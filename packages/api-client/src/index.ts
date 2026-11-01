@@ -1,8 +1,10 @@
-import createClient from "openapi-fetch";
+import createClient, { type Middleware } from "openapi-fetch";
 import type { components, paths } from "./generated/schema.ts";
 
 export type { components, paths };
 export type Health = components["schemas"]["Health"];
+export type User = components["schemas"]["User"];
+export type ApiMiddleware = Middleware;
 
 export interface ApiClientOptions {
   baseUrl: string;
