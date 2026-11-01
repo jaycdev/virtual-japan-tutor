@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/config"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/marumori"
 )
 
 const testKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" // 32 zero bytes, base64
@@ -216,5 +217,61 @@ func TestLoadMaxBodyBytes(t *testing.T) {
 		if _, err := config.Load(env(map[string]string{"DATABASE_URL": "postgres://x", "HTTP_MAX_BODY_BYTES": bad})); err == nil {
 			t.Errorf("HTTP_MAX_BODY_BYTES=%q: expected error", bad)
 		}
+	}
+}
+
+func TestLoadMaruMoriDefaults(t *testing.T) {
+	cfg, err := config.Load(env(map[string]string{"DATABASE_URL": "postgres://x"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MaruMoriBaseURL != marumori.KnownDefaultBaseURL {
+		t.Errorf("MaruMoriBaseURL = %q, want %q", cfg.MaruMoriBaseURL, marumori.KnownDefaultBaseURL)
+	}
+	if cfg.MaruMoriSyncInterval != 4*time.Hour {
+		t.Errorf("MaruMoriSyncInterval = %v, want 4h", cfg.MaruMoriSyncInterval)
+	}
+	if !cfg.MaruMoriSyncEnabled {
+		t.Error("MaruMoriSyncEnabled = false, want true by default")
+	}
+}
+
+func TestLoadMaruMoriOverrides(t *testing.T) {
+	cfg, err := config.Load(env(map[string]string{
+		"DATABASE_URL":           "postgres://x",
+		"MARUMORI_API_BASE_URL":  "http://marumori.test:3000/api/",
+		"MARUMORI_SYNC_INTERVAL": "15m",
+		"MARUMORI_SYNC_ENABLED":  "false",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MaruMoriBaseURL != "http://marumori.test:3000/api" { // normalised: no trailing slash
+		t.Errorf("MaruMoriBaseURL = %q", cfg.MaruMoriBaseURL)
+	}
+	if cfg.MaruMoriSyncInterval != 15*time.Minute {
+		t.Errorf("MaruMoriSyncInterval = %v, want 15m", cfg.MaruMoriSyncInterval)
+	}
+	if cfg.MaruMoriSyncEnabled {
+		t.Error("MARUMORI_SYNC_ENABLED=false must disable scheduled Syncs")
+	}
+}
+
+func TestLoadRejectsBadMaruMoriConfig(t *testing.T) {
+	cases := map[string]map[string]string{
+		"bad url":           {"MARUMORI_API_BASE_URL": "ftp://marumori"},
+		"zero interval":     {"MARUMORI_SYNC_INTERVAL": "0s"},
+		"negative interval": {"MARUMORI_SYNC_INTERVAL": "-5m"},
+		"garbage interval":  {"MARUMORI_SYNC_INTERVAL": "often"},
+		"garbage enabled":   {"MARUMORI_SYNC_ENABLED": "maybe"},
+	}
+	for name, extra := range cases {
+		t.Run(name, func(t *testing.T) {
+			extra["DATABASE_URL"] = "postgres://x"
+			_, err := config.Load(env(extra))
+			if err == nil || !strings.Contains(err.Error(), "MARUMORI_") {
+				t.Fatalf("err = %v, want a MARUMORI_* error", err)
+			}
+		})
 	}
 }
