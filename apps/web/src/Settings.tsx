@@ -357,6 +357,9 @@ function MaruMoriSettings({ client }: { client: ApiClient }) {
         </p>
       )}
       {m.connected && m.counts?.lastSyncAt && <p>Last Sync {m.counts.lastSyncAt}</p>}
+      {m.connected && m.lastFailure && (
+        <p className="test-result failed">Last Sync failed: {m.lastFailure.error ?? "unknown error"}</p>
+      )}
 
       <form onSubmit={(e) => void saveKey(e)}>
         <p>

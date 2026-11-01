@@ -351,12 +351,20 @@ func TestMaruMoriUpstreamFailureIsAFailedRunNotAnHTTPError(t *testing.T) {
 		t.Errorf("failure text = %q, want the API-key hint", *run.Error)
 	}
 
-	// A failed run is not the status page's lastSync, but it is in the history.
+	// A failed run is not the status page's lastSync, but it is the failure the
+	// Learner last saw, and it is in the history.
 	rec = alice.do("GET", "/marumori", nil)
 	var status api.MaruMoriStatus
 	mustJSON(t, rec, &status)
 	if status.LastSync != nil {
 		t.Errorf("lastSync = %+v, want only successful runs", status.LastSync)
+	}
+	if status.LastFailure == nil {
+		t.Fatalf("lastFailure = nil, want the failed run")
+	}
+	if status.LastFailure.Status != api.MaruMoriSyncRunStatusFailed || status.LastFailure.Error == nil ||
+		!strings.Contains(*status.LastFailure.Error, "API key") {
+		t.Errorf("lastFailure = %+v, want the failed run with the API-key hint", status.LastFailure)
 	}
 	rec = alice.do("GET", "/marumori/syncs", nil)
 	var runs []api.MaruMoriSyncRun
@@ -366,6 +374,44 @@ func TestMaruMoriUpstreamFailureIsAFailedRunNotAnHTTPError(t *testing.T) {
 	}
 
 	// The failure text is scrubbed: the key (and any part of it) appears nowhere.
+	alice.checkNoKeyLeak()
+}
+
+func TestMaruMoriLastFailureClearsAfterANewerSuccess(t *testing.T) {
+	m := newMarumoriEnv(t)
+	alice := newMarumoriClient(t, m.e, "alice")
+	alice.do("PUT", "/marumori/key", map[string]any{"apiKey": apiKey})
+
+	m.up.Err = &marumori.Error{Kind: marumori.ErrAuth, Status: 401, Detail: "invalid token"}
+	if rec := alice.do("POST", "/marumori/sync", nil); rec.Code != http.StatusOK {
+		t.Fatalf("failed sync = %d (%s)", rec.Code, rec.Body)
+	}
+	var status api.MaruMoriStatus
+	mustJSON(t, alice.do("GET", "/marumori", nil), &status)
+	if status.LastFailure == nil {
+		t.Fatalf("lastFailure = nil after a failed run")
+	}
+
+	// A newer successful Sync supersedes the failure: the Learner's newest news is ok,
+	// and the failed run stays where it belongs, in the history.
+	m.up.Err = nil
+	happyMarumoriData(m.up)
+	if rec := alice.do("POST", "/marumori/sync", nil); rec.Code != http.StatusOK {
+		t.Fatalf("sync after recovery = %d (%s)", rec.Code, rec.Body)
+	}
+	status = api.MaruMoriStatus{}
+	mustJSON(t, alice.do("GET", "/marumori", nil), &status)
+	if status.LastFailure != nil {
+		t.Errorf("lastFailure = %+v, want nil once a newer run succeeded", status.LastFailure)
+	}
+	if status.LastSync == nil || status.LastSync.Status != api.MaruMoriSyncRunStatusOk {
+		t.Errorf("lastSync = %+v, want the successful run", status.LastSync)
+	}
+	var runs []api.MaruMoriSyncRun
+	mustJSON(t, alice.do("GET", "/marumori/syncs", nil), &runs)
+	if len(runs) != 2 {
+		t.Fatalf("syncs = %+v, want both runs in the history", runs)
+	}
 	alice.checkNoKeyLeak()
 }
 

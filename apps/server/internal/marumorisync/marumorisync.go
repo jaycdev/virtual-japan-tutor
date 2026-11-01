@@ -186,10 +186,11 @@ type Store interface {
 	KnowledgeTotals(ctx context.Context, userID uuid.UUID) (Totals, error)
 
 	// StartRun inserts a running run; ErrSyncRunning if one is already running for
-	// this user. A running run older than StaleRunAfter is treated as abandoned and
-	// closed as a failed run (StaleRunMessage) first, so a lost run row cannot lock the
-	// Learner out of Sync for ever. Staleness is measured against the time the Store
-	// measures now, never against the new run's startedAt, so a live run is never stolen.
+	// this user. A running run that started more than StaleRunAfter before the new
+	// run's startedAt is treated as abandoned and closed as a failed run
+	// (StaleRunMessage) first, so a lost run row cannot lock the Learner out of Sync
+	// for ever. Both sides of that comparison are started_at values, so a run another
+	// Sync is still writing is never stolen and no Store needs its own clock.
 	StartRun(ctx context.Context, userID, runID uuid.UUID, startedAt time.Time) error
 	// FinishRun closes a running run as ok (failure nil) or failed. It is the write that
 	// closes a round: the Service calls it on a context detached from the request's, so a
@@ -199,6 +200,9 @@ type Store interface {
 	RecentRuns(ctx context.Context, userID uuid.UUID, limit int) ([]SyncRun, error)
 	// LastSuccessfulRun returns the newest ok run, if any.
 	LastSuccessfulRun(ctx context.Context, userID uuid.UUID) (SyncRun, bool, error)
+	// LastFailedRun returns the newest failed run, if any. Reaped runs (StaleRunMessage)
+	// count as failures like any other.
+	LastFailedRun(ctx context.Context, userID uuid.UUID) (SyncRun, bool, error)
 
 	// ApplySync applies one Sync's whole batch atomically: upsert Items (clearing any
 	// disappeared mark and refreshing last_seen_at), mark Disappeared, append History,

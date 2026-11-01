@@ -767,7 +767,8 @@ components:
       type: object
       description: >
         Whether the Learner has a MaruMori API key stored, and what the most recent Sync found.
-        `lastSync` and `counts` are null before the first successful Sync.
+        `lastSync` and `counts` are null before the first successful Sync. `lastFailure` reports the
+        most recent failed Sync only while it is newer than `lastSync`.
       required: [connected]
       properties:
         connected:
@@ -779,6 +780,13 @@ components:
           nullable: true
         lastSync:
           nullable: true
+          allOf:
+            - $ref: "#/components/schemas/MaruMoriSyncRun"
+        lastFailure:
+          nullable: true
+          description: >
+            The most recent failed Sync, shown only while it is the newest news: null when a later
+            Sync succeeded, and null when there is no failure. Its `error` never contains the API key.
           allOf:
             - $ref: "#/components/schemas/MaruMoriSyncRun"
         counts:

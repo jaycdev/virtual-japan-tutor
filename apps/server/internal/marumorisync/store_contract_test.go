@@ -320,6 +320,60 @@ func storeContract(t *testing.T, newFixture func(*testing.T) fixture) {
 		if err := s.StartRun(ctx, v, uuid.New(), time.Now()); !errors.Is(err, marumorisync.ErrSyncRunning) {
 			t.Errorf("a fresh run was reaped: %v", err)
 		}
+
+		// Staleness is measured between started_at values, never against a clock the
+		// Store reads for itself: timestamps from a clock that is hours behind the wall
+		// clock must not make a run that started a second ago look abandoned.
+		w := mkUser("carol")
+		fakeClock := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+		if err := s.StartRun(ctx, w, uuid.New(), fakeClock); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.StartRun(ctx, w, uuid.New(), fakeClock.Add(time.Second)); !errors.Is(err, marumorisync.ErrSyncRunning) {
+			t.Errorf("a run stamped by a lagging clock was reaped: %v", err)
+		}
+		x := mkUser("dave")
+		late := uuid.New()
+		if err := s.StartRun(ctx, x, late, fakeClock.Add(-2*marumorisync.StaleRunAfter)); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.StartRun(ctx, x, uuid.New(), fakeClock); err != nil {
+			t.Errorf("an abandoned run stamped by a lagging clock blocked a new one: %v", err)
+		}
+		runs, err = s.RecentRuns(ctx, x, 10)
+		if err != nil || len(runs) != 2 {
+			t.Fatalf("RecentRuns = %+v, %v", runs, err)
+		}
+		for _, r := range runs {
+			if r.ID == late && r.FinishedAt != nil && !r.FinishedAt.Equal(fakeClock) {
+				t.Errorf("reaped run finished at %v, want the new run's startedAt %v", r.FinishedAt, fakeClock)
+			}
+		}
+	})
+
+	t.Run("LastFailedRun reports the newest failed run for a user", func(t *testing.T) {
+		f := newFixture(t)
+		s, mkUser := f.store, f.mkUser
+		u := mkUser("alice")
+		if _, ok, err := s.LastFailedRun(ctx, u); ok || err != nil {
+			t.Fatalf("fresh LastFailedRun ok=%v err=%v, want none", ok, err)
+		}
+		first := time.Now().Add(-3 * time.Hour)
+		r1 := uuid.New()
+		_ = s.StartRun(ctx, u, r1, first)
+		_ = s.FinishRun(ctx, u, r1, first.Add(time.Minute), str("MaruMori rejected the API key"), nil)
+		second := time.Now().Add(-2 * time.Hour)
+		r2 := uuid.New()
+		_ = s.StartRun(ctx, u, r2, second)
+		_ = s.FinishRun(ctx, u, r2, second.Add(time.Minute), str("MaruMori returned 503"), nil)
+		run, ok, err := s.LastFailedRun(ctx, u)
+		if err != nil || !ok || run.ID != r2 {
+			t.Fatalf("LastFailedRun = %+v %v %v, want the newest failure (%s)", run, ok, err, r2)
+		}
+		// It stays scoped to the user.
+		if _, ok, _ := s.LastFailedRun(ctx, mkUser("bob")); ok {
+			t.Error("bob can see alice's failures")
+		}
 	})
 
 	t.Run("RecentRuns honours the limit and stays scoped to the user", func(t *testing.T) {

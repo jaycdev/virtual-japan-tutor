@@ -35,6 +35,7 @@ interface Maru {
   connected: boolean;
   connectedAt: string | null;
   lastSync: Record<string, unknown> | null;
+  lastFailure: Record<string, unknown> | null;
   counts: { kanji: number; vocabulary: number; vocabularyLinkRate: number; lastSyncAt: string | null } | null;
   runs: Record<string, unknown>[];
 }
@@ -77,6 +78,7 @@ function fakeApi(
     connected: false,
     connectedAt: null,
     lastSync: null,
+    lastFailure: null,
     counts: null,
     runs: [],
     ...opts.maruMori,
@@ -85,6 +87,7 @@ function fakeApi(
     connected: maru.connected,
     connectedAt: maru.connectedAt,
     lastSync: maru.lastSync,
+    lastFailure: maru.lastFailure,
     counts: maru.counts,
   });
 
@@ -153,9 +156,16 @@ function fakeApi(
       if (key === "POST /marumori/sync") {
         if (!maru.connected) return json(400, { code: "no_key", message: "Add your MaruMori API key first" });
         const run = opts.syncOutcome ?? syncRun("55555555-5555-4555-8555-555555555555", "ok", { counts: syncCounts });
-        maru.lastSync = run;
+        // Like the server: lastSync is the newest successful run, lastFailure the newest
+        // failure, and a run that ends the round supersedes whatever it was following.
+        if (run.status === "ok") {
+          maru.lastSync = run;
+          maru.lastFailure = null;
+          if (maru.counts) maru.counts = { ...maru.counts, lastSyncAt: run.finishedAt };
+        } else {
+          maru.lastFailure = run;
+        }
         maru.runs = [run, ...maru.runs];
-        if (maru.counts && run.status === "ok") maru.counts = { ...maru.counts, lastSyncAt: run.finishedAt };
         return json(200, run);
       }
       if (key === "GET /marumori/syncs") return json(200, maru.runs);
@@ -382,6 +392,26 @@ describe("Settings — MaruMori section", () => {
     const line = await screen.findByRole("status");
     expect(line.textContent).toContain("the API key was rejected");
     expect(line.className).toContain("failed");
+  });
+
+  it("keeps naming the last failed Sync when the newest run failed", async () => {
+    const failure = syncRun("77777777-7777-4777-8777-777777777777", "failed", {
+      error: "MaruMori rejected the API key",
+    });
+    await renderSettings({ maruMori: { ...connectedMaru, lastSync: null, lastFailure: failure } });
+    expect(await screen.findByText("Connected to MaruMori")).toBeTruthy();
+    expect(screen.getByText(/Last Sync failed/).textContent).toContain("MaruMori rejected the API key");
+  });
+
+  it("stops reporting a failure once a newer Sync succeeded", async () => {
+    const failure = syncRun("88888888-8888-4888-8888-888888888888", "failed", { error: "MaruMori timed out" });
+    const api = await renderSettings({ maruMori: { ...connectedMaru, lastFailure: failure } });
+    expect((await screen.findByText(/Last Sync failed/)).textContent).toContain("MaruMori timed out");
+
+    fireEvent.click(screen.getByRole("button", { name: "Sync now" }));
+    expect(await screen.findByText(/Sync complete/)).toBeTruthy();
+    await waitFor(() => expect(api.maru.lastFailure).toBeNull());
+    expect(screen.queryByText(/Last Sync failed/)).toBeNull();
   });
 
   it("removes the key after confirmation and returns to the form", async () => {

@@ -126,18 +126,18 @@ func (s *PostgresStore) KnowledgeTotals(ctx context.Context, userID uuid.UUID) (
 }
 
 // StartRun inserts a running run. The partial unique index on (user_id) WHERE
-// status = 'running' is the Sync single-flight: a violation is ErrSyncRunning. A run older
-// than StaleRunAfter is abandoned — a process that died mid-Sync, or a request cut short
-// before the Service could close the row — so it is closed as a failed run first: that is
-// what keeps a Learner from being locked out of Sync for ever. Staleness is measured
-// against the time this Store measures now, never against startedAt, so a run another
-// worker is still writing is never stolen.
+// status = 'running' is the Sync single-flight: a violation is ErrSyncRunning. A run
+// that started more than StaleRunAfter before startedAt is abandoned — a process that
+// died mid-Sync, or a request cut short before the Service could close the row — so it
+// is closed as a failed run first: that is what keeps a Learner from being locked out
+// of Sync for ever. Both sides of that comparison are started_at values written by the
+// Service's clock, so a run another Sync is still writing is never stolen by a clock
+// that disagrees with it.
 func (s *PostgresStore) StartRun(ctx context.Context, userID, runID uuid.UUID, startedAt time.Time) error {
-	now := time.Now()
 	if _, err := s.pool.Exec(ctx,
 		`UPDATE marumori_sync_runs SET status = 'failed', finished_at = $3, error = $4
 		 WHERE user_id = $1 AND status = 'running' AND started_at < $2`,
-		userID, now.Add(-StaleRunAfter), now, StaleRunMessage); err != nil {
+		userID, startedAt.Add(-StaleRunAfter), startedAt, StaleRunMessage); err != nil {
 		return err
 	}
 	_, err := s.pool.Exec(ctx,
@@ -201,6 +201,19 @@ func (s *PostgresStore) LastSuccessfulRun(ctx context.Context, userID uuid.UUID)
 	run, err := scanRun(s.pool.QueryRow(ctx,
 		`SELECT `+runColumns+` FROM marumori_sync_runs
 		 WHERE user_id = $1 AND status = 'ok' ORDER BY started_at DESC, id DESC LIMIT 1`, userID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return SyncRun{}, false, nil
+	}
+	if err != nil {
+		return SyncRun{}, false, err
+	}
+	return run, true, nil
+}
+
+func (s *PostgresStore) LastFailedRun(ctx context.Context, userID uuid.UUID) (SyncRun, bool, error) {
+	run, err := scanRun(s.pool.QueryRow(ctx,
+		`SELECT `+runColumns+` FROM marumori_sync_runs
+		 WHERE user_id = $1 AND status = 'failed' ORDER BY started_at DESC, id DESC LIMIT 1`, userID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return SyncRun{}, false, nil
 	}

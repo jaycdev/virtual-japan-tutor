@@ -57,6 +57,10 @@ func maruMoriStatusView(st marumorisync.Status) api.MaruMoriStatus {
 		run := maruMoriRunView(*st.LastSync)
 		out.LastSync = &run
 	}
+	if st.LastFailure != nil {
+		run := maruMoriRunView(*st.LastFailure)
+		out.LastFailure = &run
+	}
 	if st.Totals != nil {
 		t := st.Totals
 		counts := api.MaruMoriStatusCounts{

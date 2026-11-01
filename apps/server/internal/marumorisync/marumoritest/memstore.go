@@ -134,8 +134,7 @@ func (m *MemStore) KnowledgeTotals(_ context.Context, userID uuid.UUID) (marumor
 func (m *MemStore) StartRun(_ context.Context, userID, runID uuid.UUID, startedAt time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	now := time.Now()
-	staleBefore := now.Add(-marumorisync.StaleRunAfter)
+	staleBefore := startedAt.Add(-marumorisync.StaleRunAfter)
 	for idx := range m.runs[userID] {
 		r := &m.runs[userID][idx]
 		if r.Status != marumorisync.RunRunning {
@@ -146,7 +145,7 @@ func (m *MemStore) StartRun(_ context.Context, userID, runID uuid.UUID, startedA
 		}
 		// Abandoned by a crash or a cut-short request: close it as a failure rather
 		// than let it block the Learner's next Sync.
-		finished, message := now, marumorisync.StaleRunMessage
+		finished, message := startedAt, marumorisync.StaleRunMessage
 		r.Status = marumorisync.RunFailed
 		r.FinishedAt = &finished
 		r.Error = &message
@@ -198,6 +197,19 @@ func (m *MemStore) LastSuccessfulRun(_ context.Context, userID uuid.UUID) (marum
 	ok := false
 	for _, r := range m.runs[userID] {
 		if r.Status == marumorisync.RunOK {
+			found, ok = r, true
+		}
+	}
+	return found, ok, nil
+}
+
+func (m *MemStore) LastFailedRun(_ context.Context, userID uuid.UUID) (marumorisync.SyncRun, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var found marumorisync.SyncRun
+	ok := false
+	for _, r := range m.runs[userID] {
+		if r.Status == marumorisync.RunFailed {
 			found, ok = r, true
 		}
 	}

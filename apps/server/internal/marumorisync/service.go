@@ -106,10 +106,13 @@ func NewService(store Store, box *secrets.Box, ref Reference, newUpstream func(b
 }
 
 // Status is what the Settings page shows about one learner's MaruMori connection.
+// LastFailure is the newest failed run, and only while it is newer than LastSync: once a
+// Sync has succeeded, an older failure is not what the Learner needs to be told.
 type Status struct {
 	Connected   bool       `json:"connected"`
 	ConnectedAt *time.Time `json:"connectedAt,omitempty"`
 	LastSync    *SyncRun   `json:"lastSync,omitempty"`
+	LastFailure *SyncRun   `json:"lastFailure,omitempty"`
 	Totals      *Totals    `json:"totals,omitempty"`
 }
 
@@ -171,6 +174,12 @@ func (s *Service) Status(ctx context.Context) (Status, error) {
 	} else if ok {
 		run := last
 		status.LastSync = &run
+	}
+	if failure, ok, err := s.store.LastFailedRun(ctx, userID); err != nil {
+		return Status{}, err
+	} else if ok && (status.LastSync == nil || failure.StartedAt.After(status.LastSync.StartedAt)) {
+		run := failure
+		status.LastFailure = &run
 	}
 	return status, nil
 }

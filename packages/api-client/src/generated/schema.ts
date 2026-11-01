@@ -442,13 +442,15 @@ export interface components {
              */
             apiKey: string;
         };
-        /** @description Whether the Learner has a MaruMori API key stored, and what the most recent Sync found. `lastSync` and `counts` are null before the first successful Sync. */
+        /** @description Whether the Learner has a MaruMori API key stored, and what the most recent Sync found. `lastSync` and `counts` are null before the first successful Sync. `lastFailure` reports the most recent failed Sync only while it is newer than `lastSync`. */
         MaruMoriStatus: {
             /** @description Whether a MaruMori API key is stored. The key itself is never exposed. */
             connected: boolean;
             /** Format: date-time */
             connectedAt?: string | null;
             lastSync?: components["schemas"]["MaruMoriSyncRun"] | null;
+            /** @description The most recent failed Sync, shown only while it is the newest news: null when a later Sync succeeded, and null when there is no failure. Its `error` never contains the API key. */
+            lastFailure?: components["schemas"]["MaruMoriSyncRun"] | null;
             counts?: components["schemas"]["MaruMoriStatusCounts"] | null;
         };
         /** @description Totals over the Learner's stored knowledge state, from the last successful Sync. */

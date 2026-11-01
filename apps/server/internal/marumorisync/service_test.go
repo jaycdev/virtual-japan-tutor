@@ -310,6 +310,77 @@ func assertNoKeyFragment(t *testing.T, where, s string) {
 	}
 }
 
+// TestStatusReportsTheLastFailureUntilANewerSyncSucceeds: a failed Sync is news the
+// Settings page should show, but only while it is the newest news. Once a later Sync
+// succeeds, the failure stops being what the Learner needs to see.
+func TestStatusReportsTheLastFailureUntilANewerSyncSucceeds(t *testing.T) {
+	e := newEnv(t, testRefs())
+	e.connect(t)
+
+	e.up.Err = &marumori.Error{Kind: marumori.ErrAuth, Status: 401, Detail: "invalid api key"}
+	failed, err := e.svc.Sync(e.ctx)
+	if err != nil || failed.Status != marumorisync.RunFailed {
+		t.Fatalf("Sync = %+v, %v; want a failed run", failed, err)
+	}
+	st, err := e.svc.Status(e.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.LastSync != nil {
+		t.Errorf("lastSync = %+v, want null: a failed run synced nothing", st.LastSync)
+	}
+	if st.LastFailure == nil || st.LastFailure.ID != failed.ID {
+		t.Fatalf("status = %+v, want the failed run as lastFailure", st)
+	}
+	if st.LastFailure.Status != marumorisync.RunFailed || st.LastFailure.Error == nil ||
+		!strings.Contains(*st.LastFailure.Error, "API key") {
+		t.Errorf("lastFailure = %+v, want the Learner-facing reason", st.LastFailure)
+	}
+	assertNoKeyFragment(t, "status lastFailure", deref(st.LastFailure.Error))
+
+	// A Sync that succeeds makes the older failure stale news.
+	e.up.Err = nil
+	happyData(e.up)
+	if _, err := e.svc.Sync(e.ctx); err != nil {
+		t.Fatal(err)
+	}
+	st, err = e.svc.Status(e.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.LastSync == nil {
+		t.Error("lastSync is missing after a successful Sync")
+	}
+	if st.LastFailure != nil {
+		t.Errorf("lastFailure = %+v, want null once the newest run succeeded", st.LastFailure)
+	}
+
+	// And a failure after that success is news again — without erasing lastSync, which is
+	// still the last time data actually arrived.
+	e.up.Err = &marumori.Error{Kind: marumori.ErrServer, Status: 503, Detail: "MaruMori is down"}
+	latest, err := e.svc.Sync(e.ctx)
+	if err != nil || latest.Status != marumorisync.RunFailed {
+		t.Fatalf("Sync = %+v, %v; want a failed run", latest, err)
+	}
+	st, err = e.svc.Status(e.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.LastSync == nil {
+		t.Error("a later failure erased the last successful Sync")
+	}
+	if st.LastFailure == nil || st.LastFailure.ID != latest.ID {
+		t.Errorf("status = %+v, want the newest failure as lastFailure", st)
+	}
+}
+
+func deref(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
 // TestLongFailureMessageKeepsWholeCharacters: MaruMori's own detail text is mostly
 // Japanese, and slicing it by bytes leaves the Learner with half a character.
 func TestLongFailureMessageKeepsWholeCharacters(t *testing.T) {
@@ -468,7 +539,9 @@ func TestConcurrentSyncIsRejected(t *testing.T) {
 	e := newEnv(t, testRefs())
 	e.connect(t)
 	happyData(e.up)
-	if err := e.store.StartRun(e.ctx, e.uid, uuid.New(), time.Now()); err != nil {
+	// A run is already running for this Learner, stamped with the same clock the
+	// Service stamps its own runs with.
+	if err := e.store.StartRun(e.ctx, e.uid, uuid.New(), e.now); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := e.svc.Sync(e.ctx); !errors.Is(err, marumorisync.ErrSyncRunning) {
