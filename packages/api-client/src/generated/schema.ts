@@ -632,7 +632,7 @@ export interface components {
             /** @description Every example sentence stored on the point after generation. */
             examples: components["schemas"]["GrammarExample"][];
         };
-        /** @description The Learner's Starting Level. `level` is null until onboarding chooses one; `added` and `removed` report what the most recent change did to Seeded Grammar. */
+        /** @description The Learner's Starting Level. `level` is null until onboarding chooses one; `added` and `removed` appear only on the PUT response, reporting what that change did to Seeded Grammar. */
         StartingLevelStatus: {
             /** @description Whether the Learner has declared a Starting Level yet. */
             configured: boolean;
@@ -1500,7 +1500,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The Learner's grammar observations, oldest first */
+            /** @description The Learner's grammar observations, oldest first (`observed_at`, MaruMori id as tie-break) */
             200: {
                 headers: {
                     [name: string]: unknown;

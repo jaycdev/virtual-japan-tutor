@@ -21,13 +21,14 @@ func (s *server) knownGrammarService() (*knowngrammar.Service, error) {
 	return s.knownGrammar, nil
 }
 
-// startingLevelStatusView turns the stored level and a Seeded Grammar delta into
-// the api shape.
-func startingLevelStatusView(level refdata.Level, configured bool, delta knowngrammar.SeededDelta) api.StartingLevelStatus {
-	out := api.StartingLevelStatus{
-		Configured: configured,
-		Added:      &delta.Added,
-		Removed:    &delta.Removed,
+// startingLevelStatusView turns the stored level and an optional Seeded Grammar
+// delta into the api shape. The delta belongs to a change (the PUT); GET leaves
+// Added and Removed absent rather than reporting zeros.
+func startingLevelStatusView(level refdata.Level, configured bool, delta *knowngrammar.SeededDelta) api.StartingLevelStatus {
+	out := api.StartingLevelStatus{Configured: configured}
+	if delta != nil {
+		out.Added = &delta.Added
+		out.Removed = &delta.Removed
 	}
 	if configured {
 		lvl := api.StartingLevelStatusLevel(level)
@@ -49,7 +50,7 @@ func (s *server) GetStartingLevel(ctx context.Context, _ api.GetStartingLevelReq
 	if err != nil {
 		return nil, err
 	}
-	return api.GetStartingLevel200JSONResponse(startingLevelStatusView(level, configured, knowngrammar.SeededDelta{})), nil
+	return api.GetStartingLevel200JSONResponse(startingLevelStatusView(level, configured, nil)), nil
 }
 
 func (s *server) SetStartingLevel(ctx context.Context, req api.SetStartingLevelRequestObject) (api.SetStartingLevelResponseObject, error) {
@@ -72,7 +73,7 @@ func (s *server) SetStartingLevel(ctx context.Context, req api.SetStartingLevelR
 		return nil, err
 	}
 	return api.SetStartingLevel200JSONResponse(
-		startingLevelStatusView(refdata.Level(req.Body.Level), true, delta)), nil
+		startingLevelStatusView(refdata.Level(req.Body.Level), true, &delta)), nil
 }
 
 // knownLevel accepts exactly the levels the spec's enum lists; the strict decoder

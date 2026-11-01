@@ -133,10 +133,15 @@ func TestSetStartingLevelSeedsGrammarAndReadsBack(t *testing.T) {
 	var get struct {
 		Configured bool   `json:"configured"`
 		Level      string `json:"level"`
+		Added      *int   `json:"added"`
+		Removed    *int   `json:"removed"`
 	}
 	mustJSON(t, rec, &get)
 	if !get.Configured || get.Level != "N4" {
 		t.Errorf("GET body = %+v, want the level read back", get)
+	}
+	if get.Added != nil || get.Removed != nil {
+		t.Errorf("GET body = %+v, want no added/removed deltas outside a PUT", get)
 	}
 }
 

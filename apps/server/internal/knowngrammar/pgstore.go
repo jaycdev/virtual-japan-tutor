@@ -146,7 +146,7 @@ func (s *PostgresStore) Observations(ctx context.Context, userID uuid.UUID) ([]O
 	rows, err := s.pool.Query(ctx, `
 		SELECT marumori_id, pattern, jlpt_level, matched_point, flagged_for_review
 		FROM known_grammar_observations WHERE user_id = $1
-		ORDER BY marumori_id`, userID)
+		ORDER BY observed_at, marumori_id`, userID)
 	if err != nil {
 		return nil, err
 	}

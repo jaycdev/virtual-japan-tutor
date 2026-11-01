@@ -626,7 +626,7 @@ paths:
           description: false returns every observation, flagged or not, for a fuller picture.
       responses:
         "200":
-          description: The Learner's grammar observations, oldest first
+          description: The Learner's grammar observations, oldest first (`observed_at`, MaruMori id as tie-break)
           content:
             application/json:
               schema:
@@ -1111,7 +1111,7 @@ components:
       type: object
       description: >
         The Learner's Starting Level. `level` is null until onboarding chooses one; `added` and
-        `removed` report what the most recent change did to Seeded Grammar.
+        `removed` appear only on the PUT response, reporting what that change did to Seeded Grammar.
       required: [configured]
       properties:
         configured:
