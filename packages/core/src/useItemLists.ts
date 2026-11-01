@@ -91,20 +91,23 @@ export function useItemLists(client: ApiClient): ItemListsView {
     };
   }, [client, attempt]);
 
-  /** Apply the answer the server just gave us, so every mutation ends on truth. */
-  const refresh = useCallback(async (): Promise<ActionResult> => {
+  /**
+   * Re-read after a mutation. A failed re-read never clobbers what is on
+   * screen: the mutation itself succeeded, and flipping a ready view into an
+   * error would blank the Learner's lists and call a successful Save a
+   * failure. The stale lists stay, and the next reload corrects them.
+   */
+  const refresh = useCallback(async (): Promise<void> => {
     try {
-      const { data, error: err, response } = await client.GET("/item-lists");
+      const { data } = await client.GET("/item-lists");
       if (data)
         setState({
           status: "ready",
           lists: data.items ?? [],
           defaultListId: data.defaultListId ?? null,
         });
-      else setState({ status: "error", message: message(err, response.status) });
-      return data ? { ok: true } : { ok: false, message: message(err, response.status) };
     } catch {
-      return { ok: false, message: UNREACHABLE };
+      // keep the stale view
     }
   }, [client]);
 
@@ -114,10 +117,11 @@ export function useItemLists(client: ApiClient): ItemListsView {
         const { data, error: err, response } = await client.POST("/item-lists", { body: list });
         if (response.status === 201 && data) {
           // Hand back the created list (the reader's inline "Save to a new
-          // list" needs its id); the re-read keeps the shared view honest.
+          // list" needs its id); the re-read keeps the shared view honest,
+          // but the create is settled either way.
           const created = data;
-          const res = await refresh();
-          return res.ok ? { ok: true, list: created } : res;
+          await refresh();
+          return { ok: true, list: created };
         }
         return { ok: false, message: message(err, response.status) };
       } catch {
@@ -134,7 +138,10 @@ export function useItemLists(client: ApiClient): ItemListsView {
           params: { path: { listId } },
           body: patch,
         });
-        if (response.status === 200) return refresh();
+        if (response.status === 200) {
+          await refresh();
+          return { ok: true };
+        }
         return { ok: false, message: message(err, response.status) };
       } catch {
         return { ok: false, message: UNREACHABLE };
@@ -149,7 +156,10 @@ export function useItemLists(client: ApiClient): ItemListsView {
         const { error: err, response } = await client.DELETE("/item-lists/{listId}", {
           params: { path: { listId } },
         });
-        if (response.status === 204) return refresh();
+        if (response.status === 204) {
+          await refresh();
+          return { ok: true };
+        }
         return { ok: false, message: message(err, response.status) };
       } catch {
         return { ok: false, message: UNREACHABLE };
@@ -164,7 +174,10 @@ export function useItemLists(client: ApiClient): ItemListsView {
         const { error: err, response } = await client.PUT("/item-lists/default", {
           body: { listId },
         });
-        if (response.status === 204) return refresh();
+        if (response.status === 204) {
+          await refresh();
+          return { ok: true };
+        }
         return { ok: false, message: message(err, response.status) };
       } catch {
         return { ok: false, message: UNREACHABLE };
@@ -180,7 +193,10 @@ export function useItemLists(client: ApiClient): ItemListsView {
           params: { path: { listId } },
           body: item,
         });
-        if (response.status === 204) return refresh();
+        if (response.status === 204) {
+          await refresh();
+          return { ok: true };
+        }
         return { ok: false, message: message(err, response.status) };
       } catch {
         return { ok: false, message: UNREACHABLE };
@@ -195,7 +211,10 @@ export function useItemLists(client: ApiClient): ItemListsView {
         const { error: err, response } = await client.DELETE("/item-lists/{listId}/items", {
           params: { path: { listId }, query: { itemKind: item.itemKind, itemRef: item.itemRef } },
         });
-        if (response.status === 204) return refresh();
+        if (response.status === 204) {
+          await refresh();
+          return { ok: true };
+        }
         return { ok: false, message: message(err, response.status) };
       } catch {
         return { ok: false, message: UNREACHABLE };

@@ -196,6 +196,28 @@ describe("useItemLists", () => {
     expect(result.current.state.status === "ready" && result.current.state.lists.length).toBe(2);
   });
 
+  it("a mutation that lands stays ok even when the follow-up refresh fails, keeping the loaded lists", async () => {
+    // The finding: a successful 204 plus a broken re-read used to answer
+    // ok:false (the Settings screen told the Learner their Save had failed)
+    // and flip the whole view to error (the list section went blank).
+    const { client, fetchImpl, json } = fakeClient();
+    fetchImpl
+      .mockImplementationOnce(async () => json(200, listsBody))
+      .mockImplementationOnce(async () => json(204, undefined)) // the save itself
+      .mockImplementationOnce(async () => json(500, { code: "internal", message: "boom" })); // refresh
+    const { result } = renderHook(() => useItemLists(client));
+    await waitFor(() => expect(result.current.state.status).toBe("ready"));
+
+    const res = await act(async () =>
+      result.current.addToList("l1", { itemKind: "vocabulary", itemRef: "990101" }),
+    );
+    expect(res.ok).toBe(true);
+    // Stale but usable: the ready state and its lists survive the bad refresh.
+    const st = result.current.state;
+    expect(st.status === "ready" && st.lists.map((l) => l.id)).toEqual(["l1", "l2"]);
+    expect(result.current.defaultListId).toBe("l1");
+  });
+
   it("reports a failed load as an error the screen can retry", async () => {
     const { client, fetchImpl, json } = fakeClient();
     fetchImpl
