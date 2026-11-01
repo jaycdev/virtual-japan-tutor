@@ -256,7 +256,7 @@ func (g *Generator) materialise(ctx context.Context, raw *storyJSON, userID uuid
 			})
 		}
 		s.Sentences = append(s.Sentences, sen)
-		texts = append(texts, in.JA)
+		texts = append(texts, sen.JA)
 	}
 	for i, q := range raw.Questions {
 		opts := make([]string, len(q.OptionsJA))

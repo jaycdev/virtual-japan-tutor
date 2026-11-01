@@ -446,6 +446,38 @@ func TestToHiraganaKeepsMarksAndKana(t *testing.T) {
 	}
 }
 
+func TestMaterialiseStripsNullsFromStoryText(t *testing.T) {
+	// End-to-end: a NUL inside a model sentence must not survive into the
+	// paragraph either. stories.text is assembled from the stripped
+	// sentences, so Text and the Sentences stay identical, NUL-free strings
+	// (Postgres would reject the NUL at the store anyway).
+	nulClause := "ねこは\x00ねこをみつけました。"
+	client := &fakeChat{responses: [][]byte{
+		fixture(t, "travel", cleanClause, nulClause, cleanClause, cleanClause),
+	}}
+	req := baseRequest()
+	req.Settings.MaxAttempts = 1
+	req.Known = fakeKnown{1: {IsKnown: true, SRSLevel: 5}, 2: {IsKnown: true, SRSLevel: 4}}
+
+	gen := NewGenerator(cleanLookup())
+	st, err := gen.Generate(context.Background(), client, req)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if strings.ContainsRune(st.Sentences[1].JA, 0) {
+		t.Fatal("the stripped sentence still holds a NUL")
+	}
+	if st.Sentences[1].JA != sentence(12, cleanClause) {
+		t.Fatalf("stripped sentence lost more than the NUL: %q", st.Sentences[1].JA)
+	}
+	if strings.ContainsRune(st.Text, 0) {
+		t.Fatal("stories.text still holds a NUL: Text must be built from the stripped sentences")
+	}
+	if st.Text != st.Sentences[0].JA+st.Sentences[1].JA+st.Sentences[2].JA+st.Sentences[3].JA {
+		t.Fatal("Text is not the stripped sentences joined: paragraph and sentences drifted apart")
+	}
+}
+
 func TestStripNulls(t *testing.T) {
 	// Postgres rejects \u0000 in text: a stray NUL from the model must not
 	// turn a storable story into a save failure.
