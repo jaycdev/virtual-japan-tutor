@@ -26,7 +26,7 @@ func (s *server) focusService() (*mastery.Service, error) {
 // enum members verbatim, so they convert directly.
 func focusSetItemView(it mastery.ScoredItem) api.FocusSetItem {
 	out := api.FocusSetItem{
-		Kind:                 api.FocusSetItemKind(it.Item.Key.Kind),
+		Kind:                 api.ItemKind(it.Item.Key.Kind),
 		ItemRef:              it.Item.Key.Ref,
 		Source:               api.FocusSetItemSource(it.Item.Source),
 		Mastery:              float32(math.Round(it.Mastery*1e4) / 1e4),

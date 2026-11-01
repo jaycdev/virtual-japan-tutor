@@ -69,27 +69,6 @@ func (e AiTask) Valid() bool {
 	}
 }
 
-// Defines values for FocusSetItemKind.
-const (
-	Grammar    FocusSetItemKind = "grammar"
-	Kanji      FocusSetItemKind = "kanji"
-	Vocabulary FocusSetItemKind = "vocabulary"
-)
-
-// Valid indicates whether the value is a known member of the FocusSetItemKind enum.
-func (e FocusSetItemKind) Valid() bool {
-	switch e {
-	case Grammar:
-		return true
-	case Kanji:
-		return true
-	case Vocabulary:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for FocusSetItemSource.
 const (
 	Marumori FocusSetItemSource = "marumori"
@@ -219,6 +198,27 @@ func (e HealthStatus) Valid() bool {
 	}
 }
 
+// Defines values for ItemKind.
+const (
+	Grammar    ItemKind = "grammar"
+	Kanji      ItemKind = "kanji"
+	Vocabulary ItemKind = "vocabulary"
+)
+
+// Valid indicates whether the value is a known member of the ItemKind enum.
+func (e ItemKind) Valid() bool {
+	switch e {
+	case Grammar:
+		return true
+	case Kanji:
+		return true
+	case Vocabulary:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for MaruMoriSyncRunStatus.
 const (
 	MaruMoriSyncRunStatusFailed  MaruMoriSyncRunStatus = "failed"
@@ -234,6 +234,42 @@ func (e MaruMoriSyncRunStatus) Valid() bool {
 	case MaruMoriSyncRunStatusOk:
 		return true
 	case MaruMoriSyncRunStatusRunning:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PracticeExerciseKind.
+const (
+	GrammarCloze PracticeExerciseKind = "grammar_cloze"
+	Recognition  PracticeExerciseKind = "recognition"
+)
+
+// Valid indicates whether the value is a known member of the PracticeExerciseKind enum.
+func (e PracticeExerciseKind) Valid() bool {
+	switch e {
+	case GrammarCloze:
+		return true
+	case Recognition:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PracticeState.
+const (
+	Complete   PracticeState = "complete"
+	InProgress PracticeState = "in_progress"
+)
+
+// Valid indicates whether the value is a known member of the PracticeState enum.
+func (e PracticeState) Valid() bool {
+	switch e {
+	case Complete:
+		return true
+	case InProgress:
 		return true
 	default:
 		return false
@@ -412,8 +448,10 @@ type FocusSet struct {
 // FocusSetItem One Known Item in the Focus Set, with its current Mastery. Later features (Practice Sessions, Weak Signals ingestion) address the item by `kind` plus `itemRef`.
 type FocusSetItem struct {
 	// ItemRef The item's stable ref: the JMdict ent_seq (as text) for linked vocabulary, the literal for linked kanji, the MaruMori id for items no reference-data link covers yet, and the Grammar Catalogue point id (as text) for grammar.
-	ItemRef string           `json:"itemRef"`
-	Kind    FocusSetItemKind `json:"kind"`
+	ItemRef string `json:"itemRef"`
+
+	// Kind The kind of a Known Item — the same three kinds the Knowledge Store, the Focus Set and the Practice Record address items by.
+	Kind ItemKind `json:"kind"`
 
 	// Mastery The item's current Mastery score, recomputed from SRS Level, Level Trend, Practice Record and Weak Signals on this read. Never stored.
 	Mastery float32 `json:"mastery"`
@@ -427,9 +465,6 @@ type FocusSetItem struct {
 	// SrsLevel MaruMori's SRS Level for the item; null when it reports none (e.g. Seeded Grammar).
 	SrsLevel *int `json:"srsLevel,omitempty"`
 }
-
-// FocusSetItemKind defines model for FocusSetItem.Kind.
-type FocusSetItemKind string
 
 // FocusSetItemSource Why the item is known — Synced, Seeded Grammar, or Observed Grammar.
 type FocusSetItemSource string
@@ -568,6 +603,9 @@ type HealthDatabase string
 // HealthStatus defines model for Health.Status.
 type HealthStatus string
 
+// ItemKind The kind of a Known Item — the same three kinds the Knowledge Store, the Focus Set and the Practice Record address items by.
+type ItemKind string
+
 // LoginRequest defines model for LoginRequest.
 type LoginRequest struct {
 	Password string `json:"password"`
@@ -667,6 +705,111 @@ type MaruMoriSyncRun struct {
 // MaruMoriSyncRunStatus defines model for MaruMoriSyncRun.Status.
 type MaruMoriSyncRunStatus string
 
+// PracticeAnswer defines model for PracticeAnswer.
+type PracticeAnswer struct {
+	ExerciseId string `json:"exerciseId"`
+	OptionId   string `json:"optionId"`
+}
+
+// PracticeAnswerResult defines model for PracticeAnswerResult.
+type PracticeAnswerResult struct {
+	Correct bool `json:"correct"`
+
+	// CorrectOptionId Lets the UI reveal the right answer after a miss.
+	CorrectOptionId string `json:"correctOptionId"`
+
+	// State A Practice Session's state — complete once every Exercise has been answered. Its value after each answer is what the answer result reports.
+	State PracticeState `json:"state"`
+}
+
+// PracticeExercise One Exercise. `recognition` shows a Known Item in Japanese with four English meaning options; `grammar_cloze` shows a Grammar Point's example sentence with the pattern replaced by ＿＿＿ and pattern variants as options. The correct answer is never sent before the Learner answers — once answered, `chosenOptionId` and `correctOptionId` reveal both sides so a resumed session shows the same feedback.
+type PracticeExercise struct {
+	Answered bool `json:"answered"`
+
+	// ChosenOptionId Present once answered — the option the Learner chose.
+	ChosenOptionId *string `json:"chosenOptionId,omitempty"`
+
+	// Correct Present once answered — whether the Learner's choice was right.
+	Correct *bool `json:"correct,omitempty"`
+
+	// CorrectOptionId Present once answered — the option that holds the right answer.
+	CorrectOptionId *string `json:"correctOptionId,omitempty"`
+
+	// Id The exercise id within its session, used when answering.
+	Id string `json:"id"`
+
+	// Instruction What to do, in English ("What does this mean?" / "Which pattern completes the sentence?").
+	Instruction *string `json:"instruction,omitempty"`
+
+	// ItemKind The kind of a Known Item — the same three kinds the Knowledge Store, the Focus Set and the Practice Record address items by.
+	ItemKind ItemKind `json:"itemKind"`
+
+	// ItemRef The Focus Set item ref this exercise practises (same addressing as the Practice Record).
+	ItemRef string               `json:"itemRef"`
+	Kind    PracticeExerciseKind `json:"kind"`
+	Options *[]PracticeOption    `json:"options,omitempty"`
+
+	// Prompt The Japanese side: the vocabulary's kanji form (reading when it has none), the kanji, or the example sentence with the grammar pattern replaced by ＿＿＿.
+	Prompt string `json:"prompt"`
+}
+
+// PracticeExerciseKind defines model for PracticeExercise.Kind.
+type PracticeExerciseKind string
+
+// PracticeOption defines model for PracticeOption.
+type PracticeOption struct {
+	// Id Stable within the exercise ("a"…"d"); send it in the answer.
+	Id   string `json:"id"`
+	Text string `json:"text"`
+}
+
+// PracticeResults The session's results summary, present once complete.
+type PracticeResults struct {
+	Correct int `json:"correct"`
+
+	// Items Per-item results, in exercise order — what was appended to the Practice Record.
+	Items *[]PracticeResultsItem `json:"items,omitempty"`
+	Total int                    `json:"total"`
+}
+
+// PracticeResultsItem defines model for PracticeResultsItem.
+type PracticeResultsItem struct {
+	Correct bool `json:"correct"`
+
+	// ItemKind The kind of a Known Item — the same three kinds the Knowledge Store, the Focus Set and the Practice Record address items by.
+	ItemKind ItemKind `json:"itemKind"`
+	ItemRef  string   `json:"itemRef"`
+}
+
+// PracticeSession One Practice Session (issue #9): its exercises in answer order, and once every exercise is answered, the results summary. Sessions are short-lived server state.
+type PracticeSession struct {
+	Exercises []PracticeExercise `json:"exercises"`
+
+	// Id The session id to use for answers and further reads.
+	Id string `json:"id"`
+
+	// Results Present once the session is complete.
+	Results *PracticeResults `json:"results,omitempty"`
+
+	// Skipped Focus Set items the session could not build an exercise for — unlinked MaruMori items (no stored content) and grammar points with no example sentence.
+	Skipped int `json:"skipped"`
+
+	// State A Practice Session's state — complete once every Exercise has been answered. Its value after each answer is what the answer result reports.
+	State PracticeState `json:"state"`
+
+	// TargetSize The session's configured target size (server config PRACTICE_SESSION_SIZE). A learner with a shorter Focus Set simply gets fewer exercises.
+	TargetSize *int `json:"targetSize,omitempty"`
+}
+
+// PracticeSessionStart Session options. Everything is optional: an empty body (or no body at all) starts a session with a server-chosen seed.
+type PracticeSessionStart struct {
+	// Seed Makes item selection, distractor choice and option order deterministic — the same seed and Focus Set produce the same session. Omit for a server-chosen seed.
+	Seed *int64 `json:"seed,omitempty"`
+}
+
+// PracticeState A Practice Session's state — complete once every Exercise has been answered. Its value after each answer is what the answer result reports.
+type PracticeState string
+
 // StartingLevelStatus The Learner's Starting Level. `level` is null until onboarding chooses one; `added` and `removed` appear only on the PUT response, reporting what that change did to Seeded Grammar.
 type StartingLevelStatus struct {
 	// Added Grammar Points Seeded by the most recent change.
@@ -705,6 +848,9 @@ type GrammarPointId = string
 
 // ProviderId defines model for ProviderId.
 type ProviderId = string
+
+// SessionId defines model for SessionId.
+type SessionId = string
 
 // NotFound defines model for NotFound.
 type NotFound = Error
@@ -754,6 +900,12 @@ type GenerateGrammarExamplesJSONRequestBody = GenerateExamplesRequest
 
 // SetMaruMoriKeyJSONRequestBody defines body for SetMaruMoriKey for application/json ContentType.
 type SetMaruMoriKeyJSONRequestBody = MaruMoriKeyRequest
+
+// StartPracticeSessionJSONRequestBody defines body for StartPracticeSession for application/json ContentType.
+type StartPracticeSessionJSONRequestBody = PracticeSessionStart
+
+// AnswerPracticeExerciseJSONRequestBody defines body for AnswerPracticeExercise for application/json ContentType.
+type AnswerPracticeExerciseJSONRequestBody = PracticeAnswer
 
 // SetStartingLevelJSONRequestBody defines body for SetStartingLevel for application/json ContentType.
 type SetStartingLevelJSONRequestBody = StartingLevelUpdate
@@ -835,6 +987,15 @@ type ServerInterface interface {
 	// GetMe The authenticated user
 	// (GET /me)
 	GetMe(w http.ResponseWriter, r *http.Request)
+	// StartPracticeSession Start a Practice Session drawn from the Focus Set
+	// (POST /practice/sessions)
+	StartPracticeSession(w http.ResponseWriter, r *http.Request)
+	// GetPracticeSession A Practice Session in progress, or its results once complete
+	// (GET /practice/sessions/{sessionId})
+	GetPracticeSession(w http.ResponseWriter, r *http.Request, sessionId SessionId)
+	// AnswerPracticeExercise Answer one exercise of a Practice Session
+	// (POST /practice/sessions/{sessionId}/answers)
+	AnswerPracticeExercise(w http.ResponseWriter, r *http.Request, sessionId SessionId)
 	// GetStartingLevel The Learner's declared Starting Level, if they have chosen one
 	// (GET /starting-level)
 	GetStartingLevel(w http.ResponseWriter, r *http.Request)
@@ -1399,6 +1560,72 @@ func (siw *ServerInterfaceWrapper) GetMe(w http.ResponseWriter, r *http.Request)
 	handler.ServeHTTP(w, r)
 }
 
+// StartPracticeSession operation middleware
+func (siw *ServerInterfaceWrapper) StartPracticeSession(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StartPracticeSession(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPracticeSession operation middleware
+func (siw *ServerInterfaceWrapper) GetPracticeSession(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "sessionId" -------------
+	var sessionId SessionId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "sessionId", r.PathValue("sessionId"), &sessionId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sessionId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPracticeSession(w, r, sessionId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AnswerPracticeExercise operation middleware
+func (siw *ServerInterfaceWrapper) AnswerPracticeExercise(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "sessionId" -------------
+	var sessionId SessionId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "sessionId", r.PathValue("sessionId"), &sessionId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sessionId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AnswerPracticeExercise(w, r, sessionId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetStartingLevel operation middleware
 func (siw *ServerInterfaceWrapper) GetStartingLevel(w http.ResponseWriter, r *http.Request) {
 
@@ -1574,6 +1801,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/starting-level", wrapper.SetStartingLevel)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/grammar/review", wrapper.ListGrammarReviewItems)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/focus-set", wrapper.GetFocusSet)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/practice/sessions", wrapper.StartPracticeSession)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/practice/sessions/{sessionId}", wrapper.GetPracticeSession)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/practice/sessions/{sessionId}/answers", wrapper.AnswerPracticeExercise)
 
 	return m
 }
@@ -2830,6 +3060,185 @@ func (response GetMe401JSONResponse) VisitGetMeResponse(w http.ResponseWriter) e
 	return err
 }
 
+type StartPracticeSessionRequestObject struct {
+	Body *StartPracticeSessionJSONRequestBody
+}
+
+type StartPracticeSessionResponseObject interface {
+	VisitStartPracticeSessionResponse(w http.ResponseWriter) error
+}
+
+type StartPracticeSession200JSONResponse PracticeSession
+
+func (response StartPracticeSession200JSONResponse) VisitStartPracticeSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartPracticeSession401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response StartPracticeSession401JSONResponse) VisitStartPracticeSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartPracticeSession409JSONResponse Error
+
+func (response StartPracticeSession409JSONResponse) VisitStartPracticeSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPracticeSessionRequestObject struct {
+	SessionId SessionId `json:"sessionId"`
+}
+
+type GetPracticeSessionResponseObject interface {
+	VisitGetPracticeSessionResponse(w http.ResponseWriter) error
+}
+
+type GetPracticeSession200JSONResponse PracticeSession
+
+func (response GetPracticeSession200JSONResponse) VisitGetPracticeSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPracticeSession401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetPracticeSession401JSONResponse) VisitGetPracticeSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPracticeSession404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetPracticeSession404JSONResponse) VisitGetPracticeSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AnswerPracticeExerciseRequestObject struct {
+	SessionId SessionId `json:"sessionId"`
+	Body      *AnswerPracticeExerciseJSONRequestBody
+}
+
+type AnswerPracticeExerciseResponseObject interface {
+	VisitAnswerPracticeExerciseResponse(w http.ResponseWriter) error
+}
+
+type AnswerPracticeExercise200JSONResponse PracticeAnswerResult
+
+func (response AnswerPracticeExercise200JSONResponse) VisitAnswerPracticeExerciseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AnswerPracticeExercise400JSONResponse Error
+
+func (response AnswerPracticeExercise400JSONResponse) VisitAnswerPracticeExerciseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AnswerPracticeExercise401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response AnswerPracticeExercise401JSONResponse) VisitAnswerPracticeExerciseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AnswerPracticeExercise404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response AnswerPracticeExercise404JSONResponse) VisitAnswerPracticeExerciseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AnswerPracticeExercise409JSONResponse Error
+
+func (response AnswerPracticeExercise409JSONResponse) VisitAnswerPracticeExerciseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetStartingLevelRequestObject struct {
 }
 
@@ -2992,6 +3401,15 @@ type StrictServerInterface interface {
 	// GetMe The authenticated user
 	// (GET /me)
 	GetMe(ctx context.Context, request GetMeRequestObject) (GetMeResponseObject, error)
+	// StartPracticeSession Start a Practice Session drawn from the Focus Set
+	// (POST /practice/sessions)
+	StartPracticeSession(ctx context.Context, request StartPracticeSessionRequestObject) (StartPracticeSessionResponseObject, error)
+	// GetPracticeSession A Practice Session in progress, or its results once complete
+	// (GET /practice/sessions/{sessionId})
+	GetPracticeSession(ctx context.Context, request GetPracticeSessionRequestObject) (GetPracticeSessionResponseObject, error)
+	// AnswerPracticeExercise Answer one exercise of a Practice Session
+	// (POST /practice/sessions/{sessionId}/answers)
+	AnswerPracticeExercise(ctx context.Context, request AnswerPracticeExerciseRequestObject) (AnswerPracticeExerciseResponseObject, error)
 	// GetStartingLevel The Learner's declared Starting Level, if they have chosen one
 	// (GET /starting-level)
 	GetStartingLevel(ctx context.Context, request GetStartingLevelRequestObject) (GetStartingLevelResponseObject, error)
@@ -3715,6 +4133,99 @@ func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// StartPracticeSession operation middleware
+func (sh *strictHandler) StartPracticeSession(w http.ResponseWriter, r *http.Request) {
+	var request StartPracticeSessionRequestObject
+
+	var body StartPracticeSessionJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		if !errors.Is(err, io.EOF) {
+			sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+			return
+		}
+	} else {
+		request.Body = &body
+	}
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.StartPracticeSession(ctx, request.(StartPracticeSessionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "StartPracticeSession")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(StartPracticeSessionResponseObject); ok {
+		if err := validResponse.VisitStartPracticeSessionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetPracticeSession operation middleware
+func (sh *strictHandler) GetPracticeSession(w http.ResponseWriter, r *http.Request, sessionId SessionId) {
+	var request GetPracticeSessionRequestObject
+
+	request.SessionId = sessionId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetPracticeSession(ctx, request.(GetPracticeSessionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetPracticeSession")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetPracticeSessionResponseObject); ok {
+		if err := validResponse.VisitGetPracticeSessionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AnswerPracticeExercise operation middleware
+func (sh *strictHandler) AnswerPracticeExercise(w http.ResponseWriter, r *http.Request, sessionId SessionId) {
+	var request AnswerPracticeExerciseRequestObject
+
+	request.SessionId = sessionId
+
+	var body AnswerPracticeExerciseJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AnswerPracticeExercise(ctx, request.(AnswerPracticeExerciseRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AnswerPracticeExercise")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AnswerPracticeExerciseResponseObject); ok {
+		if err := validResponse.VisitAnswerPracticeExerciseResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetStartingLevel operation middleware
 func (sh *strictHandler) GetStartingLevel(w http.ResponseWriter, r *http.Request) {
 	var request GetStartingLevelRequestObject
@@ -3775,140 +4286,171 @@ func (sh *strictHandler) SetStartingLevel(w http.ResponseWriter, r *http.Request
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"+v8MAA==",
+	"7L3dbiQ3lif+KkTOHygJ/1Aqyy73dKsuBupy2V3t+oKk2gbGZSipiJOZtCLJMMmQKtsooPtmHmB3gb3Z",
+	"63mKxe67tB9gX2FxDskIRgQjM1UfsrGzQKOtyoxkkIfni+fjx58nuVpXSoK0ZnLy86Timq/BgqZ/fav5",
+	"es31ayWkfVbgJwWYXIvKCiUnJ5NTtnRPsAofeWBYzi0v1bIGJoop+xrykmsoGDeMs6rkQjJjtZBLtlCa",
+	"2RUww9fANHCjJD71WqsbUYB+VpzQ10uQoLmFgmlVW9DsSsjCsIrbFWvnyq5goTQwXttVxoyin664LErQ",
+	"+JgBw4RlwhooF+zg0ewREwu25uVC6TUUh9O3cpJNBC4JR55kE8nXMDmZiGKSTTT8VAsNxeTE6hqyiclX",
+	"sOZIDbup8Cm3pMn799mknX+CWpKdPmtW+MCwN2+efb2VSEqyqtaVMrCVGnNcBrcnrK5FMU/Qxa4cbdha",
+	"FEUJt1wD07U0RCveEoKJgt2quizYFTAuzS3gvB7NZswqxiWrJY4C0oqcZpHzsgQ9ZRdJcn9OOp+DMULJ",
+	"NFO+1jy3Igfmn3pgmCgypK8GW2sJBbvasNevzi/YceWfPTbuWTNlr+/IpwNmFLKIOZJIPbp006zkLhR4",
+	"jw+bSkkDJKkvlf1G1ZLIkStpQVr8k1dViXsllDz+0SB5fo4G/f80LCYnk386bnXAsfvWHD/VWmn3oi55",
+	"Xypm6nzFNBhV6xwaCnVZozag2UGuCmBzqezlAmc3P5y8zyZviIuUFn+Fe5jvC2GMkMuMCXnDS1EwpRm8",
+	"q5DMzNOeWXUNkvjKD4dvOxVhk1M8ZvgNFOxVBfL02RHOh1txVQIDWZAudEJx+voZu4YNE4bdamHhSMly",
+	"w7gsmIQb0A0/TifZpNKqAm2F29ArbuCNLoevfomyXgqTfDv+ir05e54xmC6nbGVtZU6Oj3klpqoCycU0",
+	"V+vjm4eTrM9R2STXgDt3ShvhNMrkZFJwC0dWrCH1kxU3p5X4DjbDaf5lBXYFmvGwfmOVhsKRhT5yylgY",
+	"Twp4h3quyJhUlsENSBQpK3hZbqbtu6+UKoFLfLkoOhNF3Zea41oVUCZEKAhg4ou6Ku5Gifex6H7vtBmN",
+	"njX7GCYSEy2mefzWH5oXqKsfIbc4p5Ybn9BvyFh3OIaP7MSrtbAZk3VZEuuvK7shmQ2caphdccskQMGk",
+	"wr1BejfLrrgxt0rTkuqy5FclBPXUpUI2eXe0VEfNhwUK8PSM374AY/gS4geOxLpSmugb1KB7fpI59Xgy",
+	"AZmrQsil0wPv4x+ba1EdKVofL49oEaDdpN5n45JzKjckEQfmcIvgoqLIyxpfzSotbriF4+enL49LlfNy",
+	"pYxlvCg0GANmyk7Z2qkXdnzzEHmZF4WT5g/gw+5s30jxUw2sAs2eA9eS1Ck3cCSkAWmEFTdwON3JiyNs",
+	"uJ3FLsDYMzB1aYdsVnILMt+8MMMpn6GOP7JaVAzlhKkFGYZcSQk5PsPyFeTXTEi2FiXqsFzJwnTYTUj7",
+	"u0ftqnBrl6CJgJ6NBq/9U73m8kgDL5A5maptrtbgVeDbyRP3eijeTlAAbleoe9iCi3Jkp9R1tE2RwjFW",
+	"17mtNRSvalvVNjETdUsrDrzknSLD/nz+6iVOrKptxm5XIPuEuVX62pww5PVLZ4PYwRUYe5i5z9wuZazS",
+	"al3ZSzIjBzQqvLPowkDBFlqtvf+ooSoFmENccC35DRckuM4JAVmvkTWil02ySfQaZ4zCe1A1tUNMfhhQ",
+	"rMdx6nqSRVzSbtx2nntD6u9uag1XfQ1QGeeikYVBBfa4p+40rNUNOaWPGZcbpsg03fCyBiIVz+nL/2v0",
+	"3scbwffJvbrg5jrlDP2orpwLWFWsgBKW3ILxZ4boyDNl34h35HbZacSHuG/IZf4seRn8wR8SsunmcGqM",
+	"WMq1dxq7/FJ1TmB992D7VuKq/RK3+ZqeEH3Gp59m8QRSHP+Ey0Igq5/Bj074h2tAt3lI53NL+s0fQvAZ",
+	"r+NqeS3VrbxEdmUHJAqAJMwBRcBUXJKbpSxq3j+/KESOegU/v7Twzl6uhVlzm6/8Z+iuC3lZcWtBy4xZ",
+	"pS7NSmnr/iwVetOFMLws1S0Ul/mKkwbSJgvm8NJqLk1JjrxTOkOWbNX54Lsw/SEN0HvURDg6fnpSNuuN",
+	"lGvYBmZqPFRAwZSE3faSSL9dZ7mjxt02bc3zlZDQWinAQWgT2YHfxPZU1BxWLnMNBUh0g42j/prLzSXu",
+	"zLqy5nB6N8refa3fqLw252DTO+EdE4z71FqDtIyeZ+dg2YEwpgb2T/98iKuhLVEa96M5nZsVhRpqA0zY",
+	"E1YJKaFgL+G23LBXVwY0nrB8CIothDbIgLi93OQgyUF7wY0FvZmyuRF/hTmyuTesC7FES81yXvFc2M1j",
+	"xsN02e1KMZQYwxZwC5oJC2vDjFhX5YYtwRrGGTE8cg9Yx8DdzaafdP7YpjACFZ9ZWE9a1cq15hv8N04+",
+	"TWEDFFUbrocdPPzqH3/7L1/MHjOilPYPsW9ePXlzfnn+9OLy/Nm/Po05pPGlemxAb8/8SrYxAU1/aIgl",
+	"sO9Q/zD8Pux1wwgZuxV2xYRtmaTZteccSbwAjl6VYQf9wI3J2F+AX7NzsZS8NEzIJRh87WFwwuldOHOM",
+	"6MyvhcT4V1kbNscPz2AxH9u9M1gM13LhR3tgmAnaduFib05vMpD20sBP7IAbhsrzkM5SpZDXULAblfOr",
+	"uuR6Q5zKSmFB8zJ+5JrLH4X79gXX9QulBRMFPeHYUCp8J2hUZ0cFt5x+yXJ1A9qwDRKUy4IGCLLxpAm6",
+	"Oq9TFL3pecs6oomRars4GLf2O3wO9Yvbvq3U6201M7nSkDENOHbdeKvnZ+fsOdxAmbn/sAsNsshaHXEG",
+	"ORo1XHGHExRymTBoDIspe0kRBB9hoEWu+TuxRvfiYTZZC+n+njWLl/X6yp0qJKqboG08QRMr07ULdKX1",
+	"EjMAkvjcc7+E2yNPdHYrZKFuHzO7Ugb8JnMNQd9ZF61eaCVtOtDh4mypEMumZX9hSKVJ9o+//Vd2vpE5",
+	"WpFzgKKda8YSC4gdsTXX9VppMckmhn45ySbKP5/0xow2tG3DuQXefmDaPW4ihThh76KTuRaWaaiUtsj9",
+	"MhjE7uRJkY14b2OKjRg7a6S9oWTLwiP7n1KC3/rY+9N3fF2VYM7gpxqMTfkBtRw5G6LxZmTYKUYKfijy",
+	"lIuCHRSw4HVp2cPZ4TRm4i9nERc/TK57bL5CybGTfHj9cK5Pb1Bm/fetM+kPWMo7WKRr+MKCDokJ9PYa",
+	"S7JDo3hae3KmrGKT7RhOsHGiffAKD2tQBNKKoB0wPzFNBhOksgmJeq0BF+u4sl0TLryqcMO4Ljfe6SYS",
+	"gHbHsIZWOa/YLSUaeL4aiS8E/3Xrsgphcq4Ll6po15VejQ5Hif1dksQxJOWY0I4ngtBw23Ivz22NYdrA",
+	"HwdF7aL4+F2JGnrT4xkNdBohScG00G4fpeWFZlIRITsUyFrGTspxl+8GUrFnWDkIxZ95+gTT6OygXLkg",
+	"iZY1L9O6tOLyqUzQ+qyWGEpbGLDsx9oQs1vnXuAfzekrhNuC3cEB0+yC35xbrhNa6hsyZzp65cHsCCML",
+	"xWFqfCYkaykx/rYLeJd4WfvL75spnXg6/PDYMQzXNrw4PB5xEryjeJdJyll0Bn0qd5+GaJ+jbe0PENOt",
+	"3a5ofc2ub2G7Pz9/fTFiMvErVojFQuR1aTfsKrh5nRw7E1GSvWC1xLhKZMNffjXJJi8xgvryS/y/L/D/",
+	"HiY5Ls7ufw2WizJhzMKrXjqP6eTnxA7HhuQT6X7aWMlDeGTgXFwX6Ou0+fAr5wpxCgxBEUedKAxYiOgp",
+	"fw6csqcUHWxDBj5mS054NAP0utmBVO3wIbhALlVkKFwqy9R5Ts7L4YjHHY39lGY24nE2M/MzDuvAj6Ix",
+	"HjMN0SRcRJSStPi82St9Nh53/7GsbMOye+xqy+IUi+ASF53SkT7AlPzuhmvBpe2y1OCpLtek5LmdfDbg",
+	"5XYG7TyjN3eZMLVp+1kakq/XPiDzMVGEeLzzGv/cpESnFGth04LqVHr6O6ssT2ilC/y4q4IMo2ghxl/o",
+	"5CJKi5LgKx4qvhRy1Ffp7xGtO7w8zL2Z6C6qBip8lNp6kvbX3S/R9jh/I/MRgKOB/94YJpM2gCtunnbV",
+	"2Zg0JkOHcUmVi+72i67caRZtsbCGlcjuh3sm1e5DuIdBAgvc8U8TYyaX+pe//fdf/v7vv/z9v/3y9//5",
+	"y9//bbpfov3uIt7bkB4n7GK6sURVz2St+bvnIJd2NTn5ajZzB7jwwcNdC4vH2jKfM7gRcDselqOQIBV2",
+	"NbGmwDvuXE9voOgKck4bR3oRBNwnU6fsjSShR66XVgswbMVvgEnF5v4LXyU4p+G8o28ZZ5UyhjLsIVU+",
+	"DFvhkJtUoG5R8uVyt3mk31MFg4nN5QPDYAMnOEmf31CacdYcTwL7US1TiUERDOGo2rIofEHi1LHjkdh2",
+	"xGc0AoKuStmJgPhKgxD9MJYOSz5B8QGuXIjcpOrhUOCi3X5g4sCjlzy/Jce/++qff5/OKXT2OP2SsXAk",
+	"HcVjfvODtev3HwQC7KG3tqoX/yUFQNvFmhVmq9gBtE5fXRmrga9Jg1PsaY+KiojWsXoJrJoS1z8BL+1q",
+	"qDIwvIuHq/icmIdyBcq7UxxhJO+eTZBvahP/mpLvBSw1L5Ixu95a/ABZO5PU9Jvgb5LaGGVDM8njLABG",
+	"IZuySbvS4J5z4onPlVAsgZ1bCgt3EgZNeHsQBPYhfxdCvdp0qxkosI7+WxODb1PKSeI9V0shR6N4Tfo/",
+	"dpKbDxPD1Qb0eDI9JnrzZNYOmCK7n6Cr8kzaG6HBXPI7FOy5Qsehrag41hpdAdegXTXklJ2vcDeVzOGx",
+	"P37rJspuGFWgoNFYcbOajhFkl1fxxiScQjfJLF6gHy1FpSDfZLxNKkrOLVNkDNHGWygoPM6oIJV4zecN",
+	"BsaHr6/EslZ1YtCW041Lb61dmTWX9KrG5PUyOaTnHDXzUhkwFo+kdPB3EXIMHeYrZWAkcoNZ96rCbSq2",
+	"T0oqhnl60D4rIGSjCB+zNdfXVGlJp9UCiCrpF3oBeg7G+Ohi951B55f0AMX6ydIZSvXoYse4zoHZMq6m",
+	"B/Yf12mBEdLQl+ygGYw9/P8PKYPkklGBQOmR6RdPVhxTkDsYAjcwSnvk9KOCGdEEr3BZCtXdRuYjr6N0",
+	"4fYXuWcoe8C+O33552dfP3vClI5SlXqTHl3C7fahKaoeWO1uM8cqpQoKWvu/glbDF7lXuJQPFIzbdn/Z",
+	"jB2UwLWkkm2prDMqh8EoaHfIxC9asR3OoZb70O8aKutjQkK3jgK5Da7CTqqkCB+m3xqZnpH3tk98GBv2",
+	"E1xbbF4QrYEMN7wVkSmLlJ3jjh7Dd1VPYpO3qebvYDNqZ8fK+7rlJc3e+IL6KftLU05/wkDmelN5VtJg",
+	"bNYrrw//LhW6aFN2Fmr+MB8XWLpNYFyD9y12G/7fRvFfjy08TbdtyXnjOabL9uOg44oak/pb0IRFUDJv",
+	"UV3gb9bK4BbkIG1kZqdsjrkK/MAdD+eU+jFzlwrCRHDUqeRT6hhENWZRl07XuCG+4aKsNcybhHH/pa6u",
+	"172bZPh2JUqg7i+DaXlaG5fRhFLnztYJ39LYMKDI/l0O6ZBs89YtnQc7Cxjzxg/iZflqMTn5frsL1uUI",
+	"70W9/6H/JjRJLf0/YPiNzM9qSSMPJX1kBzM6tMnhRvoaCzAW/2NOomICzkqqKiIOaCLxjk3bp8iU0LYo",
+	"emGtYcqeWcPmVJg399uVK2m5kO6FQfcQvySpg+/8ONL0hh0U7AW23C3bY/4wBXQNUzddKX9gGu3XnM4o",
+	"LJE5q9TkG/tyOZCdPVywjsV/SFGZK3UDI56QJ+ypTQoj7SUj24zes5sj1b90Qgl3kqE7GfI7Lab93XMh",
+	"r894qgrhfIVaUS3Y4FWxwxc7eexgNp0+PJzuX/i0jyORmOtWtvNsnIxE4pdM1xJbZnQtnX9pLCcH8Kqm",
+	"WoCyIL9uIaQwK5TNuVMFc3fE4jII52OvBZpuTjJQX8xm7EoVG+c2csn+dHHx2tXZplX8h+nJbRoSQmVw",
+	"ulDLGURaE9XEetE7WvAc46LoYJhQzJbUPPvwriPfx9mQfWsg3P7dpWNwGLHStfRheYpdOfLsjlyJYtKM",
+	"Fs8kxaEhkHRKHc2pSAroXBhwgc3BnJ3TlfxyELZvBop+tntKYxVaudIaf5BMGfkvX0Wz67Ldc/D+0Ztn",
+	"eI4GXtK/tFiurO/u9uVbnGLz07ENg11hnLCac3p4aLXcKoZTDsNvo9BTT9O0XgnfTtlcQ66WUuCXc/Ib",
+	"TDckib0PvOISDDiFslC1Zk/lskR147NDzO2aeczmTTtKqf4K7YghMvHaJ98GVXI0tl3F2QU6bVD5wf/+",
+	"H//L/c9lSfwTIeeMisxPwLmQnmBhtxo3El8Wu8zBVXfPGQq/KpyM+wD1zdzFlQLtGz+8syPzwChXyq6Y",
+	"EQUYBxGgwdTrqGPaUaOJ8C4AiiueX6cUbZjCCBd3ZjVektdZTRNedsTqkIAGTLJyJE37vuN2eBx6QBE6",
+	"kYOr80NhGvPmd8jnnkvjlq1U6UPnsfBOJ6Oqe+hhB9VEEA+uUFlYE/YzY7XB9Bc50DS4kMv0+NK1QSYL",
+	"cyjWahUrFNm3IFsHb903haJ6TWFI2v7l7YQdM/xK5KtGFEKU1nRKvv7l7STd6yKi1MS+9etbq//bNAQ+",
+	"htEfN+OGfg4wwmC7ArG+z0qg7uAmlbdITzwU3TdmsNVecSsc6p5k9sKrib2LR8KkHDum6kZcy2eaKo3i",
+	"RJXg+iFa7/CB8W49ugDsQAOn3pyQ3HP1VBIOXZ7HN0D4ROi49myKHLZp0WR9VcpTiErBv+tXhfuFZ62m",
+	"2maPPAFH6kaTFRxRY0DDRgdvJ/zt5B9/+/e3k+Lt5BC7eCgLH/pntoi49cWUeyybHt22Gud5mLHmowCf",
+	"ot1jzLiCm4xVse4KMjtNONl9ByY6CzV821OLoI+87NFLSZU0dHM9ZE43c0s6GMOSsmhbKXryt3dFeo8m",
+	"Y81aTaHUjuCse641O3tsQ6jkuIMX+JEKcAcPpcRln/X4/q20z9bv8mpaBf9weEJGKWy2wZ33rg/tu4vi",
+	"EM+Bb1EIVs1Erg4Zyi7HTsPLXO8NdfcdleIGijavyS2k/JdmNnfWtY3rmuAiUWyVOTTTVlFv5EK1fh0u",
+	"f1Fr8klQz5qRBoNGqPc72/a1wTBI1/FVbDxPE4l/m/1JVJZ3DKvpDNIe/q9qURaMRwK/UE7cQ64iql6h",
+	"cTBH4yNXvnHcJYt6JYtkV6QaGJyOBYmzWB9w7skmlusl2PMt7ZxBo0Ytne5HDNsw2UG3mfP12emTi2dP",
+	"nl6ePz0/f/bqpe/pZKesDL2suK62XbWlctzO6tpcG0bepzCzPZxlkQS0+7uH9I+0GPhv24MOdRtZKjcT",
+	"4fzDyxPiAqrVwagOO1Aa94/+5pbxsjx0ASTq1vVjBmoQEY/c2YIZgCIl2Ph5qm7rGlyNCTNQuqYSancn",
+	"mA2lg/dPmoh+5G1SARY0htyMFXm3AAbfRD9ot6fSqqhziJ+hJUwZAls4oR9dx84Cqffbdscmo45J2DTi",
+	"AFpLEPJY+wb9Ri7eFTRnByhcLN0BbLgQA9YxRcfYJmHkP3IqK2R14io4RCLQaqnBGDI+bhpJn5gYTsgl",
+	"ZSXHMlzdxGL4iUvVY5IJ/0uN5JQsqKUVJVPySnFNXm2+Usq4Wr3HbE5wP/4o7UBG8F+UJnVJC384ff3m",
+	"ggW8tsyv0vnIRAZufZEAK5ze7/Y+Jk/V+ObxuonXTuv5cXzfQ5xlce9LB6lb3bR/grBoUAx7NGUbGDkg",
+	"l+nCyQ7dybK3FTG7SyN3xjb9NqX0UkzzQME03VihXUfgwaAhuInR+Ef26W6LCJ7Sqx2+His/HqFml92b",
+	"XTJhj+hnH1R12luDe39q+m9MKui6Z4x5/7I6+n3z+HAi1LSX11rYzTnab4+zRzVvp7VdDWnny+I6KIEu",
+	"G+awIxGw47jEKr3MReS4YfNTj+JBpa4n7I80Pntbz2Zf5jQC/QlzpDn5ESQV9FS7/pW1lQMzFHKRqKA5",
+	"d9CLasGsrimU6SSSUh6nr59N2beqdWzrK9MUVV5sKjinkVheCvDdmBTua7upfMZPGGzuAHaga8nmlazW",
+	"zTPz0NokLMra5D8JjU2gLlDALmqrNM5jkk1uQLujwGQ2fTidudgFSF6Jycnky+ls+qUvf6DtOObiKDRX",
+	"0QdL16+CnMNDIG3yXBjbIkeZSQ8M84vZ7E64kns59e37Ep1HA9TJ07JsmsRMxlRZgLGusmEa0jnuKOKU",
+	"hcOcw5zl+2zyaPZwbDbNOo87KJrE3KEZpifzDqkyaogz+I5KmQRhHbZgtFQnYmDsH1Wx+WRgnQMww/dd",
+	"YfbptN6mPvwM70/tnZtT4XZi9vkRSp95YFLUW1kD4cmUZgTbFVBUAyRQYKs5obu12L3oGX8g9+CP/vD5",
+	"F3raiEQI86GxpCCqbxOHd8JYE1aMX11afg1yfthj8XNsPuFY/BFzNj3UUSHHP4vivdOf5DYOu6sDmBTN",
+	"6NHsD77OpAMhJUzb+knJd4T6ekxIXPgpPYwfeQGfZD2x+ppe3hOrDm8/Gs7M/aj4iC19tPtHDW7wffHA",
+	"xU66ht0PTyEWWW1gwAJn5Mj1IOYcbkRCs30Ldhv9Z/ekWzrLPwjtRsJiMerm8L72ukNHDMn1KBijwI+E",
+	"jtpHjiPMcwwcVVghm4r8lRtf3geYzQoRZLSBvkJ6yuaudHHO1FZ0xzl6+XMqtQkxAg/X3SI9soNr2JRg",
+	"TAR0Sz3R3LBXZcnXPEDeSvDOTJdjnKN9j7bQvXA/W3if/OqBiVkVcch/IMP4W9Sip9JBmDaqJBjQFTeR",
+	"Wd1tR11990CJJs3osQ0V3B+lHrzj2feXb/nGNHFurOUaIjk67wCR/HyNqIcTNmyurk/YgpcGQrEYa5AW",
+	"5x7fcD5aGNaVewQ/vm9TEQEujwihb8RtMJVx5b+KuXhCNLchftdyYEhRMCvkBlW6ZV5fNvyE5n3Xqe6C",
+	"nrmfE10PS3aPcx0aS1dyWYEmd4XSkzzABVIo+HHrvGBJTYglupZTGTyeT3HSc7UTkei6OCvOi9VIuw7l",
+	"j3/G//Tc4d4BEPMKjjCTgR+QuL3CY96OX1yxF47uD59VyPq7nBYwt5dS3X78FjUC9nmNwBsH+9txmjtX",
+	"bXRY5Tm4IxM9HRzPofPscc27XHEO9tfhiQ9zt+4CCL09prgVy/m+/bT9+BiPxLyj0+7FV3vxSd2t+xMc",
+	"qkSS/k6b9mS2S5qeUBrIFWdH2tel7WxAB48ixMSJyZgbtXl/psNFp8f9nhm2276e2Ibn1I3HhPwVmNQT",
+	"u8+s98N3dDeS0uxWK8LAcb2F7EDIQhjMytTCEOgDJu4KQFl2oYEv7iNAo5TDKfU+dsAax3AX+j0unYuM",
+	"L1uEJHeRBxOSneFDR6f40CSbrICHQH78xcnPu6+6anNl7+PUzeTk+x9iQXz6zmfkOAu5H19a7akaMun9",
+	"m54a2VS13Sqc+P0+8bpQ11B8VNyuo2X8AZhbp2kCqHJiMQuV1+bIg3stx/DaPWQ4i5ugB5jbRL5zqwjk",
+	"x9emtGDurvgTgf+NPQrozuRuZ2wt3mEMJkbB9v1ebT1ODwzermATgOCv2uLaYupnN0wzr5U0VvOrcsOk",
+	"49ADTi1FatGUyzdraqrAKk5dJswJWG7Zm4snrOAbc8i0oiIH5w65JJnEDvBbwEoQy7CufSHK0jz2OeAU",
+	"PL0wKTxndlCo3BzzQh/PZrMvD6cNHrYwAyzsKMhlWpRrV2lB3eFYhhH6WFu86xYOnFcVQzEq6hIMk8qV",
+	"1HSm8CgZ6foWbIPz/xkNQvOOEc9lcIfAp8qF0Q4jLZqRkVlKddswcCQQTp48tx67wOHWI2uMDWZGHOSf",
+	"ao827Tzk0sOVtXT7gOx7euifOsNGIGQPZ7O9BwkwfJ2BXCvhF7OdWNTpMT2kX2fQYX9iO8znPBMOkBnT",
+	"ySq+pHhLqpLQQUb4yTDfh3ZfbkzwI4iNmNKou47U4kiTIaTNOw7ovc6RveLFpXd55oefQqy+7dJEyAim",
+	"0Gn2Aze7l1/949/+88uH/uaO9iHnPBympK3J2S1hW8vvNrRW8upd18yi7fn/aojYmMXQRhgjGbj0cYIK",
+	"v5v3rimauxN1AyTka9uE9e2p5qQP19q5y2QLmiSrK3zpV1P29J3zCxuGa2xA6IrAklBHkFDoGh7FiaWg",
+	"axmhFYiybFuPKOrqW21dVmUeTXsehpr7mZr5iDGJxWtyT2LsAYxHTEtHhNsLSeJNwcVt2YxfJdZ6hmaf",
+	"d2efNXjDctlAKobNDsxFDsPdM3m9+563ZPNeEJC5wxemFB5i6Zx0cYiRory26mgAkKxuQNN9qK7Su90E",
+	"G3o6PNDxCjSM5+YGfPbpD9AJ4M97Pkbvz+QhT9dhl3szSg5LO97MQRLuU1qjjxMsBHAeqGXCMOwRb8Q6",
+	"HceQ5x8vY8mUWHQZBApYW51nV1rVy9U44DkKXnt/RMijuRN9fEfG4Ko4FOYOvP+6NtYdM6nJRlrl8eQ8",
+	"+gRBFngb2jxPVxV1kPsbmN+ANFuSU+oevwKGx9JHs/YqA3OIGE39W94cHRrYMNQNWecolDZHjmxdyHnz",
+	"udTFyCUx79+//6w6on/Xy3hsuEW5Cizs7stycBi4YcPr9e7Ps30VO7I0pd+YFrmn/P5L1RHoXp3UFje0",
+	"CVxfchEVRPS9d8+mKX846Ae59D0bSy6ksUHiPegA8hA+IrbqyEa3HjeOAXxSjdmV9bPmJY20xyjfv10/",
+	"VNJ1Ou1c/x8z34GZ213vW/TMH4+oN1/66lL8h5LQZVsHM7o1dmrA4m8NeztxT+PbDLydsFKYNkL6u8OT",
+	"CHY9gbYe8EETYOsOklaqbg+K73ajI20DVJ5CMU+Al7fQsikEd2dOj8LH6KuvuRU5XeZ0tYmA1Ezb+Nke",
+	"4ZcNPhGxc8r6RvGxFqs+ESTrkpsKecLx2UdAIwpmzGNtu9SdzXyMf1GXJWhWCbqkm9q+E3Eo/9tOIMrf",
+	"u9brGWpalT46FnWX6z1aOu1Tj9It9U+xW7f5gB3MlY9dX3I7zzqXUHLDrICjKw38+pNEiQa3DsThfHcD",
+	"a1NIlJCHti3Y8z3LcUNKd9fL8apBVR+r+PW4659R9fs3JHbm3MWUBIVxQog+wKwz4a+Io1a199nkq9mX",
+	"9z0nRF3rzykGnN+WdXsubkCCcbmiZoBwn/2NsJtQoYYb1dwruWWresCkn3HLem9KNYA0l5e6Jzvx3Y8t",
+	"2HLtk63YGdagOvawVAnKsAVR7dLy+Dqg5qb7Gk5dQeiRg0Lsgzq6HB8OvRJ0/XoTwxlrXoiwfPfKhn4H",
+	"4dr9T5IJPbeq6l6aG5jNB5oWihKV1uGuRpVMiQsLHFTrADWYxukCB2MaMtydfgNaLIQ/eJ4w3h6UcEBT",
+	"64WDFDZtfSpR2NejourSvurUAxCHG5Tw967QnXd3DSUrZVbPwfb349OfZRPozfcc+totqd81OMSPAybs",
+	"fSdjXvgQrNI+Zh7QgHvV6dew+YSF6X3h6OLAJRCze9rDeKTadOjpzF1U379MJy4bIAXSovJ3kMvpS4fT",
+	"77MhATk8a8Dwm9xVhCvukv7DJMcC/PUwurli1ACw06/Pjmaz2ReEh0Gi1qKKGjJvKIbdLIdpkxxzxygn",
+	"7K0HnXw7cSmOFmg0KXsbmYeF3ouZCujAaecvAKu6tdP9oAEB9N5E4KUaQwd3Nyc2xziSgd96jyJRVDS6",
+	"mHmAUt9jLUzjwPp1oShd+oeGfYqOLWMp6pviruhIdZsQ1e0VCDGr3E/p/IA5d59UziJQeF1Lg2U7V+jX",
+	"QOGvSI8uVibX54vZ4afvhta9aWQBR5yOR570sNVThc8p9v5GnK0FMnQXzieiDH4JEg/9Fgo/MtKg8iVU",
+	"x77YzIxbiz8iZlOMwqMWPnWdhC9qYGNMW/c0KP3pYIJF2IiMHBGcT4Ow02ATIud6X3AI7OqzFC2Oj2GF",
+	"5reynQOh8JABohut0GoxI9ai5Dq+ogdfG+NLEURjO63sgyBir0pO2FZjoLAOc8jEVXEGAi5oOMjxqgrl",
+	"EMGEos46GEHOyvaFyDp0kGkO+Imm6C/uZkKyuf98PmWvuTFsbgAxcKxia34d4R02WEo7gJM6d01VIr82",
+	"TEl/1R+/wimhtQ+chghuxl1CTT9YwxoPMy4eFLSLFdgKN+DFi4vnh499dKkFJtoBJpgxo5oivnCqb7nW",
+	"dSSbJCbvHoV4BPTSx9D7PN59EqvrM6ep+isbUXNhc0OyMPCQQ4KM8QB/265ED07W+POB11vh+glXpWlV",
+	"U/sa+0xBC19KdUlCOz98KwfeP9eoqwawij39FpVVJhX88c/+r2dbqq+6IHbNzsRFcX6DyLl5vAuscQxL",
+	"0KkZrilOjUww96W88xbR0ZfBZcxdFFe4fnDXGFsbh30Sgz7ysoxbOkaKl1Li9+vKQ7/sm1IVv0bVxBAi",
+	"DgUyoLNloYLA71QXG/buxUjngRsn73/YybDHXsvePbsYvyYbPQ+7s6zrvEVTnHlDYSKw0VGT4Y7D7r6i",
+	"gCgubIQfzi7aQRAcTwtr0d5ZBz1GhKwiBMcTTNs0ON3UAO1PK5dBsOZT1lRKkje9U/rCTpmUYLh7CgbA",
+	"pp/XNrmX3nfUKXk1Q0I0YyQ8r/NwR30PQluW36rLEJ2Ce68UjuCTg+/VHGfD/v8HKKvoAOHjZoUzfiMQ",
+	"nggDaeqf60+9FyKjAal+rK8hnbENcHtHDUpf0rq+anEm3QULzX3u5AqD9uBE8xYwkNrLKWE67aFGkqPh",
+	"LO8gn6w0u4JS3Tr1gC/IfGEX6hwoRL1uvFwcxjnGpYjKyfy8iIHi9PeIWe1gGH5Oo5oCAd1hWHuAlZGI",
+	"fsrIQ4O92H1dxsTClefRheoe65UqFEZyGOeuEiHaBF4Uprf7Jzu3XmAxT67W0LsnZcABU0YoIa7cxxcF",
+	"0BupIMHh7fRYD7FPHw+7pLqhLldYQJE2Av+g9FM62zHknk9vdVIom/dseu7Au27jpbpF8XPGZqVuXedm",
+	"1UKXhubIooCi3a/i18iO1J2ulV52hD78NK0pvjVb6bB4unqrI3OTfktpFwf0+x/QFXQhBedD1rr0qJwn",
+	"x8elynm5Usae/H72+xl6p/9nAA==",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

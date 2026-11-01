@@ -405,6 +405,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/practice/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a Practice Session drawn from the Focus Set
+         * @description Builds a session of up to PRACTICE_SESSION_SIZE Exercises from the current Focus Set (issue #9): recognition questions — the Japanese item and four English meanings, the distractors drawn from the same Item kind at a similar JLPT Level — and grammar cloze questions, a Grammar Point's example sentence with the pattern blanked and pattern variants as choices. Items the set holds but the app has no content for (unlinked MaruMori items, grammar points with no example sentence) are skipped and counted in `skipped`. Pass `seed` to make exercise selection and option order deterministic; the server picks one when absent. A session lives in server memory for a bounded time (PRACTICE_SESSION_TTL); every answer is appended to the Practice Record, so Mastery and the Focus Set move as the Learner answers (docs/adr/0004).
+         */
+        post: operations["startPracticeSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/practice/sessions/{sessionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A Practice Session's id, as returned by POST /practice/sessions. Plain string for the same reason as ProviderId: path parameters bind before auth runs. */
+                sessionId: components["parameters"]["SessionId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * A Practice Session in progress, or its results once complete
+         * @description The session's exercises with their answer state; once every exercise is answered the session is complete and carries its `results` summary. Unknown, expired or another user's sessions are all `not_found`.
+         */
+        get: operations["getPracticeSession"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/practice/sessions/{sessionId}/answers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A Practice Session's id, as returned by POST /practice/sessions. Plain string for the same reason as ProviderId: path parameters bind before auth runs. */
+                sessionId: components["parameters"]["SessionId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Answer one exercise of a Practice Session
+         * @description Records the choice, appends the result to the Practice Record, and reports whether it was right. The result is written at most once per exercise: re-answering is `already_answered`. When the last exercise is answered the session completes.
+         */
+        post: operations["answerPracticeExercise"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -700,8 +766,7 @@ export interface components {
         };
         /** @description One Known Item in the Focus Set, with its current Mastery. Later features (Practice Sessions, Weak Signals ingestion) address the item by `kind` plus `itemRef`. */
         FocusSetItem: {
-            /** @enum {string} */
-            kind: "kanji" | "vocabulary" | "grammar";
+            kind: components["schemas"]["ItemKind"];
             /** @description The item's stable ref: the JMdict ent_seq (as text) for linked vocabulary, the literal for linked kanji, the MaruMori id for items no reference-data link covers yet, and the Grammar Catalogue point id (as text) for grammar. */
             itemRef: string;
             /**
@@ -715,6 +780,86 @@ export interface components {
             srsLevel?: number | null;
             /** @description True for Observed Grammar first seen within the new-grammar window; those items are pinned to the front. */
             newlyObservedGrammar: boolean;
+        };
+        /**
+         * @description The kind of a Known Item — the same three kinds the Knowledge Store, the Focus Set and the Practice Record address items by.
+         * @enum {string}
+         */
+        ItemKind: "kanji" | "vocabulary" | "grammar";
+        /** @description Session options. Everything is optional: an empty body (or no body at all) starts a session with a server-chosen seed. */
+        PracticeSessionStart: {
+            /**
+             * Format: int64
+             * @description Makes item selection, distractor choice and option order deterministic — the same seed and Focus Set produce the same session. Omit for a server-chosen seed.
+             */
+            seed?: number;
+        };
+        /** @description One Practice Session (issue #9): its exercises in answer order, and once every exercise is answered, the results summary. Sessions are short-lived server state. */
+        PracticeSession: {
+            /** @description The session id to use for answers and further reads. */
+            id: string;
+            state: components["schemas"]["PracticeState"];
+            /** @description The session's configured target size (server config PRACTICE_SESSION_SIZE). A learner with a shorter Focus Set simply gets fewer exercises. */
+            targetSize?: number;
+            /** @description Focus Set items the session could not build an exercise for — unlinked MaruMori items (no stored content) and grammar points with no example sentence. */
+            skipped: number;
+            exercises: components["schemas"]["PracticeExercise"][];
+            /** @description Present once the session is complete. */
+            results?: components["schemas"]["PracticeResults"];
+        };
+        /** @description One Exercise. `recognition` shows a Known Item in Japanese with four English meaning options; `grammar_cloze` shows a Grammar Point's example sentence with the pattern replaced by ＿＿＿ and pattern variants as options. The correct answer is never sent before the Learner answers — once answered, `chosenOptionId` and `correctOptionId` reveal both sides so a resumed session shows the same feedback. */
+        PracticeExercise: {
+            /** @description The exercise id within its session, used when answering. */
+            id: string;
+            /** @enum {string} */
+            kind: "recognition" | "grammar_cloze";
+            itemKind: components["schemas"]["ItemKind"];
+            /** @description The Focus Set item ref this exercise practises (same addressing as the Practice Record). */
+            itemRef: string;
+            /** @description The Japanese side: the vocabulary's kanji form (reading when it has none), the kanji, or the example sentence with the grammar pattern replaced by ＿＿＿. */
+            prompt: string;
+            /** @description What to do, in English ("What does this mean?" / "Which pattern completes the sentence?"). */
+            instruction?: string;
+            options?: components["schemas"]["PracticeOption"][];
+            answered: boolean;
+            /** @description Present once answered — whether the Learner's choice was right. */
+            correct?: boolean;
+            /** @description Present once answered — the option the Learner chose. */
+            chosenOptionId?: string;
+            /** @description Present once answered — the option that holds the right answer. */
+            correctOptionId?: string;
+        };
+        PracticeOption: {
+            /** @description Stable within the exercise ("a"…"d"); send it in the answer. */
+            id: string;
+            text: string;
+        };
+        PracticeAnswer: {
+            exerciseId: string;
+            optionId: string;
+        };
+        PracticeAnswerResult: {
+            correct: boolean;
+            /** @description Lets the UI reveal the right answer after a miss. */
+            correctOptionId: string;
+            state: components["schemas"]["PracticeState"];
+        };
+        /**
+         * @description A Practice Session's state — complete once every Exercise has been answered. Its value after each answer is what the answer result reports.
+         * @enum {string}
+         */
+        PracticeState: "in_progress" | "complete";
+        /** @description The session's results summary, present once complete. */
+        PracticeResults: {
+            total: number;
+            correct: number;
+            /** @description Per-item results, in exercise order — what was appended to the Practice Record. */
+            items?: components["schemas"]["PracticeResultsItem"][];
+        };
+        PracticeResultsItem: {
+            itemKind: components["schemas"]["ItemKind"];
+            itemRef: string;
+            correct: boolean;
         };
     };
     responses: {
@@ -738,6 +883,8 @@ export interface components {
         };
     };
     parameters: {
+        /** @description A Practice Session's id, as returned by POST /practice/sessions. Plain string for the same reason as ProviderId: path parameters bind before auth runs. */
+        SessionId: string;
         /** @description An AI Provider's UUID. Declared as a plain string on purpose: the generated router binds `format: uuid` parameters before the auth middleware runs, so a malformed id would be answered 400 to an unauthenticated caller. The handler parses it (404 if malformed). */
         ProviderId: string;
         /** @description A grammar point's catalogue id. Declared as a plain string for the same reason as ProviderId: the generated router binds path parameters before auth, so the handler parses it itself (404 if malformed). */
@@ -1575,6 +1722,112 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    startPracticeSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PracticeSessionStart"];
+            };
+        };
+        responses: {
+            /** @description The session and its exercises, in answer order */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PracticeSession"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description The Focus Set is empty — there is nothing to practise yet (code `practice_no_items`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getPracticeSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A Practice Session's id, as returned by POST /practice/sessions. Plain string for the same reason as ProviderId: path parameters bind before auth runs. */
+                sessionId: components["parameters"]["SessionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The current session view */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PracticeSession"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    answerPracticeExercise: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A Practice Session's id, as returned by POST /practice/sessions. Plain string for the same reason as ProviderId: path parameters bind before auth runs. */
+                sessionId: components["parameters"]["SessionId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PracticeAnswer"];
+            };
+        };
+        responses: {
+            /** @description Whether the answer was correct, and the session's new state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PracticeAnswerResult"];
+                };
+            };
+            /** @description Unknown exercise or option for this session (code `bad_request`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description The exercise was already answered (code `already_answered`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
 }

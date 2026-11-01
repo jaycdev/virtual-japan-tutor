@@ -6,6 +6,8 @@ export { useAiSettings } from "./useAiSettings.ts";
 export type { ActionResult, AiSettings, AiSettingsState } from "./useAiSettings.ts";
 export { useMarumori } from "./useMarumori.ts";
 export type { MaruMori, MaruMoriRunsState, MaruMoriState, SyncOutcome } from "./useMarumori.ts";
+export { usePractice } from "./usePractice.ts";
+export type { AnswerFeedback, ExerciseView, PracticeView } from "./usePractice.ts";
 export { useGrammar } from "./useGrammar.ts";
 export type {
   GenerateOutcome,

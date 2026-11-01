@@ -27,6 +27,16 @@ export type StartingLevelUpdate = components["schemas"]["StartingLevelUpdate"];
 export type GrammarReviewItem = components["schemas"]["GrammarReviewItem"];
 export type FocusSet = components["schemas"]["FocusSet"];
 export type FocusSetItem = components["schemas"]["FocusSetItem"];
+export type ItemKind = components["schemas"]["ItemKind"];
+export type PracticeSession = components["schemas"]["PracticeSession"];
+export type PracticeSessionStart = components["schemas"]["PracticeSessionStart"];
+export type PracticeExercise = components["schemas"]["PracticeExercise"];
+export type PracticeOption = components["schemas"]["PracticeOption"];
+export type PracticeAnswer = components["schemas"]["PracticeAnswer"];
+export type PracticeAnswerResult = components["schemas"]["PracticeAnswerResult"];
+export type PracticeState = components["schemas"]["PracticeState"];
+export type PracticeResults = components["schemas"]["PracticeResults"];
+export type PracticeResultsItem = components["schemas"]["PracticeResultsItem"];
 export type ApiMiddleware = Middleware;
 
 export interface ApiClientOptions {

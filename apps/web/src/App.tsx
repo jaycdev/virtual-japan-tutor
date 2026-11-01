@@ -2,6 +2,7 @@ import type { ApiClient } from "@vjt/api-client";
 import { STARTING_LEVELS, useAuth, useHealth, useStartingLevel, type Auth, type StartingLevel, type TokenStorage } from "@vjt/core";
 import { useState, type FormEvent } from "react";
 import { Grammar } from "./Grammar.tsx";
+import { Practice } from "./Practice.tsx";
 import { Settings } from "./Settings.tsx";
 
 export function App({ client, storage }: { client: ApiClient; storage: TokenStorage }) {
@@ -84,7 +85,7 @@ function Shell({
 }) {
   const health = useHealth(client);
   const startingLevel = useStartingLevel(client);
-  const [page, setPage] = useState<"home" | "grammar" | "settings">("home");
+  const [page, setPage] = useState<"home" | "grammar" | "practice" | "settings">("home");
 
   return (
     <section>
@@ -95,6 +96,9 @@ function Shell({
         <button type="button" aria-current={page === "grammar" ? "page" : undefined} onClick={() => setPage("grammar")}>
           Grammar
         </button>{" "}
+        <button type="button" aria-current={page === "practice" ? "page" : undefined} onClick={() => setPage("practice")}>
+          Practice
+        </button>{" "}
         <button type="button" aria-current={page === "settings" ? "page" : undefined} onClick={() => setPage("settings")}>
           Settings
         </button>
@@ -102,6 +106,7 @@ function Shell({
       <p>Signed in as {username}</p>
       {page === "settings" && <Settings client={client} />}
       {page === "grammar" && <Grammar client={client} />}
+      {page === "practice" && <Practice client={client} />}
       {page === "home" && (
         <>
           <Onboarding level={startingLevel} onOpenSettings={() => setPage("settings")} />
