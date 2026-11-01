@@ -324,8 +324,11 @@ describe("Story reader gestures (mobile)", () => {
     // is already primed.
     expect(within(panel).getByText("Word meaning")).toBeTruthy();
     expect(within(panel).queryByLabelText("Sentence Translation")).toBeNull();
-    await waitFor(() => expect(requests.some((r) => r.path === "/dictionary/entries/990101")).toBe(true));
+    // Release synchronously: HOLD_MS is tiny, so awaiting anything between press
+    // and release lets a slow runner cross the threshold and turn the tap into a
+    // hold (flaky on CI). The fetch assertion therefore comes after the release.
     fireEvent.mouseUp(token(0, 0), { clientX: 300, clientY: 300 });
+    await waitFor(() => expect(requests.some((r) => r.path === "/dictionary/entries/990101")).toBe(true));
 
     // Released before the threshold: no menu, no Weak Signal — and the panel
     // is back to sentence-mode, not showing the stale word.
