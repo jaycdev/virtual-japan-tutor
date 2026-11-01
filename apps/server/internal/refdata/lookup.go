@@ -306,3 +306,61 @@ func (s *Store) FindGrammar(ctx context.Context, pattern string) ([]GrammarPoint
 	}
 	return out, rows.Err()
 }
+
+// GrammarPointIDsAtOrBelow returns the ids of every catalogue point at or below
+// the given JLPT Level (N5 first: a Starting Level of N4 covers N5 and N4).
+// Used for Seeded Grammar (issue #6).
+func (s *Store) GrammarPointIDsAtOrBelow(ctx context.Context, level Level) ([]int64, error) {
+	const jlptOrder = `array_position(ARRAY['N5','N4','N3','N2','N1'], jlpt_level)`
+	rows, err := s.q.Query(ctx, `
+		SELECT id FROM grammar_points
+		WHERE `+jlptOrder+` <= `+jlptOrder+`
+		ORDER BY `+jlptOrder+`, catalogue_number, ordinal`, string(level))
+	if err != nil {
+		return nil, fmt.Errorf("grammar ids at or below %s: %w", level, err)
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("grammar ids at or below %s: %w", level, err)
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// GrammarPointsByNormalisedPattern returns every point whose normalised
+// pattern or normalised variants contain normalised as an element: the exact
+// Catalogue Matching lookup for one normalised MaruMori pattern (issue #6).
+// The same pattern at two levels, or twice at one level, returns two rows.
+func (s *Store) GrammarPointsByNormalisedPattern(ctx context.Context, normalised string) ([]GrammarPoint, error) {
+	if normalised == "" {
+		return nil, nil
+	}
+	rows, err := s.q.Query(ctx, `
+		SELECT id, jlpt_level, catalogue_number, ordinal, pattern, romaji, meaning,
+		       variants, normalised_pattern, normalised_variants
+		FROM grammar_points
+		WHERE normalised_variants @> ARRAY[$1]::text[]
+		ORDER BY jlpt_level DESC, catalogue_number, ordinal`, normalised)
+	if err != nil {
+		return nil, fmt.Errorf("grammar points by pattern: %w", err)
+	}
+	defer rows.Close()
+	var out []GrammarPoint
+	for rows.Next() {
+		var g GrammarPoint
+		var level string
+		var number int32
+		var ordinal int16
+		if err := rows.Scan(&g.ID, &level, &number, &ordinal, &g.Pattern, &g.Romaji, &g.Meaning,
+			&g.Variants, &g.NormalisedPattern, &g.NormalisedVariants); err != nil {
+			return nil, fmt.Errorf("grammar points by pattern: %w", err)
+		}
+		g.Level, g.Number, g.Ordinal = Level(level), int(number), int(ordinal)
+		out = append(out, g)
+	}
+	return out, rows.Err()
+}

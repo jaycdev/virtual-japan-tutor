@@ -562,6 +562,79 @@ paths:
                   $ref: "#/components/schemas/MaruMoriSyncRun"
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /starting-level:
+    get:
+      operationId: getStartingLevel
+      summary: The Learner's declared Starting Level, if they have chosen one
+      description: >
+        Onboarding shows its level picker while `configured` is false. Seeded Grammar — every
+        Grammar Point at or below the level, known at medium Mastery — is applied when the level
+        is set (issue #6).
+      responses:
+        "200":
+          description: The current Starting Level state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StartingLevelStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      operationId: setStartingLevel
+      summary: Choose or change the Starting Level
+      description: >
+        Setting the level adds Seeded Grammar: every Grammar Point at or below it becomes a Known
+        Item at medium Mastery. Changing it later adds or removes Seeded Grammar only; Observed
+        Grammar from MaruMori Syncs is always kept.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartingLevelUpdate"
+      responses:
+        "200":
+          description: The level now set, and how many points the change added or removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StartingLevelStatus"
+        "400":
+          description: Missing or unknown level (code `invalid_level`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /grammar/review:
+    get:
+      operationId: listGrammarReviewItems
+      summary: MaruMori grammar the Learner knows that the Catalogue Matching could not resolve cleanly
+      description: >
+        The settings "review these" list (issue #6): confirmed grammar observations whose Catalogue
+        Matching found no Grammar Point at all, or resolved a duplicate pattern without MaruMori's
+        JLPT Level. Unmatched entries are re-matched automatically by later Syncs once the
+        catalogue gains the point.
+      parameters:
+        - name: flagged
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: true
+          description: false returns every observation, flagged or not, for a fuller picture.
+      responses:
+        "200":
+          description: The Learner's grammar observations, oldest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GrammarReviewItem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 components:
   parameters:
     ProviderId:
@@ -1034,3 +1107,58 @@ components:
           items:
             $ref: "#/components/schemas/GrammarExample"
           description: Every example sentence stored on the point after generation.
+    StartingLevelStatus:
+      type: object
+      description: >
+        The Learner's Starting Level. `level` is null until onboarding chooses one; `added` and
+        `removed` report what the most recent change did to Seeded Grammar.
+      required: [configured]
+      properties:
+        configured:
+          type: boolean
+          description: Whether the Learner has declared a Starting Level yet.
+        level:
+          type: string
+          nullable: true
+          enum: [N5, N4, N3, N2, N1]
+          description: null until one is chosen.
+        added:
+          type: integer
+          description: Grammar Points Seeded by the most recent change.
+        removed:
+          type: integer
+          description: Seeded Grammar Points the most recent change dropped (Observed Grammar is never dropped).
+    StartingLevelUpdate:
+      type: object
+      required: [level]
+      properties:
+        level:
+          type: string
+          enum: [N5, N4, N3, N2, N1]
+          description: The Learner's declared starting level.
+    GrammarReviewItem:
+      type: object
+      description: >
+        One confirmed MaruMori grammar observation and its Catalogue Matching outcome. Unmatched
+        entries have no `matchedPointId` and point at a possible missing Grammar Catalogue entry.
+      required: [marumoriId, pattern, flagged]
+      properties:
+        marumoriId:
+          type: string
+          description: The observation's MaruMori id, e.g. Grammar/6578.
+        pattern:
+          type: string
+          description: The pattern text MaruMori showed (empty when upstream sent none).
+        jlptLevel:
+          type: string
+          enum: [N5, N4, N3, N2, N1]
+          description: MaruMori's own level for the point, when it states one.
+        matchedPointId:
+          type: integer
+          format: int64
+          description: The Grammar Catalogue point this observation matched, when it matched one.
+        flagged:
+          type: boolean
+          description: >
+            True when the entry needs the Learner's eye: no match, or a duplicate pattern resolved
+            without MaruMori's level.

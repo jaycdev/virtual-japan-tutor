@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/auth"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/knowngrammar"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/marumori"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/refdata"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/secrets"
@@ -63,9 +64,18 @@ type Service struct {
 	box         *secrets.Box
 	ref         Reference
 	newUpstream func(baseURL, apiKey string) (Upstream, error)
+	grammar     GrammarObserver
 	baseURL     string
 	clock       func() time.Time
 	log         *slog.Logger
+}
+
+// GrammarObserver turns the confirmed MaruMori grammar observations of a Sync
+// into Observed Grammar (issue #6, internal/knowngrammar). *knowngrammar.Service
+// implements it; nil means Sync leaves grammar matching to whoever reads the
+// stored observations.
+type GrammarObserver interface {
+	SyncObserved(ctx context.Context, userID uuid.UUID, observations []marumori.GrammarObservation) (knowngrammar.SyncResult, error)
 }
 
 // Option configures a Service.
@@ -85,6 +95,12 @@ func WithBaseURL(baseURL string) Option {
 // WithLogger overrides the structured logger used for scheduler warnings.
 func WithLogger(log *slog.Logger) Option {
 	return func(s *Service) { s.log = log }
+}
+
+// WithGrammarObserver makes each Sync apply its confirmed grammar observations
+// to the Learner's known grammar (issue #6).
+func WithGrammarObserver(observer GrammarObserver) Option {
+	return func(s *Service) { s.grammar = observer }
 }
 
 // NewService wires the orchestration layer. newUpstream builds the per-run upstream
@@ -221,7 +237,7 @@ func (s *Service) SyncUser(ctx context.Context, userID uuid.UUID) (SyncRun, erro
 	if err != nil {
 		return s.finishFailed(ctx, userID, runID, startedAt, describeFailure(err, apiKey))
 	}
-	counts, batch, upstreamErr := s.collect(ctx, upstream)
+	counts, batch, confirmed, upstreamErr := s.collect(ctx, upstream)
 	if upstreamErr != nil {
 		message := describeFailure(upstreamErr, apiKey)
 		return s.finishFailed(ctx, userID, runID, startedAt, message)
@@ -236,6 +252,20 @@ func (s *Service) SyncUser(ctx context.Context, userID uuid.UUID) (SyncRun, erro
 	batch.SyncedAt = s.clock()
 	if err := s.store.ApplySync(ctx, userID, runID, batch); err != nil {
 		return s.finishFailed(ctx, userID, runID, startedAt, fmt.Sprintf("record synced knowledge: %v", err))
+	}
+
+	// Observed Grammar (issue #6): matching runs on the confirmed observations
+	// this Sync just stored. A matching failure fails the run like any other
+	// store failure — the next Sync redoes the whole idempotent step.
+	if s.grammar != nil {
+		grammarRes, err := s.grammar.SyncObserved(ctx, userID, confirmed)
+		if err != nil {
+			return s.finishFailed(ctx, userID, runID, startedAt, fmt.Sprintf("apply observed grammar: %v", err))
+		}
+		if grammarRes.NewlyKnown > 0 {
+			s.log.Info("observed grammar applied", "user_id", userID.String(),
+				"matched", grammarRes.Matched, "queued", grammarRes.Queued, "newly_known", grammarRes.NewlyKnown)
+		}
 	}
 
 	finishedAt := s.clock()
@@ -283,28 +313,28 @@ func (s *Service) SyncScheduled(ctx context.Context) error {
 
 // collect reads the five knowledge-state endpoints and links what it reads into a
 // SyncBatch. It stops at the first upstream failure.
-func (s *Service) collect(ctx context.Context, upstream Upstream) (Counts, SyncBatch, error) {
+func (s *Service) collect(ctx context.Context, upstream Upstream) (Counts, SyncBatch, []marumori.GrammarObservation, error) {
 	var counts Counts
 
 	home, err := upstream.Home(ctx)
 	if err != nil {
-		return counts, SyncBatch{}, err
+		return counts, SyncBatch{}, nil, err
 	}
 	kanji, err := upstream.KnownKanji(ctx)
 	if err != nil {
-		return counts, SyncBatch{}, err
+		return counts, SyncBatch{}, nil, err
 	}
 	vocabulary, err := upstream.KnownVocabulary(ctx)
 	if err != nil {
-		return counts, SyncBatch{}, err
+		return counts, SyncBatch{}, nil, err
 	}
 	lessons, err := upstream.GrammarLessons(ctx)
 	if err != nil {
-		return counts, SyncBatch{}, err
+		return counts, SyncBatch{}, nil, err
 	}
 	reviews, err := upstream.GrammarReviews(ctx)
 	if err != nil {
-		return counts, SyncBatch{}, err
+		return counts, SyncBatch{}, nil, err
 	}
 
 	batch := SyncBatch{Home: &home}
@@ -318,7 +348,7 @@ func (s *Service) collect(ctx context.Context, upstream Upstream) (Counts, SyncB
 		default:
 			found, ok, err := s.ref.FindKanji(ctx, item.Text)
 			if err != nil {
-				return counts, batch, fmt.Errorf("link kanji %q: %w", item.Text, err)
+				return counts, batch, nil, fmt.Errorf("link kanji %q: %w", item.Text, err)
 			}
 			if !ok && utf8.RuneCountInString(item.Text) != 1 {
 				// MaruMori kanji that KANJIDIC does not know keep their text because
@@ -353,7 +383,7 @@ func (s *Service) collect(ctx context.Context, upstream Upstream) (Counts, SyncB
 		default:
 			candidates, err := s.ref.FindVocabulary(ctx, item.Text, "")
 			if err != nil {
-				return counts, batch, fmt.Errorf("link vocabulary %q: %w", item.Text, err)
+				return counts, batch, nil, fmt.Errorf("link vocabulary %q: %w", item.Text, err)
 			}
 			if len(candidates) == 0 {
 				// No JMdict entry: this stays MaruMori-side; we count it, not copy it.
@@ -378,6 +408,7 @@ func (s *Service) collect(ctx context.Context, upstream Upstream) (Counts, SyncB
 
 	// Grammar observations merge across the two endpoints: reviews carry the SRS
 	// level and suspension; lessons only prove the point exists on the account.
+	// Pattern and JLPTLevel ride along for Catalogue Matching (issue #6).
 	grammar := make(map[string]marumori.GrammarObservation, len(lessons)+len(reviews))
 	for _, observation := range append(append([]marumori.GrammarObservation{}, lessons...), reviews...) {
 		if observation.MaruMoriID == "" {
@@ -392,6 +423,12 @@ func (s *Service) collect(ctx context.Context, upstream Upstream) (Counts, SyncB
 		}
 		if observation.Suspended != nil {
 			merged.Suspended = observation.Suspended
+		}
+		if observation.Pattern != "" {
+			merged.Pattern = observation.Pattern
+		}
+		if observation.JLPTLevel != "" {
+			merged.JLPTLevel = observation.JLPTLevel
 		}
 		grammar[observation.MaruMoriID] = merged
 	}
@@ -408,10 +445,23 @@ func (s *Service) collect(ctx context.Context, upstream Upstream) (Counts, SyncB
 			delete(grammar, observation.MaruMoriID)
 		}
 	}
+	// ConfirmedGrammar is the Observed Grammar input (issue #6): a point is
+	// known once it appears in grammar reviews, or has SRS Level >= 1 anywhere;
+	// lesson-only points at Level 0 or with no progress are pending and ignored.
+	var confirmed []marumori.GrammarObservation
+	inReviews := make(map[string]bool, len(reviews))
+	for _, observation := range reviews {
+		inReviews[observation.MaruMoriID] = true
+	}
+	for _, merged := range batch.Grammar {
+		if inReviews[merged.MaruMoriID] || (merged.Level != nil && *merged.Level >= 1) {
+			confirmed = append(confirmed, merged)
+		}
+	}
 	counts.GrammarLessons = len(lessons)
 	counts.GrammarReviews = len(reviews)
 
-	return counts, batch, nil
+	return counts, batch, confirmed, nil
 }
 
 // itemKey addresses one Known Item the way the schema does: (kind, MaruMori id).
