@@ -9,7 +9,7 @@ import (
 )
 
 func TestParseWallerVocab(t *testing.T) {
-	f, err := os.Open("testdata/waller_vocab_n5.csv")
+	f, err := os.Open("testdata/source/waller/n5_vocab.csv")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func TestParseWallerVocab(t *testing.T) {
 }
 
 func TestParseWallerKanji(t *testing.T) {
-	f, err := os.Open("testdata/waller_kanji_n5.csv")
+	f, err := os.Open("testdata/source/waller/n5_kanji.csv")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestParseWallerKanji(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(got, []string{"日", "一", "国"}) {
+	if !reflect.DeepEqual(got, []string{"日", "食", "国"}) {
 		t.Errorf("kanji = %v", got)
 	}
 }
@@ -61,6 +61,7 @@ func TestWallerWrittenCandidates(t *testing.T) {
 		{"二十（歳）", []string{"二十歳", "二十"}},
 		{"他（外）", []string{"他外", "他"}},
 		{"お・金持ち", []string{"お金持ち"}},
+		{"見る  観る", []string{"見る", "観る"}},
 	}
 	for _, c := range cases {
 		got := refdata.WallerVocab{Written: c.in}.WrittenCandidates()
@@ -134,8 +135,15 @@ func TestMatchVocab(t *testing.T) {
 			refdata.WallerVocab{Reading: "あの"}, []int64{10}, refdata.MatchKanaAmbiguous},
 		{"kana-only word with one eligible entry is not ambiguous",
 			refdata.WallerVocab{Reading: "ふと"}, []int64{13}, refdata.MatchKana},
-		{"kana-only word whose entries all have kanji and are not usually kana is unmatched",
-			refdata.WallerVocab{Reading: "はし"}, nil, refdata.MatchNone},
+		{"a kana-only word whose entries all have kanji and are not usually kana falls back to the best of them",
+			refdata.WallerVocab{Reading: "はし"}, []int64{12}, refdata.MatchKanaFallback},
+		{"a written form that is only kana is looked up as a kana word",
+			refdata.WallerVocab{Written: "ふと", Reading: "ふと"}, []int64{13}, refdata.MatchKana},
+		{"a grammatical tail the list adds is stripped as a last resort (written)",
+			refdata.WallerVocab{Written: "土曜な", Reading: "どよう"}, []int64{3}, refdata.MatchStem},
+		{"a grammatical tail the list adds is stripped as a last resort (kana)",
+			refdata.WallerVocab{Reading: "ふとする"}, []int64{13}, refdata.MatchStem},
+		{"a kana word with no entry at all is unmatched", refdata.WallerVocab{Reading: "ほげほげ"}, nil, refdata.MatchNone},
 		{"unknown word", refdata.WallerVocab{Written: "存在しない", Reading: "ない"}, nil, refdata.MatchNone},
 	}
 	for _, c := range cases {

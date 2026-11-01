@@ -20,6 +20,8 @@ import (
 // twice at one level (e.g. のに at N4 appears as #62 and #63 with different
 // meanings), so those stay two distinct points.
 type GrammarPoint struct {
+	// ID is the database id; zero for points freshly parsed from the spreadsheet.
+	ID      int64
 	Level   Level
 	Number  int // catalogue number within the level, as in the spreadsheet
 	Ordinal int // 1-based occurrence of NormalisedPattern within Level

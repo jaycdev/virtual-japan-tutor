@@ -9,7 +9,7 @@ import (
 )
 
 func TestParseKanjidic(t *testing.T) {
-	f, err := os.Open("testdata/kanjidic2_sample.xml")
+	f, err := os.Open("testdata/source/kanjidic2.xml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,7 +26,7 @@ func TestParseKanjidic(t *testing.T) {
 	if hdr.DatabaseVersion != "2026-305" || hdr.Created != "2026-11-01" {
 		t.Errorf("header = %+v", hdr)
 	}
-	if len(got) != 3 {
+	if len(got) != 4 {
 		t.Fatalf("got %d kanji", len(got))
 	}
 

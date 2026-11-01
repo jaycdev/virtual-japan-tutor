@@ -62,4 +62,22 @@
 <stroke_count>3</stroke_count>
 </misc>
 </character>
+<character>
+<literal>日</literal>
+<misc>
+<grade>1</grade>
+<stroke_count>4</stroke_count>
+<freq>1</freq>
+<jlpt>4</jlpt>
+</misc>
+<reading_meaning>
+<rmgroup>
+<reading r_type="ja_on">ニチ</reading>
+<reading r_type="ja_on">ジツ</reading>
+<reading r_type="ja_kun">ひ</reading>
+<meaning>day</meaning>
+<meaning>sun</meaning>
+</rmgroup>
+</reading_meaning>
+</character>
 </kanjidic2>

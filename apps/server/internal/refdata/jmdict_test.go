@@ -10,7 +10,7 @@ import (
 
 func parseJMdictFixture(t *testing.T) (refdata.JMdictHeader, map[int64]refdata.JMdictEntry, []int64) {
 	t.Helper()
-	f, err := os.Open("testdata/jmdict_sample.xml")
+	f, err := os.Open("testdata/source/JMdict_e")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,8 @@ func TestParseJMdictHeaderAndOrder(t *testing.T) {
 	if got := hdr.Tags["uk"]; got != "word usually written using kana alone" {
 		t.Errorf("tag description for uk = %q", got)
 	}
-	if len(entries) != 4 || !reflect.DeepEqual(order, []int64{1358280, 1000090, 1000110, 1000300}) {
+	want := []int64{1358280, 1000090, 1000110, 1000300, 1198180, 1417030, 2085150, 1417040, 1000420}
+	if len(entries) != len(want) || !reflect.DeepEqual(order, want) {
 		t.Errorf("entries in document order = %v", order)
 	}
 }
@@ -118,7 +119,7 @@ func TestParseJMdictReadingRestrictions(t *testing.T) {
 }
 
 func TestParseJMdictStopsWhenCallbackFails(t *testing.T) {
-	f, err := os.Open("testdata/jmdict_sample.xml")
+	f, err := os.Open("testdata/source/JMdict_e")
 	if err != nil {
 		t.Fatal(err)
 	}

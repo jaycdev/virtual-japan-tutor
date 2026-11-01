@@ -10,7 +10,7 @@ import (
 
 func parseAccents(t *testing.T) (map[[2]string]refdata.PitchEntry, refdata.PitchStats) {
 	t.Helper()
-	f, err := os.Open("testdata/accents_sample.txt")
+	f, err := os.Open("testdata/source/accents.txt")
 	if err != nil {
 		t.Fatal(err)
 	}

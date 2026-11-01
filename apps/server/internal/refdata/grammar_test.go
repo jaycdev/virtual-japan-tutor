@@ -64,7 +64,7 @@ func TestSplitVariants(t *testing.T) {
 }
 
 func TestParseGrammarCSV(t *testing.T) {
-	f, err := os.Open("testdata/grammar.csv")
+	f, err := os.Open("testdata/source/grammar.csv")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestParseGrammarCSV(t *testing.T) {
 }
 
 func TestGrammarIdentityKeepsSamePatternAtDifferentLevelsAndWithinALevel(t *testing.T) {
-	f, err := os.Open("testdata/grammar.csv")
+	f, err := os.Open("testdata/source/grammar.csv")
 	if err != nil {
 		t.Fatal(err)
 	}

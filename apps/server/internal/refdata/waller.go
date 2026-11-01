@@ -7,6 +7,7 @@ import (
 	"io"
 	"slices"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -99,7 +100,7 @@ func ParseWallerKanji(r io.Reader) ([]string, error) {
 // dropped. The fuller spelling of an optional part comes first.
 func (w WallerVocab) WrittenCandidates() []string {
 	var out []string
-	for _, alt := range strings.FieldsFunc(w.Written, func(r rune) bool { return r == '/' || r == '／' }) {
+	for _, alt := range strings.FieldsFunc(w.Written, func(r rune) bool { return r == '/' || r == '／' || unicode.IsSpace(r) }) {
 		alt = strings.ReplaceAll(strings.TrimSpace(alt), "・", "")
 		if alt != "" {
 			out = append(out, expandParens(alt)...)
@@ -233,7 +234,28 @@ const (
 	MatchKana MatchMethod = "kana"
 	// MatchKanaAmbiguous: a kana-only row with several plausible entries; the best is chosen.
 	MatchKanaAmbiguous MatchMethod = "kana_ambiguous"
+	// MatchKanaFallback: a kana-only row for which every entry has kanji forms
+	// and none is marked usually-kana (e.g. いす for 椅子); the best is chosen.
+	MatchKanaFallback MatchMethod = "kana_fallback"
+	// MatchStem: matched only after stripping a trailing する, と, な or に.
+	MatchStem MatchMethod = "stem"
 )
+
+// lookupForms returns the written forms and readings MatchVocab searches
+// for. A "written form" that is only kana (ここ, でも) is treated as a
+// kana-only word, so it moves to the readings.
+func (w WallerVocab) lookupForms() (written, readings []string) {
+	written, readings = w.WrittenCandidates(), w.ReadingCandidates()
+	if len(written) > 0 && !slices.ContainsFunc(written, func(s string) bool { return !isKana(s) }) {
+		readings = dedupe(append(slices.Clone(written), readings...))
+		written = nil
+	}
+	return written, readings
+}
+
+// kanaOnlySkip lists reading fragments never searched on their own: they are
+// the tail of "チェック・する" style entries, not words the list means.
+var kanaOnlySkip = map[string]bool{"する": true, "な": true, "に": true, "の": true}
 
 // MatchVocab ties a Waller row to JMdict entries via the index. It tries, in
 // order:
@@ -250,8 +272,60 @@ const (
 // Anything else is unmatched (nil, MatchNone); the importer records and
 // reports those rows instead of guessing.
 func MatchVocab(row WallerVocab, idx *FormIndex) ([]int64, MatchMethod) {
-	written, readings := row.WrittenCandidates(), row.ReadingCandidates()
+	written, readings := row.lookupForms()
+	if ents, method := matchForms(written, readings, idx); method != MatchNone {
+		return ents, method
+	}
+	// Last resort: lists sometimes include a tail that belongs to the usage,
+	// not the word (コピーする, ゆっくりと, 陽気な).
+	if sw, sr, ok := row.stemForms(); ok {
+		if ents, method := matchForms(sw, sr, idx); method != MatchNone {
+			return ents, MatchStem
+		}
+	}
+	return nil, MatchNone
+}
 
+// stemSuffixes are the tails stemForms strips.
+var stemSuffixes = []string{"する", "と", "な", "に"}
+
+func stripStemSuffix(s string) (string, bool) {
+	for _, suffix := range stemSuffixes {
+		if t := strings.TrimSuffix(s, suffix); t != s && t != "" {
+			return t, true
+		}
+	}
+	return s, false
+}
+
+// stemForms returns the lookup strings with a trailing する/と/な/に removed
+// from the written forms (and, for matching, from the readings too). ok is
+// false when nothing could be stripped.
+func (w WallerVocab) stemForms() (written, readings []string, ok bool) {
+	w0, r0 := w.lookupForms()
+	for _, s := range w0 {
+		if t, changed := stripStemSuffix(s); changed {
+			written = append(written, t)
+		}
+	}
+	if len(w0) > 0 && len(written) == 0 {
+		return nil, nil, false
+	}
+	readings = slices.Clone(r0)
+	if len(w0) == 0 {
+		readings = nil // kana-only: only the stripped readings are new information
+	}
+	changed := len(written) > 0
+	for _, s := range r0 {
+		if t, c := stripStemSuffix(s); c {
+			readings = append(readings, t)
+			changed = true
+		}
+	}
+	return dedupe(written), dedupe(readings), changed
+}
+
+func matchForms(written, readings []string, idx *FormIndex) ([]int64, MatchMethod) {
 	if len(written) > 0 {
 		var found []int64
 		for _, w := range written {
@@ -277,37 +351,45 @@ func MatchVocab(row WallerVocab, idx *FormIndex) ([]int64, MatchMethod) {
 		return nil, MatchNone
 	}
 
-	for _, r := range readings {
-		var eligible []FormRow
-		for _, f := range idx.byReading[r] {
-			if !f.HasKanji || f.UsuallyKana {
-				eligible = append(eligible, f)
+	// Kana-only word. First choice: entries that have no kanji form or are
+	// usually written in kana. Last resort: any entry with the reading.
+	for _, fallback := range []bool{false, true} {
+		for i, r := range readings {
+			if kanaOnlySkip[r] && i > 0 {
+				continue
 			}
-		}
-		if len(eligible) == 0 {
-			continue
-		}
-		slices.SortFunc(eligible, func(a, b FormRow) int {
-			if a.Common != b.Common {
-				if a.Common {
-					return -1
+			var eligible []FormRow
+			for _, f := range idx.byReading[r] {
+				if fallback || !f.HasKanji || f.UsuallyKana {
+					eligible = append(eligible, f)
 				}
-				return 1
 			}
+			if len(eligible) == 0 {
+				continue
+			}
+			best := bestEntry(eligible)
 			switch {
-			case a.EntSeq < b.EntSeq:
-				return -1
-			case a.EntSeq > b.EntSeq:
-				return 1
+			case fallback:
+				return []int64{best}, MatchKanaFallback
+			case len(uniqueEnts(eligible)) == 1:
+				return []int64{best}, MatchKana
 			}
-			return 0
-		})
-		if len(uniqueEnts(eligible)) == 1 {
-			return []int64{eligible[0].EntSeq}, MatchKana
+			return []int64{best}, MatchKanaAmbiguous
 		}
-		return []int64{eligible[0].EntSeq}, MatchKanaAmbiguous
 	}
 	return nil, MatchNone
+}
+
+// bestEntry picks the common entry with the lowest ent_seq (JMdict numbers
+// its more established entries lower).
+func bestEntry(rows []FormRow) int64 {
+	best := rows[0]
+	for _, f := range rows[1:] {
+		if (f.Common && !best.Common) || (f.Common == best.Common && f.EntSeq < best.EntSeq) {
+			best = f
+		}
+	}
+	return best.EntSeq
 }
 
 func uniqueSorted(in []int64) []int64 {
