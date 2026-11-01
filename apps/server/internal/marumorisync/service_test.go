@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -306,6 +307,35 @@ func assertNoKeyFragment(t *testing.T, where, s string) {
 		if strings.Contains(s, frag) {
 			t.Errorf("%s leaks (part of) the API key %q: %s", where, frag, s)
 		}
+	}
+}
+
+// TestLongFailureMessageKeepsWholeCharacters: MaruMori's own detail text is mostly
+// Japanese, and slicing it by bytes leaves the Learner with half a character.
+func TestLongFailureMessageKeepsWholeCharacters(t *testing.T) {
+	e := newEnv(t, testRefs())
+	e.connect(t)
+	e.up.Err = errors.New(strings.Repeat("マーモリ日本語エラー ", 300)) // multi-byte throughout
+
+	run, err := e.svc.Sync(e.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Status != marumorisync.RunFailed || run.Error == nil {
+		t.Fatalf("run = %+v, want a failed run with a message", run)
+	}
+	message := *run.Error
+	if len(message) > 2000 {
+		t.Errorf("message is %d bytes, want at most 2000", len(message))
+	}
+	if !utf8.ValidString(message) {
+		t.Errorf("message cuts a rune in half, tail = %q", message[len(message)-12:])
+	}
+	if !strings.HasSuffix(message, "…") {
+		t.Errorf("message tail = %q, want the truncation marker", message[len(message)-8:])
+	}
+	if !strings.HasPrefix(message, "MaruMori sync failed: マーモリ") {
+		t.Errorf("message lost its head: %q", message)
 	}
 }
 

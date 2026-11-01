@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -532,11 +533,18 @@ func redactKey(message, apiKey string) string {
 	return message
 }
 
+// truncate keeps s within max bytes. The cut lands on a rune boundary: this text is shown
+// to the Learner, and half a UTF-8 character is not text. MaruMori's own detail strings
+// are largely Japanese, where a byte slice lands inside a character almost always.
 func truncate(s string, max int) string {
 	if len(s) <= max {
 		return s
 	}
-	return s[:max] + "…"
+	cut := max - len("…")
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "…"
 }
 
 func derefString(p *string) string {
