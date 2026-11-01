@@ -101,9 +101,10 @@ The `import` service applies pending migrations itself, so it also works against
 
 ```sh
 cd apps/server
-DATABASE_URL=postgres://user:pass@host:5432/db go run ./cmd/import                       # download to the user cache dir
-DATABASE_URL=... go run ./cmd/import --grammar-csv ../../data/grammar/jlpt-grammar.csv   # (default path is relative to the repo root)
-DATABASE_URL=... go run ./cmd/import --source-dir /path/to/sources                        # offline
+export DATABASE_URL=postgres://user:pass@host:5432/db
+export GRAMMAR_CSV=../../data/grammar/jlpt-grammar.csv   # the default, data/grammar/..., is relative to the repo root
+go run ./cmd/import                                      # download into the user cache dir, then load
+go run ./cmd/import --source-dir /path/to/sources        # offline, no network
 ```
 
 Flags: `--only jmdict,kanjidic2,waller,kanjium,grammar` (default all, in dependency order: the JLPT lists are

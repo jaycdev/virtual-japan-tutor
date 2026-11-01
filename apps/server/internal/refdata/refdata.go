@@ -52,16 +52,6 @@ func (l Level) Rank() int {
 	return 0
 }
 
-// levelFromRank is the inverse of Rank.
-func levelFromRank(rank int) (Level, bool) {
-	for _, l := range Levels {
-		if l.Rank() == rank {
-			return l, true
-		}
-	}
-	return "", false
-}
-
 // utf8BOM is the byte order mark some spreadsheet exports start with.
 const utf8BOM = "\xef\xbb\xbf"
 
