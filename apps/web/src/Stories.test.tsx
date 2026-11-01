@@ -1013,6 +1013,20 @@ describe("Saving and Weak Signals (issue #12)", () => {
     ]);
   });
 
+  it("a hold threshold of 0 signals every lookup, immediately", async () => {
+    const { client, requests } = fakeApi({ lookupHoldMs: 0 });
+    await openStory(client);
+
+    // 0 means "signal every lookup": the timer exists and fires at once,
+    // it is not switched off.
+    fireEvent.mouseEnter(tokenButton("がっこう"));
+    const signals = () => requests.filter((r) => r.path === "/weak-signals");
+    await waitFor(() => expect(signals().length).toBe(1));
+    expect((signals()[0]?.body as { signals: unknown }).signals).toEqual([
+      { itemKind: "vocabulary", itemRef: "990101", reason: "lookup" },
+    ]);
+  });
+
   it("hovering away before the threshold cancels the hold", async () => {
     const { client, requests } = fakeApi({ lookupHoldMs: 200 });
     await openStory(client);

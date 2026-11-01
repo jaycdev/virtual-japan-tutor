@@ -179,7 +179,8 @@ function StoryReader({ view, client }: { view: StoryView; client: ApiClient }) {
   // The Lookup Menu hold: a Known word whose Lookup row stays up past the
   // configured threshold signals a shakier word. The timer starts on hover
   // (or Tab) and dies on hover-out, on the menu opening (menu_open counts
-  // instead), and on leaving the reader.
+  // instead), and on leaving the reader. A threshold of 0 signals every
+  // lookup — the timer simply fires immediately.
   const holdMs = reading.state.status === "ready" ? reading.state.settings.lookupHoldMs : DEFAULT_LOOKUP_HOLD_MS;
   const holdTimer = useRef<number | null>(null);
   const cancelHold = () => {
@@ -188,7 +189,7 @@ function StoryReader({ view, client }: { view: StoryView; client: ApiClient }) {
   };
   const startHold = (token: StoryToken) => {
     cancelHold();
-    if (token.tag !== "known" || token.entSeq === undefined || holdMs <= 0) return;
+    if (token.tag !== "known" || token.entSeq === undefined) return;
     const entSeq = token.entSeq;
     holdTimer.current = window.setTimeout(() => {
       holdTimer.current = null;
