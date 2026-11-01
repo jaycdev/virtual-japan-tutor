@@ -2,7 +2,9 @@
 // public API (issue #5, docs/adr/0002). It is read-only and deliberately narrow: the
 // upstream carries item content (meanings, definitions, readings, mnemonics, pitch,
 // examples, personal notes) inside these payloads, and none of it is decoded or kept —
-// only item identity and SRS progress. The API key is write-only: it appears in request
+// only item identity and SRS progress, plus for grammar points the pattern itself,
+// which is a Grammar Point's identity and what Catalogue Matching (issue #6) matches on.
+// The API key is write-only: it appears in request
 // headers and nowhere else, and every upstream string that could echo it is redacted.
 //
 // The endpoint set mirrors the community reference (gist.github.com/Eearslya/
@@ -48,11 +50,20 @@ type Home struct {
 
 // GrammarObservation is one entry of /srs/grammar-lessons or /srs/grammar-reviews.
 // Lesson-only entries have no progress object upstream, so Level is nil. The grammar
-// point's name and explanation are content and are dropped at decode time (ADR-0002).
+// point's explanation, gloss and examples are content and are dropped at decode time
+// (ADR-0002). Pattern is the exception: a Grammar Point is identified by its pattern
+// (GLOSSARY.md), so Catalogue Matching (issue #6) cannot decide whether the Learner
+// knows the point without the pattern itself.
 type GrammarObservation struct {
 	MaruMoriID string
-	Level      *int
-	Suspended  *bool
+	// Pattern is the point's Japanese pattern: upstream `japanese`, or the older
+	// `grammar` field. Empty when upstream sends neither.
+	Pattern string
+	// JLPTLevel is the point's JLPT Level as MaruMori states it ("N4"), empty when
+	// upstream does not name one — grammar reviews do not today.
+	JLPTLevel string
+	Level     *int
+	Suspended *bool
 }
 
 // Sentinel error kinds; match with errors.Is. They mirror internal/llm so callers can

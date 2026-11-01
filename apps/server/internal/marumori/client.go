@@ -262,8 +262,11 @@ func (c *Client) GrammarLessons(ctx context.Context) ([]GrammarObservation, erro
 	var body struct {
 		successFlag
 		Lessons []struct {
-			ID       string `json:"_id"`
-			Key      string `json:"_key"`
+			ID       string          `json:"_id"`
+			Key      string          `json:"_key"`
+			Japanese string          `json:"japanese"`
+			Grammar  string          `json:"grammar"`
+			JLPT     json.RawMessage `json:"jlpt"`
 			Progress *struct {
 				Level     *int  `json:"level"`
 				Suspended *bool `json:"suspended"`
@@ -275,7 +278,7 @@ func (c *Client) GrammarLessons(ctx context.Context) ([]GrammarObservation, erro
 	}
 	out := make([]GrammarObservation, 0, len(body.Lessons))
 	for _, l := range body.Lessons {
-		o, err := grammarObservation(l.ID, l.Key, l.Progress)
+		o, err := grammarObservation(l.ID, l.Key, l.Japanese, l.Grammar, l.JLPT, l.Progress)
 		if err != nil {
 			return nil, err
 		}
@@ -289,8 +292,11 @@ func (c *Client) GrammarReviews(ctx context.Context) ([]GrammarObservation, erro
 	var body struct {
 		successFlag
 		Reviews []struct {
-			ID       string `json:"_id"`
-			Key      string `json:"_key"`
+			ID       string          `json:"_id"`
+			Key      string          `json:"_key"`
+			Japanese string          `json:"japanese"`
+			Grammar  string          `json:"grammar"`
+			JLPT     json.RawMessage `json:"jlpt"`
 			Progress *struct {
 				Level     *int  `json:"level"`
 				Suspended *bool `json:"suspended"`
@@ -302,7 +308,7 @@ func (c *Client) GrammarReviews(ctx context.Context) ([]GrammarObservation, erro
 	}
 	out := make([]GrammarObservation, 0, len(body.Reviews))
 	for _, r := range body.Reviews {
-		o, err := grammarObservation(r.ID, r.Key, r.Progress)
+		o, err := grammarObservation(r.ID, r.Key, r.Japanese, r.Grammar, r.JLPT, r.Progress)
 		if err != nil {
 			return nil, err
 		}
@@ -311,7 +317,7 @@ func (c *Client) GrammarReviews(ctx context.Context) ([]GrammarObservation, erro
 	return out, nil
 }
 
-func grammarObservation(id, key string, progress *struct {
+func grammarObservation(id, key, japanese, grammar string, jlpt json.RawMessage, progress *struct {
 	Level     *int  `json:"level"`
 	Suspended *bool `json:"suspended"`
 }) (GrammarObservation, error) {
@@ -321,11 +327,36 @@ func grammarObservation(id, key string, progress *struct {
 	if id == "" {
 		return GrammarObservation{}, &Error{Kind: ErrBadResponse, Detail: "a grammar point had no id"}
 	}
-	o := GrammarObservation{MaruMoriID: id}
+	o := GrammarObservation{MaruMoriID: id, Pattern: firstNonEmpty(japanese, grammar)}
+	// `jlpt` upstream is not a stable shape (a bare string on some payloads, a list of
+	// numbers on others); only a plain "N5"…"N1" string is taken as a JLPT Level.
+	if len(jlpt) > 0 {
+		var level string
+		if json.Unmarshal(jlpt, &level) == nil && isJLPTLevel(level) {
+			o.JLPTLevel = level
+		}
+	}
 	if progress != nil {
 		o.Level, o.Suspended = progress.Level, progress.Suspended
 	}
 	return o, nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func isJLPTLevel(s string) bool {
+	switch s {
+	case "N5", "N4", "N3", "N2", "N1":
+		return true
+	}
+	return false
 }
 
 // getJSON sends one GET with retries, decoding 2xx JSON into out. Retries cover

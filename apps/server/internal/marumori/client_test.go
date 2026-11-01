@@ -183,7 +183,7 @@ func TestHomeKeepsCountersAndDropsContent(t *testing.T) {
 	}
 }
 
-func TestGrammarObservationsKeepProgressNotContent(t *testing.T) {
+func TestGrammarObservationsKeepProgressAndPatternNotContent(t *testing.T) {
 	srv := fixtureServer(t)
 	c := newClient(t, srv.URL)
 
@@ -193,6 +193,9 @@ func TestGrammarObservationsKeepProgressNotContent(t *testing.T) {
 	}
 	if len(lessons) != 1 || lessons[0].MaruMoriID != "Grammar/101" || lessons[0].Level != nil {
 		t.Fatalf("lessons = %+v, want one lesson-only point without progress", lessons)
+	}
+	if lessons[0].Pattern == "" {
+		t.Error("lesson pattern is empty: the older `grammar` field must still decode")
 	}
 
 	reviews, err := c.GrammarReviews(context.Background())
@@ -205,9 +208,18 @@ func TestGrammarObservationsKeepProgressNotContent(t *testing.T) {
 	if reviews[1].MaruMoriID != "Grammar/203" || *reviews[1].Level != 5 || !*reviews[1].Suspended {
 		t.Fatalf("reviews[1] = %+v", reviews[1])
 	}
+	if reviews[0].Pattern == "" || reviews[1].Pattern == "" {
+		t.Errorf("review patterns = %q, %q: Catalogue Matching needs the pattern text", reviews[0].Pattern, reviews[1].Pattern)
+	}
+	if reviews[0].JLPTLevel != "N3" {
+		t.Errorf("reviews[0].JLPTLevel = %q, want N3 from the plain string `jlpt`", reviews[0].JLPTLevel)
+	}
+	if reviews[1].JLPTLevel != "" {
+		t.Errorf("reviews[1].JLPTLevel = %q: a non-string `jlpt` must be ignored, not guessed", reviews[1].JLPTLevel)
+	}
 
 	all := marshal(t, append(lessons, reviews...))
-	for _, forbidden := range []string{"つもり", "てしまう", "intention", "passive", "旅行", "layout"} {
+	for _, forbidden := range []string{"intention", "completion", "passive", "旅行", "layout"} {
 		if strings.Contains(all, forbidden) {
 			t.Errorf("decoded grammar observations carry upstream content %q: %s", forbidden, all)
 		}

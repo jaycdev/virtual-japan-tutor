@@ -77,6 +77,20 @@ func TestLiveGrammarObservations(t *testing.T) {
 			t.Fatal("a grammar point decoded without an id")
 		}
 	}
+	// Issue #6's Catalogue Matching runs on the live field name (`japanese`): if
+	// upstream renames it, patterns silently go empty, so pin that at least the
+	// reviews carry one.
+	if len(reviews) > 0 {
+		patterns := 0
+		for _, o := range reviews {
+			if o.Pattern != "" {
+				patterns++
+			}
+		}
+		if patterns == 0 {
+			t.Error("no live grammar review decoded a pattern: Catalogue Matching would match nothing")
+		}
+	}
 	t.Logf("live account: %d grammar lessons, %d grammar reviews", len(lessons), len(reviews))
 }
 

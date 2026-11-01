@@ -4,8 +4,11 @@
     {
       "_id": "Grammar/202",
       "_key": "202",
-      "grammar": "～てしまう",
-      "explanation": "completion or an unintended action",
+      "japanese": "～てしまう",
+      "english": "completion or an unintended action",
+      "index": 202,
+      "status": 2,
+      "jlpt": "N3",
       "progress": {
         "level": 3,
         "nextReview": 1714597200000,
@@ -20,6 +23,7 @@
       "_id": "Grammar/203",
       "_key": "203",
       "grammar": "～られる",
+      "jlpt": [3],
       "explanation": "potential or passive form",
       "progress": { "level": 5, "nextReview": 1714700000000, "suspended": true },
       "studyListKey": "PL-1"
