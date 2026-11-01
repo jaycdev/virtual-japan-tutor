@@ -45,8 +45,16 @@ MaruMori's 1–9 stage for an Item in its spaced-repetition system. The app read
 _Avoid_: Stage, level (unqualified)
 
 **Mastery**:
-How well the Learner knows a specific Item, combining its SRS Level with their Practice Record.
+How well the Learner knows a specific Item, on a 0–1 scale, combining its SRS Level, Level Trend, Practice Record and Weak Signals. Recomputed on every read; never stored.
 _Avoid_: Strength, proficiency, level
+
+**Level Trend**:
+How an Item's SRS Level last moved between MaruMori Syncs. A drop is a strong weak sign.
+_Avoid_: Regression, progress
+
+**Newly Observed Grammar**:
+Observed Grammar the Learner came across within the new-grammar window; the Focus Set targets it straight away.
+_Avoid_: Fresh grammar, recent grammar
 
 ## Practice
 

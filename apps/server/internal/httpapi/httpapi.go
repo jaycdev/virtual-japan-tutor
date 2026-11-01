@@ -17,6 +17,7 @@ import (
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/grammar"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/knowngrammar"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/marumorisync"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/mastery"
 )
 
 // Pinger reports whether the database is reachable.
@@ -46,6 +47,7 @@ type server struct {
 	grammar      grammar.Store
 	grammarGen   *grammar.Generator
 	knownGrammar *knowngrammar.Service
+	mastery      *mastery.Service
 	maxBody      int64
 }
 
@@ -65,6 +67,12 @@ func WithMaruMori(svc *marumorisync.Service) Option { return func(s *server) { s
 // (issue #6: onboarding and Observed Grammar review).
 func WithKnownGrammar(svc *knowngrammar.Service) Option {
 	return func(s *server) { s.knownGrammar = svc }
+}
+
+// WithFocusSet enables the /focus-set route (issue #7: Mastery scoring and
+// the rotating Focus Set).
+func WithFocusSet(svc *mastery.Service) Option {
+	return func(s *server) { s.mastery = svc }
 }
 
 // New returns the HTTP handler serving the API defined in api/openapi.yaml.

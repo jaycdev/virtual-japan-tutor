@@ -10,6 +10,7 @@ import (
 
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/llm"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/marumori"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/mastery"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/secrets"
 )
 
@@ -50,6 +51,9 @@ type Config struct {
 	// MaruMoriSyncEnabled gates scheduled Syncs (env MARUMORI_SYNC_ENABLED, default true).
 	// Manual Syncs from Settings work regardless.
 	MaruMoriSyncEnabled bool
+	// Mastery holds the Mastery scoring weights and Focus Set rotation knobs
+	// (env MASTERY_* and FOCUS_SET_*, see loadMastery for names and bounds).
+	Mastery mastery.Options
 }
 
 // Load builds a Config using getenv (typically os.Getenv).
@@ -96,6 +100,9 @@ func Load(getenv func(string) string) (Config, error) {
 	if err := loadMaruMori(getenv, &cfg); err != nil {
 		return Config{}, err
 	}
+	if err := loadMastery(getenv, &cfg); err != nil {
+		return Config{}, err
+	}
 	return cfg, nil
 }
 
@@ -140,6 +147,69 @@ func loadMaruMori(getenv func(string) string, cfg *Config) error {
 	return nil
 }
 
+// loadMastery validates the MASTERY_* and FOCUS_SET_* settings (issue #7).
+// Defaults come from mastery's own constants, so the scoring defaults live in
+// one place.
+func loadMastery(getenv func(string) string, cfg *Config) error {
+	def := mastery.DefaultOptions()
+	opts := mastery.DefaultOptions()
+
+	var err error
+	if opts.Weights.SRS, err = unitFloat(getenv, "MASTERY_WEIGHT_SRS", def.Weights.SRS); err != nil {
+		return err
+	}
+	if opts.Weights.Practice, err = unitFloat(getenv, "MASTERY_WEIGHT_PRACTICE", def.Weights.Practice); err != nil {
+		return err
+	}
+	if opts.Weights.Trend, err = unitFloat(getenv, "MASTERY_WEIGHT_TREND", def.Weights.Trend); err != nil {
+		return err
+	}
+	if opts.Weights.WeakSignals, err = unitFloat(getenv, "MASTERY_WEIGHT_WEAK_SIGNALS", def.Weights.WeakSignals); err != nil {
+		return err
+	}
+	// The positive-evidence weights must keep at least one component live:
+	// all three at zero would score every Known Item at NoEvidenceMastery no
+	// matter what the Learner does.
+	if opts.Weights.SRS+opts.Weights.Practice+opts.Weights.Trend <= 0 {
+		return fmt.Errorf("MASTERY_WEIGHT_SRS, MASTERY_WEIGHT_PRACTICE and MASTERY_WEIGHT_TREND must not all be zero")
+	}
+	// A zero penalty would be rewritten to the default by withDefaults, so
+	// the config layer refuses it: what you set is what the scorer uses.
+	opts.TrendDropPenalty, err = unitFloat(getenv, "MASTERY_TREND_DROP_PENALTY", def.TrendDropPenalty)
+	if err != nil {
+		return err
+	}
+	if opts.TrendDropPenalty <= 0 {
+		return fmt.Errorf("MASTERY_TREND_DROP_PENALTY must be in (0, 1], got 0")
+	}
+	if opts.PracticeHalfLife, err = duration(getenv, "MASTERY_PRACTICE_HALF_LIFE", def.PracticeHalfLife); err != nil {
+		return err
+	}
+	if opts.WeakSignalHalfLife, err = duration(getenv, "MASTERY_WEAK_SIGNAL_HALF_LIFE", def.WeakSignalHalfLife); err != nil {
+		return err
+	}
+
+	if opts.SetSize, err = boundedInt(getenv, "FOCUS_SET_SIZE", def.SetSize, 15, 20); err != nil {
+		return err
+	}
+	// The per-kind cap only makes sense inside the set's capacity.
+	if opts.MaxPerKind, err = boundedInt(getenv, "FOCUS_SET_MAX_PER_KIND", def.MaxPerKind, 1, opts.SetSize); err != nil {
+		return err
+	}
+	if opts.GraduateStreak, err = boundedInt(getenv, "FOCUS_SET_GRADUATE_STREAK", def.GraduateStreak, 1, 100); err != nil {
+		return err
+	}
+	if opts.GraduateMinDays, err = boundedInt(getenv, "FOCUS_SET_GRADUATE_MIN_DAYS", def.GraduateMinDays, 1, 365); err != nil {
+		return err
+	}
+	if opts.NewGrammarWindow, err = duration(getenv, "FOCUS_SET_NEW_GRAMMAR_WINDOW", def.NewGrammarWindow); err != nil {
+		return err
+	}
+
+	cfg.Mastery = opts
+	return nil
+}
+
 // duration parses a positive Go duration (e.g. "15s") from key, or returns def if unset.
 func duration(getenv func(string) string, key string, def time.Duration) (time.Duration, error) {
 	v := getenv(key)
@@ -170,4 +240,36 @@ func positiveInt(getenv func(string) string, key string, def int64) (int64, erro
 		return 0, fmt.Errorf("%s must be positive, got %q", key, v)
 	}
 	return n, nil
+}
+
+// unitFloat parses a fraction in [0,1] from key, or returns def if unset.
+func unitFloat(getenv func(string) string, key string, def float64) (float64, error) {
+	v := getenv(key)
+	if v == "" {
+		return def, nil
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", key, err)
+	}
+	if !(f >= 0 && f <= 1) { // rejects NaN too: every comparison against NaN is false
+		return 0, fmt.Errorf("%s must be between 0 and 1, got %q", key, v)
+	}
+	return f, nil
+}
+
+// boundedInt parses an integer in [min, max] from key, or returns def if unset.
+func boundedInt(getenv func(string) string, key string, def, min, max int) (int, error) {
+	v := getenv(key)
+	if v == "" {
+		return def, nil
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", key, err)
+	}
+	if n < int64(min) || n > int64(max) {
+		return 0, fmt.Errorf("%s must be between %d and %d, got %q", key, min, max, v)
+	}
+	return int(n), nil
 }

@@ -22,6 +22,7 @@ import (
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/knowngrammar"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/marumori"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/marumorisync"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/mastery"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/refdata"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/secrets"
 )
@@ -79,6 +80,10 @@ func run(args []string) error {
 		marumorisync.WithBaseURL(cfg.MaruMoriBaseURL),
 		marumorisync.WithGrammarObserver(knownGrammar),
 	)
+	// Mastery and the Focus Set (issue #7): read-only over the knowledge state
+	// and the signals; scoring weights and rotation knobs come from config.
+	focus := mastery.NewService(mastery.NewPostgresStore(pool), cfg.Mastery)
+
 	// The grammar store doubles as the JMdict-backed dictionary the example
 	// validator checks words against.
 	grammarStore := grammar.NewPostgresStore(pool)
@@ -97,7 +102,7 @@ func run(args []string) error {
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.New(pool, svc, httpapi.WithAIProviders(ai), httpapi.WithMaruMori(maru), httpapi.WithGrammar(grammarStore, grammarGen), httpapi.WithKnownGrammar(knownGrammar), httpapi.WithMaxBodyBytes(cfg.MaxBodyBytes)),
+		Handler:           httpapi.New(pool, svc, httpapi.WithAIProviders(ai), httpapi.WithMaruMori(maru), httpapi.WithGrammar(grammarStore, grammarGen), httpapi.WithKnownGrammar(knownGrammar), httpapi.WithFocusSet(focus), httpapi.WithMaxBodyBytes(cfg.MaxBodyBytes)),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       cfg.ReadTimeout,
 		WriteTimeout:      cfg.WriteTimeout,

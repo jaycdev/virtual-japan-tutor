@@ -635,6 +635,26 @@ paths:
                   $ref: "#/components/schemas/GrammarReviewItem"
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /focus-set:
+    get:
+      operationId: getFocusSet
+      summary: The rotating Focus Set of low-Mastery Known Items
+      description: >
+        The 15–20 Known Items Practice Sessions and Stories target (issue #7): the lowest-Mastery
+        items, mixing vocabulary, kanji and grammar, in the order they should be practised. Items
+        the Learner has demonstrably nailed (a run of correct Practice results spanning distinct UTC
+        days) rotate out and the next weakest backfills; recently Observed Grammar is pinned to
+        the front (docs/adr/0003). Mastery is recomputed from the stored signals on every read —
+        it is never stored, and the app schedules nothing (docs/adr/0004).
+      responses:
+        "200":
+          description: The current Focus Set
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FocusSet"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 components:
   parameters:
     ProviderId:
@@ -1162,3 +1182,52 @@ components:
           description: >
             True when the entry needs the Learner's eye: no match, or a duplicate pattern resolved
             without MaruMori's level.
+    FocusSet:
+      type: object
+      description: >
+        The Learner's current Focus Set (issue #7), in the order Practice should use it: pinned
+        Newly Observed Grammar first, then ascending Mastery. `size` is the configured capacity;
+        a Learner who knows fewer items simply gets a shorter set.
+      required: [size, items]
+      properties:
+        size:
+          type: integer
+          description: The set's configured capacity (15–20; server config FOCUS_SET_SIZE).
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/FocusSetItem"
+    FocusSetItem:
+      type: object
+      description: >
+        One Known Item in the Focus Set, with its current Mastery. Later features (Practice
+        Sessions, Weak Signals ingestion) address the item by `kind` plus `itemRef`.
+      required: [kind, itemRef, source, mastery, newlyObservedGrammar]
+      properties:
+        kind:
+          type: string
+          enum: [kanji, vocabulary, grammar]
+        itemRef:
+          type: string
+          description: >
+            The item's stable ref: the JMdict ent_seq (as text) for linked vocabulary, the literal
+            for linked kanji, the MaruMori id for items no reference-data link covers yet, and the
+            Grammar Catalogue point id (as text) for grammar.
+        source:
+          type: string
+          enum: [marumori, seeded, observed]
+          description: Why the item is known — Synced, Seeded Grammar, or Observed Grammar.
+        mastery:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: >
+            The item's current Mastery score, recomputed from SRS Level, Level Trend, Practice
+            Record and Weak Signals on this read. Never stored.
+        srsLevel:
+          type: integer
+          nullable: true
+          description: MaruMori's SRS Level for the item; null when it reports none (e.g. Seeded Grammar).
+        newlyObservedGrammar:
+          type: boolean
+          description: True for Observed Grammar first seen within the new-grammar window; those items are pinned to the front.
