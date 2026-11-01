@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go server
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: vjt
+          POSTGRES_PASSWORD: vjt_ci_password
+          POSTGRES_DB: vjt
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vjt -d vjt"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgres://vjt:vjt_ci_password@localhost:5432/vjt?sslmode=disable
+    defaults:
+      run:
+        working-directory: apps/server
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: apps/server/go.mod
+          cache-dependency-path: apps/server/go.sum
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24.21.0
+      - name: go vet
+        run: go vet ./...
+      - name: gofmt
+        run: node scripts/gofmt-check.mjs
+      - name: go test
+        run: go test ./...
+      - name: go build
+        run: go build -o bin/ ./cmd/server
+
+  node:
+    name: Node packages and generated code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      # Turborepo also runs the Go server's tasks, so Go is needed here too.
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: apps/server/go.mod
+          cache-dependency-path: apps/server/go.sum
+      - uses: pnpm/action-setup@v6.1.0
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24.21.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Regenerate from OpenAPI spec and fail if committed output is stale
+        run: |
+          pnpm generate:force
+          git diff --exit-code
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build

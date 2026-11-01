@@ -1,0 +1,5 @@
+bin/
+node_modules/
+package.json
+scripts/
+Dockerfile
