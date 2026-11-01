@@ -74,9 +74,14 @@ CREATE TABLE story_tokens (
     "end"       INTEGER    NOT NULL CHECK ("end" > start),
     reading     TEXT       NOT NULL DEFAULT '',
     dictionary  TEXT       NOT NULL DEFAULT '',
-    ent_seq     BIGINT REFERENCES jmdict_entries (ent_seq),
+    -- ON DELETE SET NULL: a jmdict entry withdrawn upstream unlinks the
+    -- token rather than deleting the whole Story (the token then reads as
+    -- unlinked, exactly like a token that never linked at all).
+    ent_seq     BIGINT REFERENCES jmdict_entries (ent_seq) ON DELETE SET NULL,
     tag         TEXT       NOT NULL CHECK (tag IN ('known', 'unknown')),
-    srs_level   SMALLINT,
+    -- The Learner's SRS Level at generation time; mastery's scale is 0–9
+    -- (mastery.MaxSRSLevel), and only Known Items carry one.
+    srs_level   SMALLINT   CHECK (srs_level BETWEEN 0 AND 9),
     UNIQUE (story_id, sentence_id, position)
 );
 
@@ -95,6 +100,10 @@ CREATE TABLE story_grammar_spans (
     is_focus         BOOLEAN    NOT NULL DEFAULT FALSE
 );
 
+-- Every span read goes through story_id (Get's loadChildren); without this
+-- the query seq-scans the whole table.
+CREATE INDEX story_grammar_spans_story_idx ON story_grammar_spans (story_id);
+
 CREATE TABLE story_questions (
     id           UUID        PRIMARY KEY,
     story_id     UUID        NOT NULL REFERENCES stories (id) ON DELETE CASCADE,
@@ -112,6 +121,10 @@ CREATE TABLE story_ratings (
     rating   TEXT        NOT NULL CHECK (rating IN ('up', 'down')),
     rated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- RatingCounts and genre steering look ratings up by user; the PRIMARY KEY
+-- only covers the story side.
+CREATE INDEX story_ratings_user_idx ON story_ratings (user_id);
 
 -- Per-user background state: the membership of the Focus Set captured when
 -- the last VALIDATED Story was generated (a failed attempt leaves the old

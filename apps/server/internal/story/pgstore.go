@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -28,6 +29,10 @@ func (st *PostgresStore) Save(ctx context.Context, s *Story) error {
 	if s.ID == uuid.Nil {
 		s.ID = uuid.New()
 	}
+	// The genre may originate in model output: the store is the choke point
+	// that keeps it a single-line, bounded label no matter who built the
+	// Story (materialise sanitises too; this is idempotent).
+	s.Genre = sanitizeLabel(s.Genre, maxLabelRunes)
 	tx, err := st.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("story save: %w", err)
@@ -91,8 +96,29 @@ func (st *PostgresStore) Save(ctx context.Context, s *Story) error {
 			return fmt.Errorf("story save: question: %w", err)
 		}
 	}
+	// Failed-story housekeeping: a stuck provider keeps one analysable
+	// failure per cooldown window, so bound the accumulation — the newest
+	// maxStoredFailures failures per user survive, older ones go. Validated
+	// stories are never pruned here.
+	if !s.Validated {
+		if _, err := tx.Exec(ctx, `
+			DELETE FROM stories
+			WHERE user_id = $1 AND NOT validated
+			  AND id NOT IN (
+				SELECT id FROM stories
+				WHERE user_id = $1 AND NOT validated
+				ORDER BY created_at DESC, id DESC
+				LIMIT $2)`,
+			s.UserID, maxStoredFailures); err != nil {
+			return fmt.Errorf("story save: prune failed stories: %w", err)
+		}
+	}
 	return tx.Commit(ctx)
 }
+
+// maxStoredFailures bounds each user's stored gate failures (failed-story
+// policy keeps the newest for analysis; the bound stops unbounded growth).
+const maxStoredFailures = 5
 
 func (st *PostgresStore) Get(ctx context.Context, id, userID uuid.UUID) (*Story, error) {
 	q := `
@@ -320,8 +346,16 @@ func (st *PostgresStore) ReadyStoryID(ctx context.Context, userID uuid.UUID) (uu
 	return id, true, nil
 }
 
+// errReadyConflict marks a lost SetReady race: another concurrent SetReady
+// took the user's one ready slot first, which the partial unique index turns
+// into a 23505 unique violation. The service treats it as benign — the
+// loser's story stays stored and validated, just not ready.
+var errReadyConflict = errors.New("story: another story is already ready for this user")
+
 // SetReady clears any other ready story first: the partial unique index
-// (one ready row per user) makes a race fail loudly rather than fork.
+// (one ready row per user) makes a race fail loudly rather than fork, and
+// the 23505 is wrapped in errReadyConflict so callers can tell the race
+// apart from a genuine fault.
 func (st *PostgresStore) SetReady(ctx context.Context, storyID, userID uuid.UUID) error {
 	tx, err := st.pool.Begin(ctx)
 	if err != nil {
@@ -333,12 +367,28 @@ func (st *PostgresStore) SetReady(ctx context.Context, storyID, userID uuid.UUID
 	}
 	tag, err := tx.Exec(ctx, `UPDATE stories SET ready_at = now() WHERE id = $1 AND user_id = $2`, storyID, userID)
 	if err != nil {
-		return fmt.Errorf("story set ready: %w", err)
+		return wrapReadyConflict(err)
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		// The index is checked at commit too: a concurrent winner commits
+		// between our UPDATE and ours.
+		return wrapReadyConflict(err)
+	}
+	return nil
+}
+
+// wrapReadyConflict turns Postgres' unique violation (23505, the one-ready-
+// per-user partial index rejecting a second ready row) into the package's
+// errReadyConflict sentinel; anything else passes through unchanged.
+func wrapReadyConflict(err error) error {
+	var pe *pgconn.PgError
+	if errors.As(err, &pe) && pe.Code == "23505" {
+		return fmt.Errorf("story set ready: %w", errReadyConflict)
+	}
+	return fmt.Errorf("story set ready: %w", err)
 }
 
 func (st *PostgresStore) ClearReady(ctx context.Context, storyID uuid.UUID) error {
@@ -346,6 +396,26 @@ func (st *PostgresStore) ClearReady(ctx context.Context, storyID uuid.UUID) erro
 		return fmt.Errorf("story clear ready: %w", err)
 	}
 	return nil
+}
+
+// LastFailedAt is the failure backoff's clock: it reports the newest story's
+// creation time only when that newest story failed the gate. An older
+// failure followed by a validated story is not "stuck", so it reports false.
+func (st *PostgresStore) LastFailedAt(ctx context.Context, userID uuid.UUID) (time.Time, bool, error) {
+	var at time.Time
+	var validated bool
+	err := st.pool.QueryRow(ctx, `
+		SELECT created_at, validated FROM stories
+		WHERE user_id = $1
+		ORDER BY created_at DESC, id DESC
+		LIMIT 1`, userID).Scan(&at, &validated)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return time.Time{}, false, nil
+	}
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("story last failed at: %w", err)
+	}
+	return at, !validated, nil
 }
 
 func (st *PostgresStore) GenresByLastActivity(ctx context.Context, userID uuid.UUID, limit int) ([]string, error) {
@@ -467,6 +537,17 @@ func (st *PostgresStore) MarkPracticed(ctx context.Context, storyID uuid.UUID, a
 		return false, fmt.Errorf("story practiced: %w", err)
 	}
 	return true, nil
+}
+
+// ResetPracticed undoes a MarkPracticed claim — and only that claim: the
+// WHERE keeps the compare-and-clear on the exact timestamp, so a retry of
+// Answer can write the Practice Records a failed append never landed, while a
+// concurrent answer's successful claim is never disturbed.
+func (st *PostgresStore) ResetPracticed(ctx context.Context, storyID uuid.UUID, at time.Time) error {
+	if _, err := st.pool.Exec(ctx, `UPDATE stories SET practiced_at = NULL WHERE id = $1 AND practiced_at = $2`, storyID, at); err != nil {
+		return fmt.Errorf("story unpracticed: %w", err)
+	}
+	return nil
 }
 
 func (st *PostgresStore) UserIDs(ctx context.Context) ([]uuid.UUID, error) {

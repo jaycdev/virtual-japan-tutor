@@ -24,7 +24,9 @@ package story
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -64,7 +66,44 @@ const (
 	// DefaultPromptKnownLimit caps how many Known Items the prompt lists;
 	// truncation is safe because every listed word is genuinely Known.
 	DefaultPromptKnownLimit = 600
+	// MaxQuestionOptions bounds a question's options. The prompt asks for
+	// exactly four; the gate accepts 3 or 4 and rejects more, so a bad
+	// completion cannot store an unbounded option list.
+	MaxQuestionOptions = 4
+	// DefaultRetryCooldown is the failure backoff: while a user's newest
+	// Story is a gate failure younger than this, background regeneration is
+	// skipped. A stuck provider then costs one generation per window instead
+	// of one per scheduler interval. Zero disables the cooldown.
+	DefaultRetryCooldown = 6 * time.Hour
+	// DefaultGenerationTimeout caps one model round-trip from the story side
+	// (llm.Options.Timeout, set explicitly per attempt) and sizes the
+	// scheduler's per-user context budget.
+	DefaultGenerationTimeout = 60 * time.Second
 )
+
+// maxLabelRunes caps a model- or user-supplied label (a genre, a theme).
+const maxLabelRunes = 60
+
+// sanitizeLabel cleans such a label before it is stored or shown: control
+// characters (newlines included) become spaces, whitespace runs collapse, and
+// the result is capped at maxRunes codepoints. One sanitizer for every label
+// so the newline rule cannot drift between call sites; the cap differs per
+// kind (maxLabelRunes for genres, the settings' own bound for preferences).
+func sanitizeLabel(s string, maxRunes int) string {
+	var b strings.Builder
+	for _, r := range s {
+		if unicode.IsControl(r) {
+			b.WriteRune(' ')
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	out := strings.Join(strings.Fields(b.String()), " ")
+	if utf8.RuneCountInString(out) > maxRunes {
+		out = string([]rune(out)[:maxRunes])
+	}
+	return out
+}
 
 // Rating is a Learner's verdict on a Story, steering genre choice later.
 type Rating string
@@ -222,6 +261,9 @@ func (s *Story) Validate() error {
 		}
 		if q.PromptJA == "" || len(q.OptionsJA) < 2 {
 			return fmt.Errorf("question %d needs a prompt and at least two options", i)
+		}
+		if len(q.OptionsJA) > MaxQuestionOptions {
+			return fmt.Errorf("question %d has %d options, want at most %d", i, len(q.OptionsJA), MaxQuestionOptions)
 		}
 		if q.AnswerIndex < 0 || q.AnswerIndex >= len(q.OptionsJA) {
 			return fmt.Errorf("question %d answer_index %d is outside %d options", i, q.AnswerIndex, len(q.OptionsJA))

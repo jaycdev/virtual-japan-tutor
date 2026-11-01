@@ -2,10 +2,15 @@ package story
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/dbtest"
 )
@@ -305,6 +310,209 @@ func TestPostgresStoreAgainstPostgres(t *testing.T) {
 	}
 	if len(users) < 2 {
 		t.Errorf("user ids: %v", users)
+	}
+}
+
+// The 00009 schema's guards, against the real schema: the SRS Level CHECK,
+// the withdrawn-entry behaviour of story_tokens.ent_seq, and the two
+// lookup indexes the read paths need.
+func TestPostgresStorySchemaConstraints(t *testing.T) {
+	pool := dbtest.New(t)
+	ctx := context.Background()
+	st := NewPostgresStore(pool)
+
+	user := uuid.New()
+	if _, err := pool.Exec(ctx, `INSERT INTO users (id, username, password_hash) VALUES ($1, $2, 'x')`, user, user.String()); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	const ent = 990199
+	if _, err := pool.Exec(ctx, `INSERT INTO jmdict_entries (ent_seq, is_common) VALUES ($1, true)`, ent); err != nil {
+		t.Fatalf("seed jmdict: %v", err)
+	}
+
+	saved := saveStory(t, ctx, st, user, "schema", true)
+	var sentence uuid.UUID
+	if err := pool.QueryRow(ctx, `SELECT id FROM story_sentences WHERE story_id = $1`, saved.ID).Scan(&sentence); err != nil {
+		t.Fatal(err)
+	}
+	insertToken := func(srs any, pos int) error {
+		_, err := pool.Exec(ctx, `
+			INSERT INTO story_tokens (id, story_id, sentence_id, position, surface, start, "end", reading, dictionary, ent_seq, tag, srs_level)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+			uuid.New(), saved.ID, sentence, pos, "ねこ", 0, 2, "ねこ", "猫", ent, "known", srs)
+		return err
+	}
+
+	// mastery's scale is 0–9: a level outside it is a schema error, not a
+	// silently meaningless number.
+	if err := insertToken(10, 7); err == nil {
+		t.Fatal("srs_level 10 accepted, want the CHECK to reject it")
+	} else if !strings.Contains(err.Error(), "srs_level") {
+		t.Fatalf("srs_level 10 rejected by %v, want the srs_level CHECK", err)
+	}
+	if err := insertToken(nil, 8); err != nil {
+		t.Fatalf("unknown-token row (no level) rejected: %v", err)
+	}
+	if err := insertToken(0, 9); err != nil {
+		t.Fatalf("level 0 rejected: %v", err)
+	}
+
+	// A jmdict entry withdrawn upstream unlinks the token rather than
+	// deleting the Story: the row survives with ent_seq NULL, reading as
+	// unlinked exactly like a token that never linked.
+	if _, err := pool.Exec(ctx, `DELETE FROM jmdict_entries WHERE ent_seq = $1`, ent); err != nil {
+		t.Fatalf("withdraw entry: %v", err)
+	}
+	var linked *int64
+	if err := pool.QueryRow(ctx, `SELECT ent_seq FROM story_tokens WHERE sentence_id = $1 AND position = 8`, sentence).Scan(&linked); err != nil {
+		t.Fatal(err)
+	}
+	if linked != nil {
+		t.Fatalf("ent_seq survived the entry's deletion: %d, want NULL", *linked)
+	}
+	if _, err := st.Get(ctx, saved.ID, user); err != nil {
+		t.Fatalf("story vanished with a withdrawn entry: %v", err)
+	}
+
+	// The read paths' indexes: spans by story, ratings by user.
+	names, err := storyIndexes(ctx, pool, "story_grammar_spans", "story_ratings")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !names["story_grammar_spans_story_idx"] {
+		t.Error("story_grammar_spans has no story_id index (Get would seq-scan every span)")
+	}
+	if !names["story_ratings_user_idx"] {
+		t.Error("story_ratings has no user_id index (rating steering would seq-scan)")
+	}
+}
+
+// storyIndexes lists the index names on the given tables of this test's
+// schema.
+func storyIndexes(ctx context.Context, pool *pgxpool.Pool, tables ...string) (map[string]bool, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT tablename, indexname FROM pg_indexes
+		WHERE schemaname = current_schema() AND tablename = ANY($1)`, tables)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var table, name string
+		if err := rows.Scan(&table, &name); err != nil {
+			return nil, err
+		}
+		out[name] = true
+	}
+	return out, rows.Err()
+}
+
+// wrapReadyConflict is pure: the one-ready-per-user partial index's 23505
+// becomes the package's benign sentinel, while any other failure stays a
+// genuine fault. (The race itself needs two servers to force, so the store's
+// contract is pinned here and the service's handling in service_test.go.)
+func TestWrapReadyConflict(t *testing.T) {
+	unique := &pgconn.PgError{Code: "23505", ConstraintName: "stories_one_ready_per_user_idx", Message: "duplicate key value violates unique constraint"}
+	err := wrapReadyConflict(unique)
+	if !errors.Is(err, errReadyConflict) {
+		t.Fatalf("23505 wrapped as %v, want it to wrap errReadyConflict", err)
+	}
+	fkey := &pgconn.PgError{Code: "23503", Message: "insert or update on table violates foreign key constraint"}
+	if got := wrapReadyConflict(fkey); errors.Is(got, errReadyConflict) {
+		t.Fatalf("a foreign-key failure wrapped as %v, must not look like a ready race", got)
+	}
+	if got := wrapReadyConflict(errors.New("network down")); errors.Is(got, errReadyConflict) {
+		t.Fatalf("a transport failure wrapped as %v, must not look like a ready race", got)
+	}
+}
+
+// The failure backoff's clock and the failed-story bound, against the real
+// schema (skipped without TEST_DATABASE_URL).
+func TestPostgresLastFailedAtAndFailurePruning(t *testing.T) {
+	pool := dbtest.New(t)
+	ctx := context.Background()
+	st := NewPostgresStore(pool)
+
+	user := uuid.New()
+	if _, err := pool.Exec(ctx, `INSERT INTO users (id, username, password_hash) VALUES ($1, $2, 'x')`, user, user.String()); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+
+	// No stories yet: nothing to wait out.
+	if at, failed, err := st.LastFailedAt(ctx, user); err != nil || failed || !at.IsZero() {
+		t.Fatalf("empty user: at=%v failed=%v err=%v, want zero/false/nil", at, failed, err)
+	}
+
+	// A gate failure arms the backoff, with the story's own timestamp.
+	failed1 := saveStory(t, ctx, st, user, "failed one", false)
+	at, failed, err := st.LastFailedAt(ctx, user)
+	if err != nil || !failed {
+		t.Fatalf("after a failure: failed=%v err=%v, want true", failed, err)
+	}
+	var row time.Time
+	if err := pool.QueryRow(ctx, `SELECT created_at FROM stories WHERE id = $1`, failed1.ID).Scan(&row); err != nil {
+		t.Fatal(err)
+	}
+	if !at.Equal(row) {
+		t.Fatalf("LastFailedAt = %v, want the newest failure's created_at %v", at, row)
+	}
+
+	// A newer validated story clears it: an old failure behind a success is
+	// not a stuck user.
+	saveStory(t, ctx, st, user, "validated", true)
+	if _, failed, err := st.LastFailedAt(ctx, user); err != nil || failed {
+		t.Fatalf("newest story validated: failed=%v err=%v, want false", failed, err)
+	}
+
+	// Bound the accumulation: each user keeps the newest maxStoredFailures
+	// gate failures, and validated Stories are never pruned by it.
+	var pruned []*Story
+	for i := range maxStoredFailures + 2 {
+		s := saveStory(t, ctx, st, user, fmt.Sprintf("failed %d", i), false)
+		if i < 2 { // the two oldest of the batch are the ones that must go
+			pruned = append(pruned, s)
+		}
+	}
+	var failedRows, validatedRows int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM stories WHERE user_id = $1 AND NOT validated`, user).Scan(&failedRows); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM stories WHERE user_id = $1 AND validated`, user).Scan(&validatedRows); err != nil {
+		t.Fatal(err)
+	}
+	if failedRows != maxStoredFailures {
+		t.Fatalf("stored failures = %d, want the newest %d", failedRows, maxStoredFailures)
+	}
+	if validatedRows != 1 { // the one validated story is untouched by pruning
+		t.Fatalf("validated rows = %d, want 1 (pruning must not touch them)", validatedRows)
+	}
+	for _, s := range pruned {
+		if _, err := st.Get(ctx, s.ID, user); err != ErrNotFound {
+			t.Fatalf("pruned story %v still readable: %v", s.ID, err)
+		}
+		var kids int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM story_sentences WHERE story_id = $1`, s.ID).Scan(&kids); err != nil {
+			t.Fatal(err)
+		}
+		if kids != 0 {
+			t.Fatalf("pruned story %v left %d sentence rows behind", s.ID, kids)
+		}
+	}
+	// Another user's failures are none of this user's business.
+	other := uuid.New()
+	if _, err := pool.Exec(ctx, `INSERT INTO users (id, username, password_hash) VALUES ($1, $2, 'x')`, other, other.String()); err != nil {
+		t.Fatalf("seed other user: %v", err)
+	}
+	saveStory(t, ctx, st, other, "their failure", false)
+	if _, failed, err := st.LastFailedAt(ctx, other); err != nil || !failed {
+		t.Fatalf("other user's failure: failed=%v err=%v, want true", failed, err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM stories WHERE user_id = $1 AND NOT validated`, user).Scan(&failedRows); err != nil {
+		t.Fatal(err)
+	}
+	if failedRows != maxStoredFailures {
+		t.Fatalf("stored failures after another user saved one = %d, want %d", failedRows, maxStoredFailures)
 	}
 }
 

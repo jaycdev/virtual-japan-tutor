@@ -4,14 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -34,6 +37,12 @@ type fakeProvider struct {
 	script []string // assistant content per call; repeats the last when exhausted
 	calls  int
 	msgs   [][]llm.Message
+
+	// block, when non-nil, turns every completion into a two-phase
+	// handshake: the handler sends on it once the request has been recorded,
+	// then waits for the reply before answering. Tests use it to hold a
+	// generation mid-flight while they exercise concurrent paths.
+	block chan struct{}
 }
 
 func newFakeProvider(t *testing.T, script ...string) *fakeProvider {
@@ -60,6 +69,10 @@ func newFakeProvider(t *testing.T, script ...string) *fakeProvider {
 		}
 		f.mu.Unlock()
 
+		if f.block != nil {
+			f.block <- struct{}{}
+			<-f.block
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"model": body.Model,
@@ -165,6 +178,10 @@ type fakeStore struct {
 	prefs     map[uuid.UUID][2]string // genre, theme ("" = surprise-me / no theme)
 	snapshots map[uuid.UUID][]string
 	now       time.Time
+
+	// setReadyConflict makes SetReady answer like the Postgres store when a
+	// concurrent generator took the one ready slot first (23505).
+	setReadyConflict bool
 }
 
 func newFakeStore() *fakeStore {
@@ -184,11 +201,29 @@ func (s *fakeStore) Save(_ context.Context, st *Story) error {
 	if st.ID == uuid.Nil {
 		st.ID = uuid.New()
 	}
+	// Mirror the Postgres store's choke point: stored genres are sanitised
+	// labels no matter who built the story.
+	st.Genre = sanitizeLabel(st.Genre, maxLabelRunes)
 	s.now = s.now.Add(time.Second)
 	st.CreatedAt = s.now
 	s.stories[st.ID] = st
 	s.users[st.UserID] = true
 	return nil
+}
+
+// advanceNow moves the fake store's clock (it stamps CreatedAt), so a test
+// can step past the retry cooldown with the service clock pointed at
+// storeNow.
+func (s *fakeStore) advanceNow(d time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.now = s.now.Add(d)
+}
+
+func (s *fakeStore) storeNow() time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.now
 }
 
 func (s *fakeStore) get(id, userID uuid.UUID) (*Story, error) {
@@ -275,6 +310,9 @@ func (s *fakeStore) ReadyStoryID(_ context.Context, userID uuid.UUID) (uuid.UUID
 func (s *fakeStore) SetReady(_ context.Context, id, userID uuid.UUID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.setReadyConflict {
+		return fmt.Errorf("story set ready: %w", errReadyConflict)
+	}
 	st, err := s.get(id, userID)
 	if err != nil {
 		return err
@@ -296,6 +334,26 @@ func (s *fakeStore) ClearReady(_ context.Context, id uuid.UUID) error {
 		st.ReadyAt = nil
 	}
 	return nil
+}
+
+// LastFailedAt mirrors the Postgres store's contract: the timestamp counts
+// only when the user's newest story failed the gate.
+func (s *fakeStore) LastFailedAt(_ context.Context, userID uuid.UUID) (time.Time, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var newest *Story
+	for _, st := range s.stories {
+		if st.UserID != userID {
+			continue
+		}
+		if newest == nil || st.CreatedAt.After(newest.CreatedAt) {
+			newest = st
+		}
+	}
+	if newest == nil || newest.Validated {
+		return time.Time{}, false, nil
+	}
+	return newest.CreatedAt, true, nil
 }
 
 func (s *fakeStore) GenresByLastActivity(_ context.Context, userID uuid.UUID, limit int) ([]string, error) {
@@ -375,6 +433,21 @@ func (s *fakeStore) MarkPracticed(_ context.Context, id uuid.UUID, at time.Time)
 	return true, nil
 }
 
+// ResetPracticed mirrors the Postgres store: it clears the claim only when
+// it is still exactly the value MarkPracticed set.
+func (s *fakeStore) ResetPracticed(_ context.Context, id uuid.UUID, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st, ok := s.stories[id]
+	if !ok {
+		return ErrNotFound
+	}
+	if st.PracticedAt != nil && st.PracticedAt.Equal(at) {
+		st.PracticedAt = nil
+	}
+	return nil
+}
+
 func (s *fakeStore) UserIDs(_ context.Context) ([]uuid.UUID, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -391,6 +464,9 @@ var _ practice.ResultWriter = (*resultsSpy)(nil)
 
 type resultsSpy struct {
 	calls []practiceCall
+	// fail, when set, makes AppendResult error — the Practice Record
+	// append failure the Answer rollback must recover from.
+	fail bool
 }
 
 type practiceCall struct {
@@ -400,9 +476,14 @@ type practiceCall struct {
 }
 
 func (r *resultsSpy) AppendResult(_ context.Context, userID uuid.UUID, item mastery.ItemKey, correct bool, _ time.Time) error {
+	if r.fail {
+		return errors.New("practice record append failed (test)")
+	}
 	r.calls = append(r.calls, practiceCall{UserID: userID, Item: item, Correct: correct})
 	return nil
 }
+
+func (r *resultsSpy) callCount() int { return len(r.calls) }
 
 // --- wiring helper ---
 
@@ -846,5 +927,273 @@ func TestEnsureReadyAvoidsDislikedGenres(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "surprise the reader") {
 		t.Fatal("with only disliked genres in history the fallback is surprise-me")
+	}
+}
+
+func TestEnsureReadyFailureWaitsOutRetryCooldown(t *testing.T) {
+	// Failure backoff: while the user's newest Story is a gate failure
+	// younger than Settings.RetryCooldown, later passes are skipped — a
+	// stuck provider costs one generation per cooldown window, not one per
+	// scheduler interval.
+	ctx := context.Background()
+	user := uuid.New()
+	dirty := string(fixture(t, "travel", dirtyClause, dirtyClause, dirtyClause, dirtyClause))
+	clean := string(fixture(t, "travel", cleanClause, cleanClause, cleanClause, cleanClause))
+	provider := newFakeProvider(t, dirty, clean)
+	svc, store, _, _ := newTestService(t, provider)
+	svc.settings.RetryCooldown = 6 * time.Hour
+	svc.now = store.storeNow // one clock: the cooldown compares store stamps
+
+	if err := svc.EnsureReady(ctx, user); err == nil {
+		t.Fatal("want the gate's rejection surfaced as an error")
+	}
+	if provider.callCount() != 1 {
+		t.Fatalf("provider calls = %d, want 1", provider.callCount())
+	}
+
+	// Inside the window: no spend, no error — the pass is simply skipped.
+	if err := svc.EnsureReady(ctx, user); err != nil {
+		t.Fatalf("EnsureReady (inside cooldown): %v", err)
+	}
+	if provider.callCount() != 1 {
+		t.Fatalf("provider calls = %d inside the cooldown, want still 1", provider.callCount())
+	}
+
+	// Past the window: the next pass generates again, and the success also
+	// clears the backoff (the newest story is no longer a failure).
+	store.advanceNow(6 * time.Hour)
+	if err := svc.EnsureReady(ctx, user); err != nil {
+		t.Fatalf("EnsureReady (after cooldown): %v", err)
+	}
+	if provider.callCount() != 2 {
+		t.Fatalf("provider calls = %d past the cooldown, want 2", provider.callCount())
+	}
+	if _, ready, _ := store.ReadyStoryID(ctx, user); !ready {
+		t.Fatal("the post-cooldown pass should produce the ready story")
+	}
+	if err := svc.EnsureReady(ctx, user); err != nil {
+		t.Fatalf("EnsureReady (ready): %v", err)
+	}
+	if provider.callCount() != 2 {
+		t.Fatalf("provider calls = %d with a ready story, want still 2", provider.callCount())
+	}
+}
+
+func TestEnsureReadySingleFlightAcrossSweeps(t *testing.T) {
+	// The at-most-one-generation-per-user rule lives in EnsureReady, so
+	// every route shares it (the scheduler pass and the post-open kick
+	// alike): while one is in flight, a later call returns without spending
+	// a second provider call.
+	ctx := context.Background()
+	user := uuid.New()
+	provider := newFakeProvider(t, string(fixture(t, "travel", cleanClause, cleanClause, cleanClause, cleanClause)))
+	provider.block = make(chan struct{}, 4) // two-phase handshake per call
+	svc, store, focus, _ := newTestService(t, provider)
+
+	firstDone := make(chan error, 1)
+	go func() { firstDone <- svc.EnsureReady(ctx, user) }()
+	<-provider.block // first call recorded, still mid-flight
+
+	if err := svc.EnsureReady(ctx, user); err != nil {
+		t.Fatalf("EnsureReady (deduped): %v", err)
+	}
+	if n := provider.callCount(); n != 1 {
+		provider.block <- struct{}{}
+		<-firstDone
+		t.Fatalf("provider calls = %d while one generation was in flight, want 1", n)
+	}
+
+	provider.block <- struct{}{} // let the in-flight call answer
+	if err := <-firstDone; err != nil {
+		t.Fatalf("EnsureReady (first): %v", err)
+	}
+	if _, ready, _ := store.ReadyStoryID(ctx, user); !ready {
+		t.Fatal("the in-flight generation should still have produced the ready story")
+	}
+
+	// The blocked call's slot was released: the guard is not stuck, so a
+	// later focus change generates again rather than deadlocking.
+	focus.set.Vocab = []VocabFocus{{EntSeq: 1}, {EntSeq: 2}, {EntSeq: 3}}
+	if err := svc.EnsureReady(ctx, user); err != nil {
+		t.Fatalf("EnsureReady (after): %v", err)
+	}
+	if n := provider.callCount(); n != 2 {
+		t.Fatalf("provider calls = %d after the flight ended, want 2", n)
+	}
+}
+
+func TestBeginGenerationGuardIsExclusiveAndReleasable(t *testing.T) {
+	// The guard's contract, without goroutines: one slot per user, released
+	// exactly once by its paired closure.
+	user, other := uuid.New(), uuid.New()
+	svc, _, _, _ := newTestService(t, nil)
+
+	inFlight := func() []uuid.UUID {
+		svc.genMu.Lock()
+		defer svc.genMu.Unlock()
+		out := make([]uuid.UUID, 0, len(svc.genInFlight))
+		for id := range svc.genInFlight {
+			out = append(out, id)
+		}
+		sort.Slice(out, func(i, j int) bool { return out[i].String() < out[j].String() })
+		return out
+	}
+
+	rel, ok := svc.beginGeneration(user)
+	if !ok {
+		t.Fatal("first beginGeneration: ok=false, want the slot")
+	}
+	if _, ok := svc.beginGeneration(user); ok {
+		t.Fatal("beginGeneration handed out a second slot for the same user")
+	}
+	if _, ok := svc.beginGeneration(other); !ok {
+		t.Fatal("another user's generation must not be blocked")
+	}
+	if got := inFlight(); len(got) != 2 {
+		t.Fatalf("in flight = %v, want this user and the other", got)
+	}
+	rel()
+	rel() // the paired release is idempotent
+	if got := inFlight(); len(got) != 1 || got[0] != other {
+		t.Fatalf("in flight after release = %v, want only the other user", got)
+	}
+	rel2, ok := svc.beginGeneration(user)
+	if !ok {
+		t.Fatal("the slot is not reusable after release")
+	}
+	rel2()
+}
+
+func TestEnsureReadySetReadyConflictIsBenign(t *testing.T) {
+	// A concurrent generator (another instance) that took the one ready
+	// slot first surfaces as errReadyConflict; it is logged, not an error:
+	// the loser's story stays stored and validated, just not ready.
+	ctx := context.Background()
+	user := uuid.New()
+	provider := newFakeProvider(t, string(fixture(t, "travel", cleanClause, cleanClause, cleanClause, cleanClause)))
+	svc, store, _, _ := newTestService(t, provider)
+	store.setReadyConflict = true
+
+	if err := svc.EnsureReady(ctx, user); err != nil {
+		t.Fatalf("EnsureReady with a lost SetReady race = %v, want nil", err)
+	}
+	if provider.callCount() != 1 {
+		t.Fatalf("provider calls = %d, want 1", provider.callCount())
+	}
+	var stored *Story
+	for _, st := range store.stories {
+		stored = st
+	}
+	if stored == nil || !stored.Validated || stored.ReadyAt != nil {
+		t.Fatalf("story after a lost ready race: %+v, want stored, validated, unready", stored)
+	}
+}
+
+func TestAnswerRejectsFailedStory(t *testing.T) {
+	// A gate failure is kept for analysis, never offered: answering one by
+	// id (stale or forged) is a 400, and it writes no Practice Records and
+	// never claims the practiced marker.
+	ctx := context.Background()
+	user := uuid.New()
+	svc, store, _, results := newTestService(t, nil)
+	st := &Story{
+		UserID: user, Genre: "travel", Validated: false,
+		Questions:  []Question{{Pos: 0, PromptJA: "q", OptionsJA: []string{"a", "b"}, AnswerIndex: 1}},
+		VocabItems: []VocabItem{{EntSeq: 1, IsFocus: true, IsKnown: true}},
+	}
+	if err := store.Save(ctx, st); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	_, err := svc.Answer(ctx, st.ID, user, 0, 1)
+	var se *Error
+	if !errors.As(err, &se) || se.Status != 400 {
+		t.Fatalf("Answer on a failed story err = %v, want a 400 story error", err)
+	}
+	if results.callCount() != 0 {
+		t.Fatalf("practice rows = %d for a failed story, want 0", results.callCount())
+	}
+	if store.stories[st.ID].PracticedAt != nil {
+		t.Fatal("a rejected answer must not claim the practiced marker")
+	}
+}
+
+func TestAnswerRollsBackPracticedMarkerWhenAppendFails(t *testing.T) {
+	// The practiced marker claims the at-most-once Practice Records write.
+	// If the append fails after the claim, the claim is undone, so the
+	// Learner's retry records the items instead of being silently skipped.
+	ctx := context.Background()
+	user := uuid.New()
+	svc, store, _, results := newTestService(t, nil)
+	st := &Story{
+		UserID: user, Genre: "travel", Validated: true,
+		Questions:  []Question{{Pos: 0, PromptJA: "q", OptionsJA: []string{"a", "b"}, AnswerIndex: 1}},
+		VocabItems: []VocabItem{{EntSeq: 1, IsFocus: true, IsKnown: true}},
+	}
+	if err := store.Save(ctx, st); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	results.fail = true
+	if _, err := svc.Answer(ctx, st.ID, user, 0, 1); err == nil {
+		t.Fatal("Answer must surface the Practice Record append failure")
+	}
+	if store.stories[st.ID].PracticedAt != nil {
+		t.Fatal("the failed append must roll the practiced marker back")
+	}
+	if results.callCount() != 0 {
+		t.Fatalf("practice rows = %d, want 0 (the append failed)", results.callCount())
+	}
+
+	// Retry after the outage: the marker is free again, so the records land.
+	results.fail = false
+	res, err := svc.Answer(ctx, st.ID, user, 0, 1)
+	if err != nil {
+		t.Fatalf("Answer (retry): %v", err)
+	}
+	if !res.PracticeRecorded {
+		t.Fatal("retry after a failed append must write the Practice Records")
+	}
+	if results.callCount() != 1 {
+		t.Fatalf("practice rows = %d, want exactly 1 after one successful write", results.callCount())
+	}
+}
+
+func TestPutSettingsStripsControlCharactersFromPrefs(t *testing.T) {
+	// Stored preferences go through the same sanitizer as model genres:
+	// newlines and control characters collapse to spaces, so a preference
+	// can never smuggle a line break into a prompt or the UI.
+	ctx := context.Background()
+	user := uuid.New()
+	svc, _, _, _ := newTestService(t, nil)
+
+	us, err := svc.PutSettings(ctx, user, UserSettings{
+		FuriganaThresholdSRSLevel: 3,
+		PreferredGenre:            "road\ntrip",
+		PreferredTheme:            "ramen\tshop\r\nvisit",
+	})
+	if err != nil {
+		t.Fatalf("PutSettings: %v", err)
+	}
+	if us.PreferredGenre != "road trip" {
+		t.Fatalf("genre = %q, want control characters collapsed", us.PreferredGenre)
+	}
+	if us.PreferredTheme != "ramen shop visit" {
+		t.Fatalf("theme = %q, want control characters collapsed", us.PreferredTheme)
+	}
+}
+
+func TestSanitizeLabel(t *testing.T) {
+	if got := sanitizeLabel("romance\nwith\tnewlines", 60); got != "romance with newlines" {
+		t.Fatalf("collapse = %q", got)
+	}
+	if got := sanitizeLabel("  spaces   everywhere  ", 60); got != "spaces everywhere" {
+		t.Fatalf("collapse = %q", got)
+	}
+	if got := sanitizeLabel(strings.Repeat("猫", 70), maxLabelRunes); got != strings.Repeat("猫", maxLabelRunes) {
+		t.Fatalf("cap: got %d runes, want %d", utf8.RuneCountInString(got), maxLabelRunes)
+	}
+	if got := sanitizeLabel("  \n ", 60); got != "" {
+		t.Fatalf("blank label = %q, want empty", got)
 	}
 }

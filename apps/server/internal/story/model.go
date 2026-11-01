@@ -20,6 +20,11 @@ type Settings struct {
 	MaxAttempts int
 	// PromptKnownLimit: how many Known Items the prompt lists (0 → default).
 	PromptKnownLimit int
+	// RetryCooldown: how long to skip regeneration while the user's newest
+	// Story is a gate failure (failure backoff for a stuck provider). Zero
+	// disables the cooldown; cmd/server passes STORY_RETRY_COOLDOWN, whose
+	// default is DefaultRetryCooldown.
+	RetryCooldown time.Duration
 }
 
 // WithDefaults fills the zero fields with the package defaults.
@@ -91,10 +96,15 @@ type Store interface {
 	// ReadyStoryID returns the user's ready (not yet opened) Story, if any.
 	ReadyStoryID(ctx context.Context, userID uuid.UUID) (uuid.UUID, bool, error)
 	// SetReady marks s.ID ready and clears any other ready flag for the same
-	// user in one transaction (one ready Story per user, always).
+	// user in one transaction (one ready Story per user, always). A racing
+	// concurrent SetReady surfaces as an error wrapping errReadyConflict.
 	SetReady(ctx context.Context, storyID, userID uuid.UUID) error
 	// ClearReady drops a Story's ready flag (opening it).
 	ClearReady(ctx context.Context, storyID uuid.UUID) error
+	// LastFailedAt reports the newest Story's creation time when that newest
+	// Story failed the gate — the failure backoff's clock (false when the
+	// user has no stories or their newest one validated).
+	LastFailedAt(ctx context.Context, userID uuid.UUID) (at time.Time, failed bool, err error)
 
 	// GenresByLastActivity returns the genres of the user's recent Stories,
 	// newest first; it seeds genre choice when there are no ratings.
@@ -119,6 +129,10 @@ type Store interface {
 	// the first call ever for that Story (the at-most-once guard for writing
 	// its Practice Records).
 	MarkPracticed(ctx context.Context, storyID uuid.UUID, at time.Time) (bool, error)
+	// ResetPracticed undoes a MarkPracticed claim when the Story's practiced
+	// flag still holds exactly the value that call set (the rollback for a
+	// Practice Record append that failed after the claim).
+	ResetPracticed(ctx context.Context, storyID uuid.UUID, at time.Time) error
 
 	// UserIDs lists the users the background generator considers.
 	UserIDs(ctx context.Context) ([]uuid.UUID, error)

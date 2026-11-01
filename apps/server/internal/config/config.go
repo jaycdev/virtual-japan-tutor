@@ -271,6 +271,15 @@ func loadStory(getenv func(string) string, cfg *Config) error {
 	if cfg.Story.PromptKnownLimit, err = boundedInt(getenv, "STORY_PROMPT_KNOWN_LIMIT", story.DefaultPromptKnownLimit, 10, 5000); err != nil {
 		return err
 	}
+	// Failure backoff: while a user's newest Story is a gate failure younger
+	// than this, regeneration passes skip them (issue #10 review: a stuck
+	// provider costs one generation per window, not one per interval). "0"
+	// disables the backoff.
+	if getenv("STORY_RETRY_COOLDOWN") == "0" {
+		cfg.Story.RetryCooldown = 0
+	} else if cfg.Story.RetryCooldown, err = duration(getenv, "STORY_RETRY_COOLDOWN", story.DefaultRetryCooldown); err != nil {
+		return err
+	}
 	if cfg.StoryInterval, err = duration(getenv, "STORY_SCHEDULER_INTERVAL", 15*time.Minute); err != nil {
 		return err
 	}

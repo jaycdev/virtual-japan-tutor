@@ -351,6 +351,178 @@ func TestGenerateUnlinkedCountsUnknown(t *testing.T) {
 	}
 }
 
+func TestGenerateRejectsTooManyQuestionOptions(t *testing.T) {
+	// The prompt asks for exactly four options; the gate caps them, so a
+	// completion that rambles extra options is rejected (and its retry
+	// feedback says why) rather than stored with an unbounded list.
+	out := struct {
+		Genre     string  `json:"genre"`
+		Sentences []fSent `json:"sentences"`
+		Questions []fQ    `json:"questions"`
+	}{Genre: "travel"}
+	for range 4 {
+		out.Sentences = append(out.Sentences, fSent{JA: sentence(12, cleanClause), EN: "The cat found it."})
+	}
+	for range 3 {
+		out.Questions = append(out.Questions, fQ{
+			PromptJA:  "ねこは何を見つけましたか。",
+			OptionsJA: []string{"ねこ", "いぬ", "ほん", "さかな", "とり"},
+			AnswerIdx: 0,
+		})
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		t.Fatalf("payload: %v", err)
+	}
+
+	client := &fakeChat{responses: [][]byte{b}}
+	req := baseRequest()
+	req.Settings.MaxAttempts = 1
+	req.Known = fakeKnown{1: {IsKnown: true, SRSLevel: 5}, 2: {IsKnown: true, SRSLevel: 4}}
+
+	gen := NewGenerator(cleanLookup())
+	st, err := gen.Generate(context.Background(), client, req)
+	if err == nil {
+		t.Fatal("five options must be rejected")
+	}
+	if !strings.Contains(err.Error(), "options") {
+		t.Fatalf("error %q should name the options problem", err)
+	}
+	if st == nil || st.Validated {
+		t.Fatalf("candidate %+v, want stored unvalidated", st)
+	}
+}
+
+func TestGenerateStoresHiraganaReadings(t *testing.T) {
+	// Kagome reports surface readings in katakana (ネコ, ノミ); furigana is
+	// hiragana everywhere else in the app, so stored readings are converted
+	// to one script.
+	client := &fakeChat{responses: [][]byte{
+		fixture(t, "travel", cleanClause, cleanClause, cleanClause, cleanClause),
+	}}
+	req := baseRequest()
+	req.Settings.MaxAttempts = 1
+	req.Known = fakeKnown{1: {IsKnown: true, SRSLevel: 5}, 2: {IsKnown: true, SRSLevel: 4}}
+
+	gen := NewGenerator(cleanLookup())
+	st, err := gen.Generate(context.Background(), client, req)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	var checked int
+	for _, sen := range st.Sentences {
+		for _, tok := range sen.Tokens {
+			if tok.Reading == "" {
+				continue
+			}
+			for _, r := range tok.Reading {
+				if r >= 0x30A1 && r <= 0x30FA {
+					t.Fatalf("token %q reading %q still holds katakana", tok.Surface, tok.Reading)
+				}
+			}
+			checked++
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no readings to check")
+	}
+	if tok := st.Sentences[0].Tokens[0]; tok.Surface == "ねこ" && tok.Reading != "ねこ" {
+		t.Fatalf("reading for ねこ = %q, want hiragana", tok.Reading)
+	}
+}
+
+func TestToHiraganaKeepsMarksAndKana(t *testing.T) {
+	if got := toHiragana("コーヒー"); got != "こーひー" {
+		t.Fatalf("コーヒー -> %q, want こーひー (long-vowel mark stays)", got)
+	}
+	if got := toHiragana("ネコ"); got != "ねこ" {
+		t.Fatalf("ネコ -> %q, want ねこ", got)
+	}
+	if got := toHiragana("ねこ"); got != "ねこ" {
+		t.Fatalf("ねこ -> %q, want unchanged", got)
+	}
+	if got := toHiragana(""); got != "" {
+		t.Fatalf("empty -> %q", got)
+	}
+}
+
+func TestStripNulls(t *testing.T) {
+	// Postgres rejects \u0000 in text: a stray NUL from the model must not
+	// turn a storable story into a save failure.
+	if got := stripNulls("ねこ\x00はねこをみつけ\x00ました。"); got != "ねこはねこをみつけました。" {
+		t.Fatalf("stripNulls = %q", got)
+	}
+	if got := stripNulls("clean"); got != "clean" {
+		t.Fatalf("clean text changed: %q", got)
+	}
+}
+
+func TestGenerateAttemptsCountEveryModelCall(t *testing.T) {
+	// Attempts records what the candidate cost, including attempts that never
+	// produced a candidate: a gate failure followed by unparsable output
+	// spent two model calls, and the stored story says so.
+	client := &fakeChat{responses: [][]byte{
+		fixture(t, "travel", dirtyClause, dirtyClause, dirtyClause, dirtyClause),
+		[]byte("{not json at all"),
+	}}
+	req := baseRequest()
+	req.Settings.MaxAttempts = 2
+	req.Known = fakeKnown{1: {IsKnown: true, SRSLevel: 5}, 2: {IsKnown: true, SRSLevel: 4}}
+
+	gen := NewGenerator(cleanLookup())
+	st, err := gen.Generate(context.Background(), client, req)
+	if err == nil {
+		t.Fatal("want the gate's rejection surfaced as an error")
+	}
+	if st == nil {
+		t.Fatal("want the last usable candidate returned")
+	}
+	if st.Attempts != 2 || client.calls != 2 {
+		t.Fatalf("attempts=%d calls=%d, want 2 of each", st.Attempts, client.calls)
+	}
+}
+
+func TestMaterialiseCachesLookupMisses(t *testing.T) {
+	// The lookup cache covers misses as well as hits: a repeated unlinked
+	// word costs one query, not one per occurrence.
+	counting := &countingLookup{inner: cleanLookup()}
+	client := &fakeChat{responses: [][]byte{
+		fixture(t, "travel", dirtyClause, dirtyClause, dirtyClause, dirtyClause),
+	}}
+	req := baseRequest()
+	req.Settings.MaxAttempts = 1
+	req.Known = fakeKnown{1: {IsKnown: true, SRSLevel: 5}, 2: {IsKnown: true, SRSLevel: 4}}
+
+	gen := NewGenerator(counting)
+	if _, err := gen.Generate(context.Background(), client, req); err == nil {
+		t.Fatal("the unlinked ほん should have sunk coverage")
+	}
+	// ほん appears four times (once per sentence) but must be queried once;
+	// the two linked surfaces likewise once each.
+	for surface, n := range counting.counts {
+		if n != 1 {
+			t.Fatalf("lookup of %q called %d times, want 1 (misses are cached too)", surface, n)
+		}
+	}
+	if counting.counts["ほん"] != 1 {
+		t.Fatalf("ほん lookups = %d, want 1", counting.counts["ほん"])
+	}
+}
+
+// countingLookup counts how often each surface is queried.
+type countingLookup struct {
+	inner  fakeLookup
+	counts map[string]int
+}
+
+func (c *countingLookup) Lookup(ctx context.Context, surface, base string) (VocabHit, bool, error) {
+	if c.counts == nil {
+		c.counts = map[string]int{}
+	}
+	c.counts[surface]++
+	return c.inner.Lookup(ctx, surface, base)
+}
+
 func TestPickGenreSteeredByRatings(t *testing.T) {
 	got := PickGenre(map[string]map[Rating]int{
 		"travel":  {RatingUp: 3, RatingDown: 1},

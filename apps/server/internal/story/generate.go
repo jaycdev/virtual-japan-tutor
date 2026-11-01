@@ -132,8 +132,12 @@ func (g *Generator) Generate(ctx context.Context, client ChatClient, req Request
 	brief := msgs[1].Content
 	var last *Story
 	var lastErr error
+	// attemptsUsed counts every attempt that reached the model, parse and
+	// materialise failures included, so the stored candidate's Attempts says
+	// what it cost even when the final attempt never produced a candidate.
+	attemptsUsed := 0
 	for attempt := 1; attempt <= settings.MaxAttempts; attempt++ {
-		res, err := client.ChatJSON(ctx, msgs, Schema(), llm.Options{MaxTokens: 4000})
+		res, err := client.ChatJSON(ctx, msgs, Schema(), llm.Options{MaxTokens: 4000, Timeout: DefaultGenerationTimeout})
 		if err != nil {
 			// Provider-level failure: gate feedback cannot fix it. Report
 			// the last candidate if a previous attempt got that far.
@@ -142,6 +146,7 @@ func (g *Generator) Generate(ctx context.Context, client ChatClient, req Request
 			}
 			return nil, fmt.Errorf("story generation: %w", err)
 		}
+		attemptsUsed++
 		var raw storyJSON
 		if err := json.Unmarshal(res.JSON, &raw); err != nil {
 			lastErr = fmt.Errorf("story generation: parsing model output: %w", err)
@@ -183,6 +188,9 @@ func (g *Generator) Generate(ctx context.Context, client ChatClient, req Request
 			)
 		}
 	}
+	if last != nil {
+		last.Attempts = attemptsUsed
+	}
 	return last, lastErr
 }
 
@@ -194,27 +202,32 @@ func (g *Generator) Generate(ctx context.Context, client ChatClient, req Request
 func (g *Generator) materialise(ctx context.Context, raw *storyJSON, userID uuid.UUID, focus FocusSet, genre string) (*Story, error) {
 	s := &Story{UserID: userID, Genre: genre}
 	if s.Genre == "" {
-		s.Genre = raw.Genre
+		// The model names its own genre: a free-text label it can fill with
+		// anything, so it goes through the same sanitizer the user's stored
+		// preferences do before it is stored or shown.
+		s.Genre = sanitizeLabel(raw.Genre, maxLabelRunes)
 	}
 	if s.Genre == "" {
 		s.Genre = "free"
 	}
 	var texts []string
 	looked := map[string]VocabHit{} // surface → hit, so repeats cost one query
+	missed := map[string]bool{}     // surfaces that linked to nothing: also cached, so a repeated plant costs no query
 	for i, in := range raw.Sentences {
-		sen := Sentence{Pos: i, JA: in.JA, EN: in.EN}
-		toks, err := tokenise(in.JA)
+		sen := Sentence{Pos: i, JA: stripNulls(in.JA), EN: stripNulls(in.EN)}
+		toks, err := tokenise(sen.JA)
 		if err != nil {
 			return nil, err
 		}
 		for j, kt := range toks {
 			base, _ := kt.BaseForm()
 			reading, _ := kt.Reading()
-			tok := Token{Pos: j, Surface: kt.Surface, Start: kt.Start, End: kt.End, Reading: reading, Dictionary: base, Tag: TagUnknown}
+			tok := Token{Pos: j, Surface: kt.Surface, Start: kt.Start, End: kt.End, Reading: toHiragana(reading), Dictionary: base, Tag: TagUnknown}
 			if isContent(kt) {
 				tok.content = true
 				hit, ok := looked[kt.Surface]
-				if !ok {
+				miss := missed[kt.Surface]
+				if !ok && !miss {
 					var err error
 					hit, ok, err = g.lookup.Lookup(ctx, kt.Surface, base)
 					if err != nil {
@@ -222,6 +235,8 @@ func (g *Generator) materialise(ctx context.Context, raw *storyJSON, userID uuid
 					}
 					if ok {
 						looked[kt.Surface] = hit
+					} else {
+						missed[kt.Surface] = true
 					}
 				}
 				if ok {
@@ -244,7 +259,11 @@ func (g *Generator) materialise(ctx context.Context, raw *storyJSON, userID uuid
 		texts = append(texts, in.JA)
 	}
 	for i, q := range raw.Questions {
-		s.Questions = append(s.Questions, Question{Pos: i, PromptJA: q.PromptJA, OptionsJA: q.OptionsJA, AnswerIndex: q.AnswerIdx})
+		opts := make([]string, len(q.OptionsJA))
+		for j, o := range q.OptionsJA {
+			opts[j] = stripNulls(o)
+		}
+		s.Questions = append(s.Questions, Question{Pos: i, PromptJA: stripNulls(q.PromptJA), OptionsJA: opts, AnswerIndex: q.AnswerIdx})
 	}
 	s.Text = strings.Join(texts, "")
 
@@ -421,6 +440,39 @@ func (f FocusSet) hasGrammar(pointID int64) bool {
 	return false
 }
 
+// stripNulls removes NUL characters: Postgres rejects \u0000 in text, and a
+// model that emits one should produce a storable story, not a save failure.
+func stripNulls(s string) string {
+	if !strings.ContainsRune(s, 0) {
+		return s
+	}
+	return strings.ReplaceAll(s, "\x00", "")
+}
+
+// toHiragana converts kagome's surface reading to hiragana: katakana
+// morphemes (シズカ) tokenise with a katakana reading, and furigana is
+// hiragana everywhere else (dictionary readings included), so readings are
+// stored in one script. The long-vowel mark and iteration marks stay as they
+// are; only the base katakana block (U+30A1–U+30FA, plus the small ン U+30FC
+// is not converted) shifts by the fixed 0x60 offset to its hiragana twin.
+func toHiragana(s string) string {
+	if s == "" {
+		return s
+	}
+	out := []rune(s)
+	changed := false
+	for i, r := range out {
+		if r >= 0x30A1 && r <= 0x30FA {
+			out[i] = r - 0x60
+			changed = true
+		}
+	}
+	if !changed {
+		return s
+	}
+	return string(out)
+}
+
 // onTokenBoundary reports whether [start,end) covers whole kagome tokens.
 func onTokenBoundary(toks []Token, start, end int) bool {
 	for i, t := range toks {
@@ -549,7 +601,7 @@ const storySchemaJSON = `{"type":"object","properties":{
 		"type":"object",
 		"properties":{
 			"prompt_ja":{"type":"string"},
-			"options_ja":{"type":"array","minItems":2,"items":{"type":"string"}},
+			"options_ja":{"type":"array","minItems":2,"maxItems":4,"items":{"type":"string"}},
 			"answer_index":{"type":"integer"}
 		},
 		"required":["prompt_ja","options_ja","answer_index"],
