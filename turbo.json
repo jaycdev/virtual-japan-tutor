@@ -1,0 +1,16 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "tasks": {
+    "generate": {
+      "inputs": ["$TURBO_ROOT$/api/openapi.yaml", "package.json", "internal/api/oapi-codegen.yaml"],
+      "outputs": ["src/generated/**", "internal/api/api.gen.go"]
+    },
+    "build": {
+      "dependsOn": ["^build", "generate"],
+      "outputs": ["dist/**", "bin/**"]
+    },
+    "typecheck": { "dependsOn": ["^build", "generate"] },
+    "lint": { "dependsOn": ["^build", "generate"] },
+    "test": { "dependsOn": ["^build", "generate"] }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "name": "virtual-japan-tutor",
+  "private": true,
+  "packageManager": "pnpm@10.33.2",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "generate": "turbo run generate",
+    "generate:force": "turbo run generate --force",
+    "check:generated": "node scripts/check-generated.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.14.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.13.0",
+    "turbo": "^2.11.10",
+    "typescript": "catalog:",
+    "typescript-eslint": "^8.72.1"
+  }
+}
