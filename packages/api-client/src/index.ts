@@ -48,6 +48,11 @@ export type StoryRating = components["schemas"]["StoryRating"];
 export type StorySettings = components["schemas"]["StorySettings"];
 export type StoryAnswer = components["schemas"]["StoryAnswer"];
 export type StoryAnswerResult = components["schemas"]["StoryAnswerResult"];
+export type ReadingSettings = components["schemas"]["ReadingSettings"];
+export type DictionaryEntry = components["schemas"]["DictionaryEntry"];
+export type DictionarySense = components["schemas"]["DictionarySense"];
+export type DictionaryKanji = components["schemas"]["DictionaryKanji"];
+export type PitchPattern = components["schemas"]["PitchPattern"];
 export type ApiMiddleware = Middleware;
 
 export interface ApiClientOptions {

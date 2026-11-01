@@ -9,6 +9,8 @@ export type { MaruMori, MaruMoriRunsState, MaruMoriState, SyncOutcome } from "./
 export { usePractice } from "./usePractice.ts";
 export type { AnswerFeedback, ExerciseView, PracticeView } from "./usePractice.ts";
 export { NO_READY_STORY, useStory } from "./useStory.ts";
+export { useReadingSettings } from "./useReadingSettings.ts";
+export type { ReadingSettingsState, ReadingSettingsView } from "./useReadingSettings.ts";
 export type {
   StoryLibraryState,
   StoryQuestionView,

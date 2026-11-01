@@ -40,7 +40,17 @@ function story(overrides: Partial<Story> = {}): Story {
           },
           { surface: "で", start: 4, end: 5, reading: "で", tag: "unknown", showFurigana: true },
         ],
-        grammarSpans: [{ start: 9, end: 13, grammarPointId: "12" }],
+        grammarSpans: [
+          {
+            start: 9,
+            end: 13,
+            grammarPointId: "12",
+            isFocus: false,
+            pattern: "～てしまう",
+            meaning: "completing something",
+            jlptLevel: "N4",
+          },
+        ],
       },
     ],
     questions: [

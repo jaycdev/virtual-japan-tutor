@@ -1,6 +1,24 @@
-import type { ApiClient, Story as StoryData, StorySettings, StoryToken } from "@vjt/api-client";
-import { useStory, type StoryView } from "@vjt/core";
-import { useState, type FormEvent } from "react";
+import type {
+  ApiClient,
+  DictionaryEntry,
+  GrammarPointDetail,
+  PitchPattern,
+  Story as StoryData,
+  StoryGrammarSpan,
+  StorySettings,
+  StoryToken,
+} from "@vjt/api-client";
+import { useReadingSettings, useStory, type StoryView } from "@vjt/core";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
+import "./reader.css";
 
 /**
  * Stories (issue #10): read the Story the background generator has ready,
@@ -10,10 +28,18 @@ import { useState, type FormEvent } from "react";
  * settings (Furigana Threshold, preferred genre/theme). Generation is never
  * triggered from this screen, so opening a story is instant.
  *
- * Sentences render token by token: the reading goes above the surface as
- * ruby text wherever the server's `showFurigana` says so (unknown tokens,
- * and Known Items below the Learner's Furigana Threshold), and Grammar
- * Spans underline the morphemes they cover.
+ * The reader itself (issue #11) puts a fixed-size Reading Panel above the
+ * story: tapping any word or punctuation selects its sentence (shown with
+ * furigana from the story's tokens, and the translation blurred until
+ * clicked — a preference remembered across sessions). Hovering or tabbing
+ * to a word fills the single-line Lookup row with its reading, first
+ * glosses, pitch graph and JLPT badge — instantly, from a cached lookup —
+ * while Grammar Spans show their point's pattern and meaning instead. A
+ * tapped word opens a menu (Dictionary · Save · Save to…); Dictionary
+ * opens a Dictionary Entry window with the full JMdict entry, the
+ * Learner's MaruMori state for the word and each of its kanji, and the
+ * Kanjium pitch pattern when we have one. Everything reachable by mouse is
+ * reachable by keyboard: tokens are buttons, Escape closes menus/windows.
  */
 export function Stories({ client }: { client: ApiClient }) {
   const view = useStory(client);
@@ -25,7 +51,7 @@ export function Stories({ client }: { client: ApiClient }) {
           {view.error}
         </p>
       )}
-      {view.open && view.story ? <StoryReader view={view} /> : <StoryLibrary view={view} />}
+      {view.open && view.story ? <StoryReader view={view} client={client} /> : <StoryLibrary view={view} />}
       <StorySettingsForm view={view} />
     </section>
   );
@@ -85,10 +111,60 @@ function StoryLibrary({ view }: { view: StoryView }) {
   );
 }
 
-function StoryReader({ view }: { view: StoryView }) {
+/** What the Lookup row is describing right now: a hovered/focused word, or a Grammar Span. */
+type HoverTarget = { kind: "token"; sentence: number; index: number } | { kind: "grammar"; sentence: number; index: number };
+
+/** The token menu that is open (Dictionary · Save · Save to…), if any. */
+type OpenMenu = { sentence: number; index: number };
+
+/** An open Dictionary Entry or Grammar Point window. */
+type OpenWindow =
+  | { kind: "dictionary"; key: string; entSeq: number; surface: string; reading?: string }
+  | { kind: "grammar"; key: string; grammarPointId: string };
+
+function StoryReader({ view, client }: { view: StoryView; client: ApiClient }) {
   const story = view.story as StoryData;
+  const reading = useReadingSettings(client);
+  const lookup = useEntryLookup(client);
+  const [selected, setSelected] = useState<number | null>(null);
+  const [hovered, setHovered] = useState<HoverTarget | null>(null);
+  const [menu, setMenu] = useState<OpenMenu | null>(null);
+  const [windows, setWindows] = useState<OpenWindow[]>([]);
+
+  const openWindow = useCallback((w: OpenWindow) => {
+    setWindows((prev) => (prev.some((x) => x.key === w.key) ? prev : [...prev, w]));
+  }, []);
+
+  const dismissAll = useCallback(() => {
+    setMenu(null);
+    setWindows([]);
+    setHovered(null);
+  }, []);
+
+  const onTokenActivate = (sentenceIdx: number, tokenIdx: number) => {
+    const sentence = story.sentences[sentenceIdx];
+    const token = sentence?.tokens[tokenIdx];
+    if (!sentence || !token) return;
+    const span = coveringSpan(sentence, token);
+    setSelected(sentenceIdx);
+    if (span) {
+      setMenu(null);
+      openWindow({ kind: "grammar", key: `grammar-${span.grammarPointId}`, grammarPointId: span.grammarPointId });
+      return;
+    }
+    if (menu && menu.sentence === sentenceIdx && menu.index === tokenIdx) {
+      setMenu(null);
+      return;
+    }
+    setMenu({ sentence: sentenceIdx, index: tokenIdx });
+  };
+
+  const escape = (e: KeyboardEvent<HTMLElement>) => {
+    if (e.key === "Escape") dismissAll();
+  };
+
   return (
-    <>
+    <section onKeyDown={escape}>
       <p>
         <button type="button" onClick={view.close}>
           ← Library
@@ -98,15 +174,73 @@ function StoryReader({ view }: { view: StoryView }) {
         {story.genre} <span className="muted">{new Date(story.createdAt).toDateString()}</span>
       </h3>
       <RatingButtons view={view} story={story} />
+
+      <ReadingPanel story={story} selected={selected} hovered={hovered} lookup={lookup} reading={reading} />
+
       {story.sentences.map((sen, i) => (
-        <p key={i}>
-          {sen.tokens.map((tok, j) => (
-            <TokenText key={j} token={tok} spans={sen.grammarSpans ?? []} />
-          ))}
-          <br />
-          <span className="muted">{sen.en}</span>
+        <p key={i} className="story-sentence" onClick={() => setSelected(i)}>
+          <SentenceText
+            sentence={sen}
+            tokens={sen.tokens}
+            renderToken={(tok, j) => (
+              <TokenButton
+                key={j}
+                token={tok}
+                spans={sen.grammarSpans}
+                hovered={hovered?.kind === "token" && hovered.sentence === i && hovered.index === j}
+                onEnter={() => {
+                  setHovered({ kind: coveringSpan(sen, tok) ? "grammar" : "token", sentence: i, index: j });
+                  if (coveringSpan(sen, tok) === null && tok.entSeq !== undefined) {
+                    lookup.load(tok.entSeq, tok.surface, tok.reading);
+                  }
+                }}
+                onLeave={() =>
+                  setHovered((h) => (h && h.sentence === i && h.index === j ? null : h))
+                }
+                onActivate={() => onTokenActivate(i, j)}
+                menu={
+                  menu && menu.sentence === i && menu.index === j ? (
+                    <TokenMenu
+                      token={tok}
+                      onDictionary={() => {
+                        if (tok.entSeq === undefined) return;
+                        setMenu(null);
+                        openWindow({
+                          kind: "dictionary",
+                          key: `entry-${tok.entSeq}-${tok.surface}`,
+                          entSeq: tok.entSeq,
+                          surface: tok.surface,
+                          reading: tok.reading,
+                        });
+                      }}
+                    />
+                  ) : null
+                }
+              />
+            )}
+          />
         </p>
       ))}
+
+      {windows.map((w) =>
+        w.kind === "dictionary" ? (
+          <DictionaryWindow
+            key={w.key}
+            client={client}
+            entry={w}
+            cached={lookup.peek(w.entSeq, w.surface, w.reading)}
+            onClose={() => setWindows((prev) => prev.filter((x) => x.key !== w.key))}
+          />
+        ) : (
+          <GrammarWindow
+            key={w.key}
+            client={client}
+            grammarPointId={w.grammarPointId}
+            onClose={() => setWindows((prev) => prev.filter((x) => x.key !== w.key))}
+          />
+        ),
+      )}
+
       <h4>Comprehension</h4>
       {view.questions.map((q) => {
         const settled = q.result !== null;
@@ -137,27 +271,515 @@ function StoryReader({ view }: { view: StoryView }) {
           </div>
         );
       })}
+    </section>
+  );
+}
+
+/**
+ * The Reading Panel: fixed size, stuck to the top while the story scrolls.
+ * The selected sentence (with furigana) and its translation live in a
+ * two-line area that scrolls internally rather than resizing the panel; the
+ * Lookup row below it is a single line.
+ */
+function ReadingPanel({
+  story,
+  selected,
+  hovered,
+  lookup,
+  reading,
+}: {
+  story: StoryData;
+  selected: number | null;
+  hovered: HoverTarget | null;
+  lookup: EntryLookup;
+  reading: ReturnType<typeof useReadingSettings>;
+}) {
+  const blur = reading.state.status === "ready" ? reading.state.settings.blurTranslation : true;
+  const sen = selected !== null ? story.sentences[selected] : null;
+  return (
+    <div className="reading-panel" aria-label="Reading Panel">
+      <div className="sentence-area">
+        {sen ? (
+          <>
+            <span className="panel-sentence">
+              <SentenceText sentence={sen} tokens={sen.tokens} renderToken={(tok, j) => <TokenRuby key={j} token={tok} />} />
+            </span>{" "}
+            <span
+              className={`translation ${blur ? "blurred" : "revealed"}`}
+              role="button"
+              tabIndex={0}
+              title={blur ? "Translation is blurred — click to show it" : "Click to blur the translation"}
+              aria-pressed={!blur}
+              onClick={() => void reading.setBlurTranslation(!blur)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  void reading.setBlurTranslation(!blur);
+                }
+              }}
+            >
+              {sen.en}
+            </span>
+            {reading.state.status === "error" && (
+              <span className="muted"> (reading settings unavailable — {reading.state.message})</span>
+            )}
+          </>
+        ) : (
+          <span className="muted">Tap a word or punctuation to select its sentence.</span>
+        )}
+      </div>
+      <div className="lookup-row" aria-live="polite">
+        <LookupRow story={story} hovered={hovered} lookup={lookup} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The single Lookup row line. A word: the word in blue, its reading in
+ * orange, the first two glosses ("…" when the entry has more), and on the
+ * right the pitch graph then the JLPT badge — all from the cached entry the
+ * hover triggered, so repeat hovers are instant. A Grammar Span instead
+ * shows the Grammar Point's pattern and meaning straight from the story
+ * payload — no request needed.
+ */
+function LookupRow({
+  story,
+  hovered,
+  lookup,
+}: {
+  story: StoryData;
+  hovered: HoverTarget | null;
+  lookup: EntryLookup;
+}) {
+  if (!hovered) return <span className="muted">Hover or Tab to a word to look it up.</span>;
+  const sen = story.sentences[hovered.sentence];
+  if (!sen) return null;
+  if (hovered.kind === "grammar") {
+    const token = sen.tokens[hovered.index];
+    const span = token ? coveringSpan(sen, token) : null;
+    if (!span) return null;
+    return (
+      <>
+        <span className="lookup-word">{span.pattern}</span>
+        <span className="lookup-glosses">{span.meaning}</span>
+        <span className="lookup-right">
+          <JlptBadge level={span.jlptLevel} />
+        </span>
+      </>
+    );
+  }
+  const token = sen.tokens[hovered.index];
+  if (!token) return null;
+  const entry = token.entSeq !== undefined ? lookup.peek(token.entSeq, token.surface, token.reading) : undefined;
+  // Until the entry arrives, a story Focus Set item already has a gloss to show.
+  const seedGloss = entry ? undefined : story.vocabItems?.find((v) => v.entSeq === token.entSeq)?.en;
+  const glosses = entry ? firstGlosses(entry, 2) : seedGloss ? [seedGloss] : [];
+  const more = entry ? countGlosses(entry) > glosses.length : false;
+  return (
+    <>
+      <span className="lookup-word">{token.surface}</span>
+      {token.reading && token.reading !== token.surface && <span className="lookup-reading">{token.reading}</span>}
+      {glosses.length > 0 && (
+        <span className="lookup-glosses">
+          {glosses.join(", ")}
+          {more ? "…" : ""}
+        </span>
+      )}
+      <span className="lookup-right">
+        {entry?.pitch && <PitchGraph pitch={entry.pitch} />}
+        {entry?.jlptLevel && <JlptBadge level={entry.jlptLevel} />}
+      </span>
     </>
   );
 }
 
-/** One morpheme: ruby reading when the server asked for furigana, underlined when a Grammar Span covers it. */
-function TokenText({ token, spans }: { token: StoryToken; spans: NonNullable<StoryData["sentences"][number]["grammarSpans"]> }) {
-  const covered = spans.filter((sp) => token.start < sp.end && sp.start < token.end);
-  const spanTitle = covered.map((sp) => `grammar point ${sp.grammarPointId}`).join(", ");
-  const body =
-    token.showFurigana && token.reading ? (
+/** The menu over a tapped word. Save / Save to… arrive with Saved Items (issue #12). */
+function TokenMenu({ token, onDictionary }: { token: StoryToken; onDictionary: () => void }) {
+  const later = { disabled: true, title: "Saving words comes with Saved Items (issue #12)" } as const;
+  return (
+    <span className="token-menu" role="menu" onClick={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        role="menuitem"
+        disabled={token.entSeq === undefined}
+        title={token.entSeq === undefined ? "This word did not match a dictionary entry" : undefined}
+        onClick={onDictionary}
+      >
+        Dictionary
+      </button>
+      <button type="button" role="menuitem" {...later}>
+        Save
+      </button>
+      <button type="button" role="menuitem" {...later}>
+        Save to…
+      </button>
+    </span>
+  );
+}
+
+/** A floating Dictionary Entry window. */
+function DictionaryWindow({
+  client,
+  entry,
+  cached,
+  onClose,
+}: {
+  client: ApiClient;
+  entry: { entSeq: number; surface: string; reading?: string };
+  cached: DictionaryEntry | undefined;
+  onClose: () => void;
+}) {
+  const [data, setData] = useState<DictionaryEntry | null>(cached ?? null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(cached === undefined);
+
+  useEffect(() => {
+    // Start with the cached entry when the hover already fetched it; otherwise
+    // the window loads its own copy.
+    if (cached) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { data: got, error: err } = await client.GET("/dictionary/entries/{entSeq}", {
+          params: {
+            path: { entSeq: String(entry.entSeq) },
+            query: { surface: entry.surface, reading: entry.reading },
+          },
+        });
+        if (cancelled) return;
+        if (got) setData(got);
+        else setError(err?.message ?? "Cannot load this entry");
+      } catch {
+        if (!cancelled) setError("Cannot reach the server");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [client, entry.entSeq, entry.surface, entry.reading, cached]);
+
+  return (
+    <section className="entry-window" aria-label={`Dictionary entry: ${entry.surface}`}>
+      <p className="entry-head">
+        <strong>{data?.headword ?? entry.surface}</strong>
+        {data?.reading && data.reading !== data.headword && <span className="lookup-reading"> {data.reading}</span>}
+        {data?.jlptLevel && <JlptBadge level={data.jlptLevel} />}
+        <button type="button" aria-label="Close entry window" onClick={onClose}>
+          ×
+        </button>
+      </p>
+      {loading && <p className="muted">Loading entry…</p>}
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+      {data && !data.found && <p className="muted">The dictionary has no entry behind this word.</p>}
+      {data && data.found && (
+        <>
+          {data.srsLevel !== null && (
+            <p className="entry-srs">
+              Known item — SRS Level {data.srsLevel}, Mastery {Math.round((data.mastery ?? 0) * 100)}%
+            </p>
+          )}
+          <ol className="senses">
+            {data.senses.map((sense, i) => (
+              <li key={i}>
+                {sense.partsOfSpeech.length > 0 && <em className="pos">{sense.partsOfSpeech.join(", ")} — </em>}
+                {sense.glosses.join("; ")}
+              </li>
+            ))}
+          </ol>
+          {data.kanjiForms.length > 0 && <p className="forms">Kanji forms: {data.kanjiForms.join("、")}</p>}
+          {data.readings.length > 0 && <p className="forms">Readings: {data.readings.join("、")}</p>}
+          {data.pitch && (
+            <p className="pitch-row">
+              Pitch <PitchGraph pitch={data.pitch} />{" "}
+              <span className="muted">
+                {data.pitch.heiban ? "heiban (flat)" : `downstep after mora ${data.pitch.downstepAfterMora}`}
+              </span>
+            </p>
+          )}
+          {data.kanji.length > 0 && (
+            <table className="kanji-table">
+              <caption>Kanji in this word</caption>
+              <tbody>
+                {data.kanji.map((k) => (
+                  <tr key={k.literal}>
+                    <td>{k.literal}</td>
+                    <td>{k.known ? "known" : "new"}</td>
+                    <td>{k.srsLevel !== null ? `SRS ${k.srsLevel}` : ""}</td>
+                    <td>{k.mastery !== null ? `${Math.round(k.mastery * 100)}%` : ""}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+/** A floating Grammar Point window: explanation and examples from the catalogue. */
+function GrammarWindow({
+  client,
+  grammarPointId,
+  onClose,
+}: {
+  client: ApiClient;
+  grammarPointId: string;
+  onClose: () => void;
+}) {
+  const [data, setData] = useState<GrammarPointDetail | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { data: got, error: err } = await client.GET("/grammar/points/{id}", {
+          params: { path: { id: grammarPointId } },
+        });
+        if (cancelled) return;
+        if (got) setData(got);
+        else setError(err?.message ?? "Cannot load this grammar point");
+      } catch {
+        if (!cancelled) setError("Cannot reach the server");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [client, grammarPointId]);
+
+  return (
+    <section className="entry-window" aria-label={`Grammar point ${grammarPointId}`}>
+      <p className="entry-head">
+        <strong>{data?.pattern ?? `Grammar point ${grammarPointId}`}</strong>
+        {data && <JlptBadge level={data.jlptLevel} />}
+        <button type="button" aria-label="Close grammar window" onClick={onClose}>
+          ×
+        </button>
+      </p>
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+      {data && (
+        <>
+          <p>{data.meaning}</p>
+          {data.explanation ? (
+            <p className="explanation" style={{ whiteSpace: "pre-line" }}>
+              {data.explanation}
+            </p>
+          ) : (
+            <p className="muted">No explanation for this point yet.</p>
+          )}
+          {data.examples.length > 0 && (
+            <ul className="examples">
+              {data.examples.map((ex) => (
+                <li key={ex.id}>
+                  <span>
+                    {ex.sentenceJa.slice(0, ex.spanStart)}
+                    <mark>{ex.sentenceJa.slice(ex.spanStart, ex.spanEnd)}</mark>
+                    {ex.sentenceJa.slice(ex.spanEnd)}
+                  </span>{" "}
+                  <span className="muted">{ex.translationEn}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+/** The mora pitch graph, drawn from Kanjium numbers only when we have them. */
+function PitchGraph({ pitch }: { pitch: PitchPattern }) {
+  const w = 10;
+  const high = 3;
+  const low = 15;
+  const y = (m: number) => (pitch.heiban ? (m === 1 ? low : high) : m <= pitch.accentPosition ? high : low);
+  const pts: string[] = [];
+  for (let m = 1; m <= pitch.moraCount; m++) pts.push(`${(m - 1) * w},${y(m)}`);
+  pts.push(`${pitch.moraCount * w + 4},${low}`); // the drop after the downstep
+  return (
+    <svg className="pitch-graph" width={pitch.moraCount * w + 8} height={18} role="img" aria-label={`Pitch pattern for ${pitch.reading}`}>
+      <polyline points={pts.join(" ")} fill="none" stroke="#1a56db" strokeWidth={1.5} />
+    </svg>
+  );
+}
+
+function JlptBadge({ level }: { level: string }) {
+  return <span className="jlpt-badge">{level}</span>;
+}
+
+function countGlosses(entry: DictionaryEntry): number {
+  return entry.senses.reduce((n, s) => n + s.glosses.length, 0);
+}
+
+function firstGlosses(entry: DictionaryEntry, n: number): string[] {
+  const out: string[] = [];
+  for (const sense of entry.senses) {
+    for (const g of sense.glosses) {
+      out.push(g);
+      if (out.length >= n) return out;
+    }
+  }
+  return out;
+}
+
+/**
+ * Cached on-demand dictionary lookups powering the Lookup row. Hovering a
+ * word fetches its entry (keyed by entSeq + the tapped form so the echoed
+ * headword and the reading's pitch are right) and caches it; repeated hovers
+ * and the Dictionary window then need no new request.
+ */
+interface EntryLookup {
+  load(entSeq: number, surface?: string, reading?: string): void;
+  peek(entSeq: number, surface?: string, reading?: string): DictionaryEntry | undefined;
+}
+
+function useEntryLookup(client: ApiClient): EntryLookup {
+  const [cache, setCache] = useState<Map<string, DictionaryEntry>>(() => new Map());
+  const inflight = useRef<Set<string>>(new Set());
+
+  const key = (entSeq: number, surface?: string, reading?: string) => `${entSeq}|${surface ?? ""}|${reading ?? ""}`;
+
+  const load = useCallback(
+    (entSeq: number, surface?: string, reading?: string) => {
+      const k = key(entSeq, surface, reading);
+      if (cache.has(k) || inflight.current.has(k)) return;
+      inflight.current.add(k);
+      void (async () => {
+        try {
+          const { data } = await client.GET("/dictionary/entries/{entSeq}", {
+            params: { path: { entSeq: String(entSeq) }, query: { surface, reading } },
+          });
+          if (data) setCache((prev) => new Map(prev).set(k, data));
+        } catch {
+          /* the Lookup row simply stays empty; the window shows the error */
+        } finally {
+          inflight.current.delete(k);
+        }
+      })();
+    },
+    [client, cache],
+  );
+
+  const peek = useCallback((entSeq: number, surface?: string, reading?: string) => cache.get(key(entSeq, surface, reading)), [cache]);
+
+  return { load, peek };
+}
+
+/** The Grammar Span covering this token, if any. */
+function coveringSpan(sentence: StoryData["sentences"][number], token: StoryToken): StoryGrammarSpan | null {
+  for (const sp of sentence.grammarSpans) {
+    if (token.start < sp.end && sp.start < token.end) return sp;
+  }
+  return null;
+}
+
+/**
+ * Renders a sentence's tokens in order, splicing in any characters the
+ * tokeniser left out (punctuation) as plain text, using the codepoint
+ * offsets both the server and String iterators agree on for this text.
+ */
+function SentenceText({
+  sentence,
+  tokens,
+  renderToken,
+}: {
+  sentence: StoryData["sentences"][number];
+  tokens: StoryToken[];
+  renderToken: (token: StoryToken, index: number) => ReactNode;
+}) {
+  const chars = Array.from(sentence.ja);
+  const out: ReactNode[] = [];
+  let cursor = 0;
+  tokens.forEach((tok, j) => {
+    if (tok.start > cursor) out.push(<span key={`gap-${j}`}>{chars.slice(cursor, tok.start).join("")}</span>);
+    out.push(renderToken(tok, j));
+    cursor = Math.max(cursor, tok.end);
+  });
+  if (cursor < chars.length) out.push(<span key="gap-end">{chars.slice(cursor).join("")}</span>);
+  return <>{out}</>;
+}
+
+/** A token in the Reading Panel: ruby reading when the server asked for furigana. */
+function TokenRuby({ token }: { token: StoryToken }) {
+  if (token.showFurigana && token.reading) {
+    return (
       <ruby>
         {token.surface}
         <rt>{token.reading}</rt>
       </ruby>
-    ) : (
-      token.surface
     );
-  if (covered.length === 0) return <span>{body}</span>;
+  }
+  return <span>{token.surface}</span>;
+}
+
+/**
+ * A token in the story body: a real button so Tab reaches every word and
+ * Enter opens its menu. Underline rules: solid = Known Item, dotted =
+ * unknown with a dictionary entry, none = unlinked; Grammar Spans override
+ * with a wavy line (bold for the story's focus grammar).
+ */
+function TokenButton({
+  token,
+  spans,
+  hovered,
+  onEnter,
+  onLeave,
+  onActivate,
+  menu,
+}: {
+  token: StoryToken;
+  spans: StoryGrammarSpan[];
+  hovered: boolean;
+  onEnter: () => void;
+  onLeave: () => void;
+  onActivate: () => void;
+  menu: ReactNode;
+}) {
+  const covered = spans.filter((sp) => token.start < sp.end && sp.start < token.end);
+  const cls = ["token"];
+  if (covered.length > 0) {
+    cls.push("tok-grammar");
+    if (covered.some((sp) => sp.isFocus)) cls.push("tok-grammar-focus");
+  } else if (token.tag === "known") {
+    cls.push("tok-known");
+  } else if (token.entSeq !== undefined) {
+    cls.push("tok-dotted");
+  } else {
+    cls.push("tok-plain");
+  }
+  if (hovered) cls.push("is-hovered");
+  const title = covered.map((sp) => `${sp.pattern}: ${sp.meaning}`).join(" / ") || undefined;
   return (
-    <span className="grammar-span" title={spanTitle}>
-      {body}
+    <span className="token-wrap">
+      <button
+        type="button"
+        className={cls.join(" ")}
+        title={title}
+        onMouseEnter={onEnter}
+        onMouseLeave={onLeave}
+        onFocus={onEnter}
+        onBlur={onLeave}
+        onClick={(e) => {
+          e.stopPropagation();
+          onActivate();
+        }}
+      >
+        <TokenRuby token={token} />
+      </button>
+      {menu}
     </span>
   );
 }
