@@ -18,9 +18,10 @@ export function useHealth(client: ApiClient): HealthState {
     };
 
     client.GET("/health").then(
-      ({ data, error }) => {
+      ({ data, error: degraded }) => {
+        // `degraded` is the 503 response body (a Health payload), not an exception.
         if (data) set({ state: "ok", health: data });
-        else if (error) set({ state: "degraded", health: error });
+        else if (degraded) set({ state: "degraded", health: degraded });
         else set({ state: "error", message: "Empty response" });
       },
       (err: unknown) =>
