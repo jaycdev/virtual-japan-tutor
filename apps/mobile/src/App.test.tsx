@@ -67,6 +67,12 @@ function makeFetch(log: LoggedRequest[]): typeof fetch {
     if (path === '/practice/session') {
       return jsonResponse({ practiceSessionId: 'practice-1', items: [] });
     }
+    if (request.method === 'GET' && path === '/stories') {
+      return jsonResponse({ items: [], total: 0, limit: 10, offset: 0 });
+    }
+    if (request.method === 'GET' && path === '/story-settings') {
+      return jsonResponse({ furiganaThresholdSrsLevel: 3, preferredGenre: '', preferredTheme: '' });
+    }
     return jsonResponse({ message: `stub: unexpected ${request.method} ${path}` }, 500);
   }) as unknown as typeof fetch;
 }
@@ -116,6 +122,24 @@ describe('mobile App', () => {
       expect(screen.getByRole('tab', { name: 'Practice' })).toBeTruthy();
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens the Story Library from the Stories tab against the session host', async () => {
+    const store = fakeStore({ 'vjt.token': 'session-1' });
+    renderApp(store, fetchMock);
+
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: 'Practice' })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole('tab', { name: 'Stories' }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Story Library')).toBeTruthy();
+    });
+    expect(screen.getByText(/No stories yet/)).toBeTruthy();
+    expect(
+      logged.some((r) => new URL(r.url).pathname === '/stories' && r.authorization === 'Bearer session-1'),
+    ).toBe(true);
   });
 
   it('signs in and persists the session token to secure storage', async () => {

@@ -10,6 +10,7 @@ import { normalizeServerUrl, resolveApiBaseUrl } from "./src/config.ts";
 import { Practice } from "./src/Practice.tsx";
 import { secureStoreServerUrl, type ServerUrlStorage } from "./src/serverUrlStorage.ts";
 import { SettingsHome } from "./src/SettingsHome.tsx";
+import { Stories } from "./src/Stories.tsx";
 import { MIN_TOUCH, useColors } from "./src/theme.ts";
 import { secureStoreTokenStorage } from "./src/tokenStorage.ts";
 import { ErrorText, Field, LinkButton, Muted, PrimaryButton, Screen, Scroll, Title } from "./src/ui.tsx";
@@ -242,7 +243,7 @@ function ChangeServer({
   );
 }
 
-type Tab = "practice" | "settings";
+type Tab = "practice" | "stories" | "settings";
 
 function Shell({
   client,
@@ -268,6 +269,12 @@ function Shell({
               <Practice client={client} />
             </Scroll>
           </Screen>
+        ) : tab === "stories" ? (
+          // No outer Scroll: the reader is a fixed layout (text area, Reading
+          // Panel) with its own scrolling; the library scrolls itself.
+          <Screen>
+            <Stories client={client} />
+          </Screen>
         ) : (
           <SettingsHome
             client={client}
@@ -288,6 +295,7 @@ function TabBar({ tab, onSelect }: { tab: Tab; onSelect: (tab: Tab) => void }) {
   const insets = useSafeAreaInsets();
   const tabs: { id: Tab; label: string }[] = [
     { id: "practice", label: "Practice" },
+    { id: "stories", label: "Stories" },
     { id: "settings", label: "Settings" },
   ];
   return (
