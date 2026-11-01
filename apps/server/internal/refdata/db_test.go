@@ -2,63 +2,20 @@ package refdata_test
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
-	"net/url"
 	"os"
 	"reflect"
-	"sync"
 	"testing"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/db"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/dbtest"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/refdata"
 )
 
-// These tests need a real Postgres; set TEST_DATABASE_URL to run them (CI does).
-// Each test works in its own schema so packages can test in parallel.
+// testPool is an isolated, migrated schema; the test skips without TEST_DATABASE_URL.
 func testPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	base := os.Getenv("TEST_DATABASE_URL")
-	if base == "" {
-		t.Skip("TEST_DATABASE_URL not set")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
-	admin, err := db.Open(ctx, base)
-	if err != nil {
-		t.Fatal(err)
-	}
-	b := make([]byte, 6)
-	_, _ = rand.Read(b)
-	schema := "refdata_test_" + hex.EncodeToString(b)
-	if _, err := admin.Exec(ctx, "CREATE SCHEMA "+schema); err != nil {
-		t.Fatal(err)
-	}
-
-	u, err := url.Parse(base)
-	if err != nil {
-		t.Fatal(err)
-	}
-	q := u.Query()
-	q.Set("search_path", schema)
-	u.RawQuery = q.Encode()
-	if err := db.Migrate(ctx, u.String()); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	pool, err := db.Open(ctx, u.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		pool.Close()
-		_, _ = admin.Exec(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
-		admin.Close()
-	})
-	return pool
+	return dbtest.New(t)
 }
 
 func fixtureParams(pool *pgxpool.Pool, datasets ...refdata.Dataset) refdata.ImportParams {
@@ -70,16 +27,10 @@ func fixtureParams(pool *pgxpool.Pool, datasets ...refdata.Dataset) refdata.Impo
 	}
 }
 
-var (
-	importOnce sync.Mutex
-)
-
 // importedPool returns a pool whose schema already holds the fixture import.
 func importedPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	pool := testPool(t)
-	importOnce.Lock() // keep fixture imports from different tests from interleaving log output
-	defer importOnce.Unlock()
 	if _, err := refdata.Import(context.Background(), fixtureParams(pool)); err != nil {
 		t.Fatalf("import: %v", err)
 	}
