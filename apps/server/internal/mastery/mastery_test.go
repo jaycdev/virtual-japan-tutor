@@ -3,6 +3,7 @@ package mastery_test
 import (
 	"context"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -239,6 +240,22 @@ func TestWeightsAreConfigurable(t *testing.T) {
 	}
 }
 
+// mastery.Options{} is the "no tuning wanted" case. Left as-is, all-zero
+// weights would switch every component off and silently score every item at
+// NoEvidenceMastery, so a fully zero Weights falls back to the defaults.
+func TestZeroWeightsFallBackToTheDefaults(t *testing.T) {
+	store := masterytest.NewMemStore()
+	store.AddKnownItem(userID, vocabItem("weak", 2))
+	store.AddKnownItem(userID, vocabItem("strong", 8))
+	svc := mastery.NewService(store, mastery.Options{})
+	for ref, want := range map[string]float64{"weak": 2.0 / 9.0, "strong": 8.0 / 9.0} {
+		key := mastery.ItemKey{Kind: mastery.KindVocabulary, Ref: ref}
+		if got := scoreOf(t, svc, key); !near(got, want) {
+			t.Errorf("%s = %g, want %g: zero Weights must fall back to the default weights", ref, got, want)
+		}
+	}
+}
+
 func TestMasteryStaysWithinZeroAndOne(t *testing.T) {
 	store := masterytest.NewMemStore()
 	store.AddKnownItem(userID, vocabItem("ace", 9))
@@ -310,9 +327,15 @@ func TestFocusSetTakesTheWeakestItems(t *testing.T) {
 			t.Fatalf("items %d..%d not ascending by mastery", i-1, i)
 		}
 	}
-	// The level-9 items (mastery 1) are the strongest of the 30 and must be out.
-	if hasRef(set, "i") { // i: i=8 → level 9
-		t.Fatalf("a level-9 item survived the cut")
+	// The fifteen weakest, exactly: levels cycle a..z by i%9, so the level-1
+	// through level-4 items fill the set and every stronger item stays out.
+	wantRefs := []string{"a", "j", "s", "|", "b", "k", "t", "}", "c", "l", "u", "~", "d", "m", "v"}
+	gotRefs := make([]string, 0, len(set.Items))
+	for _, it := range set.Items {
+		gotRefs = append(gotRefs, it.Key().Ref)
+	}
+	if strings.Join(gotRefs, ",") != strings.Join(wantRefs, ",") {
+		t.Fatalf("set refs = %v, want exactly %v", gotRefs, wantRefs)
 	}
 	if hasRef(set, "mine") {
 		t.Fatalf("another user's item leaked into the set")

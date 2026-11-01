@@ -31,6 +31,12 @@ func (s *PostgresStore) KnownItems(ctx context.Context, userID uuid.UUID) ([]Kno
 	}
 	defer rows.Close()
 	var out []KnownItem
+	// Two MaruMori vocabulary forms (kana and kanji spellings) can link to one
+	// JMdict entry, so they share an ItemKey — and the Practice Record and
+	// Weak Signals join on that Key. Collapse duplicates into one Known Item,
+	// keeping the weakest form's SRS Level (and its MaruMori id, so the Level
+	// Trend follows the form that actually needs the practice).
+	seen := map[ItemKey]int{}
 	for rows.Next() {
 		var (
 			kind    Kind
@@ -50,12 +56,20 @@ func (s *PostgresStore) KnownItems(ctx context.Context, userID uuid.UUID) ([]Kno
 			ref = strconv.FormatInt(*entSeq, 10)
 		}
 		lvl := level
-		out = append(out, KnownItem{
+		it := KnownItem{
 			Key:        ItemKey{Kind: kind, Ref: ref},
 			MaruMoriID: mmID,
 			SRSLevel:   &lvl,
 			Source:     SourceMaruMori,
-		})
+		}
+		if at, dup := seen[it.Key]; dup {
+			if lvl < *out[at].SRSLevel {
+				out[at] = it
+			}
+			continue
+		}
+		seen[it.Key] = len(out)
+		out = append(out, it)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -101,8 +115,10 @@ func (s *PostgresStore) KnownItems(ctx context.Context, userID uuid.UUID) ([]Kno
 }
 
 // LevelTrends returns the newest level_changed delta per Synced Known Item.
-// Rows whose old/new level is missing (which the writer never produces) are
-// skipped rather than guessed at.
+// That delta is the item's Level Trend until the next level_changed row
+// arrives with the next Sync; it does not age out on its own (see the note on
+// LevelTrend). Rows whose old/new level is missing (which the writer never
+// produces) are skipped rather than guessed at.
 func (s *PostgresStore) LevelTrends(ctx context.Context, userID uuid.UUID) ([]LevelTrend, error) {
 	rows, err := s.pool.Query(ctx,
 		`SELECT DISTINCT ON (kind, marumori_id) kind, marumori_id, new_level - old_level

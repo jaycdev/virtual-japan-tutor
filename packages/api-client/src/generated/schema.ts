@@ -394,7 +394,7 @@ export interface paths {
         };
         /**
          * The rotating Focus Set of low-Mastery Known Items
-         * @description The 15–20 Known Items Practice Sessions and Stories target (issue #7): the lowest-Mastery items, mixing vocabulary, kanji and grammar, in the order they should be practised. Items the Learner has demonstrably nailed (a run of correct Practice results across separate days) rotate out and the next weakest backfills; recently Observed Grammar is pinned to the front (docs/adr/0003). Mastery is recomputed from the stored signals on every read — it is never stored, and the app schedules nothing (docs/adr/0004).
+         * @description The 15–20 Known Items Practice Sessions and Stories target (issue #7): the lowest-Mastery items, mixing vocabulary, kanji and grammar, in the order they should be practised. Items the Learner has demonstrably nailed (a run of correct Practice results spanning distinct UTC days) rotate out and the next weakest backfills; recently Observed Grammar is pinned to the front (docs/adr/0003). Mastery is recomputed from the stored signals on every read — it is never stored, and the app schedules nothing (docs/adr/0004).
          */
         get: operations["getFocusSet"];
         put?: never;

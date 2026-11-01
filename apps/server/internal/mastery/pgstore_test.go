@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/dbtest"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/knowngrammar"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/mastery"
 )
 
@@ -225,3 +226,105 @@ func TestPostgresStore(t *testing.T) {
 
 func strptr(s string) *string { return &s }
 func itoa64(v int64) string   { return strconv.FormatInt(v, 10) }
+
+// Two MaruMori vocabulary forms (the kana and kanji spellings of one word)
+// can link to the same JMdict entry: they share an ItemKey, and therefore one
+// Practice Record. The store collapses them into a single Known Item, keeping
+// the weakest form's SRS Level and that form's MaruMori id for the Level
+// Trend join.
+func TestPostgresStoreCollapsesVocabFormsSharingAnEntSeq(t *testing.T) {
+	pool := dbtest.New(t)
+	ctx := context.Background()
+	store := mastery.NewPostgresStore(pool)
+
+	u := uuid.New()
+	if _, err := pool.Exec(ctx, `INSERT INTO users (id, username, password_hash) VALUES ($1, 'forms', 'x')`, u); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	// Vocabulary links go through jmdict_entries (FK), and the table's CHECK
+	// says a linked form carries no raw MaruMori text.
+	if _, err := pool.Exec(ctx, `INSERT INTO jmdict_entries (ent_seq, is_common) VALUES (2023190, true)`); err != nil {
+		t.Fatalf("seed jmdict entry: %v", err)
+	}
+	form := func(mmID string, level int) {
+		t.Helper()
+		if _, err := pool.Exec(ctx, `
+			INSERT INTO marumori_known_items (user_id, kind, marumori_id, srs_level, first_synced_at, last_seen_at, jmdict_ent_seq)
+			VALUES ($1, 'vocabulary', $2, $3, '2026-01-01', '2026-02-01', 2023190)`, u, mmID, level); err != nil {
+			t.Fatalf("seed form %s: %v", mmID, err)
+		}
+	}
+	form("VocabularyForms/kana", 7)
+	form("VocabularyForms/kanji", 3)
+
+	items, err := store.KnownItems(ctx, u)
+	if err != nil {
+		t.Fatalf("KnownItems: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("items = %+v, want the two forms collapsed to one", items)
+	}
+	it := items[0]
+	if want := (mastery.ItemKey{Kind: mastery.KindVocabulary, Ref: "2023190"}); it.Key != want {
+		t.Errorf("key = %v, want the shared ent_seq %v", it.Key, want)
+	}
+	if it.SRSLevel == nil || *it.SRSLevel != 3 {
+		t.Errorf("SRSLevel = %v, want the weakest form's level 3", it.SRSLevel)
+	}
+	if it.MaruMoriID != "VocabularyForms/kanji" {
+		t.Errorf("MaruMoriID = %q, want the kept form's, so the Level Trend follows it", it.MaruMoriID)
+	}
+}
+
+// knowngrammar writes known_grammar_points.source and mastery decodes it; both
+// packages name those strings with their own constants. This test writes what
+// knowngrammar writes today and asserts mastery reads it back: if either
+// constant drifts, grammar items would silently lose their source, and this
+// test fails first.
+func TestPostgresStoreGrammarSourceNamesMatchTheWriter(t *testing.T) {
+	pool := dbtest.New(t)
+	ctx := context.Background()
+	store := mastery.NewPostgresStore(pool)
+
+	u := uuid.New()
+	if _, err := pool.Exec(ctx, `INSERT INTO users (id, username, password_hash) VALUES ($1, 'names', 'x')`, u); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	var seededPt, observedPt int64
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO grammar_points (jlpt_level, catalogue_number, ordinal, pattern, romaji, meaning,
+		                            variants, normalised_pattern, normalised_variants)
+		VALUES ('N5', 41, 41, 'だ', '', 'copula', ARRAY[]::text[], 'だ', ARRAY[]::text[]) RETURNING id`).Scan(&seededPt); err != nil {
+		t.Fatalf("seed grammar point: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO grammar_points (jlpt_level, catalogue_number, ordinal, pattern, romaji, meaning,
+		                            variants, normalised_pattern, normalised_variants)
+		VALUES ('N5', 42, 42, 'です', '', 'polite copula', ARRAY[]::text[], 'です', ARRAY[]::text[]) RETURNING id`).Scan(&observedPt); err != nil {
+		t.Fatalf("seed grammar point: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO known_grammar_points (user_id, grammar_point_id, source, mastery)
+		VALUES ($1, $2, $3, 'medium'), ($1, $4, $5, 'low')`,
+		u, seededPt, string(knowngrammar.SourceSeeded), observedPt, string(knowngrammar.SourceObserved)); err != nil {
+		t.Fatalf("seed known grammar: %v", err)
+	}
+
+	items, err := store.KnownItems(ctx, u)
+	if err != nil {
+		t.Fatalf("KnownItems: %v", err)
+	}
+	want := map[string]mastery.Source{
+		itoa64(seededPt):   mastery.SourceSeeded,
+		itoa64(observedPt): mastery.SourceObserved,
+	}
+	if len(items) != len(want) {
+		t.Fatalf("items = %+v, want %d", items, len(want))
+	}
+	for _, it := range items {
+		if it.Source != want[it.Key.Ref] {
+			t.Errorf("point %s: knowngrammar wrote %q, mastery read %q, want %q",
+				it.Key.Ref, want[it.Key.Ref], it.Source, want[it.Key.Ref])
+		}
+	}
+}

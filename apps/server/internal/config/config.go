@@ -167,8 +167,20 @@ func loadMastery(getenv func(string) string, cfg *Config) error {
 	if opts.Weights.WeakSignals, err = unitFloat(getenv, "MASTERY_WEIGHT_WEAK_SIGNALS", def.Weights.WeakSignals); err != nil {
 		return err
 	}
-	if opts.TrendDropPenalty, err = unitFloat(getenv, "MASTERY_TREND_DROP_PENALTY", def.TrendDropPenalty); err != nil {
+	// The positive-evidence weights must keep at least one component live:
+	// all three at zero would score every Known Item at NoEvidenceMastery no
+	// matter what the Learner does.
+	if opts.Weights.SRS+opts.Weights.Practice+opts.Weights.Trend <= 0 {
+		return fmt.Errorf("MASTERY_WEIGHT_SRS, MASTERY_WEIGHT_PRACTICE and MASTERY_WEIGHT_TREND must not all be zero")
+	}
+	// A zero penalty would be rewritten to the default by withDefaults, so
+	// the config layer refuses it: what you set is what the scorer uses.
+	opts.TrendDropPenalty, err = unitFloat(getenv, "MASTERY_TREND_DROP_PENALTY", def.TrendDropPenalty)
+	if err != nil {
 		return err
+	}
+	if opts.TrendDropPenalty <= 0 {
+		return fmt.Errorf("MASTERY_TREND_DROP_PENALTY must be in (0, 1], got 0")
 	}
 	if opts.PracticeHalfLife, err = duration(getenv, "MASTERY_PRACTICE_HALF_LIFE", def.PracticeHalfLife); err != nil {
 		return err
@@ -240,7 +252,7 @@ func unitFloat(getenv func(string) string, key string, def float64) (float64, er
 	if err != nil {
 		return 0, fmt.Errorf("%s: %w", key, err)
 	}
-	if f < 0 || f > 1 {
+	if !(f >= 0 && f <= 1) { // rejects NaN too: every comparison against NaN is false
 		return 0, fmt.Errorf("%s must be between 0 and 1, got %q", key, v)
 	}
 	return f, nil

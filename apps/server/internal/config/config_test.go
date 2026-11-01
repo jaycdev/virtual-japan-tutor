@@ -345,16 +345,21 @@ func TestLoadMasteryOverrides(t *testing.T) {
 
 func TestLoadRejectsBadMasteryConfig(t *testing.T) {
 	cases := map[string]map[string]string{
-		"weight over one":    {"MASTERY_WEIGHT_SRS": "1.5"},
-		"negative weight":    {"MASTERY_WEIGHT_PRACTICE": "-0.1"},
-		"garbage weight":     {"MASTERY_WEIGHT_WEAK_SIGNALS": "heavy"},
-		"penalty over one":   {"MASTERY_TREND_DROP_PENALTY": "2"},
-		"zero half-life":     {"MASTERY_PRACTICE_HALF_LIFE": "0h"},
-		"set too small":      {"FOCUS_SET_SIZE": "14"},
-		"set too big":        {"FOCUS_SET_SIZE": "21"},
-		"cap above set size": {"FOCUS_SET_SIZE": "16", "FOCUS_SET_MAX_PER_KIND": "17"},
-		"zero streak":        {"FOCUS_SET_GRADUATE_STREAK": "0"},
-		"garbage window":     {"FOCUS_SET_NEW_GRAMMAR_WINDOW": "new"},
+		"weight over one":           {"MASTERY_WEIGHT_SRS": "1.5"},
+		"negative weight":           {"MASTERY_WEIGHT_PRACTICE": "-0.1"},
+		"garbage weight":            {"MASTERY_WEIGHT_WEAK_SIGNALS": "heavy"},
+		"NaN weight":                {"MASTERY_WEIGHT_SRS": "NaN"},
+		"nan penalty":               {"MASTERY_TREND_DROP_PENALTY": "nan"},
+		"inf weight":                {"MASTERY_WEIGHT_TREND": "+Inf"},
+		"penalty over one":          {"MASTERY_TREND_DROP_PENALTY": "2"},
+		"zero penalty":              {"MASTERY_TREND_DROP_PENALTY": "0"},
+		"all evidence weights zero": {"MASTERY_WEIGHT_SRS": "0", "MASTERY_WEIGHT_PRACTICE": "0", "MASTERY_WEIGHT_TREND": "0"},
+		"zero half-life":            {"MASTERY_PRACTICE_HALF_LIFE": "0h"},
+		"set too small":             {"FOCUS_SET_SIZE": "14"},
+		"set too big":               {"FOCUS_SET_SIZE": "21"},
+		"cap above set size":        {"FOCUS_SET_SIZE": "16", "FOCUS_SET_MAX_PER_KIND": "17"},
+		"zero streak":               {"FOCUS_SET_GRADUATE_STREAK": "0"},
+		"garbage window":            {"FOCUS_SET_NEW_GRAMMAR_WINDOW": "new"},
 	}
 	for name, extra := range cases {
 		t.Run(name, func(t *testing.T) {

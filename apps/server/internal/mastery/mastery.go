@@ -67,7 +67,10 @@ type KnownItem struct {
 }
 
 // LevelTrend is the most recent level_changed delta (new − old) for one
-// Synced Known Item. Items with no level history have no LevelTrend.
+// Synced Known Item. Items with no level history have no LevelTrend. The
+// newest change stands as the item's trend until the next one lands (on the
+// next Sync): the delta itself is not aged out over time — decay is a
+// follow-up if the signal turns out noisier than useful.
 type LevelTrend struct {
 	Kind       Kind
 	MaruMoriID string
@@ -117,7 +120,7 @@ type Options struct {
 
 	// GraduateStreak and GraduateMinDays are the rotation threshold: an item
 	// with GraduateStreak correct answers in a row, spanning at least
-	// GraduateMinDays different days, leaves the Focus Set.
+	// GraduateMinDays different UTC days, leaves the Focus Set.
 	GraduateStreak  int
 	GraduateMinDays int
 
@@ -172,12 +175,19 @@ func DefaultOptions() Options {
 	}
 }
 
-// withDefaults fills unset fields and returns the clock to use.
-func (o Options) withDefaults() (Options, func() time.Time) {
+// withDefaults fills unset fields. A fully zero Weights also falls back to
+// the defaults: Options{} is the "no tuning wanted" case, and all-zero
+// positive-evidence weights would otherwise silently flatten every Mastery to
+// NoEvidenceMastery. (Config additionally refuses that combination in
+// loadMastery.)
+func (o Options) withDefaults() Options {
 	if o.Now == nil {
 		o.Now = time.Now
 	}
 	def := DefaultOptions()
+	if o.Weights == (Weights{}) {
+		o.Weights = def.Weights
+	}
 	if o.PracticeHalfLife <= 0 {
 		o.PracticeHalfLife = def.PracticeHalfLife
 	}
@@ -202,7 +212,7 @@ func (o Options) withDefaults() (Options, func() time.Time) {
 	if o.NewGrammarWindow <= 0 {
 		o.NewGrammarWindow = def.NewGrammarWindow
 	}
-	return o, o.Now
+	return o
 }
 
 // Store is the read side of the Mastery/Focus Set data: the Known Item
@@ -241,8 +251,7 @@ type Service struct {
 }
 
 func NewService(store Store, opts Options) *Service {
-	opts, _ = opts.withDefaults()
-	return &Service{store: store, opts: opts}
+	return &Service{store: store, opts: opts.withDefaults()}
 }
 
 // Score loads every Known Item with its signals and scores it. The result is
