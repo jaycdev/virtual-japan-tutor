@@ -53,6 +53,13 @@ export type DictionaryEntry = components["schemas"]["DictionaryEntry"];
 export type DictionarySense = components["schemas"]["DictionarySense"];
 export type DictionaryKanji = components["schemas"]["DictionaryKanji"];
 export type PitchPattern = components["schemas"]["PitchPattern"];
+export type ItemList = components["schemas"]["ItemList"];
+export type ItemListsResponse = components["schemas"]["ItemListsResponse"];
+export type ItemListCreateRequest = components["schemas"]["ItemListCreateRequest"];
+export type ItemListUpdateRequest = components["schemas"]["ItemListUpdateRequest"];
+export type ItemListAddRequest = components["schemas"]["ItemListAddRequest"];
+export type WeakSignalRequest = components["schemas"]["WeakSignalRequest"];
+export type WeakSignalBatchRequest = components["schemas"]["WeakSignalBatchRequest"];
 export type ApiMiddleware = Middleware;
 
 export interface ApiClientOptions {

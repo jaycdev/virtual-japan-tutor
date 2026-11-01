@@ -1,4 +1,10 @@
-import type { ApiClient, ItemList, ItemListCreateRequest } from "@vjt/api-client";
+import type {
+  ApiClient,
+  ItemList,
+  ItemListAddRequest,
+  ItemListCreateRequest,
+  WeakSignalRequest,
+} from "@vjt/api-client";
 import { useCallback, useEffect, useState } from "react";
 import type { ActionResult } from "./useAiSettings.ts";
 
@@ -30,6 +36,16 @@ export interface ItemListsView {
   ): Promise<ActionResult>;
   deleteList(listId: string): Promise<ActionResult>;
   setDefaultList(listId: string): Promise<ActionResult>;
+  /** Save one item into one list; the server may record a Weak Signal. */
+  addToList(listId: string, item: ItemListAddRequest): Promise<ActionResult>;
+  /** Drop one item from one list; the Practice Record keeps its answers. */
+  removeFromList(listId: string, item: ItemListAddRequest): Promise<ActionResult>;
+  /**
+   * Report reader behaviour (held lookup, opened menu, unblurred sentence) as
+   * Weak Signals. The server keeps only signals about the caller's Known
+   * Items; one-way traffic, so no re-read follows.
+   */
+  reportWeakSignals(signals: WeakSignalRequest[]): Promise<ActionResult>;
   /** Re-fetch after an error or an out-of-band change. */
   reload(): void;
 }
@@ -102,7 +118,7 @@ export function useItemLists(client: ApiClient): ItemListsView {
     async (listId: string, patch: { name?: string; boosting?: boolean }): Promise<ActionResult> => {
       try {
         const { error: err, response } = await client.PUT("/item-lists/{listId}", {
-          path: { listId },
+          params: { path: { listId } },
           body: patch,
         });
         if (response.status === 200) return refresh();
@@ -118,7 +134,7 @@ export function useItemLists(client: ApiClient): ItemListsView {
     async (listId: string): Promise<ActionResult> => {
       try {
         const { error: err, response } = await client.DELETE("/item-lists/{listId}", {
-          path: { listId },
+          params: { path: { listId } },
         });
         if (response.status === 204) return refresh();
         return { ok: false, message: message(err, response.status) };
@@ -144,9 +160,68 @@ export function useItemLists(client: ApiClient): ItemListsView {
     [client, refresh],
   );
 
+  const addToList = useCallback(
+    async (listId: string, item: ItemListAddRequest): Promise<ActionResult> => {
+      try {
+        const { error: err, response } = await client.POST("/item-lists/{listId}/items", {
+          params: { path: { listId } },
+          body: item,
+        });
+        if (response.status === 204) return refresh();
+        return { ok: false, message: message(err, response.status) };
+      } catch {
+        return { ok: false, message: UNREACHABLE };
+      }
+    },
+    [client, refresh],
+  );
+
+  const removeFromList = useCallback(
+    async (listId: string, item: ItemListAddRequest): Promise<ActionResult> => {
+      try {
+        const { error: err, response } = await client.DELETE("/item-lists/{listId}/items", {
+          params: { path: { listId } },
+          params: { query: { itemKind: item.itemKind, itemRef: item.itemRef } },
+        });
+        if (response.status === 204) return refresh();
+        return { ok: false, message: message(err, response.status) };
+      } catch {
+        return { ok: false, message: UNREACHABLE };
+      }
+    },
+    [client, refresh],
+  );
+
+  const reportWeakSignals = useCallback(
+    async (signals: WeakSignalRequest[]): Promise<ActionResult> => {
+      if (signals.length === 0) return { ok: true };
+      try {
+        const { error: err, response } = await client.POST("/weak-signals", {
+          body: { signals },
+        });
+        if (response.status === 204) return { ok: true };
+        return { ok: false, message: message(err, response.status) };
+      } catch {
+        return { ok: false, message: UNREACHABLE };
+      }
+    },
+    [client],
+  );
+
   const reload = useCallback(() => setAttempt((n) => n + 1), []);
 
   const defaultListId = state.status === "ready" ? state.defaultListId : null;
 
-  return { state, defaultListId, createList, updateList, deleteList, setDefaultList, reload };
+  return {
+    state,
+    defaultListId,
+    createList,
+    updateList,
+    deleteList,
+    setDefaultList,
+    addToList,
+    removeFromList,
+    reportWeakSignals,
+    reload,
+  };
 }

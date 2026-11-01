@@ -1,5 +1,7 @@
 export { useHealth } from "./useHealth.ts";
 export type { HealthState } from "./useHealth.ts";
+export { useItemLists } from "./useItemLists.ts";
+export type { ItemListsState, ItemListsView } from "./useItemLists.ts";
 export { useAuth } from "./useAuth.ts";
 export type { Auth, AuthState } from "./useAuth.ts";
 export { useAiSettings } from "./useAiSettings.ts";

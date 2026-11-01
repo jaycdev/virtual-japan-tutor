@@ -2,13 +2,15 @@ import type {
   ApiClient,
   DictionaryEntry,
   GrammarPointDetail,
+  ItemKind,
   PitchPattern,
   Story as StoryData,
   StoryGrammarSpan,
   StorySettings,
   StoryToken,
+  WeakSignalRequest,
 } from "@vjt/api-client";
-import { useReadingSettings, useStory, type StoryView } from "@vjt/core";
+import { useItemLists, useReadingSettings, useStory, type ItemListsView, type StoryView } from "@vjt/core";
 import {
   useCallback,
   useEffect,
@@ -37,7 +39,12 @@ import "./reader.css";
  * while Grammar Spans show their point's pattern and meaning instead. A
  * tapped word or Grammar Span token opens a menu (Dictionary · Save ·
  * Save to…; a span token's menu adds Grammar, so words inside a span keep
- * their own Dictionary Entry); Dictionary opens a Dictionary Entry window
+ * their own Dictionary Entry); Save targets the Default List and Save to…
+ * picks or creates any Item List (issue #12). Reader behaviour feeds Weak
+ * Signals: holding a Known word's lookup past the configured threshold,
+ * opening its Lookup Menu, opening a Grammar Span window, or unblurring a
+ * Sentence Translation (one signal per Focus Set item in the sentence).
+ * Dictionary opens a Dictionary Entry window
  * with the full JMdict entry, the Learner's MaruMori state for the word and
  * each of its kanji, and the Kanjium pitch pattern when we have one.
  * Everything reachable by mouse is reachable by keyboard: tokens are
