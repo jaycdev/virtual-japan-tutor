@@ -266,7 +266,7 @@ returned, never logged), and a **Sync** reads the Learner's **knowledge state** 
   *knows about the Learner*: SRS levels, per-Sync history (appeared / level changed / disappeared), grammar SRS
   observations, and the home counters. Item **content** — meanings, definitions, readings, mnemonics, pitch,
   examples, personal notes, even grammar point names — is never stored or forwarded. Unlinked vocabulary is counted,
-  not copied; unlinked kanji keep only the character itself.
+  not copied; an unlinked kanji is kept only when its text is a single character, and then only that character.
 - **Linking.** Kanji resolve against KANJIDIC2 by literal; vocabulary resolves against JMdict by written text
   (ambiguous picks go to the easiest JLPT level first). Sync counts record `linked`, `unlinked` and `ambiguous`.
 - **Scheduled + manual.** A background sweep Syncs every learner with a key every `MARUMORI_SYNC_INTERVAL`

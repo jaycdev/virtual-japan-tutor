@@ -52,8 +52,9 @@ const finishRunTimeout = 10 * time.Second
 // returned in plaintext.
 //
 // What is stored per kind (ADR-0002):
-//   - Kanji: linked to KANJIDIC2 when found; otherwise MaruMori's item text is kept,
-//     because for kanji that text is just the character itself.
+//   - Kanji: linked to KANJIDIC2 when found; otherwise MaruMori's item text is kept
+//     when it is a single character, because for kanji that text is just the
+//     character itself. A longer entry is counted (Counts.Unlinked), not stored.
 //   - Vocabulary: linked to a JMdict entry, or not stored at all — a vocabulary item
 //     we cannot link is only MaruMori's rendering of a word, and it is counted
 //     (Counts.Unlinked) rather than copied into our knowledge state.
@@ -315,11 +316,19 @@ func (s *Service) collect(ctx context.Context, upstream Upstream) (Counts, SyncB
 			counts.SkippedLevelZero++ // learning, not Known; any stored row disappears below
 		case item.Level < 0 || item.Level > 9:
 		default:
-			counts.Kanji++
 			found, ok, err := s.ref.FindKanji(ctx, item.Text)
 			if err != nil {
 				return counts, batch, fmt.Errorf("link kanji %q: %w", item.Text, err)
 			}
+			if !ok && utf8.RuneCountInString(item.Text) != 1 {
+				// MaruMori kanji that KANJIDIC does not know keep their text because
+				// for kanji that text is just the character itself — but only when it
+				// really is one character. A longer entry is not a kanji the learner
+				// can study, so it is counted, not copied.
+				counts.Unlinked++
+				continue
+			}
+			counts.Kanji++
 			applied := AppliedItem{Kind: KindKanji, MaruMoriID: item.MaruMoriID, Level: item.Level}
 			if ok {
 				literal := found.Literal

@@ -88,6 +88,53 @@ func (e *env) connect(t *testing.T) {
 	}
 }
 
+// Kanji that KANJIDIC does not know keep MaruMori's text, because for kanji that
+// text is just the character itself.
+func TestSyncKeepsASingleCharacterUnlinkedKanji(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, testRefs())
+	e.connect(t)
+	e.up.Kanji = []marumori.KnownItem{known("Kanji/9", "我", 4)}
+
+	run, err := e.svc.Sync(e.ctx)
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if run.Counts == nil || run.Counts.Kanji != 1 || run.Counts.Unlinked != 1 || run.Counts.Linked != 0 {
+		t.Fatalf("counts = %+v, want one collected kanji, unlinked, not linked", run.Counts)
+	}
+	if level, _, literal, text, ok := e.store.KnownItemLink(e.uid, marumorisync.KindKanji, "Kanji/9"); !ok ||
+		level != 4 || literal != nil || text == nil || *text != "我" {
+		t.Errorf("我 link = level %v literal %v text %v ok %v, want only the text 我", level, literal, text, ok)
+	}
+}
+
+// A kanji entry whose text is more than one character is not a character the
+// learner studies, so it is counted as unlinked instead of stored as an item.
+func TestSyncCountsAMultiCharacterUnlinkedKanjiAsUnlinked(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, testRefs())
+	e.connect(t)
+	e.up.Kanji = []marumori.KnownItem{known("Kanji/8", "私達", 4)}
+
+	run, err := e.svc.Sync(e.ctx)
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if run.Counts == nil {
+		t.Fatal("no counts")
+	}
+	if run.Counts.Kanji != 0 {
+		t.Errorf("Kanji = %d, want 0 for an entry that is not one character", run.Counts.Kanji)
+	}
+	if run.Counts.Unlinked != 1 || run.Counts.Linked != 0 || run.Counts.New != 0 {
+		t.Errorf("counts = %+v, want one unlinked and nothing collected or new", run.Counts)
+	}
+	if _, _, _, _, ok := e.store.KnownItemLink(e.uid, marumorisync.KindKanji, "Kanji/8"); ok {
+		t.Error("a multi-character kanji was stored as an item")
+	}
+}
+
 func known(id, text string, level int) marumori.KnownItem {
 	return marumori.KnownItem{MaruMoriID: id, Text: text, Level: level}
 }
