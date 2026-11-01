@@ -254,6 +254,19 @@ and model. The Learner manages them in the web app's **Settings** page and picks
   structured output and falls back to `json_object`, then to prompt-only JSON extraction, per call (nothing is
   remembered per provider). Its tests use `httptest` fakes; it has not been exercised against a real provider.
 
+### Grammar content is shared
+
+The **Grammar Catalogue** ([GLOSSARY](GLOSSARY.md)) is one shared table, and so is the content generated for it:
+an **Explanation** or an **Example Sentence** belongs to the Grammar Point, not to the Learner who asked for it.
+Whoever reads a point first pays for the generation (a missing explanation, and fewer than 5 example sentences,
+are filled in on read); every later reader is served the stored content without a provider call. That is a cost
+decision, not an oversight: one explanation per point means one bill per point, but a Learner who wants their own
+wording cannot get it, and `POST /grammar-points/{id}/regenerate` replaces the explanation for every learner.
+**Provider assignment stays per Learner**: the Learner whose request triggered the generation is the one whose
+assigned `grammar_content` provider, API key and quota are used (the in-flight generation cache is keyed by
+that Learner and point), and a Learner with no provider assigned is served whatever content the point already has
+instead of being run on someone else's provider. See `internal/grammar`.
+
 ## MaruMori connection and Sync
 
 **MaruMori** ([GLOSSARY](GLOSSARY.md)) is a third-party study app. The Learner connects it in the web app's
