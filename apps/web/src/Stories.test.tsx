@@ -1,4 +1,5 @@
-﻿import type { ApiClient } from "@vjt/api-client";
+﻿import { readFileSync } from "node:fs";
+import type { ApiClient } from "@vjt/api-client";
 import { createApiClient } from "@vjt/api-client";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -40,7 +41,7 @@ const MISE_ENTRY = {
   senses: [{ glosses: ["shop", "store"], partsOfSpeech: ["noun"] }],
   kanjiForms: ["店"],
   readings: ["みせ"],
-  pitch: null,
+  pitch: { reading: "みせ", moraCount: 2, accentPosition: 0, heiban: true, downstepAfterMora: null },
   srsLevel: null,
   mastery: null,
   kanji: [{ literal: "店", known: false, srsLevel: null, mastery: null }],
@@ -68,13 +69,25 @@ const TE_SHIMAU_POINT = {
   ],
 };
 
+const IKU_POINT = {
+  id: 13,
+  jlptLevel: "N5",
+  catalogueNumber: 5,
+  pattern: "～に行く",
+  meaning: "going to (a place)",
+  variants: [],
+  explanation: "に行く marks movement toward a destination.",
+  explanationEdited: false,
+  examples: [],
+};
+
 /**
  * A stateful fake of the API (issue #10 library/reader settings, plus the
  * issue #11 reading endpoints). `requests` records method, path and body so
  * tests can assert what the screen sent and when — in particular that
  * opening a story is a plain storage read, never a generation.
  */
-function fakeApi(opts: { ready?: boolean; blurTranslation?: boolean } = {}) {
+function fakeApi(opts: { ready?: boolean; blurTranslation?: boolean; extraSpan?: boolean } = {}) {
   const hasReady = opts.ready ?? true;
   const storyView = {
     id: "st-1",
@@ -122,7 +135,19 @@ function fakeApi(opts: { ready?: boolean; blurTranslation?: boolean } = {}) {
           { surface: "に", start: 2, end: 3, reading: "に", tag: "unknown", showFurigana: false },
           { surface: "いきました", start: 3, end: 7, reading: "いきました", tag: "unknown", showFurigana: true },
         ],
-        grammarSpans: [],
+        grammarSpans: opts.extraSpan
+          ? [
+              {
+                start: 0,
+                end: 2,
+                grammarPointId: "13",
+                isFocus: false,
+                pattern: "～に行く",
+                meaning: "going to (a place)",
+                jlptLevel: "N5",
+              },
+            ]
+          : [],
       },
     ],
     questions: [
@@ -164,6 +189,7 @@ function fakeApi(opts: { ready?: boolean; blurTranslation?: boolean } = {}) {
     if (entry === "990101") return json(200, SCHOOL_ENTRY);
     if (entry === "990103") return json(200, MISE_ENTRY);
     if (pathname === "/grammar/points/12" && request.method === "GET") return json(200, TE_SHIMAU_POINT);
+    if (pathname === "/grammar/points/13" && request.method === "GET") return json(200, IKU_POINT);
     return json(404, { code: "not_found", message: "not found" });
   });
   const client = createApiClient({ baseUrl: "http://127.0.0.1:8787", fetch: fetchImpl });
@@ -347,6 +373,41 @@ describe("Reading Panel", () => {
     expect(await screen.findByText("I went to the shop.")).toBeTruthy();
     expect(panel.querySelector(".translation")?.textContent).toBe("I went to the shop.");
   });
+
+  it("shrinks a sentence that overflows the fixed box by exactly one step", async () => {
+    // jsdom has no layout engine: fake content taller than the (0-height)
+    // box so the measure-and-shrink step engages.
+    const desc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight");
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", { configurable: true, get: () => 400 });
+    try {
+      const { client } = fakeApi();
+      await openStory(client);
+      fireEvent.click(tokenButton("がっこう"));
+      const area = document.querySelector(".sentence-area") as HTMLElement;
+      await waitFor(() => expect(area.classList.contains("shrunk")).toBe(true));
+      // One step only — the box itself never grows.
+      expect(area.classList.contains("sentence-area")).toBe(true);
+    } finally {
+      if (desc) Object.defineProperty(HTMLElement.prototype, "scrollHeight", desc);
+      else Reflect.deleteProperty(HTMLElement.prototype, "scrollHeight");
+    }
+  });
+
+  it("the panel's box is fixed in CSS: two-line height, then scroll — never resize", () => {
+    const css = readFileSync("src/reader.css", "utf8"); // vitest cwd = apps/web
+    const panel = css.match(/\.reading-panel \{[^}]*\}/)?.[0] ?? "";
+    expect(panel).toMatch(/height: 7\.5em/);
+    const area = css.match(/\.reading-panel \.sentence-area \{[^}]*\}/)?.[0] ?? "";
+    expect(area).toMatch(/height: 4\.4em/); // fixed two-line height, ruby included
+    expect(area).not.toMatch(/max-height/);
+    expect(area).toMatch(/overflow-y: auto/);
+    expect(css).toMatch(/\.sentence-area\.shrunk \{[^}]*font-size: 0\.8em/);
+    expect(css).toMatch(/\.lookup-label \{[^}]*flex: 0 0 6\.4em/);
+    // Grammar Spans read differently from the known/unknown underlines.
+    expect(css).toMatch(/\.tok-grammar \{[^}]*underline wavy #7c3aed/);
+    expect(css).toMatch(/\.tok-grammar-focus \{[^}]*text-decoration-thickness/);
+    expect(css).toMatch(/\.tok-dotted \{[^}]*underline dotted/);
+  });
 });
 
 describe("Lookup row", () => {
@@ -391,6 +452,21 @@ describe("Lookup row", () => {
     expect(document.querySelector(".lookup-word")).toBeNull();
   });
 
+  it("keeps a fixed 'Word meaning' label leading the row", async () => {
+    const { client } = fakeApi();
+    await openStory(client);
+
+    const row = document.querySelector(".lookup-row") as HTMLElement;
+    // Present before any lookup, and still first once one fills the row —
+    // the slot is fixed, so the row never shifts.
+    expect(row.querySelector(".lookup-label")?.textContent).toBe("Word meaning");
+    expect(row.firstElementChild?.className).toBe("lookup-label");
+
+    fireEvent.mouseEnter(tokenButton("がっこう"));
+    expect(document.querySelector(".lookup-word")?.textContent).toBe("がっこう");
+    expect(row.querySelector(".lookup-label")?.textContent).toBe("Word meaning");
+  });
+
   it("hovering a Grammar Span shows the Grammar Point instead, without any request", async () => {
     const { client, requests } = fakeApi();
     await openStory(client);
@@ -401,6 +477,44 @@ describe("Lookup row", () => {
     expect(document.querySelector(".jlpt-badge")?.textContent).toBe("N4");
     expect(requests.some((r) => r.path.startsWith("/dictionary/entries/"))).toBe(false);
     expect(requests.some((r) => r.path.startsWith("/grammar/points/"))).toBe(false);
+  });
+});
+
+describe("Pitch graph", () => {
+  it("draws a filled dot per mora and a hollow dot for the particle — heiban keeps it high", async () => {
+    const { client } = fakeApi();
+    await openStory(client);
+
+    // みせ is heiban in the fake: 2 moras, no downstep.
+    fireEvent.mouseEnter(tokenButton("みせ"));
+    await waitFor(() => expect(document.querySelector(".pitch-graph")).toBeTruthy());
+    const graph = document.querySelector(".pitch-graph") as Element;
+    const moras = graph.querySelectorAll(".pitch-mora");
+    expect(moras.length).toBe(2);
+    expect(moras[0]?.getAttribute("fill")).toBe("#1a56db"); // filled
+    const particle = graph.querySelector(".pitch-particle") as Element;
+    expect(particle.getAttribute("fill")).toBe("#fff"); // hollow, stroked
+    // Heiban: mora 1 low (y=15), mora 2 AND the following particle high (y=3).
+    expect(moras[0]?.getAttribute("cy")).toBe("15");
+    expect(moras[1]?.getAttribute("cy")).toBe("3");
+    expect(particle.getAttribute("cy")).toBe("3");
+    // The joining line runs through every dot, particle included.
+    const points = (graph.querySelector("polyline") as Element).getAttribute("points")?.trim().split(/\s+/);
+    expect(points?.length).toBe(3);
+  });
+
+  it("the particle dot drops low after a downstep", async () => {
+    const { client } = fakeApi();
+    await openStory(client);
+
+    // がっこう: 4 moras, downstep after mora 3.
+    fireEvent.mouseEnter(tokenButton("がっこう"));
+    await waitFor(() => expect(document.querySelector(".pitch-graph")).toBeTruthy());
+    const graph = document.querySelector(".pitch-graph") as Element;
+    expect(graph.querySelectorAll(".pitch-mora").length).toBe(4);
+    const dots = Array.from(graph.querySelectorAll(".pitch-mora"));
+    expect(dots.map((d) => d.getAttribute("cy"))).toEqual(["3", "3", "3", "15"]);
+    expect(graph.querySelector(".pitch-particle")?.getAttribute("cy")).toBe("15");
   });
 });
 
@@ -436,16 +550,22 @@ describe("Word menu and windows", () => {
     expect(within(win).getByText("new")).toBeTruthy();
     expect(win.querySelector(".pitch-graph")).toBeTruthy();
 
-    // Escape closes all windows.
+    // Escape closes the open window (one press peels one layer).
     fireEvent.keyDown(tokenButton("がっこう"), { key: "Escape" });
     await waitFor(() => expect(screen.queryByLabelText("Dictionary entry: がっこう")).toBeNull());
   });
 
-  it("clicking a Grammar Span opens the Grammar Point window with explanation and examples", async () => {
+  it("clicking a Grammar Span token opens the menu; Grammar opens the point window", async () => {
     const { client, requests } = fakeApi();
     await openStory(client);
 
     fireEvent.click(tokenButton("しました"));
+    // The spec's menu sits over any tapped token — span tokens included.
+    const menu = screen.getByRole("menu");
+    // しました itself has no dictionary link, so its Dictionary item is disabled…
+    expect((within(menu).getByRole("menuitem", { name: "Dictionary" }) as HTMLButtonElement).disabled).toBe(true);
+    // …while Grammar carries the span's full entry.
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Grammar" }));
     const win = await screen.findByLabelText("Grammar point 12");
     expect(await within(win).findByText(/action is completed/)).toBeTruthy();
     const mark = win.querySelector("mark");
@@ -460,6 +580,54 @@ describe("Word menu and windows", () => {
     fireEvent.click(tokenButton("に"));
     const menu = screen.getByRole("menu");
     expect((within(menu).getByRole("menuitem", { name: "Dictionary" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("a word inside a Grammar Span still reaches its own Dictionary Entry", async () => {
+    const { client } = fakeApi({ extraSpan: true });
+    await openStory(client);
+
+    // みせ now sits inside a Grammar Span…
+    expect(tokenButton("みせ").classList.contains("tok-grammar")).toBe(true);
+    // …but clicking it opens the same menu, with the word's Dictionary and
+    // the span's Grammar side by side.
+    fireEvent.click(tokenButton("みせ"));
+    const menu = screen.getByRole("menu");
+    expect((within(menu).getByRole("menuitem", { name: "Dictionary" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(within(menu).getByRole("menuitem", { name: "Grammar" })).toBeTruthy();
+
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Dictionary" }));
+    const win = await screen.findByLabelText("Dictionary entry: みせ");
+    expect(within(win).getByText(/shop; store/)).toBeTruthy();
+  });
+
+  it("Enter opens the menu focused on its first item; Escape closes just the menu", async () => {
+    const { client } = fakeApi();
+    await openStory(client);
+
+    // Open a Dictionary Entry window first, to show Escape leaves it alone.
+    fireEvent.click(tokenButton("みせ"));
+    fireEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Dictionary" }));
+    await screen.findByLabelText("Dictionary entry: みせ");
+
+    // Keyboard: Tab to the token, Enter opens the same menu a click gives…
+    const word = tokenButton("がっこう");
+    word.focus();
+    fireEvent.keyDown(word, { key: "Enter" });
+    fireEvent.click(word); // a browser fires click for Enter on a button
+    const menu = await screen.findByRole("menu");
+    // …and focus moves into the menu, onto the first enabled item.
+    await waitFor(() => expect(document.activeElement?.textContent).toBe("Dictionary"));
+    expect(menu.contains(document.activeElement)).toBe(true);
+
+    // Escape closes only the menu and hands focus back to the token.
+    fireEvent.keyDown(document.activeElement as Element, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    expect(document.activeElement).toBe(word);
+    expect(screen.getByLabelText("Dictionary entry: みせ")).toBeTruthy();
+
+    // A second Escape closes the window.
+    fireEvent.keyDown(word, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByLabelText("Dictionary entry: みせ")).toBeNull());
   });
 });
 

@@ -17,9 +17,15 @@
 }
 
 .reading-panel .sentence-area {
-  /* Two lines of sentence, then internal scrolling — the panel keeps its size. */
-  max-height: 4.4em;
+  /* Two lines of sentence in a fixed box — the panel keeps its size. Long
+     text first shrinks one step (.shrunk); what still overflows scrolls.
+     The height carries the furigana ruby: each ruby line box is ~2.2em. */
+  height: 4.4em;
   overflow-y: auto;
+}
+
+.reading-panel .sentence-area.shrunk {
+  font-size: 0.8em;
 }
 
 .reading-panel .lookup-row {
@@ -31,6 +37,12 @@
   align-items: center;
   gap: 8px;
   border-top: 1px solid #ddd;
+}
+
+/* Fixed slot so the Lookup content appearing never shifts the row. */
+.lookup-label {
+  flex: 0 0 6.4em;
+  color: #555;
 }
 
 .lookup-word {
@@ -79,7 +91,9 @@
 }
 
 /* Underline rules: solid = Known Item, dotted = unknown with a dictionary
-   entry, none = unlinked token; Grammar Spans override with wavy. */
+   entry, none = unlinked token; Grammar Spans override with a purple wavy
+   line, clearly distinct from the plain/known/unknown underlines, and the
+   story's focus grammar adds a thicker, stronger line. */
 .tok-known {
   text-decoration: underline solid #444;
 }
@@ -89,11 +103,12 @@
 }
 
 .tok-grammar {
-  text-decoration: underline wavy #444;
+  text-decoration: underline wavy #7c3aed;
 }
 
 .tok-grammar-focus {
-  font-weight: 700;
+  text-decoration: underline wavy #5b21b6;
+  text-decoration-thickness: 2.5px;
 }
 
 .token.is-hovered {

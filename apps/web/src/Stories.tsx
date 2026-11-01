@@ -35,11 +35,14 @@ import "./reader.css";
  * to a word fills the single-line Lookup row with its reading, first
  * glosses, pitch graph and JLPT badge — instantly, from a cached lookup —
  * while Grammar Spans show their point's pattern and meaning instead. A
- * tapped word opens a menu (Dictionary · Save · Save to…); Dictionary
- * opens a Dictionary Entry window with the full JMdict entry, the
- * Learner's MaruMori state for the word and each of its kanji, and the
- * Kanjium pitch pattern when we have one. Everything reachable by mouse is
- * reachable by keyboard: tokens are buttons, Escape closes menus/windows.
+ * tapped word or Grammar Span token opens a menu (Dictionary · Save ·
+ * Save to…; a span token's menu adds Grammar, so words inside a span keep
+ * their own Dictionary Entry); Dictionary opens a Dictionary Entry window
+ * with the full JMdict entry, the Learner's MaruMori state for the word and
+ * each of its kanji, and the Kanjium pitch pattern when we have one.
+ * Everything reachable by mouse is reachable by keyboard: tokens are
+ * buttons, Enter opens the menu (which takes focus), Escape closes just the
+ * menu — then the windows one at a time — and returns focus to the token.
  */
 export function Stories({ client }: { client: ApiClient }) {
   const view = useStory(client);
@@ -135,23 +138,14 @@ function StoryReader({ view, client }: { view: StoryView; client: ApiClient }) {
     setWindows((prev) => (prev.some((x) => x.key === w.key) ? prev : [...prev, w]));
   }, []);
 
-  const dismissAll = useCallback(() => {
-    setMenu(null);
-    setWindows([]);
-    setHovered(null);
-  }, []);
-
   const onTokenActivate = (sentenceIdx: number, tokenIdx: number) => {
     const sentence = story.sentences[sentenceIdx];
     const token = sentence?.tokens[tokenIdx];
     if (!sentence || !token) return;
-    const span = coveringSpan(sentence, token);
     setSelected(sentenceIdx);
-    if (span) {
-      setMenu(null);
-      openWindow({ kind: "grammar", key: `grammar-${span.grammarPointId}`, grammarPointId: span.grammarPointId });
-      return;
-    }
+    // Every token — plain word or one inside a Grammar Span — opens the same
+    // menu, so words inside a span still reach their own Dictionary Entry;
+    // the span's window hangs off a Grammar item the menu adds for it.
     if (menu && menu.sentence === sentenceIdx && menu.index === tokenIdx) {
       setMenu(null);
       return;
@@ -160,7 +154,17 @@ function StoryReader({ view, client }: { view: StoryView; client: ApiClient }) {
   };
 
   const escape = (e: KeyboardEvent<HTMLElement>) => {
-    if (e.key === "Escape") dismissAll();
+    if (e.key !== "Escape") return;
+    // Escape peels one layer: it closes just the menu — focusing its token
+    // button first, so focus is not dropped — and otherwise closes the most
+    // recently opened window.
+    if (menu) {
+      const btn = document.querySelector<HTMLButtonElement>(`button[data-token="${menu.sentence}:${menu.index}"]`);
+      btn?.focus();
+      setMenu(null);
+    } else if (windows.length > 0) {
+      setWindows((prev) => prev.slice(0, -1));
+    }
   };
 
   return (
@@ -186,6 +190,7 @@ function StoryReader({ view, client }: { view: StoryView; client: ApiClient }) {
               <TokenButton
                 key={j}
                 token={tok}
+                tokenKey={`${i}:${j}`}
                 spans={sen.grammarSpans}
                 hovered={hovered?.kind === "token" && hovered.sentence === i && hovered.index === j}
                 onEnter={() => {
@@ -202,6 +207,7 @@ function StoryReader({ view, client }: { view: StoryView; client: ApiClient }) {
                   menu && menu.sentence === i && menu.index === j ? (
                     <TokenMenu
                       token={tok}
+                      span={coveringSpan(sen, tok)}
                       onDictionary={() => {
                         if (tok.entSeq === undefined) return;
                         setMenu(null);
@@ -212,6 +218,12 @@ function StoryReader({ view, client }: { view: StoryView; client: ApiClient }) {
                           surface: tok.surface,
                           reading: tok.reading,
                         });
+                      }}
+                      onGrammar={() => {
+                        const sp = coveringSpan(sen, tok);
+                        if (!sp) return;
+                        setMenu(null);
+                        openWindow({ kind: "grammar", key: `grammar-${sp.grammarPointId}`, grammarPointId: sp.grammarPointId });
                       }}
                     />
                   ) : null
@@ -278,8 +290,9 @@ function StoryReader({ view, client }: { view: StoryView; client: ApiClient }) {
 /**
  * The Reading Panel: fixed size, stuck to the top while the story scrolls.
  * The selected sentence (with furigana) and its translation live in a
- * two-line area that scrolls internally rather than resizing the panel; the
- * Lookup row below it is a single line.
+ * fixed two-line area — long text first shrinks one step, then scrolls
+ * internally — so the panel never changes size; the Lookup row below it is
+ * a single line, always led by the fixed "Word meaning" label.
  */
 function ReadingPanel({
   story,
@@ -296,9 +309,19 @@ function ReadingPanel({
 }) {
   const blur = reading.state.status === "ready" ? reading.state.settings.blurTranslation : true;
   const sen = selected !== null ? story.sentences[selected] : null;
+
+  // Two lines don't fit (long sentence, furigana ruby inflating the lines)?
+  // Shrink the text exactly one step; if it still overflows, the area
+  // scrolls. The inline ref callback is re-invoked on every render, so the
+  // content is always re-measured against the CSS-fixed box height.
   return (
     <div className="reading-panel" aria-label="Reading Panel">
-      <div className="sentence-area">
+      <div
+        className="sentence-area"
+        ref={(el) => {
+          if (el) el.classList.toggle("shrunk", el.scrollHeight > el.clientHeight);
+        }}
+      >
         {sen ? (
           <>
             <span className="panel-sentence">
@@ -329,6 +352,9 @@ function ReadingPanel({
         )}
       </div>
       <div className="lookup-row" aria-live="polite">
+        {/* Fixed label, outside the conditional content: it keeps its slot so
+            the row never shifts as lookups come and go. */}
+        <span className="lookup-label">Word meaning</span>
         <LookupRow story={story} hovered={hovered} lookup={lookup} />
       </div>
     </div>
@@ -394,11 +420,32 @@ function LookupRow({
   );
 }
 
-/** The menu over a tapped word. Save / Save to… arrive with Saved Items (issue #12). */
-function TokenMenu({ token, onDictionary }: { token: StoryToken; onDictionary: () => void }) {
+/**
+ * The menu over a tapped word or Grammar Span token. Dictionary is the
+ * word's own entry; a token inside a Grammar Span also gets a Grammar item
+ * for the point, keeping words inside spans reachable. Save / Save to…
+ * arrive with Saved Items (issue #12). Opening moves focus to the first
+ * enabled item.
+ */
+function TokenMenu({
+  token,
+  span,
+  onDictionary,
+  onGrammar,
+}: {
+  token: StoryToken;
+  span: StoryGrammarSpan | null;
+  onDictionary: () => void;
+  onGrammar: () => void;
+}) {
   const later = { disabled: true, title: "Saving words comes with Saved Items (issue #12)" } as const;
+  const rootRef = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const first = rootRef.current?.querySelector<HTMLButtonElement>("[role=menuitem]:not([disabled])");
+    first?.focus();
+  }, []);
   return (
-    <span className="token-menu" role="menu" onClick={(e) => e.stopPropagation()}>
+    <span ref={rootRef} className="token-menu" role="menu" onClick={(e) => e.stopPropagation()}>
       <button
         type="button"
         role="menuitem"
@@ -408,6 +455,11 @@ function TokenMenu({ token, onDictionary }: { token: StoryToken; onDictionary: (
       >
         Dictionary
       </button>
+      {span && (
+        <button type="button" role="menuitem" title={`${span.pattern}: ${span.meaning}`} onClick={onGrammar}>
+          Grammar
+        </button>
+      )}
       <button type="button" role="menuitem" {...later}>
         Save
       </button>
@@ -600,18 +652,35 @@ function GrammarWindow({
   );
 }
 
-/** The mora pitch graph, drawn from Kanjium numbers only when we have them. */
+/**
+ * The mora pitch graph, drawn from Kanjium numbers only when we have them:
+ * a filled dot per mora joined by lines to a hollow dot for the following
+ * particle. Heiban (flat): mora 1 low, everything after — the particle
+ * included — high. Downstep: high up to the accent mora, low from there,
+ * particle low too.
+ */
 function PitchGraph({ pitch }: { pitch: PitchPattern }) {
   const w = 10;
   const high = 3;
   const low = 15;
   const y = (m: number) => (pitch.heiban ? (m === 1 ? low : high) : m <= pitch.accentPosition ? high : low);
-  const pts: string[] = [];
-  for (let m = 1; m <= pitch.moraCount; m++) pts.push(`${(m - 1) * w},${y(m)}`);
-  pts.push(`${pitch.moraCount * w + 4},${low}`); // the drop after the downstep
+  const n = pitch.moraCount;
+  const moras = Array.from({ length: n }, (_, i) => ({ x: i * w, y: y(i + 1) }));
+  const particle = { x: n * w, y: y(n + 1) };
+  const line = [...moras, particle].map((p) => `${p.x},${p.y}`).join(" ");
   return (
-    <svg className="pitch-graph" width={pitch.moraCount * w + 8} height={18} role="img" aria-label={`Pitch pattern for ${pitch.reading}`}>
-      <polyline points={pts.join(" ")} fill="none" stroke="#1a56db" strokeWidth={1.5} />
+    <svg
+      className="pitch-graph"
+      width={n * w + 8}
+      height={18}
+      role="img"
+      aria-label={`Pitch pattern for ${pitch.reading}`}
+    >
+      <polyline points={line} fill="none" stroke="#1a56db" strokeWidth={1.5} />
+      {moras.map((p, i) => (
+        <circle key={i} className="pitch-mora" cx={p.x} cy={p.y} r={2.5} fill="#1a56db" />
+      ))}
+      <circle className="pitch-particle" cx={particle.x} cy={particle.y} r={2.5} fill="#fff" stroke="#1a56db" strokeWidth={1.5} />
     </svg>
   );
 }
@@ -729,10 +798,11 @@ function TokenRuby({ token }: { token: StoryToken }) {
  * A token in the story body: a real button so Tab reaches every word and
  * Enter opens its menu. Underline rules: solid = Known Item, dotted =
  * unknown with a dictionary entry, none = unlinked; Grammar Spans override
- * with a wavy line (bold for the story's focus grammar).
+ * with a purple wavy line (thicker still for the story's focus grammar).
  */
 function TokenButton({
   token,
+  tokenKey,
   spans,
   hovered,
   onEnter,
@@ -741,6 +811,7 @@ function TokenButton({
   menu,
 }: {
   token: StoryToken;
+  tokenKey: string;
   spans: StoryGrammarSpan[];
   hovered: boolean;
   onEnter: () => void;
@@ -767,6 +838,7 @@ function TokenButton({
       <button
         type="button"
         className={cls.join(" ")}
+        data-token={tokenKey}
         title={title}
         onMouseEnter={onEnter}
         onMouseLeave={onLeave}
