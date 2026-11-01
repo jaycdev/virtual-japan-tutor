@@ -45,6 +45,9 @@ func run() error {
 		Addr:              cfg.HTTPAddr,
 		Handler:           httpapi.New(pool),
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       cfg.ReadTimeout,
+		WriteTimeout:      cfg.WriteTimeout,
+		IdleTimeout:       cfg.IdleTimeout,
 	}
 
 	errCh := make(chan error, 1)

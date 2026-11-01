@@ -2,6 +2,7 @@ package config_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/config"
 )
@@ -30,6 +31,43 @@ func TestLoadDefaultsHTTPAddr(t *testing.T) {
 	}
 	if cfg.HTTPAddr != ":8080" {
 		t.Fatalf("HTTPAddr = %q, want :8080", cfg.HTTPAddr)
+	}
+}
+
+func TestLoadHTTPTimeoutDefaults(t *testing.T) {
+	cfg, err := config.Load(env(map[string]string{"DATABASE_URL": "postgres://x"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ReadTimeout != 15*time.Second || cfg.WriteTimeout != 30*time.Second || cfg.IdleTimeout != 60*time.Second {
+		t.Fatalf("got read=%v write=%v idle=%v", cfg.ReadTimeout, cfg.WriteTimeout, cfg.IdleTimeout)
+	}
+}
+
+func TestLoadHTTPTimeoutOverrides(t *testing.T) {
+	cfg, err := config.Load(env(map[string]string{
+		"DATABASE_URL":       "postgres://x",
+		"HTTP_READ_TIMEOUT":  "3s",
+		"HTTP_WRITE_TIMEOUT": "1m30s",
+		"HTTP_IDLE_TIMEOUT":  "500ms",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ReadTimeout != 3*time.Second || cfg.WriteTimeout != 90*time.Second || cfg.IdleTimeout != 500*time.Millisecond {
+		t.Fatalf("got read=%v write=%v idle=%v", cfg.ReadTimeout, cfg.WriteTimeout, cfg.IdleTimeout)
+	}
+}
+
+func TestLoadRejectsInvalidTimeouts(t *testing.T) {
+	for _, bad := range []string{"soon", "-5s", "0s"} {
+		_, err := config.Load(env(map[string]string{
+			"DATABASE_URL":      "postgres://x",
+			"HTTP_READ_TIMEOUT": bad,
+		}))
+		if err == nil {
+			t.Fatalf("expected error for HTTP_READ_TIMEOUT=%q", bad)
+		}
 	}
 }
 
