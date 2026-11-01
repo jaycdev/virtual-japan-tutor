@@ -11,6 +11,7 @@ import (
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/llm"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/marumori"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/mastery"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/practice"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/secrets"
 )
 
@@ -54,6 +55,9 @@ type Config struct {
 	// Mastery holds the Mastery scoring weights and Focus Set rotation knobs
 	// (env MASTERY_* and FOCUS_SET_*, see loadMastery for names and bounds).
 	Mastery mastery.Options
+	// Practice holds Practice Session size and lifetime
+	// (env PRACTICE_SESSION_SIZE, PRACTICE_SESSION_TTL; see loadPractice).
+	Practice practice.Options
 }
 
 // Load builds a Config using getenv (typically os.Getenv).
@@ -101,6 +105,9 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, err
 	}
 	if err := loadMastery(getenv, &cfg); err != nil {
+		return Config{}, err
+	}
+	if err := loadPractice(getenv, &cfg); err != nil {
 		return Config{}, err
 	}
 	return cfg, nil
@@ -207,6 +214,21 @@ func loadMastery(getenv func(string) string, cfg *Config) error {
 	}
 
 	cfg.Mastery = opts
+	return nil
+}
+
+// loadPractice validates the PRACTICE_* settings (issue #9). Defaults come
+// from practice's own constants, so the session defaults live in one place.
+func loadPractice(getenv func(string) string, cfg *Config) error {
+	var err error
+	// The issue asks for "around 20 exercises"; the bounds keep a mistake
+	// from turning a session into a marathon or a single question.
+	if cfg.Practice.SessionSize, err = boundedInt(getenv, "PRACTICE_SESSION_SIZE", practice.DefaultSessionSize, 5, 50); err != nil {
+		return err
+	}
+	if cfg.Practice.SessionTTL, err = duration(getenv, "PRACTICE_SESSION_TTL", practice.DefaultSessionTTL); err != nil {
+		return err
+	}
 	return nil
 }
 

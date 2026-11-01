@@ -23,6 +23,7 @@ import (
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/marumori"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/marumorisync"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/mastery"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/practice"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/refdata"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/secrets"
 )
@@ -84,6 +85,11 @@ func run(args []string) error {
 	// and the signals; scoring weights and rotation knobs come from config.
 	focus := mastery.NewService(mastery.NewPostgresStore(pool), cfg.Mastery)
 
+	// Practice Sessions (issue #9): exercises drawn from the Focus Set, with
+	// every answer appended to the Practice Record the mastery service reads.
+	practiceSvc := practice.NewService(focus, practice.NewPostgresContent(pool),
+		practice.NewMemStore(cfg.Practice.SessionTTL), practice.NewPostgresResults(pool), cfg.Practice)
+
 	// The grammar store doubles as the JMdict-backed dictionary the example
 	// validator checks words against.
 	grammarStore := grammar.NewPostgresStore(pool)
@@ -102,7 +108,7 @@ func run(args []string) error {
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.New(pool, svc, httpapi.WithAIProviders(ai), httpapi.WithMaruMori(maru), httpapi.WithGrammar(grammarStore, grammarGen), httpapi.WithKnownGrammar(knownGrammar), httpapi.WithFocusSet(focus), httpapi.WithMaxBodyBytes(cfg.MaxBodyBytes)),
+		Handler:           httpapi.New(pool, svc, httpapi.WithAIProviders(ai), httpapi.WithMaruMori(maru), httpapi.WithGrammar(grammarStore, grammarGen), httpapi.WithKnownGrammar(knownGrammar), httpapi.WithFocusSet(focus), httpapi.WithPractice(practiceSvc), httpapi.WithMaxBodyBytes(cfg.MaxBodyBytes)),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       cfg.ReadTimeout,
 		WriteTimeout:      cfg.WriteTimeout,

@@ -156,7 +156,7 @@ describe("App", () => {
     expect(calls).toContain("POST /auth/logout");
   });
 
-  it("navigates between Home, Grammar and Settings from the signed-in shell", async () => {
+  it("navigates between Home, Grammar, Practice and Settings from the signed-in shell", async () => {
     localStorage.setItem("vjt.token", "tok-1");
     renderApp();
     await screen.findByText("Signed in as alice");
@@ -169,6 +169,10 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Grammar" }));
     expect(await screen.findByRole("heading", { name: "Grammar" })).toBeTruthy();
     expect(await screen.findByRole("button", { name: "〜てしまう" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Practice" }));
+    expect(await screen.findByRole("heading", { name: "Practice" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Start a practice session" })).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Home" }));
     expect(await screen.findByText("Signed in as alice")).toBeTruthy();

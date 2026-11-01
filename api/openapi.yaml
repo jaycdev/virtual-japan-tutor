@@ -655,8 +655,115 @@ paths:
                 $ref: "#/components/schemas/FocusSet"
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /practice/sessions:
+    post:
+      operationId: startPracticeSession
+      summary: Start a Practice Session drawn from the Focus Set
+      description: >
+        Builds a session of up to PRACTICE_SESSION_SIZE Exercises from the current Focus Set
+        (issue #9): recognition questions — the Japanese item and four English meanings, the
+        distractors drawn from the same Item kind at a similar JLPT Level — and grammar cloze
+        questions, a Grammar Point's example sentence with the pattern blanked and pattern
+        variants as choices. Items the set holds but the app has no content for (unlinked
+        MaruMori items, grammar points with no example sentence) are skipped and counted in
+        `skipped`. Pass `seed` to make exercise selection and option order deterministic; the
+        server picks one when absent. A session lives in server memory for a bounded time
+        (PRACTICE_SESSION_TTL); every answer is appended to the Practice Record, so Mastery and
+        the Focus Set move as the Learner answers (docs/adr/0004).
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PracticeSessionStart"
+      responses:
+        "200":
+          description: The session and its exercises, in answer order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PracticeSession"
+        "409":
+          description: >
+            The Focus Set is empty — there is nothing to practise yet
+            (code `practice_no_items`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /practice/sessions/{sessionId}:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    get:
+      operationId: getPracticeSession
+      summary: A Practice Session in progress, or its results once complete
+      description: >
+        The session's exercises with their answer state; once every exercise is answered the
+        session is complete and carries its `results` summary. Unknown, expired or another
+        user's sessions are all `not_found`.
+      responses:
+        "200":
+          description: The current session view
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PracticeSession"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /practice/sessions/{sessionId}/answers:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    post:
+      operationId: answerPracticeExercise
+      summary: Answer one exercise of a Practice Session
+      description: >
+        Records the choice, appends the result to the Practice Record, and reports whether it
+        was right. The result is written at most once per exercise: re-answering is
+        `already_answered`. When the last exercise is answered the session completes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PracticeAnswer"
+      responses:
+        "200":
+          description: Whether the answer was correct, and the session's new state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PracticeAnswerResult"
+        "400":
+          description: Unknown exercise or option for this session (code `bad_request`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The exercise was already answered (code `already_answered`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 components:
   parameters:
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      description: >
+        A Practice Session's id, as returned by POST /practice/sessions. Plain string for the
+        same reason as ProviderId: path parameters bind before auth runs.
+      schema:
+        type: string
     ProviderId:
       name: id
       in: path
@@ -1205,8 +1312,7 @@ components:
       required: [kind, itemRef, source, mastery, newlyObservedGrammar]
       properties:
         kind:
-          type: string
-          enum: [kanji, vocabulary, grammar]
+          $ref: "#/components/schemas/ItemKind"
         itemRef:
           type: string
           description: >
@@ -1231,3 +1337,142 @@ components:
         newlyObservedGrammar:
           type: boolean
           description: True for Observed Grammar first seen within the new-grammar window; those items are pinned to the front.
+    ItemKind:
+      type: string
+      enum: [kanji, vocabulary, grammar]
+      description: >
+        The kind of a Known Item — the same three kinds the Knowledge Store, the Focus Set and
+        the Practice Record address items by.
+    PracticeSessionStart:
+      type: object
+      description: >
+        Session options. Everything is optional: an empty body (or no body at all) starts a
+        session with a server-chosen seed.
+      properties:
+        seed:
+          type: integer
+          format: int64
+          description: >
+            Makes item selection, distractor choice and option order deterministic — the same
+            seed and Focus Set produce the same session. Omit for a server-chosen seed.
+    PracticeSession:
+      type: object
+      description: >
+        One Practice Session (issue #9): its exercises in answer order, and once every
+        exercise is answered, the results summary. Sessions are short-lived server state.
+      required: [id, state, exercises, skipped]
+      properties:
+        id:
+          type: string
+          description: The session id to use for answers and further reads.
+        state:
+          $ref: "#/components/schemas/PracticeState"
+        targetSize:
+          type: integer
+          description: The session's configured target size (server config PRACTICE_SESSION_SIZE). A learner with a shorter Focus Set simply gets fewer exercises.
+        skipped:
+          type: integer
+          description: >
+            Focus Set items the session could not build an exercise for — unlinked MaruMori
+            items (no stored content) and grammar points with no example sentence.
+        exercises:
+          type: array
+          items:
+            $ref: "#/components/schemas/PracticeExercise"
+        results:
+          description: Present once the session is complete.
+          allOf:
+            - $ref: "#/components/schemas/PracticeResults"
+    PracticeExercise:
+      type: object
+      description: >
+        One Exercise. `recognition` shows a Known Item in Japanese with four English meaning
+        options; `grammar_cloze` shows a Grammar Point's example sentence with the pattern
+        replaced by ＿＿＿ and pattern variants as options. The correct answer is never sent
+        before the Learner answers.
+      required: [id, kind, itemKind, itemRef, prompt, answered]
+      properties:
+        id:
+          type: string
+          description: The exercise id within its session, used when answering.
+        kind:
+          type: string
+          enum: [recognition, grammar_cloze]
+        itemKind:
+          $ref: "#/components/schemas/ItemKind"
+        itemRef:
+          type: string
+          description: The Focus Set item ref this exercise practises (same addressing as the Practice Record).
+        prompt:
+          type: string
+          description: >
+            The Japanese side: the vocabulary's kanji form (reading when it has none), the
+            kanji, or the example sentence with the grammar pattern replaced by ＿＿＿.
+        instruction:
+          type: string
+          description: What to do, in English ("What does this mean?" / "Which pattern completes the sentence?").
+        options:
+          type: array
+          items:
+            $ref: "#/components/schemas/PracticeOption"
+        answered:
+          type: boolean
+        correct:
+          type: boolean
+          description: Present once answered — whether the Learner's choice was right.
+    PracticeOption:
+      type: object
+      required: [id, text]
+      properties:
+        id:
+          type: string
+          description: Stable within the exercise ("a"…"d"); send it in the answer.
+        text:
+          type: string
+    PracticeAnswer:
+      type: object
+      required: [exerciseId, optionId]
+      properties:
+        exerciseId:
+          type: string
+        optionId:
+          type: string
+    PracticeAnswerResult:
+      type: object
+      required: [correct, correctOptionId, state]
+      properties:
+        correct:
+          type: boolean
+        correctOptionId:
+          type: string
+          description: Lets the UI reveal the right answer after a miss.
+        state:
+          $ref: "#/components/schemas/PracticeState"
+    PracticeState:
+      type: string
+      enum: [in_progress, complete]
+      description: A Practice Session's state — complete once every Exercise has been answered. Its value after each answer is what the answer result reports.
+    PracticeResults:
+      type: object
+      description: The session's results summary, present once complete.
+      required: [total, correct]
+      properties:
+        total:
+          type: integer
+        correct:
+          type: integer
+        items:
+          type: array
+          description: Per-item results, in exercise order — what was appended to the Practice Record.
+          items:
+            $ref: "#/components/schemas/PracticeResultsItem"
+    PracticeResultsItem:
+      type: object
+      required: [itemKind, itemRef, correct]
+      properties:
+        itemKind:
+          $ref: "#/components/schemas/ItemKind"
+        itemRef:
+          type: string
+        correct:
+          type: boolean
