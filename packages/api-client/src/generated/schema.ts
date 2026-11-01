@@ -72,10 +72,176 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ai-providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The Learner's saved AI Providers */
+        get: operations["listAiProviders"];
+        put?: never;
+        /** Save a new AI Provider */
+        post: operations["createAiProvider"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai-providers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description An AI Provider's UUID. Declared as a plain string on purpose: the generated router binds `format: uuid` parameters before the auth middleware runs, so a malformed id would be answered 400 to an unauthenticated caller. The handler parses it (404 if malformed). */
+                id: components["parameters"]["ProviderId"];
+            };
+            cookie?: never;
+        };
+        /** One AI Provider */
+        get: operations["getAiProvider"];
+        put?: never;
+        post?: never;
+        /**
+         * Remove an AI Provider
+         * @description Rejected with 409 while the provider is assigned to a task; reassign the task first.
+         */
+        delete: operations["deleteAiProvider"];
+        options?: never;
+        head?: never;
+        /**
+         * Change an AI Provider
+         * @description Only the fields present are changed. `apiKey` omitted keeps the stored key; `null` or an empty string removes it (keyless endpoints such as Ollama need none).
+         */
+        patch: operations["updateAiProvider"];
+        trace?: never;
+    };
+    "/ai-providers/{id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description An AI Provider's UUID. Declared as a plain string on purpose: the generated router binds `format: uuid` parameters before the auth middleware runs, so a malformed id would be answered 400 to an unauthenticated caller. The handler parses it (404 if malformed). */
+                id: components["parameters"]["ProviderId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check that the provider answers a tiny chat request
+         * @description Always answers 200 when the provider exists; a failed check is `ok: false` with a readable `message`, not an HTTP error.
+         */
+        post: operations["testAiProvider"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai-tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Which AI Provider each task uses */
+        get: operations["listAiTasks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai-tasks/{task}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Choose the AI Provider for a task */
+        put: operations["setAiTask"];
+        post?: never;
+        /** Leave a task without an AI Provider */
+        delete: operations["clearAiTask"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * @description A job the app delegates to an AI Provider. Fixed set.
+         * @enum {string}
+         */
+        AiTask: "story" | "grammar_content";
+        /** @description A saved OpenAI-compatible endpoint. The API key is write-only and never returned. */
+        AiProvider: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** @description Normalised OpenAI-compatible base URL, e.g. https://api.openai.com/v1 */
+            baseUrl: string;
+            model: string;
+            /** @description Whether a key is stored. The key itself is never exposed, not even partially. */
+            hasApiKey: boolean;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        AiProviderCreate: {
+            /** @description Unique per Learner (case-insensitive). */
+            name: string;
+            /** @description Any http(s) OpenAI-compatible endpoint, including private/LAN/localhost addresses. A missing /v1 is added. */
+            baseUrl: string;
+            model: string;
+            /**
+             * Format: password
+             * @description Omit, null or empty for endpoints that need no key.
+             */
+            apiKey?: string | null;
+        };
+        AiProviderUpdate: {
+            name?: string;
+            baseUrl?: string;
+            model?: string;
+            /**
+             * Format: password
+             * @description Omitted keeps the stored key; null or empty removes it; any other value replaces it.
+             */
+            apiKey?: string | null;
+        };
+        AiProviderTestResult: {
+            ok: boolean;
+            /**
+             * Format: int64
+             * @description Round-trip time of the connection check in milliseconds.
+             */
+            latencyMs: number;
+            /** @description Human-readable outcome, e.g. "Connected" or why it failed. */
+            message: string;
+            /**
+             * @description How the endpoint handles JSON output, when the connection works: json_schema (best), json_object, prompt_only (JSON extracted from plain replies) or unavailable.
+             * @enum {string}
+             */
+            structuredOutput?: "json_schema" | "json_object" | "prompt_only" | "unavailable";
+        };
+        AiTaskAssignment: {
+            task: components["schemas"]["AiTask"];
+            /** Format: uuid */
+            providerId: string | null;
+        };
         Error: {
             /** @description Stable machine-readable error code (e.g. unauthorized, invalid_credentials, too_many_attempts). */
             code: string;
@@ -115,8 +281,20 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description No such resource for the authenticated user (code `not_found`) */
+        NotFound: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
     };
-    parameters: never;
+    parameters: {
+        /** @description An AI Provider's UUID. Declared as a plain string on purpose: the generated router binds `format: uuid` parameters before the auth middleware runs, so a malformed id would be answered 400 to an unauthenticated caller. The handler parses it (404 if malformed). */
+        ProviderId: string;
+    };
     requestBodies: never;
     headers: never;
     pathItems: never;
@@ -242,6 +420,300 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    listAiProviders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description All providers, oldest first. API keys are never included. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiProvider"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    createAiProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiProviderCreate"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiProvider"];
+                };
+            };
+            /** @description Invalid name, base URL or model (code `invalid_provider`) or malformed body */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description A provider with this name already exists (code `name_taken`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getAiProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description An AI Provider's UUID. Declared as a plain string on purpose: the generated router binds `format: uuid` parameters before the auth middleware runs, so a malformed id would be answered 400 to an unauthenticated caller. The handler parses it (404 if malformed). */
+                id: components["parameters"]["ProviderId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The provider (without its key) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiProvider"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteAiProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description An AI Provider's UUID. Declared as a plain string on purpose: the generated router binds `format: uuid` parameters before the auth middleware runs, so a malformed id would be answered 400 to an unauthenticated caller. The handler parses it (404 if malformed). */
+                id: components["parameters"]["ProviderId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description The provider is assigned to a task (code `provider_in_use`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    updateAiProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description An AI Provider's UUID. Declared as a plain string on purpose: the generated router binds `format: uuid` parameters before the auth middleware runs, so a malformed id would be answered 400 to an unauthenticated caller. The handler parses it (404 if malformed). */
+                id: components["parameters"]["ProviderId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiProviderUpdate"];
+            };
+        };
+        responses: {
+            /** @description The updated provider */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiProvider"];
+                };
+            };
+            /** @description Invalid name, base URL or model (code `invalid_provider`) or malformed body */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description Another provider already has this name (code `name_taken`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    testAiProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description An AI Provider's UUID. Declared as a plain string on purpose: the generated router binds `format: uuid` parameters before the auth middleware runs, so a malformed id would be answered 400 to an unauthenticated caller. The handler parses it (404 if malformed). */
+                id: components["parameters"]["ProviderId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The outcome of the check */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiProviderTestResult"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listAiTasks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One entry per task, in a stable order; `providerId` is null when unassigned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiTaskAssignment"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    setAiTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task: components["schemas"]["AiTask"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    providerId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The new assignment */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiTaskAssignment"];
+                };
+            };
+            /** @description Malformed body */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Unknown task, or no such provider (code `not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    clearAiTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task: components["schemas"]["AiTask"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The task, now unassigned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiTaskAssignment"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Unknown task (code `not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
 }
