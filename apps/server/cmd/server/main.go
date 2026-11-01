@@ -88,7 +88,7 @@ func run(args []string) error {
 	// Practice Sessions (issue #9): exercises drawn from the Focus Set, with
 	// every answer appended to the Practice Record the mastery service reads.
 	practiceSvc := practice.NewService(focus, practice.NewPostgresContent(pool),
-		practice.NewMemStore(cfg.Practice.SessionTTL), practice.NewPostgresResults(pool), cfg.Practice)
+		practice.NewMemStore(cfg.PracticeSessionTTL), practice.NewPostgresResults(pool), cfg.Practice)
 
 	// The grammar store doubles as the JMdict-backed dictionary the example
 	// validator checks words against.

@@ -807,7 +807,7 @@ export interface components {
             /** @description Present once the session is complete. */
             results?: components["schemas"]["PracticeResults"];
         };
-        /** @description One Exercise. `recognition` shows a Known Item in Japanese with four English meaning options; `grammar_cloze` shows a Grammar Point's example sentence with the pattern replaced by ＿＿＿ and pattern variants as options. The correct answer is never sent before the Learner answers. */
+        /** @description One Exercise. `recognition` shows a Known Item in Japanese with four English meaning options; `grammar_cloze` shows a Grammar Point's example sentence with the pattern replaced by ＿＿＿ and pattern variants as options. The correct answer is never sent before the Learner answers — once answered, `chosenOptionId` and `correctOptionId` reveal both sides so a resumed session shows the same feedback. */
         PracticeExercise: {
             /** @description The exercise id within its session, used when answering. */
             id: string;
@@ -824,6 +824,10 @@ export interface components {
             answered: boolean;
             /** @description Present once answered — whether the Learner's choice was right. */
             correct?: boolean;
+            /** @description Present once answered — the option the Learner chose. */
+            chosenOptionId?: string;
+            /** @description Present once answered — the option that holds the right answer. */
+            correctOptionId?: string;
         };
         PracticeOption: {
             /** @description Stable within the exercise ("a"…"d"); send it in the answer. */

@@ -55,9 +55,13 @@ type Config struct {
 	// Mastery holds the Mastery scoring weights and Focus Set rotation knobs
 	// (env MASTERY_* and FOCUS_SET_*, see loadMastery for names and bounds).
 	Mastery mastery.Options
-	// Practice holds Practice Session size and lifetime
-	// (env PRACTICE_SESSION_SIZE, PRACTICE_SESSION_TTL; see loadPractice).
+	// Practice holds Practice Session size (env PRACTICE_SESSION_SIZE; see
+	// loadPractice).
 	Practice practice.Options
+	// PracticeSessionTTL is how long a Practice Session stays resumable after
+	// it starts (env PRACTICE_SESSION_TTL); it configures the session store,
+	// not the practice service itself.
+	PracticeSessionTTL time.Duration
 }
 
 // Load builds a Config using getenv (typically os.Getenv).
@@ -226,7 +230,7 @@ func loadPractice(getenv func(string) string, cfg *Config) error {
 	if cfg.Practice.SessionSize, err = boundedInt(getenv, "PRACTICE_SESSION_SIZE", practice.DefaultSessionSize, 5, 50); err != nil {
 		return err
 	}
-	if cfg.Practice.SessionTTL, err = duration(getenv, "PRACTICE_SESSION_TTL", practice.DefaultSessionTTL); err != nil {
+	if cfg.PracticeSessionTTL, err = duration(getenv, "PRACTICE_SESSION_TTL", practice.DefaultSessionTTL); err != nil {
 		return err
 	}
 	return nil

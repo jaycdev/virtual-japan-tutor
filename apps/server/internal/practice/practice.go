@@ -41,7 +41,7 @@ const (
 // Defaults for Options; config exposes each as an env var.
 const (
 	DefaultSessionSize = 20            // "around 20 exercises"
-	DefaultSessionTTL  = 4 * time.Hour // an idle session stops being resumable
+	DefaultSessionTTL  = 4 * time.Hour // a session stops being resumable this long after it starts
 	OptionsPerExercise = 4             // one correct + three distractors
 )
 
@@ -75,8 +75,6 @@ type Options struct {
 	// SessionSize is the target number of exercises (the Focus Set may be
 	// shorter, and skipped items shorten the session further).
 	SessionSize int
-	// SessionTTL is how long a session stays resumable after it starts.
-	SessionTTL time.Duration
 	// Now is the clock; nil uses time.Now.
 	Now func() time.Time
 }
@@ -84,9 +82,6 @@ type Options struct {
 func (o Options) withDefaults() Options {
 	if o.SessionSize <= 0 {
 		o.SessionSize = DefaultSessionSize
-	}
-	if o.SessionTTL <= 0 {
-		o.SessionTTL = DefaultSessionTTL
 	}
 	if o.Now == nil {
 		o.Now = time.Now
@@ -176,7 +171,7 @@ type Session struct {
 	Skipped    int
 	Exercises  []Exercise
 	Answers    []Answer // parallel to Exercises; zero value = not answered
-	AnsweredAt []bool
+	Done       []bool   // parallel to Exercises; Done[i] = exercise i answered
 }
 
 func (s *Session) clone() *Session {
@@ -187,14 +182,14 @@ func (s *Session) clone() *Session {
 		out.Exercises[i].Options = append([]Option(nil), s.Exercises[i].Options...)
 	}
 	out.Answers = append([]Answer(nil), s.Answers...)
-	out.AnsweredAt = append([]bool(nil), s.AnsweredAt...)
+	out.Done = append([]bool(nil), s.Done...)
 	return &out
 }
 
 // answeredCount reports how many exercises have results.
 func (s *Session) answeredCount() int {
 	n := 0
-	for _, done := range s.AnsweredAt {
+	for _, done := range s.Done {
 		if done {
 			n++
 		}
@@ -337,7 +332,7 @@ func (s *Service) StartSession(ctx context.Context, userID uuid.UUID, seed int64
 		Skipped:    skipped,
 		Exercises:  g.exercises,
 		Answers:    make([]Answer, len(g.exercises)),
-		AnsweredAt: make([]bool, len(g.exercises)),
+		Done:       make([]bool, len(g.exercises)),
 	}
 	if err := s.sessions.Put(ctx, sess); err != nil {
 		return "", err
@@ -361,6 +356,10 @@ func (s *Service) GetSession(ctx context.Context, userID uuid.UUID, id string) (
 // the result to the Practice Record, and completes the session when the last
 // exercise is answered. Re-answering is ErrAlreadyAnswered.
 func (s *Service) SubmitAnswer(ctx context.Context, userID uuid.UUID, sessionID, exerciseID, optionID string) (AnswerResult, error) {
+	// The mutex is deliberately global rather than per-session: sessions are
+	// few and short-lived, and serialising every read-modify-write keeps the
+	// at-most-once rule simple until the SessionStore itself can enforce it
+	// (a Postgres store would do it with a transaction).
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -378,13 +377,10 @@ func (s *Service) SubmitAnswer(ctx context.Context, userID uuid.UUID, sessionID,
 	if idx < 0 {
 		return AnswerResult{}, BadRequestError("no exercise %q in this session", exerciseID)
 	}
-	if sess.AnsweredAt[idx] {
+	if sess.Done[idx] {
 		return AnswerResult{}, ErrAlreadyAnswered
 	}
 	ex := sess.Exercises[idx]
-	if sess.State == StateComplete {
-		return AnswerResult{}, ErrAlreadyAnswered // complete sessions keep their last state
-	}
 	optIdx := -1
 	for i, o := range ex.Options {
 		if o.ID == optionID {
@@ -399,10 +395,16 @@ func (s *Service) SubmitAnswer(ctx context.Context, userID uuid.UUID, sessionID,
 	correct := ex.Options[optIdx].ID == ex.CorrectOptionID
 	at := s.opts.Now()
 	sess.Answers[idx] = Answer{OptionID: optionID, Correct: correct, AnsweredAt: at}
-	sess.AnsweredAt[idx] = true
+	sess.Done[idx] = true
 	if sess.answeredCount() == len(sess.Exercises) {
 		sess.State = StateComplete
 	}
+	// AppendResult goes before the session Put on purpose: if the Practice
+	// Record write fails the session stays unanswered, so the learner's retry
+	// re-attempts the record write. The reverse order would mark the exercise
+	// answered while its result never landed — and a Postgres-backed store
+	// needs the same order (one transaction: record insert + session update)
+	// to keep the at-most-once rule idempotent.
 	if err := s.results.AppendResult(ctx, userID, ex.Item, correct, at); err != nil {
 		return AnswerResult{}, err
 	}
@@ -412,7 +414,7 @@ func (s *Service) SubmitAnswer(ctx context.Context, userID uuid.UUID, sessionID,
 	return AnswerResult{Correct: correct, CorrectOptionID: ex.CorrectOptionID, State: sess.State}, nil
 }
 
-// ParseItemRef splits a Focus Set item ref into the id its Content lookup
+// parseNumericRef splits a Focus Set item ref into the id its Content lookup
 // needs. Only refs that address reference data (an ent_seq or a grammar point
 // id) parse; a MaruMori id ("Vocab/1") does not — its content was never
 // stored (docs/adr/0002), so such items are skipped.

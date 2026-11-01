@@ -127,7 +127,7 @@ describe("usePractice", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 
-  it("a complete session reports done with results", async () => {
+  it("a complete session reports done with results, revealing answered options", async () => {
     const { client, fetchImpl, json } = fakeClient();
     const complete = session({
       state: "complete",
@@ -143,6 +143,10 @@ describe("usePractice", () => {
         ...ex,
         answered: true,
         correct: i === 0,
+        // The view reveals both sides of an answered exercise — what a
+        // reloaded Learner resumes with.
+        chosenOptionId: i === 0 ? "a" : "b",
+        correctOptionId: "a",
       })),
     });
     fetchImpl.mockImplementation(async () => json(201, complete));
@@ -157,11 +161,16 @@ describe("usePractice", () => {
     expect(result.current.results?.correct).toBe(1);
     expect(result.current.results?.total).toBe(2);
     expect(result.current.results?.items).toHaveLength(2);
-    // Answers recorded before this view have feedback but no option ids to highlight.
+    // Feedback for answers made in an earlier view comes from the reveal.
     expect(result.current.exercises[0]?.feedback).toEqual({
-      chosenOptionId: "",
-      correctOptionId: "",
+      chosenOptionId: "a",
+      correctOptionId: "a",
       correct: true,
+    });
+    expect(result.current.exercises[1]?.feedback).toEqual({
+      chosenOptionId: "b",
+      correctOptionId: "a",
+      correct: false,
     });
   });
 
@@ -216,6 +225,82 @@ describe("usePractice", () => {
     // The exercise stays open because the answer never landed, and no refresh ran.
     expect(result.current.current?.id).toBe("e1");
     expect(result.current.exercises[0]?.feedback).toBeNull();
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("locks further answers while one is in flight", async () => {
+    const { client, fetchImpl, json } = fakeClient();
+    // The answer POST hangs on a promise the test controls, so the request
+    // is verifiably mid-flight while the extra answers are attempted.
+    let resolveAnswer!: (res: Response) => void;
+    const answerPending = new Promise<Response>((resolve) => {
+      resolveAnswer = resolve;
+    });
+    const answered = session({
+      exercises: session().exercises.map((ex) =>
+        ex.id === "e1"
+          ? { ...ex, answered: true, correct: true, chosenOptionId: "a", correctOptionId: "a" }
+          : ex,
+      ),
+    });
+    fetchImpl
+      .mockImplementationOnce(async () => json(201, session()))
+      .mockImplementationOnce(() => answerPending)
+      .mockImplementationOnce(async () => json(200, answered));
+
+    const { result } = renderHook(() => usePractice(client));
+    await act(async () => {
+      void result.current.start();
+    });
+    await waitFor(() => expect(result.current.state).toBe("active"));
+
+    let first!: Promise<void>;
+    act(() => {
+      first = result.current.answer("e1", "a");
+    });
+    await waitFor(() => expect(result.current.pending).toBe(true));
+
+    // A double-click lands while the first POST is still open: no-ops.
+    await act(async () => {
+      await result.current.answer("e1", "b");
+      await result.current.answer("e2", "a");
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(2); // start + one answer
+
+    await act(async () => {
+      resolveAnswer(
+        json(200, { exerciseId: "e1", correct: true, correctOptionId: "a", state: "in_progress" }),
+      );
+      await first;
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(3); // the refresh, and nothing else
+    expect(result.current.pending).toBe(false);
+    expect(result.current.exercises[0]?.feedback?.chosenOptionId).toBe("a");
+  });
+
+  it("an expired session during an answer returns the screen to the start form", async () => {
+    const { client, fetchImpl, json } = fakeClient();
+    fetchImpl
+      .mockImplementationOnce(async () => json(201, session()))
+      .mockImplementationOnce(async () =>
+        json(404, { code: "not_found", message: "practice session expired" }),
+      );
+
+    const { result } = renderHook(() => usePractice(client));
+    await act(async () => {
+      void result.current.start();
+    });
+    await waitFor(() => expect(result.current.state).toBe("active"));
+
+    await act(async () => {
+      await result.current.answer("e1", "a");
+    });
+
+    // Nothing to resume: the session is gone, so the Start form comes back.
+    expect(result.current.state).toBe("error");
+    expect(result.current.session).toBeNull();
+    expect(result.current.error).toContain("expired");
+    // No pointless refresh of a session the server says is missing.
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 

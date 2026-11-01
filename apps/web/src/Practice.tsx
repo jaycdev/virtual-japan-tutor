@@ -14,7 +14,8 @@ type Api = ReturnType<typeof createApiClient>;
 export function Practice({ client }: { client: Api }) {
   const practice = usePractice(client);
   // The exercise on screen. It stays up after answering so the Learner sees
-  // what was right; Continue moves to the next unanswered one.
+  // what was right — even after the last answer flips the session to done;
+  // Continue is what moves on to the results.
   const [shownId, setShownId] = useState<string | null>(null);
 
   let body: ReactNode = null;
@@ -26,9 +27,23 @@ export function Practice({ client }: { client: Api }) {
     case "starting":
       body = <p className="muted">Building your session from the Focus Set…</p>;
       break;
-    case "done":
-      body = <PracticeResults practice={practice} />;
+    case "done": {
+      // The final answer's feedback stays on screen until Continue, so the
+      // Learner sees the last exercise's result too.
+      const shown = shownId ? practice.exercises.find((ex) => ex.id === shownId) : undefined;
+      body =
+        shown && shown.feedback ? (
+          <ActivePractice
+            practice={practice}
+            current={shown}
+            onContinue={() => setShownId(null)}
+            onAnswer={() => undefined}
+          />
+        ) : (
+          <PracticeResults practice={practice} />
+        );
       break;
+    }
     case "active": {
       const shown = practice.exercises.find((ex) => ex.id === shownId) ?? practice.current;
       body = shown ? (
@@ -92,7 +107,10 @@ function ActivePractice({
   const answeredCount = practice.exercises.filter((ex) => ex.answered).length;
   const skipped = practice.session?.skipped ?? 0;
   const feedback = current.feedback;
+  // Settled once the answer landed; pending covers the request in flight, so
+  // a double-click cannot post the same answer twice.
   const settled = feedback !== null;
+  const locked = settled || practice.pending;
   return (
     <>
       <p className="muted">
@@ -116,7 +134,7 @@ function ActivePractice({
             <li key={opt.id}>
               <button
                 type="button"
-                disabled={settled}
+                disabled={locked}
                 className={settled ? (right ? "option correct" : chosen ? "option chosen-wrong" : "option") : "option"}
                 onClick={() => onAnswer(current.id, opt.id)}
               >
@@ -137,25 +155,26 @@ function ActivePractice({
 }
 
 function PracticeResults({ practice }: { practice: PracticeView }) {
-  const [retryKey, setRetryKey] = useState(0);
+  const exercises = practice.session?.exercises ?? [];
   return (
     <>
       <p className="saved" role="status">
         Session complete — {practice.results?.correct ?? 0} of {practice.results?.total ?? 0} correct.
       </p>
       <table>
-        <caption>Every item you practised</caption>
+        <caption>Every exercise you practised</caption>
         <thead>
           <tr>
-            <th scope="col">Item</th>
+            <th scope="col">Exercise</th>
             <th scope="col">Kind</th>
             <th scope="col">Result</th>
           </tr>
         </thead>
         <tbody>
+          {/* results.items are in exercise order, so index into the session's exercises. */}
           {(practice.results?.items ?? []).map((item, i) => (
             <tr key={`${item.itemKind}:${item.itemRef}:${i}`}>
-              <td>{item.itemRef}</td>
+              <td>{exercises[i]?.prompt ?? item.itemRef}</td>
               <td>{item.itemKind}</td>
               <td>{item.correct ? "✓" : "✗"}</td>
             </tr>
@@ -163,10 +182,8 @@ function PracticeResults({ practice }: { practice: PracticeView }) {
         </tbody>
       </table>
       <form
-        key={retryKey}
         onSubmit={(e: FormEvent) => {
           e.preventDefault();
-          setRetryKey((k) => k + 1);
           void practice.start();
         }}
       >

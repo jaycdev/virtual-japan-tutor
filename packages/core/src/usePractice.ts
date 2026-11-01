@@ -4,24 +4,28 @@ import type {
   PracticeResults,
   PracticeSession,
 } from "@vjt/api-client";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 /**
  * State and actions behind the Practice Session screen (issue #9), shared by
  * web and mobile. The server holds the session; every answer is posted
  * immediately (it lands in the Practice Record) and the session is refetched
- * so the server stays the source of truth. The chosen option and the revealed
- * correct option are kept locally, because the session view never sends the
- * correct answer before the Learner has answered.
+ * so the server stays the source of truth. The answer result carries the
+ * chosen and revealed options, which are kept locally too; the session view
+ * also reveals them per exercise, so a reloaded Learner sees the same
+ * feedback — the view never sends the correct answer before the Learner has
+ * answered.
  *
  * Like the other hooks this never rejects: failures land in `error` and the
- * session stays usable.
+ * session stays usable. An answer request is one at a time (`pending`); a
+ * session that has expired mid-answer (404) is unrecoverable and returns the
+ * screen to the Start form.
  */
 
 const UNREACHABLE = "Cannot reach the server";
 const FAILED = "Request failed";
 
-/** Feedback for one answered exercise. Ids are empty when the answer was recorded in an earlier view. */
+/** Feedback for one answered exercise. Ids are empty only for answers the view cannot attribute to an option. */
 export interface AnswerFeedback {
   chosenOptionId: string;
   correctOptionId: string;
@@ -49,10 +53,12 @@ export interface PracticeView {
   current: ExerciseView | null;
   /** Present once the session is complete. */
   results: PracticeResults | null;
-  /** Exercises generated so far; the total grows while the server streams them. */
+  /** Exercises in the session so far. The server builds them up front, so this equals the session size. */
   generated: number;
   /** The session's target size. */
   target: number;
+  /** True while an answer request is in flight: the option buttons are locked. */
+  pending: boolean;
   error: string | null;
   start(): Promise<void>;
   answer(exerciseId: string, optionId: string): Promise<void>;
@@ -68,7 +74,12 @@ export function usePractice(client: ApiClient): PracticeView {
   // session view carries the result.
   const [answers, setAnswers] = useState<Map<string, AnswerFeedback>>(() => new Map());
   const [state, setState] = useState<PracticeView["state"]>("idle");
+  const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Ref, not state: answer() must see the in-flight flag synchronously,
+  // before React re-renders. It stops a double-click posting the same answer
+  // twice (the second POST would 409 already_answered).
+  const inFlight = useRef(false);
 
   const start = useCallback(async () => {
     setState("starting");
@@ -91,7 +102,9 @@ export function usePractice(client: ApiClient): PracticeView {
 
   const answer = useCallback(
     async (exerciseId: string, optionId: string) => {
-      if (!session) return;
+      if (!session || inFlight.current) return;
+      inFlight.current = true;
+      setPending(true);
       setError(null);
       try {
         const { data, error: err, response } = await client.POST(
@@ -103,6 +116,11 @@ export function usePractice(client: ApiClient): PracticeView {
         );
         if (!data) {
           setError(message(err, response.status));
+          if (response.status === 404) {
+            // The session is gone (expired or foreign): nothing to resume.
+            setSession(null);
+            setState("error");
+          }
           return;
         }
         // Mark it before refetching, so a failing refresh still shows feedback.
@@ -121,9 +139,16 @@ export function usePractice(client: ApiClient): PracticeView {
           setState(refreshed.data.state === "complete" ? "done" : "active");
         } else {
           setError(message(refreshed.error, refreshed.response.status));
+          if (refreshed.response.status === 404) {
+            setSession(null);
+            setState("error");
+          }
         }
       } catch {
         setError(UNREACHABLE);
+      } finally {
+        inFlight.current = false;
+        setPending(false);
       }
     },
     [client, session],
@@ -132,11 +157,18 @@ export function usePractice(client: ApiClient): PracticeView {
   const exercises = useMemo<ExerciseView[]>(() => {
     if (!session) return [];
     return session.exercises.map((ex) => {
+      // Prefer the locally recorded answer (it is the freshest); otherwise
+      // fall back to what the session view reveals for answered exercises —
+      // that is all a reloaded Learner has.
       const local = answers.get(ex.id);
       const feedback: AnswerFeedback | null = local
         ? local
         : ex.answered
-          ? { chosenOptionId: "", correctOptionId: "", correct: ex.correct === true }
+          ? {
+              chosenOptionId: ex.chosenOptionId ?? "",
+              correctOptionId: ex.correctOptionId ?? "",
+              correct: ex.correct === true,
+            }
           : null;
       return {
         id: ex.id,
@@ -160,6 +192,7 @@ export function usePractice(client: ApiClient): PracticeView {
     results: session?.results ?? null,
     generated: session?.exercises.length ?? 0,
     target: session?.targetSize ?? session?.exercises.length ?? 0,
+    pending,
     error,
     start,
     answer,

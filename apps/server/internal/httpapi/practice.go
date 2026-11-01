@@ -110,8 +110,9 @@ func (s *server) AnswerPracticeExercise(ctx context.Context, request api.AnswerP
 	}, nil
 }
 
-// practiceSessionView maps the stored session to the API view. The correct
-// option is only revealed per exercise once it has been answered.
+// practiceSessionView maps the stored session to the API view. Once an
+// exercise has been answered its chosen and correct options are revealed, so
+// a resumed session shows the same feedback; nothing is revealed before.
 func practiceSessionView(sess *practice.Session) api.PracticeSession {
 	view := api.PracticeSession{
 		Id:         sess.ID,
@@ -135,10 +136,14 @@ func practiceSessionView(sess *practice.Session) api.PracticeSession {
 			opts = append(opts, api.PracticeOption{Id: o.ID, Text: o.Text})
 		}
 		ex.Options = &opts
-		if sess.AnsweredAt[i] {
+		if sess.Done[i] {
 			ex.Answered = true
 			correct := sess.Answers[i].Correct
 			ex.Correct = &correct
+			chosen := sess.Answers[i].OptionID
+			ex.ChosenOptionId = &chosen
+			right := e.CorrectOptionID
+			ex.CorrectOptionId = &right
 		}
 		view.Exercises = append(view.Exercises, ex)
 	}

@@ -13,7 +13,7 @@ function json(status: number, body: unknown) {
  * A stateful fake of the Practice API (issue #9). `requests` records every
  * call's method, path and body so the test can assert the answer loop.
  */
-function fakeApi(opts: { empty?: boolean } = {}) {
+function fakeApi(opts: { empty?: boolean; slowAnswerMs?: number } = {}) {
   interface Exercise {
     id: string;
     kind: string;
@@ -75,9 +75,14 @@ function fakeApi(opts: { empty?: boolean } = {}) {
         instruction: ex.instruction,
         options: ex.options,
         answered: ex.answered,
-        // The server never reveals the right option before the answer; it only
-        // reports `correct` afterwards.
-        ...(ex.answered ? { correct: ex.correct === true } : {}),
+        // The server reveals both sides only once the Learner has answered.
+        ...(ex.answered
+          ? {
+              correct: ex.correct === true,
+              chosenOptionId: ex.chosenOptionId ?? "",
+              correctOptionId: ex.correctOptionId,
+            }
+          : {}),
       })),
       ...(done
         ? {
@@ -122,6 +127,7 @@ function fakeApi(opts: { empty?: boolean } = {}) {
         const ex = exercises.find((e) => e.id === body.exerciseId);
         if (!ex) return json(404, { code: "not_found", message: "no such exercise" });
         if (ex.answered) return json(409, { code: "already_answered", message: "that exercise is already answered" });
+        if (opts.slowAnswerMs) await new Promise((r) => setTimeout(r, opts.slowAnswerMs));
         ex.answered = true;
         ex.chosenOptionId = String(body.optionId);
         ex.correct = body.optionId === ex.correctOptionId;
@@ -170,17 +176,41 @@ describe("Practice page", () => {
     expect(await screen.findByText("Exercise 2 of 2")).toBeTruthy();
     expect(screen.getByText("水を飲む＿＿＿。")).toBeTruthy();
 
-    // Right answer this time; the session completes with the results summary.
+    // Right answer this time. The last answer's feedback stays on screen —
+    // Continue is what moves to the results summary.
     fireEvent.click(screen.getByRole("button", { name: "ました" }));
+    expect(await screen.findByText("Correct")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     expect(await screen.findByText("Session complete — 1 of 2 correct.")).toBeTruthy();
-    expect(screen.getByText("900001")).toBeTruthy();
-    expect(screen.getByText("900002")).toBeTruthy();
+    // The review names each exercise by its prompt, not its bare item ref.
+    expect(screen.getByText("学生")).toBeTruthy();
+    expect(screen.getByText("水を飲む＿＿＿。")).toBeTruthy();
     expect(screen.getByText("✓")).toBeTruthy();
     expect(screen.getByText("✗")).toBeTruthy();
 
     // Every answer reached the server exactly once.
     const answers = requests.filter((r) => r.path.endsWith("/answers"));
     expect(answers).toHaveLength(2);
+  });
+
+  it("locks the options while an answer is in flight — one POST per exercise", async () => {
+    const { client, requests } = fakeApi({ slowAnswerMs: 60 });
+    render(<Practice client={client} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Start a practice session" }));
+    await screen.findByText("Exercise 1 of 2");
+
+    fireEvent.click(screen.getByRole("button", { name: "student" }));
+    // The POST is still open: every option is locked, and further clicks do nothing.
+    const other = screen.getByRole("button", { name: "teacher" });
+    expect((other as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(other);
+    fireEvent.click(screen.getByRole("button", { name: "student" }));
+
+    expect(await screen.findByText("Correct")).toBeTruthy();
+    expect(requests.filter((r) => r.path.endsWith("/answers"))).toHaveLength(1);
+    // And the exercise stays locked once settled, until Continue.
+    expect((other as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("Practice again starts a fresh session", async () => {
@@ -194,6 +224,8 @@ describe("Practice page", () => {
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     await screen.findByText("水を飲む＿＿＿。");
     fireEvent.click(screen.getByRole("button", { name: "ください" }));
+    await screen.findByText("Not quite");
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     await screen.findByText("Session complete — 1 of 2 correct.");
 
     fireEvent.click(screen.getByRole("button", { name: "Practice again" }));

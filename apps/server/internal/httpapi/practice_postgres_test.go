@@ -127,7 +127,7 @@ func TestPracticeAgainstPostgres(t *testing.T) {
 		practice.NewPostgresContent(pool),
 		practice.NewMemStore(time.Hour),
 		practice.NewPostgresResults(pool),
-		practice.Options{SessionSize: 10, SessionTTL: time.Hour})
+		practice.Options{SessionSize: 10})
 	e := env{h: httpapi.New(pool, authSvc, httpapi.WithFocusSet(masterySvc), httpapi.WithPractice(practiceSvc)), svc: authSvc}
 	token := e.login(t, "alice")
 

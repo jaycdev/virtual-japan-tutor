@@ -65,7 +65,7 @@ func newEnv(t *testing.T) *env {
 	})
 
 	store := practice.NewMemStore(time.Hour).WithClock(clk.Now)
-	popts := practice.Options{SessionSize: 10, SessionTTL: time.Hour, Now: clk.Now}
+	popts := practice.Options{SessionSize: 10, Now: clk.Now}
 	svc := practice.NewService(focusSvc, content, store, recordWriter{mem}, popts)
 
 	// Focus Set fixtures: linked vocabulary and kanji, a grammar point with an
@@ -257,7 +257,7 @@ func TestStartSessionTopsUpAShortFocusSet(t *testing.T) {
 
 	svc := practice.NewService(mastery.NewService(mem, mopts), content,
 		practice.NewMemStore(time.Hour).WithClock(clk.Now), &practicetest.Results{},
-		practice.Options{SessionSize: 10, SessionTTL: time.Hour, Now: clk.Now})
+		practice.Options{SessionSize: 10, Now: clk.Now})
 	sess := mustStart(t, &env{svc: svc, clock: clk}, alice, 4)
 
 	// Focus Set first (vocab 1000, kanji 水), then 1001 tops up; 1002 stays out
@@ -367,7 +367,7 @@ func TestSubmitAnswerRecordsAndCompletes(t *testing.T) {
 		t.Errorf("state = %q, want complete", again.State)
 	}
 	for i, ex := range again.Exercises {
-		if !again.AnsweredAt[i] || again.Answers[i].OptionID == "" {
+		if !again.Done[i] || again.Answers[i].OptionID == "" {
 			t.Errorf("exercise %s not recorded as answered", ex.ID)
 		}
 	}
@@ -429,7 +429,7 @@ func TestSessionSizeCapsExercises(t *testing.T) {
 	}
 	svc := practice.NewService(mastery.NewService(mem, mopts), content,
 		practice.NewMemStore(time.Hour).WithClock(clk.Now), &practicetest.Results{},
-		practice.Options{SessionSize: 20, SessionTTL: time.Hour, Now: clk.Now})
+		practice.Options{SessionSize: 20, Now: clk.Now})
 	sess := mustStart(t, &env{svc: svc, clock: clk}, alice, 1)
 	if len(sess.Exercises) != 20 {
 		t.Errorf("generated %d exercises, want capped at 20", len(sess.Exercises))
@@ -437,6 +437,134 @@ func TestSessionSizeCapsExercises(t *testing.T) {
 	if sess.TargetSize != 20 {
 		t.Errorf("target size = %d, want 20", sess.TargetSize)
 	}
+}
+
+// --- fair options (a one-option exercise is a free "correct") ---
+
+// noDistractors serves item content but never a distractor, so every
+// candidate exercise would ship with a single option.
+type noDistractors struct{ *practicetest.Content }
+
+func (c noDistractors) VocabDistractors(ctx context.Context, level string, exclude []int64, salt int64, limit int) ([]string, error) {
+	return nil, nil
+}
+
+func (c noDistractors) KanjiDistractors(ctx context.Context, level string, exclude []string, salt int64, limit int) ([]string, error) {
+	return nil, nil
+}
+
+func (c noDistractors) ClozeDistractors(ctx context.Context, level string, excludePoint int64, notText string, salt int64, limit int) ([]string, error) {
+	return nil, nil
+}
+
+// With no distractors anywhere nothing is buildable fairly: the session
+// refuses to start rather than hand out free "correct" Practice Records.
+func TestStartSessionWithoutDistractorsIsNoItems(t *testing.T) {
+	content := noDistractors{practicetest.NewContent()}
+	content.AddVocab(1000, practice.Word{Display: "学校", Meanings: []string{"school"}, Level: "N5"})
+	clk := &clock{now: time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC)}
+	mem := masterytest.NewMemStore()
+	mopts := mastery.DefaultOptions()
+	mopts.Now = clk.Now
+	mem.AddKnownItem(alice, mastery.KnownItem{
+		Key: mastery.ItemKey{Kind: mastery.KindVocabulary, Ref: "1000"}, MaruMoriID: "Vocab/1",
+		SRSLevel: ptrInt(2), Source: mastery.SourceMaruMori,
+	})
+	svc := practice.NewService(mastery.NewService(mem, mopts), content,
+		practice.NewMemStore(time.Hour).WithClock(clk.Now), &practicetest.Results{},
+		practice.Options{SessionSize: 10, Now: clk.Now})
+	if _, err := svc.StartSession(context.Background(), alice, 7); !errors.Is(err, practice.ErrNoItems) {
+		t.Fatalf("err = %v, want ErrNoItems: a one-option exercise is a giveaway", err)
+	}
+}
+
+// An empty same-level pool falls back to same-kind-all-levels distractors
+// before giving up: the exercise is built, not skipped.
+func TestRecognitionFallsBackToAllLevelsBeforeSkipping(t *testing.T) {
+	content := &emptyAtLevel{Content: practicetest.NewContent()}
+	content.Meaning = []string{"water", "fire", "mountain"}
+	content.AddVocab(1000, practice.Word{Display: "学校", Meanings: []string{"school"}, Level: "N5"})
+
+	clk := &clock{now: time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC)}
+	mem := masterytest.NewMemStore()
+	mopts := mastery.DefaultOptions()
+	mopts.Now = clk.Now
+	mem.AddKnownItem(alice, mastery.KnownItem{
+		Key: mastery.ItemKey{Kind: mastery.KindVocabulary, Ref: "1000"}, MaruMoriID: "Vocab/1",
+		SRSLevel: ptrInt(2), Source: mastery.SourceMaruMori,
+	})
+	svc := practice.NewService(mastery.NewService(mem, mopts), content,
+		practice.NewMemStore(time.Hour).WithClock(clk.Now), &practicetest.Results{},
+		practice.Options{SessionSize: 2, Now: clk.Now})
+	sess := mustStart(t, &env{svc: svc, clock: clk}, alice, 7)
+
+	if sess.Skipped != 0 {
+		t.Errorf("skipped = %d, want 0: the all-levels fallback should have built the exercise", sess.Skipped)
+	}
+	for _, ex := range sess.Exercises {
+		if len(ex.Options) < 2 {
+			t.Errorf("exercise %s has %d options, want the fallback to have offered at least 2", ex.ID, len(ex.Options))
+		}
+	}
+}
+
+// emptyAtLevel has no same-level vocabulary distractors but a full pool at
+// every level — the fallback's best case.
+type emptyAtLevel struct{ *practicetest.Content }
+
+func (c *emptyAtLevel) VocabDistractors(ctx context.Context, level string, exclude []int64, salt int64, limit int) ([]string, error) {
+	if level != "" {
+		return nil, nil
+	}
+	return c.Content.VocabDistractors(ctx, "", exclude, salt, limit)
+}
+
+// A vocabulary item with no distractors at all is skipped and counted, while
+// other kinds keep building: sessions stay fair, not empty.
+func TestSkipItemsWithoutEnoughOptionsAndKeepTheRest(t *testing.T) {
+	content := practicetest.NewContent()
+	content.Meaning = []string{"water", "fire", "mountain"}
+	content.AddVocab(1000, practice.Word{Display: "学校", Meanings: []string{"school"}, Level: "N5"})
+	content.AddKanji("水", practice.Word{Display: "水", Meanings: []string{"water"}, Level: "N5"})
+
+	clk := &clock{now: time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC)}
+	mem := masterytest.NewMemStore()
+	mopts := mastery.DefaultOptions()
+	mopts.Now = clk.Now
+	mem.AddKnownItem(alice, mastery.KnownItem{
+		Key: mastery.ItemKey{Kind: mastery.KindVocabulary, Ref: "1000"}, MaruMoriID: "Vocab/1",
+		SRSLevel: ptrInt(2), Source: mastery.SourceMaruMori,
+	})
+	mem.AddKnownItem(alice, mastery.KnownItem{
+		Key: mastery.ItemKey{Kind: mastery.KindKanji, Ref: "水"}, MaruMoriID: "Kanji/2",
+		SRSLevel: ptrInt(3), Source: mastery.SourceMaruMori,
+	})
+	svc := practice.NewService(mastery.NewService(mem, mopts), noVocabDistractors{content},
+		practice.NewMemStore(time.Hour).WithClock(clk.Now), &practicetest.Results{},
+		practice.Options{SessionSize: 10, Now: clk.Now})
+	sess := mustStart(t, &env{svc: svc, clock: clk}, alice, 3)
+
+	// The vocabulary attempt is skipped once (top-ups only cycle what built).
+	if sess.Skipped != 1 {
+		t.Errorf("skipped = %d, want 1 (vocab 1000 cannot be asked fairly)", sess.Skipped)
+	}
+	if len(sess.Exercises) == 0 {
+		t.Fatal("no exercises, want the kanji to keep filling the session")
+	}
+	for _, ex := range sess.Exercises {
+		if len(ex.Options) < 2 {
+			t.Errorf("exercise %s (%+v) has %d options, want at least 2", ex.ID, ex.Item, len(ex.Options))
+		}
+		if ex.Item.Kind != mastery.KindKanji {
+			t.Errorf("exercise %s practises %+v, want only the kanji (the vocab was skipped)", ex.ID, ex.Item)
+		}
+	}
+}
+
+type noVocabDistractors struct{ *practicetest.Content }
+
+func (c noVocabDistractors) VocabDistractors(ctx context.Context, level string, exclude []int64, salt int64, limit int) ([]string, error) {
+	return nil, nil
 }
 
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }

@@ -7,9 +7,10 @@ import (
 )
 
 // MemStore is the current SessionStore: sessions live in process memory and
-// expire SessionTTL after they start. A session survives reloads of the web
-// UI but not a server restart — acceptable for short-lived Practice Sessions,
-// and a Postgres-backed store can replace it behind the interface later.
+// stop being resumable ttl (lifetime from creation, not idle time) after they
+// start. A session survives reloads of the web UI but not a server restart —
+// acceptable for short-lived Practice Sessions, and a Postgres-backed store
+// can replace it behind the interface later.
 type MemStore struct {
 	mu    sync.Mutex
 	now   func() time.Time

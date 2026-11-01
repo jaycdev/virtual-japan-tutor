@@ -77,7 +77,7 @@ func newPracticeEnvWith(t *testing.T, mopts func(*mastery.Options), popts func(*
 		Sentence: "昨日、学校へ行きました。", SpanStart: 6, SpanEnd: 11, SpanText: "行きました", Level: "N5",
 	})
 
-	po := practice.Options{SessionSize: 10, SessionTTL: time.Hour, Now: func() time.Time { return focusClock }}
+	po := practice.Options{SessionSize: 10, Now: func() time.Time { return focusClock }}
 	if popts != nil {
 		popts(&po)
 	}
@@ -184,8 +184,8 @@ func TestPracticeSessionViewShapeAndDeterminism(t *testing.T) {
 		if want := wantRefs[i%len(wantRefs)]; ex.ItemRef != want {
 			t.Errorf("exercise %s itemRef = %q, want %q", ex.Id, ex.ItemRef, want)
 		}
-		if ex.Answered || ex.Correct != nil {
-			t.Errorf("exercise %s = %+v, want unanswered", ex.Id, ex)
+		if ex.Answered || ex.Correct != nil || ex.ChosenOptionId != nil || ex.CorrectOptionId != nil {
+			t.Errorf("exercise %s = %+v, want unanswered and nothing revealed", ex.Id, ex)
 		}
 		if ex.Instruction == nil || *ex.Instruction == "" {
 			t.Errorf("exercise %s has no instruction", ex.Id)
@@ -240,6 +240,7 @@ func TestPracticeAnswersCompleteTheSessionAndMoveMastery(t *testing.T) {
 	sess := o.start(t, "alice", map[string]any{"seed": 3})
 
 	wantText := map[string]string{"1000": "school", "水": "water", "5": "行きました"}
+	picked := map[string]string{}
 	for i, ex := range sess.Exercises {
 		pick := ""
 		for _, opt := range *ex.Options {
@@ -250,6 +251,7 @@ func TestPracticeAnswersCompleteTheSessionAndMoveMastery(t *testing.T) {
 		if pick == "" {
 			t.Fatalf("exercise for %s has no option with the correct text", ex.ItemRef)
 		}
+		picked[ex.Id] = pick
 		rec := o.answer(t, "alice", sess.Id, map[string]string{"exerciseId": ex.Id, "optionId": pick})
 		if rec.Code != http.StatusOK {
 			t.Fatalf("answer %s = %d (%s)", ex.Id, rec.Code, rec.Body)
@@ -283,6 +285,20 @@ func TestPracticeAnswersCompleteTheSessionAndMoveMastery(t *testing.T) {
 	}
 	if done.Results.Items == nil || len(*done.Results.Items) != 10 {
 		t.Fatalf("results items = %v, want 10", done.Results.Items)
+	}
+
+	// A resumed view reveals both sides of every answered exercise.
+	for _, ex := range done.Exercises {
+		if ex.ChosenOptionId == nil || ex.CorrectOptionId == nil {
+			t.Errorf("exercise %s = %+v, want chosenOptionId and correctOptionId revealed once answered", ex.Id, ex)
+			continue
+		}
+		if want := picked[ex.Id]; *ex.ChosenOptionId != want {
+			t.Errorf("exercise %s chosenOptionId = %q, want the submitted %q", ex.Id, *ex.ChosenOptionId, want)
+		}
+		if *ex.CorrectOptionId != *ex.ChosenOptionId {
+			t.Errorf("exercise %s: every answer was the correct one, so chosen %q should equal correct %q", ex.Id, *ex.ChosenOptionId, *ex.CorrectOptionId)
+		}
 	}
 
 	// Every answer went into the Practice Record...

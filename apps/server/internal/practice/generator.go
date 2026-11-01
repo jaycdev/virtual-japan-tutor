@@ -8,12 +8,17 @@ import (
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/mastery"
 )
 
-// constText options shown above recognition and cloze prompts.
+// Instructions shown above recognition and cloze prompts.
 const (
 	instructionRecognition = "What does this mean?"
 	instructionCloze       = "Which pattern completes the sentence?"
 	clozeBlank             = "＿＿＿" // three full-width underscores
 )
+
+// minExerciseOptions is the fewest options an Exercise may ship with: a
+// one-option question hands out a free "correct" answer, which would poison
+// the Practice Record (and through it Mastery).
+const minExerciseOptions = 2
 
 // generator builds one session's exercises. A single math/rand source is
 // advanced in exercise order, so the same seed and Focus Set build exactly
@@ -61,11 +66,16 @@ func (g *generator) addVocabulary(ctx context.Context, key mastery.ItemKey) (boo
 	if !found || len(word.Meanings) == 0 {
 		return false, nil
 	}
-	distractors, err := g.content.VocabDistractors(ctx, word.Level, []int64{entSeq}, g.salt(), OptionsPerExercise-1)
+	opts, correctID, err := g.recognitionOptions(ctx, word, func(level string) ([]string, error) {
+		return g.content.VocabDistractors(ctx, level, []int64{entSeq}, g.salt(), OptionsPerExercise-1)
+	})
 	if err != nil {
 		return false, err
 	}
-	g.appendBuilt(key, word, distractors)
+	if opts == nil {
+		return false, nil // no fair question could be built: skip and count
+	}
+	g.appendBuilt(key, word, opts, correctID)
 	return true, nil
 }
 
@@ -77,12 +87,43 @@ func (g *generator) addKanji(ctx context.Context, key mastery.ItemKey) (bool, er
 	if !found || len(word.Meanings) == 0 {
 		return false, nil
 	}
-	distractors, err := g.content.KanjiDistractors(ctx, word.Level, []string{key.Ref}, g.salt(), OptionsPerExercise-1)
+	opts, correctID, err := g.recognitionOptions(ctx, word, func(level string) ([]string, error) {
+		return g.content.KanjiDistractors(ctx, level, []string{key.Ref}, g.salt(), OptionsPerExercise-1)
+	})
 	if err != nil {
 		return false, err
 	}
-	g.appendBuilt(key, word, distractors)
+	if opts == nil {
+		return false, nil
+	}
+	g.appendBuilt(key, word, opts, correctID)
 	return true, nil
+}
+
+// recognitionOptions builds an Exercise's options for word: distractors from
+// the word's own JLPT Level first, and when those are too few the same Item
+// kind at every level (a level-mismatched distractor still beats a giveaway).
+// Returns nil options when even that leaves fewer than minExerciseOptions.
+func (g *generator) recognitionOptions(ctx context.Context, word Word, distractorsFor func(level string) ([]string, error)) ([]Option, string, error) {
+	distractors, err := distractorsFor(word.Level)
+	if err != nil {
+		return nil, "", err
+	}
+	opts, correctID := g.options(word.Meanings[0], distractors)
+	if len(opts) >= minExerciseOptions {
+		return opts, correctID, nil
+	}
+	if word.Level != "" { // retry across all levels before giving up
+		distractors, err = distractorsFor("")
+		if err != nil {
+			return nil, "", err
+		}
+		opts, correctID = g.options(word.Meanings[0], distractors)
+	}
+	if len(opts) < minExerciseOptions {
+		return nil, "", nil
+	}
+	return opts, correctID, nil
 }
 
 func (g *generator) addCloze(ctx context.Context, key mastery.ItemKey) (bool, error) {
@@ -101,16 +142,29 @@ func (g *generator) addCloze(ctx context.Context, key mastery.ItemKey) (bool, er
 	if err != nil {
 		return false, err
 	}
+	opts, correctID := g.options(cloze.SpanText, distractors)
+	if len(opts) < minExerciseOptions && cloze.Level != "" {
+		// same retry as recognition: all levels before giving up
+		distractors, err = g.content.ClozeDistractors(ctx, "", pointID, cloze.SpanText, g.salt(), OptionsPerExercise-1)
+		if err != nil {
+			return false, err
+		}
+		opts, correctID = g.options(cloze.SpanText, distractors)
+	}
+	if len(opts) < minExerciseOptions {
+		return false, nil
+	}
 
 	runes := []rune(cloze.Sentence)
 	ex := Exercise{
-		ID:          g.nextID(),
-		Kind:        ExerciseGrammarCloze,
-		Item:        key,
-		Prompt:      string(runes[:cloze.SpanStart]) + clozeBlank + string(runes[cloze.SpanEnd:]),
-		Instruction: instructionCloze,
+		ID:              g.nextID(),
+		Kind:            ExerciseGrammarCloze,
+		Item:            key,
+		Prompt:          string(runes[:cloze.SpanStart]) + clozeBlank + string(runes[cloze.SpanEnd:]),
+		Instruction:     instructionCloze,
+		Options:         opts,
+		CorrectOptionID: correctID,
 	}
-	ex.Options, ex.CorrectOptionID = g.options(cloze.SpanText, distractors)
 	g.append(ex)
 	return true, nil
 }
@@ -126,18 +180,18 @@ func validSpan(c ClozeContent) bool {
 	return string(r[c.SpanStart:c.SpanEnd]) == c.SpanText
 }
 
-// appendBuilt builds one recognition exercise: correct is the item's first
-// meaning, options are correct plus distractors, shuffled.
-func (g *generator) appendBuilt(key mastery.ItemKey, word Word, distractors []string) {
-	ex := Exercise{
-		ID:          g.nextID(),
-		Kind:        ExerciseRecognition,
-		Item:        key,
-		Prompt:      word.Display,
-		Instruction: instructionRecognition,
-	}
-	ex.Options, ex.CorrectOptionID = g.options(word.Meanings[0], distractors)
-	g.append(ex)
+// appendBuilt assembles one recognition exercise from its content and the
+// options built for it.
+func (g *generator) appendBuilt(key mastery.ItemKey, word Word, opts []Option, correctID string) {
+	g.append(Exercise{
+		ID:              g.nextID(),
+		Kind:            ExerciseRecognition,
+		Item:            key,
+		Prompt:          word.Display,
+		Instruction:     instructionRecognition,
+		Options:         opts,
+		CorrectOptionID: correctID,
+	})
 }
 
 // options shuffles correct plus up to OptionsPerExercise-1 distinct,
