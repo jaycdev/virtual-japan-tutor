@@ -28,6 +28,7 @@ var analyser = struct {
 	once sync.Once
 	tok  *tokenizer.Tokenizer
 	err  error
+	mu   sync.Mutex // kagome tokenisers are not goroutine-safe; generations run concurrently
 }{}
 
 // tokenise splits a sentence into Tokens. A non-nil error is an internal
@@ -39,6 +40,8 @@ func tokenise(s string) ([]Token, error) {
 	if analyser.err != nil {
 		return nil, fmt.Errorf("grammar tokeniser: %w", analyser.err)
 	}
+	analyser.mu.Lock()
+	defer analyser.mu.Unlock()
 	raw := analyser.tok.Tokenize(s)
 	out := make([]Token, 0, len(raw))
 	for _, t := range raw {
