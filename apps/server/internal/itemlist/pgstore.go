@@ -65,7 +65,20 @@ func (s *PostgresStore) DefaultID(ctx context.Context, userID uuid.UUID) (uuid.U
 
 func (s *PostgresStore) SetDefaultID(ctx context.Context, userID, listID uuid.UUID) error {
 	_, err := s.pool.Exec(ctx, `UPDATE users SET default_item_list_id = $2 WHERE id = $1`, userID, listID)
+	if isMissingDefaultTarget(err) {
+		// The list was deleted between the service's ByID check and this
+		// write: the FK refuses it, and the Learner's answer is the same
+		// 404 as any other gone list, not a 500.
+		return ErrListNotFound
+	}
 	return err
+}
+
+// isMissingDefaultTarget reports the FK violation (users.default_item_list_id
+// -> item_lists) raised when the list row is already gone.
+func isMissingDefaultTarget(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23503"
 }
 
 func (s *PostgresStore) Lists(ctx context.Context, userID uuid.UUID) ([]List, error) {
@@ -103,13 +116,20 @@ func (s *PostgresStore) Insert(ctx context.Context, userID uuid.UUID, name strin
 }
 
 func (s *PostgresStore) Update(ctx context.Context, userID, listID uuid.UUID, name string, boosting bool) error {
-	_, err := s.pool.Exec(ctx,
+	res, err := s.pool.Exec(ctx,
 		`UPDATE item_lists SET name = $3, boosting = $4 WHERE user_id = $1 AND id = $2`,
 		userID, listID, name, boosting)
 	if isUniqueName(err) {
 		return ErrDuplicateName
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	if res.RowsAffected() == 0 {
+		// Deleted after the service's ByID check: same answer as up front.
+		return ErrListNotFound
+	}
+	return nil
 }
 
 func (s *PostgresStore) Delete(ctx context.Context, userID, listID uuid.UUID) error {
@@ -139,13 +159,19 @@ func (s *PostgresStore) get(ctx context.Context, userID uuid.UUID, clause string
 	return l, err == nil, err
 }
 
-func (s *PostgresStore) AddItem(ctx context.Context, userID, listID uuid.UUID, item ItemKey) error {
-	_, err := s.pool.Exec(ctx,
+// AddItem records a membership and reports whether it actually inserted a
+// row: a re-add hits the ON CONFLICT and adds nothing, and the service uses
+// the flag to keep its Weak Signal idempotent.
+func (s *PostgresStore) AddItem(ctx context.Context, userID, listID uuid.UUID, item ItemKey) (bool, error) {
+	res, err := s.pool.Exec(ctx,
 		`INSERT INTO item_list_items (list_id, item_kind, item_ref)
 		 VALUES ($1, $2, $3)
 		 ON CONFLICT (list_id, item_kind, item_ref) DO NOTHING`,
 		listID, item.Kind, item.Ref)
-	return err
+	if err != nil {
+		return false, err
+	}
+	return res.RowsAffected() == 1, nil
 }
 
 func (s *PostgresStore) RemoveItem(ctx context.Context, userID, listID uuid.UUID, item ItemKey) error {

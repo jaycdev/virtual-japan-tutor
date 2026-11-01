@@ -132,14 +132,14 @@ func (m *memItemListStore) ByID(_ context.Context, userID, listID uuid.UUID) (it
 	return itemlist.List{}, false, nil
 }
 
-func (m *memItemListStore) AddItem(_ context.Context, userID, listID uuid.UUID, item itemlist.ItemKey) error {
+func (m *memItemListStore) AddItem(_ context.Context, userID, listID uuid.UUID, item itemlist.ItemKey) (bool, error) {
 	for _, it := range m.items[listID] {
 		if it == item {
-			return nil
+			return false, nil
 		}
 	}
 	m.items[listID] = append(m.items[listID], item)
-	return nil
+	return true, nil
 }
 
 func (m *memItemListStore) RemoveItem(_ context.Context, userID, listID uuid.UUID, item itemlist.ItemKey) error {
@@ -311,6 +311,19 @@ func TestItemListItemsAndSignals(t *testing.T) {
 	}
 	if got := listsOf(t, e.call(http.MethodGet, "/item-lists", ""))[0]["itemCount"]; got != float64(1) {
 		t.Errorf("itemCount after add: %v, want 1", got)
+	}
+
+	// Re-saving the same item is a no-op membership-wise, and the Weak
+	// Signal must not repeat: only a real insert counts.
+	if rec := e.call(http.MethodPost, "/item-lists/"+savedID+"/items",
+		`{"itemKind":"vocabulary","itemRef":"4026"}`); rec.Code != http.StatusNoContent {
+		t.Fatalf("re-add item: %d %s", rec.Code, rec.Body)
+	}
+	if len(e.store.signals) != 1 {
+		t.Errorf("signals after a re-save = %+v, want still just the one", e.store.signals)
+	}
+	if got := listsOf(t, e.call(http.MethodGet, "/item-lists", ""))[0]["itemCount"]; got != float64(1) {
+		t.Errorf("itemCount after re-add: %v, want still 1", got)
 	}
 
 	// A non-Known item saves without the signal (it becomes a Stretch Item).

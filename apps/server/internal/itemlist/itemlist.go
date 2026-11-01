@@ -143,7 +143,10 @@ type Store interface {
 	ByName(ctx context.Context, userID uuid.UUID, name string) (List, bool, error) // case-insensitive
 	ByID(ctx context.Context, userID, listID uuid.UUID) (List, bool, error)
 
-	AddItem(ctx context.Context, userID, listID uuid.UUID, item ItemKey) error
+	// AddItem records a membership (ON CONFLICT semantics: re-adding is a
+	// no-op) and reports whether a row was actually inserted — the caller
+	// uses that to keep side effects idempotent.
+	AddItem(ctx context.Context, userID, listID uuid.UUID, item ItemKey) (bool, error)
 	RemoveItem(ctx context.Context, userID, listID uuid.UUID, item ItemKey) error
 	ListItems(ctx context.Context, userID, listID uuid.UUID, limit int) ([]Member, error)
 
@@ -229,9 +232,15 @@ func (s *Service) Current(ctx context.Context, userID, listID uuid.UUID) (List, 
 }
 
 // Create adds a new list. Names are unique per Learner case-insensitively.
+// EnsureSaved runs first: a Learner who creates "Saved" before ever listing
+// their lists must collide with the built-in row, not slip past the name
+// check and claim the reserved name themselves.
 func (s *Service) Create(ctx context.Context, userID uuid.UUID, name string, boosting bool) (List, error) {
 	n, err := normalizedName(name)
 	if err != nil {
+		return List{}, err
+	}
+	if _, err := s.store.EnsureSaved(ctx, userID); err != nil {
 		return List{}, err
 	}
 	if _, found, err := s.store.ByName(ctx, userID, n); err != nil {
@@ -317,7 +326,9 @@ func (s *Service) SetDefault(ctx context.Context, userID, listID uuid.UUID) erro
 // the list is a Boosting List and the item is already Known, the save also
 // records a Weak Signal: putting a Known item on a boosting list is the
 // Learner saying "this one still feels shaky" — the same uncertainty as a
-// held lookup, and it counts once per save.
+// held lookup. It counts once per save: the membership insert reports
+// whether it actually added a row, so re-saving the same item into the
+// same list is silent rather than a fresh signal each time.
 func (s *Service) AddItem(ctx context.Context, userID, listID uuid.UUID, item ItemKey) error {
 	list, found, err := s.store.ByID(ctx, userID, listID)
 	if err != nil {
@@ -329,12 +340,14 @@ func (s *Service) AddItem(ctx context.Context, userID, listID uuid.UUID, item It
 	if err := validItem(item); err != nil {
 		return err
 	}
-	if err := s.store.AddItem(ctx, userID, listID, item); err != nil {
+	added, err := s.store.AddItem(ctx, userID, listID, item)
+	if err != nil {
 		return err
 	}
 	// The boosting flag is the row's, not the name's: Saved starts boosting
-	// but the Learner may have turned it off.
-	if list.Boosting {
+	// but the Learner may have turned it off. And only a real insert makes
+	// this a save worth signalling.
+	if added && list.Boosting {
 		known, err := s.store.IsKnownItem(ctx, userID, item)
 		if err != nil {
 			return err

@@ -297,20 +297,20 @@ func TestPostgresServiceItemsAndWeakSignals(t *testing.T) {
 		}
 		return out
 	}
-	// Re-adding to the same list is a no-op, so the signal does not repeat.
+	// Re-adding to the same list is a no-op, so the signal does not repeat:
+	// exactly the two fresh saves (into Saved, then into work) each left a
+	// 'boosting_list' signal, and the two re-adds left nothing. The count
+	// is exact — one more means the ON CONFLICT no-op still signalled.
 	if err := svc.AddItem(ctx, user, savedID, vocab); err != nil {
 		t.Fatalf("AddItem Saved (again): %v", err)
 	}
 	signals := querySignals()
-	// Saved starts boosting too, so the vocab save from Saved left a signal;
-	// but the ON CONFLICT DO NOTHING means the second save into work is
-	// silent — count the actual rows instead of assuming one.
 	var boostingCount int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM weak_signals WHERE user_id = $1 AND signal = 'boosting_list'`, user).Scan(&boostingCount); err != nil {
 		t.Fatalf("count boosting signals: %v", err)
 	}
-	if boostingCount < 1 {
-		t.Fatalf("boosting signals = %d, want at least 1: %+v", boostingCount, signals)
+	if boostingCount != 2 {
+		t.Errorf("boosting signals = %d, want exactly 2 (one per real insert, none for re-adds): %+v", boostingCount, signals)
 	}
 
 	// An unknown item in a boosting list gets no signal: the signal marks
@@ -372,6 +372,54 @@ func TestPostgresServiceItemsAndWeakSignals(t *testing.T) {
 	}
 	if rows != 1 {
 		t.Errorf("Saved list rows = %d, want the membership to remain", rows)
+	}
+}
+
+// The races this feature has to survive: a list deleted between the
+// service's existence check and the write that lands on it. Each store
+// answer must be the same not-found the checks give, never a raw FK
+// violation (500) or a silent success (200).
+func TestPostgresStoreRacesWithDeletedList(t *testing.T) {
+	pool := dbtest.New(t)
+	ctx := context.Background()
+	store := itemlist.NewPostgresStore(pool)
+	svc := itemlist.NewService(store)
+
+	user := uuid.New()
+	if _, err := pool.Exec(ctx, `INSERT INTO users (id, username, password_hash) VALUES ($1, 'races', 'x')`, user); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	travel, err := store.Insert(ctx, user, "travel", false)
+	if err != nil {
+		t.Fatalf("Insert travel: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `DELETE FROM item_lists WHERE id = $1`, travel); err != nil {
+		t.Fatalf("delete travel: %v", err)
+	}
+
+	// Update with no row to change (the concurrent-delete case for PUT):
+	// RowsAffected says the row is gone.
+	if err := store.Update(ctx, user, travel, "travel", true); !errors.Is(err, itemlist.ErrListNotFound) {
+		t.Errorf("Update deleted list = %v, want ErrListNotFound", err)
+	}
+	// SetDefault racing Delete: users.default_item_list_id -> item_lists
+	// rejects the write with an FK violation; that maps to not-found.
+	if err := store.SetDefaultID(ctx, user, travel); !errors.Is(err, itemlist.ErrListNotFound) {
+		t.Errorf("SetDefaultID deleted list = %v, want ErrListNotFound", err)
+	}
+
+	// Create seeds the built-in Saved first, so even a user who has never
+	// listed their lists cannot claim the reserved name before the built-in
+	// row exists — the name check lands on ErrDuplicateName.
+	latecomer := uuid.New()
+	if _, err := pool.Exec(ctx, `INSERT INTO users (id, username, password_hash) VALUES ($1, 'latecomer', 'x')`, latecomer); err != nil {
+		t.Fatalf("seed latecomer: %v", err)
+	}
+	if _, err := svc.Create(ctx, latecomer, "Saved", false); !errors.Is(err, itemlist.ErrDuplicateName) {
+		t.Errorf(`Create "Saved" on a fresh user = %v, want ErrDuplicateName`, err)
+	}
+	if _, found, err := store.ByName(ctx, latecomer, "Saved"); err != nil || !found {
+		t.Errorf("built-in Saved after the refused create = %v/%v, want the seeded row present", found, err)
 	}
 }
 
@@ -474,7 +522,7 @@ func TestPostgresStoreListItems(t *testing.T) {
 		{Kind: itemlist.KindVocabulary, Ref: "5569"},    // no reference row at all
 	}
 	for _, m := range members {
-		if err := store.AddItem(ctx, user, savedID, m); err != nil {
+		if _, err := store.AddItem(ctx, user, savedID, m); err != nil {
 			t.Fatalf("AddItem %v: %v", m, err)
 		}
 	}
