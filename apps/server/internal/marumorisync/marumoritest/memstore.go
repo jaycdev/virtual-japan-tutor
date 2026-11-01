@@ -29,8 +29,9 @@ type knownRow struct {
 	disappearedAt *time.Time
 }
 
-// MemStore is an in-memory marumorisync.Store. It enforces the same behavioural
-// contract as the Postgres store (see store_contract_test.go).
+// MemStore is an in-memory marumorisync.Store. It enforces the same behavioural contract
+// as the Postgres store (see store_contract_test.go), including the single-flight run
+// limit and reaping a run older than marumorisync.StaleRunAfter.
 type MemStore struct {
 	mu       sync.Mutex
 	settings map[uuid.UUID]marumorisync.Settings
@@ -133,10 +134,22 @@ func (m *MemStore) KnowledgeTotals(_ context.Context, userID uuid.UUID) (marumor
 func (m *MemStore) StartRun(_ context.Context, userID, runID uuid.UUID, startedAt time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	for _, r := range m.runs[userID] {
-		if r.Status == marumorisync.RunRunning {
+	now := time.Now()
+	staleBefore := now.Add(-marumorisync.StaleRunAfter)
+	for idx := range m.runs[userID] {
+		r := &m.runs[userID][idx]
+		if r.Status != marumorisync.RunRunning {
+			continue
+		}
+		if !r.StartedAt.Before(staleBefore) {
 			return marumorisync.ErrSyncRunning
 		}
+		// Abandoned by a crash or a cut-short request: close it as a failure rather
+		// than let it block the Learner's next Sync.
+		finished, message := now, marumorisync.StaleRunMessage
+		r.Status = marumorisync.RunFailed
+		r.FinishedAt = &finished
+		r.Error = &message
 	}
 	m.runs[userID] = append(m.runs[userID], marumorisync.SyncRun{ID: runID, Status: marumorisync.RunRunning, StartedAt: startedAt})
 	return nil

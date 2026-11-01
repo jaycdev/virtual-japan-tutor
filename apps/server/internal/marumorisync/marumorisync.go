@@ -52,6 +52,16 @@ const (
 	RunFailed  RunStatus = "failed"
 )
 
+// StaleRunAfter bounds how long a run may stay "running" before StartRun treats it as
+// abandoned — a process that died mid-Sync, or a request cut short before the Service
+// could close the row — and closes it as a failure. It must comfortably outlast a real
+// Sync round (every upstream read has its own timeout), and it is what turns a lost run
+// row from a permanent lockout into one timed-out run in the history.
+const StaleRunAfter = 15 * time.Minute
+
+// StaleRunMessage is the Learner-facing error a reaped run is closed with.
+const StaleRunMessage = "MaruMori Sync timed out"
+
 // Change is what one Sync did to one Known Item; it is the change column of
 // marumori_known_item_history. An item dropping to SRS level 0 disappears: the
 // /known/* filter only reports level 1+.
@@ -176,9 +186,14 @@ type Store interface {
 	KnowledgeTotals(ctx context.Context, userID uuid.UUID) (Totals, error)
 
 	// StartRun inserts a running run; ErrSyncRunning if one is already running for
-	// this user.
+	// this user. A running run older than StaleRunAfter is treated as abandoned and
+	// closed as a failed run (StaleRunMessage) first, so a lost run row cannot lock the
+	// Learner out of Sync for ever. Staleness is measured against the time the Store
+	// measures now, never against the new run's startedAt, so a live run is never stolen.
 	StartRun(ctx context.Context, userID, runID uuid.UUID, startedAt time.Time) error
-	// FinishRun closes a running run as ok (failure nil) or failed.
+	// FinishRun closes a running run as ok (failure nil) or failed. It is the write that
+	// closes a round: the Service calls it on a context detached from the request's, so a
+	// cancelled request cannot leave the run 'running'.
 	FinishRun(ctx context.Context, userID, runID uuid.UUID, finishedAt time.Time, failure *string, counts *Counts) error
 	// RecentRuns returns the user's runs, newest first.
 	RecentRuns(ctx context.Context, userID uuid.UUID, limit int) ([]SyncRun, error)

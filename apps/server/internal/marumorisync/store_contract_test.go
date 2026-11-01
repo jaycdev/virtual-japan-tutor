@@ -279,6 +279,49 @@ func storeContract(t *testing.T, newFixture func(*testing.T) fixture) {
 		}
 	})
 
+	t.Run("a run abandoned mid-flight is reaped so it cannot block the next one", func(t *testing.T) {
+		f := newFixture(t)
+		s, mkUser := f.store, f.mkUser
+		u := mkUser("alice")
+		abandoned := uuid.New()
+		// Started before the window and never finished: the process died, or the request
+		// was cancelled and no one came back to close the run.
+		if err := s.StartRun(ctx, u, abandoned, time.Now().Add(-2*marumorisync.StaleRunAfter)); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.StartRun(ctx, u, uuid.New(), time.Now()); err != nil {
+			t.Fatalf("a stale run blocked a new one: %v", err)
+		}
+		// It stays in the history, closed as a failure rather than deleted.
+		runs, err := s.RecentRuns(ctx, u, 10)
+		if err != nil || len(runs) != 2 {
+			t.Fatalf("RecentRuns = %+v, %v", runs, err)
+		}
+		var reaped marumorisync.SyncRun
+		for _, r := range runs {
+			if r.ID == abandoned {
+				reaped = r
+			}
+		}
+		if reaped.ID != abandoned {
+			t.Fatalf("the abandoned run vanished from history: %+v", runs)
+		}
+		if reaped.Status != marumorisync.RunFailed || reaped.FinishedAt == nil {
+			t.Errorf("abandoned run = %+v, want failed with an end time", reaped)
+		}
+		if reaped.Error == nil || *reaped.Error != marumorisync.StaleRunMessage {
+			t.Errorf("abandoned run error = %v, want %q", reaped.Error, marumorisync.StaleRunMessage)
+		}
+		// A run inside the window is another worker's business, not stale.
+		v := mkUser("bob")
+		if err := s.StartRun(ctx, v, uuid.New(), time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.StartRun(ctx, v, uuid.New(), time.Now()); !errors.Is(err, marumorisync.ErrSyncRunning) {
+			t.Errorf("a fresh run was reaped: %v", err)
+		}
+	})
+
 	t.Run("RecentRuns honours the limit and stays scoped to the user", func(t *testing.T) {
 		f := newFixture(t)
 		s, mkUser := f.store, f.mkUser

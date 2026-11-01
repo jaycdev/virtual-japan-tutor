@@ -126,8 +126,20 @@ func (s *PostgresStore) KnowledgeTotals(ctx context.Context, userID uuid.UUID) (
 }
 
 // StartRun inserts a running run. The partial unique index on (user_id) WHERE
-// status = 'running' is the Sync single-flight: a violation is ErrSyncRunning.
+// status = 'running' is the Sync single-flight: a violation is ErrSyncRunning. A run older
+// than StaleRunAfter is abandoned — a process that died mid-Sync, or a request cut short
+// before the Service could close the row — so it is closed as a failed run first: that is
+// what keeps a Learner from being locked out of Sync for ever. Staleness is measured
+// against the time this Store measures now, never against startedAt, so a run another
+// worker is still writing is never stolen.
 func (s *PostgresStore) StartRun(ctx context.Context, userID, runID uuid.UUID, startedAt time.Time) error {
+	now := time.Now()
+	if _, err := s.pool.Exec(ctx,
+		`UPDATE marumori_sync_runs SET status = 'failed', finished_at = $3, error = $4
+		 WHERE user_id = $1 AND status = 'running' AND started_at < $2`,
+		userID, now.Add(-StaleRunAfter), now, StaleRunMessage); err != nil {
+		return err
+	}
 	_, err := s.pool.Exec(ctx,
 		`INSERT INTO marumori_sync_runs (id, user_id, status, started_at) VALUES ($1, $2, 'running', $3)`,
 		runID, userID, startedAt)

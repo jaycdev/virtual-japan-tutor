@@ -3,6 +3,7 @@ package marumorisync_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -316,6 +317,120 @@ func TestSyncWithoutAKeyIsRejectedBeforeARunStarts(t *testing.T) {
 	}
 	if runs, _ := e.svc.RecentSyncs(e.ctx); len(runs) != 0 {
 		t.Errorf("a run was recorded for a keyless Sync: %+v", runs)
+	}
+}
+
+// cutShortStore wraps a Store and cuts the caller's context the way a request deadline
+// does, immediately after one write succeeds. It also refuses writes on a context that is
+// already done, which is what Postgres does: that is how a cancelled request can turn into
+// a lost run outcome.
+type cutShortStore struct {
+	marumorisync.Store
+	after string // "apply": cut the context once the batch is written
+	done  context.CancelFunc
+}
+
+func (s cutShortStore) StartRun(ctx context.Context, userID, runID uuid.UUID, startedAt time.Time) error {
+	if ctx.Err() != nil {
+		return fmt.Errorf("start run: %w", ctx.Err())
+	}
+	return s.Store.StartRun(ctx, userID, runID, startedAt)
+}
+
+func (s cutShortStore) ApplySync(ctx context.Context, userID, runID uuid.UUID, batch marumorisync.SyncBatch) error {
+	if ctx.Err() != nil {
+		return fmt.Errorf("record synced knowledge: %w", ctx.Err())
+	}
+	if err := s.Store.ApplySync(ctx, userID, runID, batch); err != nil {
+		return err
+	}
+	if s.after == "apply" {
+		s.done()
+	}
+	return nil
+}
+
+func (s cutShortStore) FinishRun(ctx context.Context, userID, runID uuid.UUID, finishedAt time.Time, failure *string, counts *marumorisync.Counts) error {
+	if ctx.Err() != nil {
+		return fmt.Errorf("finish run: %w", ctx.Err())
+	}
+	return s.Store.FinishRun(ctx, userID, runID, finishedAt, failure, counts)
+}
+
+// cancelOnRead cancels the caller's context at one endpoint read, which is what happens to
+// a Sync whose Learner navigated away: the fetch in flight is cut short.
+type cancelOnRead struct {
+	marumorisync.Upstream
+	at     string
+	cancel context.CancelFunc
+}
+
+func (c cancelOnRead) GrammarReviews(ctx context.Context) ([]marumori.GrammarObservation, error) {
+	if c.at == "reviews" {
+		c.cancel()
+	}
+	return c.Upstream.GrammarReviews(ctx)
+}
+
+// TestSyncOutcomeIsRecordedWhenTheRequestIsCancelled guards the guarantee the Store
+// interface documents for StartRun: a round must leave its run row closed. Postgres refuses
+// writes on a done context, so closing a run on the caller's context hands a cancelled
+// request the power to leave the Learner locked out until the stale-run window reaps the
+// row. The outcome is written on a context the caller no longer controls.
+func TestSyncOutcomeIsRecordedWhenTheRequestIsCancelled(t *testing.T) {
+	e := newEnv(t, testRefs())
+	e.connect(t)
+	happyData(e.up)
+
+	ctx, cancel := context.WithCancel(e.ctx)
+	defer cancel()
+	svc := marumorisync.NewService(cutShortStore{e.store, "apply", cancel}, e.box, e.ref,
+		func(_, _ string) (marumorisync.Upstream, error) { return e.up, nil },
+		marumorisync.WithClock(func() time.Time { t := e.now; e.now = t.Add(time.Second); return t }))
+
+	run, err := svc.SyncUser(ctx, e.uid)
+	if err != nil {
+		t.Fatalf("SyncUser = %+v, %v; want the round recorded despite the cut-short request", run, err)
+	}
+	if run.Status != marumorisync.RunOK {
+		t.Errorf("run = %+v, want completed", run)
+	}
+	runs, _ := e.svc.RecentSyncs(e.ctx)
+	if len(runs) != 1 || runs[0].Status != marumorisync.RunOK {
+		t.Fatalf("stored runs = %+v, want the completed round", runs)
+	}
+}
+
+// The same guarantee for a round cut short before it could finish: it must close its run as
+// a failure instead of leaving the row 'running', which is what blocks the Learner's next
+// Sync.
+func TestCancelledRoundClosesItsRunAsFailed(t *testing.T) {
+	e := newEnv(t, testRefs())
+	e.connect(t)
+	happyData(e.up)
+
+	ctx, cancel := context.WithCancel(e.ctx)
+	defer cancel()
+	svc := marumorisync.NewService(cutShortStore{e.store, "", cancel}, e.box, e.ref,
+		func(_, _ string) (marumorisync.Upstream, error) {
+			return cancelOnRead{e.up, "reviews", cancel}, nil
+		},
+		marumorisync.WithClock(func() time.Time { t := e.now; e.now = t.Add(time.Second); return t }))
+
+	run, err := svc.SyncUser(ctx, e.uid)
+	if err != nil {
+		t.Fatalf("SyncUser err = %v, want the failure recorded as a run", err)
+	}
+	if run.Status != marumorisync.RunFailed {
+		t.Errorf("run = %+v, want failed", run)
+	}
+	runs, _ := e.svc.RecentSyncs(e.ctx)
+	if len(runs) != 1 || runs[0].Status != marumorisync.RunFailed {
+		t.Fatalf("stored runs = %+v, want one failed round, not one left running", runs)
+	}
+	// The Learner can Sync again: no abandoned row blocks them.
+	if _, err := e.svc.Sync(e.ctx); err != nil {
+		t.Errorf("the abandoned run blocked the next Sync: %v", err)
 	}
 }
 

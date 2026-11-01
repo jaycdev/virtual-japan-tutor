@@ -41,6 +41,9 @@ const maxAPIKeyLength = 4096
 // defaultRecentLimit is how many runs RecentSyncs lists.
 const defaultRecentLimit = 10
 
+// finishRunTimeout bounds the write that closes a Sync run.
+const finishRunTimeout = 10 * time.Second
+
 // Service orchestrates MaruMori Syncs: it fetches each learner's knowledge state
 // through an Upstream, links it against the dictionary snapshot, records SRS level
 // history, and stores the run's counts through a Store. The learner's API key is
@@ -226,7 +229,7 @@ func (s *Service) SyncUser(ctx context.Context, userID uuid.UUID) (SyncRun, erro
 
 	finishedAt := s.clock()
 	countsCopy := counts
-	if err := s.store.FinishRun(ctx, userID, runID, finishedAt, nil, &countsCopy); err != nil {
+	if err := s.finishRun(ctx, userID, runID, finishedAt, nil, &countsCopy); err != nil {
 		return SyncRun{}, err
 	}
 	s.log.Info("marumori sync finished", "user_id", userID.String(),
@@ -445,11 +448,22 @@ func diff(known []KnownLevel, items []AppliedItem) (appeared, changed, gone int,
 	return appeared, changed, gone, disappeared, history
 }
 
+// finishRun closes a run on a context the caller no longer controls. Postgres refuses
+// writes on a context that is already done, so closing a run on the request's own context
+// would let a Learner who navigated away — or a server shutting down — leave the row
+// 'running', which blocks their next Sync until StartRun reaps it. The outcome of a round
+// that ran is not the caller's to cancel.
+func (s *Service) finishRun(ctx context.Context, userID, runID uuid.UUID, finishedAt time.Time, failure *string, counts *Counts) error {
+	finishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), finishRunTimeout)
+	defer cancel()
+	return s.store.FinishRun(finishCtx, userID, runID, finishedAt, failure, counts)
+}
+
 func (s *Service) finishFailed(ctx context.Context, userID uuid.UUID, runID uuid.UUID, startedAt time.Time, message string) (SyncRun, error) {
 	message = truncate(message, 2000)
 	finishedAt := s.clock()
 	failure := &message
-	if err := s.store.FinishRun(ctx, userID, runID, finishedAt, failure, nil); err != nil {
+	if err := s.finishRun(ctx, userID, runID, finishedAt, failure, nil); err != nil {
 		return SyncRun{}, err
 	}
 	return SyncRun{ID: runID, Status: RunFailed, StartedAt: startedAt, FinishedAt: &finishedAt, Error: failure}, nil
