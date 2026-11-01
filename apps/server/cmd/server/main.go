@@ -71,7 +71,7 @@ func run(args []string) error {
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.New(pool, svc, httpapi.WithAIProviders(ai)),
+		Handler:           httpapi.New(pool, svc, httpapi.WithAIProviders(ai), httpapi.WithMaxBodyBytes(cfg.MaxBodyBytes)),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       cfg.ReadTimeout,
 		WriteTimeout:      cfg.WriteTimeout,

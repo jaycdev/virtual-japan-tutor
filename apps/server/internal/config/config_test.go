@@ -202,3 +202,19 @@ func TestLoadRejectsHalfConfiguredAIDefault(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadMaxBodyBytes(t *testing.T) {
+	cfg, err := config.Load(env(map[string]string{"DATABASE_URL": "postgres://x"}))
+	if err != nil || cfg.MaxBodyBytes != 1<<20 {
+		t.Fatalf("default = %d, %v; want 1 MiB", cfg.MaxBodyBytes, err)
+	}
+	cfg, err = config.Load(env(map[string]string{"DATABASE_URL": "postgres://x", "HTTP_MAX_BODY_BYTES": "4096"}))
+	if err != nil || cfg.MaxBodyBytes != 4096 {
+		t.Fatalf("override = %d, %v", cfg.MaxBodyBytes, err)
+	}
+	for _, bad := range []string{"0", "-1", "lots"} {
+		if _, err := config.Load(env(map[string]string{"DATABASE_URL": "postgres://x", "HTTP_MAX_BODY_BYTES": bad})); err == nil {
+			t.Errorf("HTTP_MAX_BODY_BYTES=%q: expected error", bad)
+		}
+	}
+}

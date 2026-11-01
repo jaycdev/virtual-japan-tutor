@@ -32,11 +32,18 @@ var publicRoutes = map[string]bool{
 	"POST /auth/login": true,
 }
 
+// DefaultMaxBodyBytes is the request body cap when WithMaxBodyBytes is not used.
+const DefaultMaxBodyBytes = 1 << 20
+
 type server struct {
-	db   Pinger
-	auth *auth.Service
-	ai   *aiprovider.Service
+	db      Pinger
+	auth    *auth.Service
+	ai      *aiprovider.Service
+	maxBody int64
 }
+
+// WithMaxBodyBytes sets the cap applied to every request body (default 1 MiB).
+func WithMaxBodyBytes(n int64) Option { return func(s *server) { s.maxBody = n } }
 
 // Option wires an optional feature service into the handler.
 type Option func(*server)
@@ -46,12 +53,17 @@ func WithAIProviders(svc *aiprovider.Service) Option { return func(s *server) { 
 
 // New returns the HTTP handler serving the API defined in api/openapi.yaml.
 func New(db Pinger, authn *auth.Service, opts ...Option) http.Handler {
-	s := &server{db: db, auth: authn}
+	s := &server{db: db, auth: authn, maxBody: DefaultMaxBodyBytes}
 	for _, o := range opts {
 		o(s)
 	}
 	strict := api.NewStrictHandlerWithOptions(s, nil, api.StrictHTTPServerOptions{
-		RequestErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, _ error) {
+		RequestErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) {
+			var tooBig *http.MaxBytesError
+			if errors.As(err, &tooBig) {
+				writePayloadTooLarge(w)
+				return
+			}
 			writeError(w, http.StatusBadRequest, "bad_request", "Malformed request")
 		},
 		ResponseErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
@@ -59,12 +71,33 @@ func New(db Pinger, authn *auth.Service, opts ...Option) http.Handler {
 			writeError(w, http.StatusInternalServerError, "internal", "Internal server error")
 		},
 	})
-	return api.HandlerWithOptions(strict, api.StdHTTPServerOptions{
+	inner := api.HandlerWithOptions(strict, api.StdHTTPServerOptions{
 		Middlewares: []api.MiddlewareFunc{s.requireSession},
 		ErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, _ error) {
 			writeError(w, http.StatusBadRequest, "bad_request", "Malformed request")
 		},
 	})
+	return s.limitBody(inner)
+}
+
+// limitBody caps every request body, public routes included, before anything decodes it.
+// A declared Content-Length over the cap is refused outright; otherwise the reader errors
+// once the cap is exceeded, which the JSON decoding error handler turns into a 413.
+func (s *server) limitBody(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ContentLength > s.maxBody {
+			writePayloadTooLarge(w)
+			return
+		}
+		if r.Body != nil {
+			r.Body = http.MaxBytesReader(w, r.Body, s.maxBody)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func writePayloadTooLarge(w http.ResponseWriter) {
+	writeError(w, http.StatusRequestEntityTooLarge, "payload_too_large", "Request body too large")
 }
 
 // requireSession authenticates every route not in publicRoutes, before the request body

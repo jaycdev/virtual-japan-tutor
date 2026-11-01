@@ -4,6 +4,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,6 +23,8 @@ type Config struct {
 	WriteTimeout time.Duration
 	// IdleTimeout bounds keep-alive idle connections (env HTTP_IDLE_TIMEOUT, default 60s).
 	IdleTimeout time.Duration
+	// MaxBodyBytes caps every request body (env HTTP_MAX_BODY_BYTES, default 1 MiB).
+	MaxBodyBytes int64
 	// SecretsKey is the 32-byte key for encrypting stored secrets (env SECRETS_KEY, base64, required).
 	SecretsKey []byte
 	// SessionTTL is how long a login session lasts (env SESSION_TTL, default 720h = 30 days).
@@ -63,6 +66,9 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, err
 	}
 	if cfg.IdleTimeout, err = duration(getenv, "HTTP_IDLE_TIMEOUT", 60*time.Second); err != nil {
+		return Config{}, err
+	}
+	if cfg.MaxBodyBytes, err = positiveInt(getenv, "HTTP_MAX_BODY_BYTES", 1<<20); err != nil {
 		return Config{}, err
 	}
 	if cfg.SessionTTL, err = duration(getenv, "SESSION_TTL", 30*24*time.Hour); err != nil {
@@ -113,4 +119,20 @@ func duration(getenv func(string) string, key string, def time.Duration) (time.D
 		return 0, fmt.Errorf("%s must be positive, got %q", key, v)
 	}
 	return d, nil
+}
+
+// positiveInt parses a positive integer from key, or returns def if unset.
+func positiveInt(getenv func(string) string, key string, def int64) (int64, error) {
+	v := getenv(key)
+	if v == "" {
+		return def, nil
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", key, err)
+	}
+	if n <= 0 {
+		return 0, fmt.Errorf("%s must be positive, got %q", key, v)
+	}
+	return n, nil
 }
