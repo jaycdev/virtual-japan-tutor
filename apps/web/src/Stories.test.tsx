@@ -96,6 +96,8 @@ function fakeApi(
     gateEntry?: number;
     /** Fail PUT /reading-settings, as a server error would. */
     failReadingPut?: boolean;
+    /** Lookup-hold threshold the fake reading settings carry. */
+    lookupHoldMs?: number;
   } = {},
 ) {
   const hasReady = opts.ready ?? true;
@@ -175,7 +177,20 @@ function fakeApi(
   const requests: { method: string; path: string; body: unknown }[] = [];
   const gated: (() => void)[] = [];
   const settings = { furiganaThresholdSrsLevel: 3, preferredGenre: "", preferredTheme: "" };
-  const readingSettings = { blurTranslation: opts.blurTranslation ?? true };
+  const readingSettings = { blurTranslation: opts.blurTranslation ?? true, lookupHoldMs: opts.lookupHoldMs ?? 800 };
+
+  // Item Lists (issue #12): a Saved default and one plain list, with just
+  // enough server behaviour — duplicate names, default tracking — for the
+  // Save flow and its inline create to be tested honestly.
+  const itemLists = [
+    { id: "l1", name: "Saved", boosting: true, isDefault: true, itemCount: 1 },
+    { id: "l2", name: "Travel", boosting: false, isDefault: false, itemCount: 3 },
+  ];
+  let defaultListId = "l1";
+  const markDefault = () => {
+    for (const l of itemLists) l.isDefault = l.id === defaultListId;
+  };
+
   const fetchImpl = vi.fn(async (request: Request) => {
     const { pathname } = new URL(request.url);
     const body = request.body ? await request.json() : null;
@@ -209,12 +224,59 @@ function fakeApi(
     if (entry === "990103") return json(200, MISE_ENTRY);
     if (pathname === "/grammar/points/12" && request.method === "GET") return json(200, TE_SHIMAU_POINT);
     if (pathname === "/grammar/points/13" && request.method === "GET") return json(200, IKU_POINT);
+
+    // Item Lists and Weak Signals (issue #12).
+    if (pathname === "/item-lists" && request.method === "GET") {
+      markDefault();
+      return json(200, { items: itemLists, defaultListId });
+    }
+    if (pathname === "/item-lists" && request.method === "POST") {
+      const name = String((body as { name?: string }).name ?? "");
+      if (itemLists.some((l) => l.name.toLowerCase() === name.toLowerCase())) {
+        return json(409, { code: "duplicate_name", message: "Another list already has that name." });
+      }
+      const list = { id: `l${itemLists.length + 1}`, name, boosting: false, isDefault: false, itemCount: 0 };
+      itemLists.push(list);
+      return json(201, list);
+    }
+    if (pathname === "/item-lists/default" && request.method === "PUT") {
+      const id = String((body as { listId?: string }).listId ?? "");
+      if (!itemLists.some((l) => l.id === id)) return json(404, { code: "not_found", message: "no such list" });
+      defaultListId = id;
+      markDefault();
+      return new Response(null, { status: 204 });
+    }
+    const listMatch = pathname.match(/^\/item-lists\/([^/]+)(\/items)?$/);
+    if (listMatch && itemLists.some((l) => l.id === listMatch[1])) {
+      const list = itemLists.find((l) => l.id === listMatch[1])!;
+      if (listMatch[2]) {
+        if (request.method === "POST") {
+          list.itemCount += 1;
+          return new Response(null, { status: 204 });
+        }
+        if (request.method === "DELETE") return new Response(null, { status: 204 });
+      } else if (request.method === "PUT") {
+        const patch = body as { name?: string; boosting?: boolean };
+        if (patch.name !== undefined) list.name = patch.name;
+        if (patch.boosting !== undefined) list.boosting = patch.boosting;
+        return json(200, list);
+      } else if (request.method === "DELETE") {
+        if (list.name.toLowerCase() === "saved") {
+          return json(400, { code: "bad_request", message: "The Saved list cannot be deleted." });
+        }
+        itemLists.splice(itemLists.indexOf(list), 1);
+        return new Response(null, { status: 204 });
+      }
+    }
+    if (pathname === "/weak-signals" && request.method === "POST") return new Response(null, { status: 204 });
+
     return json(404, { code: "not_found", message: "not found" });
   });
   const client = createApiClient({ baseUrl: "http://127.0.0.1:8787", fetch: fetchImpl });
   return {
     client,
     requests,
+    itemLists,
     /** Answer the oldest held dictionary fetch; later ones can arrive after
      *  the UI has already moved on — which is exactly the race. */
     releaseEntry: () => gated.shift()?.(),
@@ -260,14 +322,15 @@ describe("Stories screen", () => {
     const rtTexts = Array.from(document.querySelectorAll("ruby rt")).map((rt) => rt.textContent);
     expect(rtTexts).toEqual(["勉強", "しました", "勉強", "しました", "いきました"]);
     // One GET for the library, one for the story settings, one for the
-    // opened story and one for the reading settings; nothing else — no
-    // generation call.
-    await waitFor(() => expect(requests.length).toBe(4));
+    // opened story, one for the reading settings and one for the Item Lists
+    // the reader's Save flow needs; nothing else — no generation call.
+    await waitFor(() => expect(requests.length).toBe(5));
     expect(requests.map((r) => `${r.method} ${r.path}`)).toEqual([
       "GET /stories",
       "GET /story-settings",
       "GET /stories/st-1",
       "GET /reading-settings",
+      "GET /item-lists",
     ]);
   });
 
@@ -376,7 +439,9 @@ describe("Reading Panel", () => {
     await waitFor(() => expect(panel.querySelector(".translation.blurred")).toBeNull());
     expect(panel.querySelector(".translation.revealed")).toBeTruthy();
     const put = requests.find((r) => r.path === "/reading-settings" && r.method === "PUT");
-    expect(put?.body).toEqual({ blurTranslation: false });
+    // The whole settings object goes over the wire, so the hold threshold
+    // rides along unchanged with the blur flip.
+    expect(put?.body).toEqual({ blurTranslation: false, lookupHoldMs: 800 });
   });
 
   it("says so when saving the blur preference fails, and keeps the old state", async () => {
@@ -618,18 +683,19 @@ describe("Pitch graph", () => {
 });
 
 describe("Word menu and windows", () => {
-  it("clicking a word opens the menu; Save items wait for issue #12", async () => {
+  it("clicking a word opens the menu, and Save enables once the Item Lists load", async () => {
     const { client } = fakeApi();
     await openStory(client);
 
     fireEvent.click(tokenButton("がっこう"));
     const menu = screen.getByRole("menu");
     expect((within(menu).getByRole("menuitem", { name: "Dictionary" }) as HTMLButtonElement).disabled).toBe(false);
-    for (const name of ["Save", "Save to…"]) {
-      const item = within(menu).getByRole("menuitem", { name }) as HTMLButtonElement;
-      expect(item.disabled).toBe(true);
-      expect(item.title).toContain("issue #12");
-    }
+    // The lists load in the background: Save turns on as soon as they are
+    // known, and its title names the Default List it targets.
+    const save = within(menu).getByRole("menuitem", { name: "Save" }) as HTMLButtonElement;
+    await waitFor(() => expect(save.disabled).toBe(false));
+    expect(save.title).toBe("Save to Saved");
+    expect((within(menu).getByRole("menuitem", { name: "Save to…" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("Dictionary opens a window with senses, SRS state, kanji and pitch", async () => {
@@ -787,5 +853,225 @@ describe("Token underlines", () => {
     const grammar = document.querySelector(".tok-grammar");
     expect(grammar?.textContent).toMatch(/^しました/);
     expect(grammar?.classList.contains("tok-grammar-focus")).toBe(true);
+  });
+});
+
+describe("Saving and Weak Signals (issue #12)", () => {
+  /** The named menu item, once the Item Lists have loaded and it is clickable. */
+  async function enabledItem(name: string): Promise<HTMLButtonElement> {
+    return waitFor(() => {
+      const b = within(screen.getByRole("menu")).getByRole("menuitem", { name }) as HTMLButtonElement;
+      if (b.disabled) throw new Error(`${name} still disabled`);
+      return b;
+    });
+  }
+
+  it("Save puts the word in the Default List, closes the menu and refocuses the token", async () => {
+    const { client, requests } = fakeApi();
+    await openStory(client);
+
+    const word = tokenButton("がっこう");
+    fireEvent.click(word);
+    fireEvent.click(await enabledItem("Save"));
+
+    await waitFor(() =>
+      expect(requests.some((r) => r.method === "POST" && r.path === "/item-lists/l1/items")).toBe(true),
+    );
+    const add = requests.find((r) => r.path === "/item-lists/l1/items");
+    expect(add?.body).toEqual({ itemKind: "vocabulary", itemRef: "990101" });
+    expect(await screen.findByText("Saved to Saved.")).toBeTruthy();
+    expect(screen.queryByRole("menu")).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(word));
+  });
+
+  it("Save to… picks another list", async () => {
+    const { client, requests } = fakeApi();
+    await openStory(client);
+
+    // Unknown words are saveable too — Saved Items is where they go to become Known.
+    fireEvent.click(tokenButton("みせ"));
+    fireEvent.click(await enabledItem("Save to…"));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Travel" }));
+
+    await waitFor(() =>
+      expect(requests.some((r) => r.method === "POST" && r.path === "/item-lists/l2/items")).toBe(true),
+    );
+    expect(requests.find((r) => r.path === "/item-lists/l2/items")?.body).toEqual({
+      itemKind: "vocabulary",
+      itemRef: "990103",
+    });
+    expect(await screen.findByText("Saved to Travel.")).toBeTruthy();
+  });
+
+  it("Save to… creates a new list and saves straight into it", async () => {
+    const { client, requests } = fakeApi();
+    await openStory(client);
+
+    fireEvent.click(tokenButton("みせ"));
+    fireEvent.click(await enabledItem("Save to…"));
+    fireEvent.change(screen.getByPlaceholderText("new list name"), { target: { value: "Food" } });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Create and save" }));
+
+    await waitFor(() =>
+      expect(
+        requests.some((r) => r.method === "POST" && r.path === "/item-lists" && (r.body as { name?: string }).name === "Food"),
+      ).toBe(true),
+    );
+    // The item lands in the freshly created list — the create's answer, not
+    // a guess — and the picker never saves into a list that failed to exist.
+    await waitFor(() =>
+      expect(requests.some((r) => r.method === "POST" && r.path === "/item-lists/l3/items")).toBe(true),
+    );
+    expect(await screen.findByText("Saved to Food.")).toBeTruthy();
+  });
+
+  it("a Grammar Span token with no dictionary link saves the Grammar Point", async () => {
+    const { client, requests } = fakeApi();
+    await openStory(client);
+
+    fireEvent.click(tokenButton("しました"));
+    const menu = screen.getByRole("menu");
+    // No dictionary entry, so Dictionary stays disabled — but the covering
+    // Span gives the token a save target: the Grammar Point itself.
+    expect((within(menu).getByRole("menuitem", { name: "Dictionary" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(await enabledItem("Save"));
+
+    await waitFor(() =>
+      expect(requests.some((r) => r.method === "POST" && r.path === "/item-lists/l1/items")).toBe(true),
+    );
+    expect(requests.find((r) => r.path === "/item-lists/l1/items")?.body).toEqual({
+      itemKind: "grammar",
+      itemRef: "12",
+    });
+    expect(await screen.findByText("Saved to Saved.")).toBeTruthy();
+  });
+
+  it("Save to… puts a Grammar Point in the chosen list", async () => {
+    const { client, requests } = fakeApi();
+    await openStory(client);
+
+    fireEvent.click(tokenButton("しました"));
+    fireEvent.click(await enabledItem("Save to…"));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Travel" }));
+
+    await waitFor(() =>
+      expect(requests.some((r) => r.method === "POST" && r.path === "/item-lists/l2/items")).toBe(true),
+    );
+    expect(requests.find((r) => r.path === "/item-lists/l2/items")?.body).toEqual({
+      itemKind: "grammar",
+      itemRef: "12",
+    });
+    expect(await screen.findByText("Saved to Travel.")).toBeTruthy();
+  });
+
+  it("a linked word inside a Grammar Span still saves its own Dictionary Entry", async () => {
+    const { client, requests } = fakeApi({ extraSpan: true });
+    await openStory(client);
+
+    // みせ sits inside the ～に行く span, yet Save means the word — the
+    // span's Grammar Point is reached through the span's own tokens.
+    fireEvent.click(tokenButton("みせ"));
+    fireEvent.click(await enabledItem("Save"));
+    await waitFor(() =>
+      expect(requests.some((r) => r.method === "POST" && r.path === "/item-lists/l1/items")).toBe(true),
+    );
+    expect(requests.find((r) => r.path === "/item-lists/l1/items")?.body).toEqual({
+      itemKind: "vocabulary",
+      itemRef: "990103",
+    });
+  });
+
+  it("opening the Lookup Menu signals menu_open once per word, however often it opens", async () => {
+    const { client, requests } = fakeApi();
+    await openStory(client);
+
+    const word = tokenButton("がっこう");
+    fireEvent.click(word); // open
+    fireEvent.click(word); // close (same token toggles)
+    fireEvent.click(word); // open again
+    const signals = () => requests.filter((r) => r.path === "/weak-signals");
+    await waitFor(() => expect(signals().length).toBe(1));
+    expect((signals()[0]?.body as { signals: unknown }).signals).toEqual([
+      { itemKind: "vocabulary", itemRef: "990101", reason: "menu_open" },
+    ]);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(signals().length).toBe(1);
+  });
+
+  it("a Known lookup held past the configured threshold signals one Weak Signal", async () => {
+    const { client, requests } = fakeApi({ lookupHoldMs: 30 });
+    await openStory(client);
+
+    fireEvent.mouseEnter(tokenButton("がっこう"));
+    const signals = () => requests.filter((r) => r.path === "/weak-signals");
+    expect(signals().length).toBe(0); // not before the threshold
+    await waitFor(() => expect(signals().length).toBe(1));
+    expect((signals()[0]?.body as { signals: unknown }).signals).toEqual([
+      { itemKind: "vocabulary", itemRef: "990101", reason: "lookup" },
+    ]);
+  });
+
+  it("a hold threshold of 0 signals every lookup, immediately", async () => {
+    const { client, requests } = fakeApi({ lookupHoldMs: 0 });
+    await openStory(client);
+
+    // 0 means "signal every lookup": the timer exists and fires at once,
+    // it is not switched off.
+    fireEvent.mouseEnter(tokenButton("がっこう"));
+    const signals = () => requests.filter((r) => r.path === "/weak-signals");
+    await waitFor(() => expect(signals().length).toBe(1));
+    expect((signals()[0]?.body as { signals: unknown }).signals).toEqual([
+      { itemKind: "vocabulary", itemRef: "990101", reason: "lookup" },
+    ]);
+  });
+
+  it("hovering away before the threshold cancels the hold", async () => {
+    const { client, requests } = fakeApi({ lookupHoldMs: 200 });
+    await openStory(client);
+
+    fireEvent.mouseEnter(tokenButton("がっこう"));
+    fireEvent.mouseLeave(tokenButton("がっこう"));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 260));
+    });
+    expect(requests.some((r) => r.path === "/weak-signals")).toBe(false);
+  });
+
+  it("an unknown word's lookup never signals, however long it is held", async () => {
+    const { client, requests } = fakeApi({ lookupHoldMs: 20 });
+    await openStory(client);
+
+    // みせ is unknown but dictionary-linked: the Lookup row fills, the hold
+    // elapses — and no signal, because unknown lookups are ordinary study.
+    fireEvent.mouseEnter(tokenButton("みせ"));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 80));
+    });
+    expect(requests.some((r) => r.path === "/weak-signals")).toBe(false);
+  });
+
+  it("revealing the translation signals the sentence's Focus Set items only", async () => {
+    const { client, requests } = fakeApi();
+    await openStory(client);
+
+    fireEvent.click(tokenButton("がっこう")); // selects sentence 0
+    const panel = screen.getByLabelText("Reading Panel");
+    fireEvent.click(panel.querySelector(".translation") as HTMLElement);
+
+    await waitFor(() => expect(panel.querySelector(".translation.revealed")).toBeTruthy());
+    await waitFor(() => {
+      const unblur = requests
+        .filter((r) => r.path === "/weak-signals")
+        .flatMap((r) => (r.body as { signals: { reason: string }[] }).signals)
+        .filter((s) => s.reason === "translation_unblur");
+      // 学校 (in this sentence, focus) and the focus Grammar Span — while 店,
+      // a focus item of the *other* sentence, stays out of it.
+      expect(unblur).toEqual([
+        { itemKind: "vocabulary", itemRef: "990101", reason: "translation_unblur" },
+        { itemKind: "grammar", itemRef: "12", reason: "translation_unblur" },
+      ]);
+    });
   });
 });

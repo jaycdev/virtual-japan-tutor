@@ -487,6 +487,31 @@ func (st *PostgresStore) SetBlurTranslation(ctx context.Context, userID uuid.UUI
 	return nil
 }
 
+// LookupHoldMs reads the reader's lookup-hold threshold (issue #12). The
+// column default is 800; rows predating the migration read the same default.
+func (st *PostgresStore) LookupHoldMs(ctx context.Context, userID uuid.UUID) (int, error) {
+	var hold int
+	err := st.pool.QueryRow(ctx, `SELECT lookup_hold_ms FROM users WHERE id = $1`, userID).Scan(&hold)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	if err != nil {
+		return 0, fmt.Errorf("story lookup hold: %w", err)
+	}
+	return hold, nil
+}
+
+func (st *PostgresStore) SetLookupHoldMs(ctx context.Context, userID uuid.UUID, holdMs int) error {
+	tag, err := st.pool.Exec(ctx, `UPDATE users SET lookup_hold_ms = $2 WHERE id = $1`, userID, holdMs)
+	if err != nil {
+		return fmt.Errorf("story lookup hold: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // StoryPrefs reads the user's preferred genre/theme, creating the state row
 // with empty ("surprise me") defaults when there is none yet.
 func (st *PostgresStore) StoryPrefs(ctx context.Context, userID uuid.UUID) (string, string, error) {

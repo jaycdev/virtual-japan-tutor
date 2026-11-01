@@ -1,0 +1,274 @@
+import type {
+  ApiClient,
+  ItemList,
+  ItemListAddRequest,
+  ItemListCreateRequest,
+  ItemListMember,
+  WeakSignalRequest,
+} from "@vjt/api-client";
+import { useCallback, useEffect, useState } from "react";
+import type { ActionResult } from "./useAiSettings.ts";
+
+/**
+ * The Learner's Item Lists (issue #12) — named groups of Words, Kanji and
+ * Grammar Points. Saving a token from the reader targets the Default List
+ * (the built-in Saved list unless the Learner picked another), and Boosting
+ * Lists push their not-yet-Known items into Focus Sets. One view serves both
+ * the reader's Save flow and the Settings list-management section; mutations
+ * re-fetch so the counts and the Default marker stay honest.
+ *
+ * Like the other hooks this never rejects: failures land in `state` or in the
+ * returned ActionResult.
+ */
+
+export type ItemListsState =
+  | { status: "loading" }
+  | { status: "error"; message: string }
+  | { status: "ready"; lists: ItemList[]; defaultListId: string | null };
+
+export interface ItemListsView {
+  state: ItemListsState;
+  /** The list a plain Save targets; null until the lists are known. */
+  defaultListId: string | null;
+  createList(list: ItemListCreateRequest): Promise<ActionResult & { list?: ItemList }>;
+  updateList(
+    listId: string,
+    patch: { name?: string; boosting?: boolean },
+  ): Promise<ActionResult>;
+  deleteList(listId: string): Promise<ActionResult>;
+  setDefaultList(listId: string): Promise<ActionResult>;
+  /** Save one item into one list; the server may record a Weak Signal. */
+  addToList(listId: string, item: ItemListAddRequest): Promise<ActionResult>;
+  /** Drop one item from one list; the Practice Record keeps its answers. */
+  removeFromList(listId: string, item: ItemListAddRequest): Promise<ActionResult>;
+  /**
+   * Read one list's members with display labels (list management): kind and
+   * ref exactly as writes address them, plus the surface/gloss the server
+   * joined from the reference data. The read is capped server-side.
+   */
+  listItems(listId: string): Promise<ActionResult & { members?: ItemListMember[] }>;
+  /**
+   * Report reader behaviour (held lookup, opened menu, unblurred sentence) as
+   * Weak Signals. The server keeps only signals about the caller's Known
+   * Items; one-way traffic, so no re-read follows.
+   */
+  reportWeakSignals(signals: WeakSignalRequest[]): Promise<ActionResult>;
+  /** Re-fetch after an error or an out-of-band change. */
+  reload(): void;
+}
+
+const UNREACHABLE = "Cannot reach the server";
+const FAILED = "Request failed";
+
+function message(error: { message?: string } | undefined, status: number): string {
+  return error?.message ?? `${FAILED} (${status})`;
+}
+
+export function useItemLists(client: ApiClient): ItemListsView {
+  const [state, setState] = useState<ItemListsState>({ status: "loading" });
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const { data, error: err, response } = await client.GET("/item-lists");
+        if (cancelled) return;
+        if (data)
+          setState({
+            status: "ready",
+            lists: data.items ?? [],
+            defaultListId: data.defaultListId ?? null,
+          });
+        else setState({ status: "error", message: message(err, response.status) });
+      } catch {
+        if (!cancelled) setState({ status: "error", message: UNREACHABLE });
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [client, attempt]);
+
+  /**
+   * Re-read after a mutation. A failed re-read never clobbers what is on
+   * screen: the mutation itself succeeded, and flipping a ready view into an
+   * error would blank the Learner's lists and call a successful Save a
+   * failure. The stale lists stay, and the next reload corrects them.
+   */
+  const refresh = useCallback(async (): Promise<void> => {
+    try {
+      const { data } = await client.GET("/item-lists");
+      if (data)
+        setState({
+          status: "ready",
+          lists: data.items ?? [],
+          defaultListId: data.defaultListId ?? null,
+        });
+    } catch {
+      // keep the stale view
+    }
+  }, [client]);
+
+  const createList = useCallback(
+    async (list: ItemListCreateRequest): Promise<ActionResult & { list?: ItemList }> => {
+      try {
+        const { data, error: err, response } = await client.POST("/item-lists", { body: list });
+        if (response.status === 201 && data) {
+          // Hand back the created list (the reader's inline "Save to a new
+          // list" needs its id); the re-read keeps the shared view honest,
+          // but the create is settled either way.
+          const created = data;
+          await refresh();
+          return { ok: true, list: created };
+        }
+        return { ok: false, message: message(err, response.status) };
+      } catch {
+        return { ok: false, message: UNREACHABLE };
+      }
+    },
+    [client, refresh],
+  );
+
+  const updateList = useCallback(
+    async (listId: string, patch: { name?: string; boosting?: boolean }): Promise<ActionResult> => {
+      try {
+        const { error: err, response } = await client.PUT("/item-lists/{listId}", {
+          params: { path: { listId } },
+          body: patch,
+        });
+        if (response.status === 200) {
+          await refresh();
+          return { ok: true };
+        }
+        return { ok: false, message: message(err, response.status) };
+      } catch {
+        return { ok: false, message: UNREACHABLE };
+      }
+    },
+    [client, refresh],
+  );
+
+  const deleteList = useCallback(
+    async (listId: string): Promise<ActionResult> => {
+      try {
+        const { error: err, response } = await client.DELETE("/item-lists/{listId}", {
+          params: { path: { listId } },
+        });
+        if (response.status === 204) {
+          await refresh();
+          return { ok: true };
+        }
+        return { ok: false, message: message(err, response.status) };
+      } catch {
+        return { ok: false, message: UNREACHABLE };
+      }
+    },
+    [client, refresh],
+  );
+
+  const setDefaultList = useCallback(
+    async (listId: string): Promise<ActionResult> => {
+      try {
+        const { error: err, response } = await client.PUT("/item-lists/default", {
+          body: { listId },
+        });
+        if (response.status === 204) {
+          await refresh();
+          return { ok: true };
+        }
+        return { ok: false, message: message(err, response.status) };
+      } catch {
+        return { ok: false, message: UNREACHABLE };
+      }
+    },
+    [client, refresh],
+  );
+
+  const addToList = useCallback(
+    async (listId: string, item: ItemListAddRequest): Promise<ActionResult> => {
+      try {
+        const { error: err, response } = await client.POST("/item-lists/{listId}/items", {
+          params: { path: { listId } },
+          body: item,
+        });
+        if (response.status === 204) {
+          await refresh();
+          return { ok: true };
+        }
+        return { ok: false, message: message(err, response.status) };
+      } catch {
+        return { ok: false, message: UNREACHABLE };
+      }
+    },
+    [client, refresh],
+  );
+
+  const removeFromList = useCallback(
+    async (listId: string, item: ItemListAddRequest): Promise<ActionResult> => {
+      try {
+        const { error: err, response } = await client.DELETE("/item-lists/{listId}/items", {
+          params: { path: { listId }, query: { itemKind: item.itemKind, itemRef: item.itemRef } },
+        });
+        if (response.status === 204) {
+          await refresh();
+          return { ok: true };
+        }
+        return { ok: false, message: message(err, response.status) };
+      } catch {
+        return { ok: false, message: UNREACHABLE };
+      }
+    },
+    [client, refresh],
+  );
+
+  const listItems = useCallback(
+    async (listId: string): Promise<ActionResult & { members?: ItemListMember[] }> => {
+      try {
+        const { data, error: err, response } = await client.GET("/item-lists/{listId}/items", {
+          params: { path: { listId } },
+        });
+        if (response.status === 200 && data) return { ok: true, members: data.items ?? [] };
+        return { ok: false, message: message(err, response.status) };
+      } catch {
+        return { ok: false, message: UNREACHABLE };
+      }
+    },
+    [client],
+  );
+
+  const reportWeakSignals = useCallback(
+    async (signals: WeakSignalRequest[]): Promise<ActionResult> => {
+      if (signals.length === 0) return { ok: true };
+      try {
+        const { error: err, response } = await client.POST("/weak-signals", {
+          body: { signals },
+        });
+        if (response.status === 204) return { ok: true };
+        return { ok: false, message: message(err, response.status) };
+      } catch {
+        return { ok: false, message: UNREACHABLE };
+      }
+    },
+    [client],
+  );
+
+  const reload = useCallback(() => setAttempt((n) => n + 1), []);
+
+  const defaultListId = state.status === "ready" ? state.defaultListId : null;
+
+  return {
+    state,
+    defaultListId,
+    createList,
+    updateList,
+    deleteList,
+    setDefaultList,
+    addToList,
+    removeFromList,
+    listItems,
+    reportWeakSignals,
+    reload,
+  };
+}

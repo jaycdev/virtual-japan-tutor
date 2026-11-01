@@ -568,3 +568,129 @@ func (c noVocabDistractors) VocabDistractors(ctx context.Context, level string, 
 }
 
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }
+
+// --- Stretch Items (issue #12) ---
+
+// withStretch rebuilds the service with Stretch Slots enabled; the default
+// env keeps them off (Options.StretchSlots zero means disabled).
+func (e *env) withStretch(t *testing.T, slots int) {
+	t.Helper()
+	e.svc = practice.NewService(e.focusSvc, e.content, e.store, recordWriter{e.mem},
+		practice.Options{SessionSize: 10, StretchSlots: slots, Now: e.clock.Now})
+}
+
+// A Stretch Item is asked once, after the Focus Set and before the top-ups,
+// and it never joins the buildable pool that the top-ups draw repeats from.
+func TestStretchItemsTakeReservedSlotsAfterTheFocusSet(t *testing.T) {
+	e := newEnv(t)
+	e.withStretch(t, 2)
+	e.content.AddVocab(2000, practice.Word{Display: "図書館", Meanings: []string{"library"}, Level: "N5"})
+	e.content.AddKanji("火", practice.Word{Display: "火", Meanings: []string{"fire"}, Level: "N5"})
+	stretchA := mastery.ItemKey{Kind: mastery.KindVocabulary, Ref: "2000"}
+	stretchB := mastery.ItemKey{Kind: mastery.KindKanji, Ref: "火"}
+	e.content.AddStretch(alice, stretchA, stretchB)
+
+	sess := mustStart(t, e, alice, 5)
+
+	// alice's buildable Focus Set is vocab 1000, kanji 水 and grammar 5;
+	// the two Stretch Items follow it, before any top-up repeats.
+	keys := make([]mastery.ItemKey, 0, len(sess.Exercises))
+	for _, ex := range sess.Exercises {
+		keys = append(keys, ex.Item)
+	}
+	want := []mastery.ItemKey{
+		{Kind: mastery.KindVocabulary, Ref: "1000"},
+		{Kind: mastery.KindKanji, Ref: "水"},
+		{Kind: mastery.KindGrammar, Ref: "5"},
+		stretchA, stretchB,
+	}
+	if len(keys) < len(want) || !reflect.DeepEqual(keys[:len(want)], want) {
+		t.Fatalf("exercises = %+v, want Focus Set then the two Stretch Items: %+v", keys, want)
+	}
+	// The remaining slots are Known Item top-ups (baseline repeat-filling):
+	// a Stretch Item is never among them.
+	for _, k := range keys[len(want):] {
+		if k == stretchA || k == stretchB {
+			t.Errorf("stretch item %+v appeared in the top-ups: %+v", k, keys)
+		}
+	}
+}
+
+// The slot reservation caps the draw, and an item that also sits in the
+// Focus Set (fixture-level overlap) is never asked twice.
+func TestStretchSlotsCapAndNoDuplicates(t *testing.T) {
+	e := newEnv(t)
+	e.withStretch(t, 2)
+	e.content.AddKanji("火", practice.Word{Display: "火", Meanings: []string{"fire"}, Level: "N5"})
+	e.content.AddKanji("水", practice.Word{Display: "水", Meanings: []string{"water"}, Level: "N5"})
+	// A known item queued as stretch anyway: the attempted set must hold.
+	e.content.AddStretch(alice,
+		mastery.ItemKey{Kind: mastery.KindKanji, Ref: "水"}, // also Focus Set
+		mastery.ItemKey{Kind: mastery.KindKanji, Ref: "火"},
+	)
+
+	sess := mustStart(t, e, alice, 9)
+
+	// The pure Stretch Item appears exactly once: the attempted set holds
+	// even when it also sits in the Focus Set (kanji 水), and top-ups never
+	// repeat it (only Known Items fill).
+	fired := map[mastery.ItemKey]int{}
+	for _, ex := range sess.Exercises {
+		fired[ex.Item]++
+	}
+	stretchKey := mastery.ItemKey{Kind: mastery.KindKanji, Ref: "火"}
+	if fired[stretchKey] != 1 {
+		t.Errorf("stretch kanji 火 asked %d times, want once", fired[stretchKey])
+	}
+	for _, k := range sess.Exercises[len(sess.Exercises)-1:] {
+		if k.Item == stretchKey {
+			t.Errorf("stretch item repeated into the top-up tail: %+v", sess.Exercises)
+		}
+	}
+}
+
+// A Stretch Item whose content is gone (a ref the Generator cannot build an
+// Exercise for — the case AddItem accepted before reference rows were
+// checked) must not hold a slot: the draw reaches past it and fills the
+// reservation with the next pool member.
+func TestStretchDrawSkipsJunkIntoTheSlots(t *testing.T) {
+	e := newEnv(t)
+	e.withStretch(t, 1)
+	e.content.AddKanji("火", practice.Word{Display: "火", Meanings: []string{"fire"}, Level: "N5"})
+	// Junk first: vocab 9999 has no fixture content, so g.add skips it. If
+	// the draw only fetched one candidate, the slot would go empty.
+	e.content.AddStretch(alice,
+		mastery.ItemKey{Kind: mastery.KindVocabulary, Ref: "9999"},
+		mastery.ItemKey{Kind: mastery.KindKanji, Ref: "火"},
+	)
+
+	sess := mustStart(t, e, alice, 6)
+
+	var asked bool
+	for _, ex := range sess.Exercises {
+		if ex.Item == (mastery.ItemKey{Kind: mastery.KindKanji, Ref: "火"}) {
+			asked = true
+		}
+	}
+	if !asked {
+		t.Errorf("stretch kanji 火 never asked: the leading junk item starved the slot (%+v)", sess.Exercises)
+	}
+	if sess.Skipped < 1 {
+		t.Errorf("skipped = %d, want the junk stretch item counted as skipped", sess.Skipped)
+	}
+}
+
+// The default configuration (StretchSlots zero) never asks Stretch Items:
+// the feature is opt-in through server config.
+func TestStretchItemsDisabledWithoutSlots(t *testing.T) {
+	e := newEnv(t)
+	e.content.AddVocab(2000, practice.Word{Display: "図書館", Meanings: []string{"library"}, Level: "N5"})
+	e.content.AddStretch(alice, mastery.ItemKey{Kind: mastery.KindVocabulary, Ref: "2000"})
+
+	sess := mustStart(t, e, alice, 5)
+	for _, ex := range sess.Exercises {
+		if ex.Item.Ref == "2000" {
+			t.Errorf("stretch item asked with slots disabled: %+v", ex)
+		}
+	}
+}

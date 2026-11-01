@@ -24,6 +24,8 @@ type Content struct {
 	Meaning []string // distractor pool for vocabulary and kanji recognition
 	Spans   []string // distractor pool for cloze exercises
 
+	Stretch map[uuid.UUID][]mastery.ItemKey // Boosting List stretch fixtures
+
 	mu    sync.Mutex
 	Calls []string // every lookup, in call order, for assertions
 }
@@ -32,9 +34,10 @@ var _ practice.Content = (*Content)(nil)
 
 func NewContent() *Content {
 	return &Content{
-		Vocab:  map[int64]practice.Word{},
-		Kanji:  map[string]practice.Word{},
-		Clozes: map[int64]practice.ClozeContent{},
+		Vocab:   map[int64]practice.Word{},
+		Kanji:   map[string]practice.Word{},
+		Clozes:  map[int64]practice.ClozeContent{},
+		Stretch: map[uuid.UUID][]mastery.ItemKey{},
 	}
 }
 
@@ -99,6 +102,29 @@ func (c *Content) KanjiDistractors(ctx context.Context, level string, exclude []
 func (c *Content) ClozeDistractors(ctx context.Context, level string, excludePoint int64, notText string, salt int64, limit int) ([]string, error) {
 	c.note("cloze-distractors:" + level)
 	return pool(c.Spans, limit), nil
+}
+
+// AddStretch queues Stretch Items for a user, in draw order.
+func (c *Content) AddStretch(userID uuid.UUID, keys ...mastery.ItemKey) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.Stretch[userID] = append(c.Stretch[userID], keys...)
+}
+
+// StretchItems draws queue order in the fixture; the real store rotates the
+// pool by salt, which the unit tests do not model.
+func (c *Content) StretchItems(ctx context.Context, userID uuid.UUID, salt int64, limit int) ([]mastery.ItemKey, error) {
+	c.note("stretch")
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return pool2(c.Stretch[userID], limit), nil
+}
+
+func pool2(list []mastery.ItemKey, limit int) []mastery.ItemKey {
+	if len(list) < limit {
+		return append([]mastery.ItemKey(nil), list...)
+	}
+	return append([]mastery.ItemKey(nil), list[:limit]...)
 }
 
 func pool(list []string, limit int) []string {

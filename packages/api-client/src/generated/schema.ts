@@ -618,10 +618,126 @@ export interface paths {
         get: operations["getReadingSettings"];
         /**
          * Update the reading settings
-         * @description Saves the Blur Translation preference. It is stored per Learner, so the reader looks the same on every session.
+         * @description Saves the Blur Translation preference. It is stored per Learner, so the reader looks the same on every session. lookupHoldMs is optional: an omitted threshold keeps the stored one.
          */
         put: operations["putReadingSettings"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/item-lists": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the Learner's Item Lists
+         * @description The Learner's Item Lists (issue #12) in creation order, each with its live item count and a Boosting flag. The built-in Saved list always exists: reads seed it for Learners who never touched the feature. `defaultListId` is the effective Save target — the configured Default List, or Saved when none is configured.
+         */
+        get: operations["getItemLists"];
+        put?: never;
+        /**
+         * Create an Item List
+         * @description Names are unique per Learner ignoring case. `boosting` marks the list a Boosting List: its not-yet-Known members become Stretch Items in Practice Sessions, and saving a Known Item into it records a Weak Signal.
+         */
+        post: operations["createItemLists"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/item-lists/default": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Choose the Default List for saving
+         * @description Points the one-tap Save at another list (issue #12). The list must be the Learner's own. Deleting the configured default falls back to Saved until another is chosen.
+         */
+        put: operations["setDefaultItemList"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/item-lists/{listId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Rename or re-flag an Item List
+         * @description Both fields are optional; omitted fields keep their current value. The built-in Saved list keeps its name forever (`reserved_list`) — its boosting flag is still editable.
+         */
+        put: operations["updateItemList"];
+        post?: never;
+        /**
+         * Delete an Item List
+         * @description Drops the list and its memberships; the items stay in every other list holding them. Saved cannot be deleted (`reserved_list`) — it is the fallback Save target.
+         */
+        delete: operations["deleteItemList"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/item-lists/{listId}/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the members of one Item List
+         * @description The list's members with a display label resolved from the reference data: the first kanji form (or reading) plus the first English gloss for Words, the pattern and meaning for Grammar Points, the literal for Kanji; unlinked items fall back to their raw ref. Ordered by kind then ref, capped at the first 500 members.
+         */
+        get: operations["getItemListItems"];
+        put?: never;
+        /**
+         * Save an item into one list
+         * @description Places one Known Item (or any item the Learner taps) in the list — an item may sit in several lists at once, and saving the same pair twice is a no-op. When the list is a Boosting List and the item is already a Known Item, the save also records a Weak Signal (`boosting_list`): the Learner just flagged it as shaky.
+         */
+        post: operations["addItemToList"];
+        /**
+         * Remove one item from one list
+         * @description Drops a single membership. Other lists holding the item are untouched, and the Practice Record keeps every answer given about it.
+         */
+        delete: operations["removeItemListItems"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weak-signals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report reader Weak Signals
+         * @description The story reader's uncertainty markers (issue #12): a dictionary lookup held past the Learner's threshold, an opened Lookup Menu, and unblurring a Sentence Translation (which flags the sentence's Focus Set items). Trust model, decided for the ticket: the reader sees only server-rendered items, but keys arrive over the wire, so the server validates every one is this Learner's Known Item before storing — unknown or foreign keys are dropped silently. Only Known Items qualify: a plain lookup of an unknown word is learning, not a signal, and needs no report.
+         */
+        post: operations["postWeakSignals"];
         delete?: never;
         options?: never;
         head?: never;
@@ -963,6 +1079,67 @@ export interface components {
          * @enum {string}
          */
         ItemKind: "kanji" | "vocabulary" | "grammar";
+        /** @description One Item List (issue #12): a named group of items the Learner assembled. `boosting` marks a Boosting List — its not-yet-Known members become Stretch Items in Practice Sessions, and its Known members carry one Mastery boost (counted once however many Boosting Lists hold the item). */
+        ItemList: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            boosting: boolean;
+            /** @description True for the effective Default List — the configured Save target, or Saved when none is configured. */
+            isDefault: boolean;
+            /** @description How many items the list holds right now. */
+            itemCount: number;
+        };
+        /** @description The Learner's Item Lists plus the effective Default List id. */
+        ItemListsResponse: {
+            items: components["schemas"]["ItemList"][];
+            /**
+             * Format: uuid
+             * @description The list a one-tap Save targets. Always resolves — Saved is the fallback.
+             */
+            defaultListId: string;
+        };
+        ItemListCreateRequest: {
+            /** @description Unique per Learner ignoring case. "Saved" is reserved for the built-in list. */
+            name: string;
+            boosting: boolean;
+        };
+        /** @description Omitted fields keep their current value. */
+        ItemListUpdateRequest: {
+            name?: string;
+            boosting?: boolean;
+        };
+        /** @description One item addressed the way every item in the app is addressed. */
+        ItemListAddRequest: {
+            itemKind: components["schemas"]["ItemKind"];
+            /** @description The item's stable ref: ent_seq text, kanji literal, MaruMori id or grammar point id. */
+            itemRef: string;
+        };
+        /** @description One member of an Item List, addressed by kind and ref plus a display label joined from the reference data where a row exists (jmdict for Words, grammar_points for Grammar Points). Items with no reference row fall back to the raw ref as surface and an empty gloss, so a Saved-but-unlinked word still shows something. */
+        ItemListMember: {
+            itemKind: components["schemas"]["ItemKind"];
+            /** @description The item's stable ref, exactly as writes address it. */
+            itemRef: string;
+            /** @description The display label — kanji form or reading (Words), pattern (Grammar Points), literal (Kanji), raw ref otherwise. */
+            surface: string;
+            /** @description First English gloss (Words) or meaning (Grammar Points); empty for Kanji and for items with no reference row. */
+            gloss: string;
+        };
+        ItemListItemsResponse: {
+            items: components["schemas"]["ItemListMember"][];
+        };
+        WeakSignalBatchRequest: {
+            signals: components["schemas"]["WeakSignalRequest"][];
+        };
+        WeakSignalRequest: {
+            itemKind: components["schemas"]["ItemKind"];
+            itemRef: string;
+            /**
+             * @description What the Learner did: held a lookup past their threshold, opened the Lookup Menu, or unblurred a Sentence Translation (one signal per Focus Set item in the sentence). `boosting_list` is written by the server on save-to-a-Boosting-List, never accepted here.
+             * @enum {string}
+             */
+            reason: "lookup" | "menu_open" | "translation_unblur";
+        };
         /** @description Session options. Everything is optional: an empty body (or no body at all) starts a session with a server-chosen seed. */
         PracticeSessionStart: {
             /**
@@ -1144,10 +1321,19 @@ export interface components {
             meaning: string;
             jlptLevel: components["schemas"]["GrammarJLPTLevel"];
         };
-        /** @description Per-Learner reader preferences (issue #11), stored so the reading experience is the same in every session and on every device. */
+        /** @description Per-Learner reader preferences (issue #11, extended by issue #12), stored so the reading experience is the same in every session and on every device. */
         ReadingSettings: {
             /** @description Blur sentence translations in the Reading Panel until the Learner clicks to reveal them. Defaults to true. */
             blurTranslation: boolean;
+            /** @description How long the Learner must hold a dictionary lookup open before it counts as a Weak Signal (issue #12): the Lookup Menu stays open past this many milliseconds, or the menu is opened at all, and the item gets a signal. 0 signals every lookup; the default is 800. The timer runs in the reader; only a threshold hit is reported. */
+            lookupHoldMs: number;
+        };
+        /** @description PUT body for the reading settings. blurTranslation is required; lookupHoldMs is optional — omitting it keeps the stored threshold (0 is a meaningful value, so an absent field must not decode to it). */
+        ReadingSettingsUpdate: {
+            /** @description Blur sentence translations in the Reading Panel until the Learner clicks to reveal them. Defaults to true. */
+            blurTranslation: boolean;
+            /** @description The new lookup-hold threshold, or absent to keep the stored one. Bounded like the stored value: 0 signals every lookup. */
+            lookupHoldMs?: number;
         };
         /** @description Everything the Dictionary Entry window shows for a looked-up word (issue #11): all JMdict senses with their parts of speech, every kanji form and reading, the JLPT Level, the pitch pattern for the tapped reading, and the Learner's Known Item state for the word and each of its constituent kanji. */
         DictionaryEntry: {
@@ -1241,6 +1427,8 @@ export interface components {
         ProviderId: string;
         /** @description A grammar point's catalogue id. Declared as a plain string for the same reason as ProviderId: the generated router binds path parameters before auth, so the handler parses it itself (404 if malformed). */
         GrammarPointId: string;
+        /** @description An Item List's UUID (issue #12). Plain string for the same reason as ProviderId: path parameters bind before auth, so the handler parses it itself (404 if malformed). */
+        ListId: string;
     };
     requestBodies: never;
     headers: never;
@@ -2420,7 +2608,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ReadingSettings"];
+                "application/json": components["schemas"]["ReadingSettingsUpdate"];
             };
         };
         responses: {
@@ -2434,6 +2622,309 @@ export interface operations {
                 };
             };
             /** @description Body missing blurTranslation (`invalid_settings`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    getItemLists: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The lists and the effective default */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemListsResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    createItemLists: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ItemListCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description The created list */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemList"];
+                };
+            };
+            /** @description Name blank or over 60 characters (`bad_request`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Another list already has that name, ignoring case (`duplicate_name`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    setDefaultItemList: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * Format: uuid
+                     * @description The list every Save targets until changed.
+                     */
+                    listId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The new Default List is stored */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateItemList: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description An Item List's UUID (issue #12). Plain string for the same reason as ProviderId: path parameters bind before auth, so the handler parses it itself (404 if malformed). */
+                listId: components["parameters"]["ListId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ItemListUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description The updated list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemList"];
+                };
+            };
+            /** @description Name blank, over 60 characters, or a rename of Saved (`bad_request` / `reserved_list`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description Another list already has that name, ignoring case (`duplicate_name`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteItemList: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description An Item List's UUID (issue #12). Plain string for the same reason as ProviderId: path parameters bind before auth, so the handler parses it itself (404 if malformed). */
+                listId: components["parameters"]["ListId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The list is gone */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Attempt to delete Saved (`reserved_list`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getItemListItems: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description An Item List's UUID (issue #12). Plain string for the same reason as ProviderId: path parameters bind before auth, so the handler parses it itself (404 if malformed). */
+                listId: components["parameters"]["ListId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The members (empty array for an empty list) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemListItemsResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    addItemToList: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description An Item List's UUID (issue #12). Plain string for the same reason as ProviderId: path parameters bind before auth, so the handler parses it itself (404 if malformed). */
+                listId: components["parameters"]["ListId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ItemListAddRequest"];
+            };
+        };
+        responses: {
+            /** @description The membership is stored */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad itemKind or blank itemRef (`bad_request`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    removeItemListItems: {
+        parameters: {
+            query?: {
+                /** @description Declared optional only so the auth middleware runs before parameter parsing; a missing value is answered 400 by the server. */
+                itemKind?: components["schemas"]["ItemKind"];
+                /** @description The item's stable ref, as everywhere items are addressed. Missing is answered 400 by the server. */
+                itemRef?: string;
+            };
+            header?: never;
+            path: {
+                /** @description An Item List's UUID (issue #12). Plain string for the same reason as ProviderId: path parameters bind before auth, so the handler parses it itself (404 if malformed). */
+                listId: components["parameters"]["ListId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The membership is gone (deleting an absent pair is a no-op) */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad itemKind (`bad_request`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    postWeakSignals: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WeakSignalBatchRequest"];
+            };
+        };
+        responses: {
+            /** @description All qualifying signals stored (others skipped) */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Over 50 signals, bad kind, blank ref or unknown reason (`bad_request`) */
             400: {
                 headers: {
                     [name: string]: unknown;

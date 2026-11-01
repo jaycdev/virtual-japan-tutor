@@ -23,6 +23,7 @@ type MemStore struct {
 	users     map[uuid.UUID]bool
 	threshold map[uuid.UUID]int
 	blur      map[uuid.UUID]bool      // missing = default true, like the users column
+	lookupMs  map[uuid.UUID]int       // missing = default 800, like the users column
 	prefs     map[uuid.UUID][2]string // genre, theme ("" = surprise-me / no theme)
 	snapshots map[uuid.UUID][]string
 	now       time.Time
@@ -34,6 +35,7 @@ func New() *MemStore {
 		users:     map[uuid.UUID]bool{},
 		threshold: map[uuid.UUID]int{},
 		blur:      map[uuid.UUID]bool{},
+		lookupMs:  map[uuid.UUID]int{},
 		prefs:     map[uuid.UUID][2]string{},
 		snapshots: map[uuid.UUID][]string{},
 		now:       time.Unix(1700000000, 0).UTC(),
@@ -225,6 +227,23 @@ func (s *MemStore) SetBlurTranslation(_ context.Context, userID uuid.UUID, blur 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.blur[userID] = blur
+	return nil
+}
+
+func (s *MemStore) LookupHoldMs(_ context.Context, userID uuid.UUID) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	v, ok := s.lookupMs[userID]
+	if !ok {
+		return story.DefaultLookupHoldMs, nil // the users column default
+	}
+	return v, nil
+}
+
+func (s *MemStore) SetLookupHoldMs(_ context.Context, userID uuid.UUID, holdMs int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lookupMs[userID] = holdMs
 	return nil
 }
 

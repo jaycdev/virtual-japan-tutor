@@ -141,6 +141,56 @@ func (c *PostgresContent) ClozeDistractors(ctx context.Context, level string, ex
 	return collectText(ctx, c.pool, clozeDistractorSQL, level, []int64{excludePoint}, notText, strconv.FormatInt(salt, 10), limit)
 }
 
+// stretchItemsSQL lists Stretch Items (issue #12): Boosting List members
+// that are NOT yet Known Items. The exclusion mirrors how
+// mastery.PostgresStore builds the Known Item universe (present Synced items
+// addressed link-first, MaruMori id for unlinked; known grammar by point
+// id), so "not known" here and "known" there are the same predicate seen
+// from both sides — an item can never be a Stretch Item and a Focus Set
+// member at once. One membership per list means an item in two Boosting
+// Lists appears twice: DISTINCT ON collapses it to its oldest membership.
+// The outer sort is the same md5-salt shuffle the distractor pools use:
+// salt is the session seed, so one session always draws the same slice of
+// the pool, and the next session's seed gives the pool a fresh order — a
+// member (or a batch of refs with no buildable content) can never hold the
+// slots at the head of a fixed order forever.
+const stretchItemsSQL = `
+	SELECT item_kind, item_ref FROM (
+		SELECT DISTINCT ON (m.item_kind, m.item_ref) m.item_kind, m.item_ref
+		FROM item_list_items m
+		JOIN item_lists l ON l.id = m.list_id
+		WHERE l.user_id = $1 AND l.boosting
+		  AND NOT (
+		    (m.item_kind = 'grammar' AND EXISTS (
+		       SELECT 1 FROM known_grammar_points p
+		       WHERE p.user_id = l.user_id AND p.grammar_point_id::text = m.item_ref))
+		    OR (m.item_kind <> 'grammar' AND EXISTS (
+		       SELECT 1 FROM marumori_known_items k
+		       WHERE k.user_id = l.user_id AND k.kind = m.item_kind AND k.disappeared_at IS NULL
+		         AND (k.jmdict_ent_seq::text = m.item_ref OR k.kanji_literal = m.item_ref OR k.marumori_id = m.item_ref)))
+		  )
+		ORDER BY m.item_kind, m.item_ref, m.added_at, m.list_id
+	) t
+	ORDER BY md5(t.item_kind || ':' || t.item_ref || $2::text), t.item_kind, t.item_ref
+	LIMIT $3`
+
+func (c *PostgresContent) StretchItems(ctx context.Context, userID uuid.UUID, salt int64, limit int) ([]mastery.ItemKey, error) {
+	rows, err := c.pool.Query(ctx, stretchItemsSQL, userID, strconv.FormatInt(salt, 10), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []mastery.ItemKey
+	for rows.Next() {
+		var k mastery.ItemKey
+		if err := rows.Scan(&k.Kind, &k.Ref); err != nil {
+			return nil, err
+		}
+		out = append(out, k)
+	}
+	return out, rows.Err()
+}
+
 func collectText(ctx context.Context, pool *pgxpool.Pool, query string, args ...any) ([]string, error) {
 	rows, err := pool.Query(ctx, query, args...)
 	if err != nil {

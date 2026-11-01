@@ -109,6 +109,14 @@ type Weights struct {
 type Options struct {
 	Weights Weights
 
+	// BoostingBonus is the mastery push for Boosting List membership
+	// (issue #12): a Known Item in at least one Boosting List has this
+	// much subtracted from its score — exactly once, however many Boosting
+	// Lists hold it. 0 disables the boost, so withDefaults deliberately
+	// leaves it alone (0 is a meaningful choice); cmd/server supplies
+	// DefaultBoostingBonus through config.
+	BoostingBonus float64
+
 	// PracticeHalfLife: a Practice Record result's influence halves every
 	// PracticeHalfLife (recent results weigh more).
 	PracticeHalfLife time.Duration
@@ -152,6 +160,12 @@ const (
 	DefaultWeightPractice     = 0.3
 	DefaultWeightTrend        = 0.1
 	DefaultWeightWeakSignals  = 0.2 // one fresh Weak Signal costs this much
+
+	// DefaultBoostingBonus is the score cost of sitting in a Boosting List
+	// (issue #12): one membership's worth, deduped per item, so ten boosting
+	// lists push exactly as hard as one. Config exposes it as
+	// MASTERY_BOOSTING_BONUS.
+	DefaultBoostingBonus = 0.15
 )
 
 // NoEvidenceMastery is the score for a Known Item none of the signals has
@@ -164,6 +178,7 @@ const NoEvidenceMastery = 0.5
 func DefaultOptions() Options {
 	return Options{
 		Weights:            Weights{DefaultWeightSRS, DefaultWeightPractice, DefaultWeightTrend, DefaultWeightWeakSignals},
+		BoostingBonus:      DefaultBoostingBonus,
 		PracticeHalfLife:   DefaultPracticeHalfLife,
 		WeakSignalHalfLife: DefaultWeakSignalHalfLife,
 		TrendDropPenalty:   DefaultTrendDropPenalty,
@@ -188,6 +203,8 @@ func (o Options) withDefaults() Options {
 	if o.Weights == (Weights{}) {
 		o.Weights = def.Weights
 	}
+	// BoostingBonus deliberately keeps its zero: disabling the boost is a
+	// legitimate configuration, so only DefaultOptions supplies the default.
 	if o.PracticeHalfLife <= 0 {
 		o.PracticeHalfLife = def.PracticeHalfLife
 	}
@@ -224,6 +241,11 @@ type Store interface {
 	LevelTrends(ctx context.Context, userID uuid.UUID) ([]LevelTrend, error)
 	PracticeResults(ctx context.Context, userID uuid.UUID) ([]PracticeRecord, error)
 	WeakSignals(ctx context.Context, userID uuid.UUID) ([]WeakSignalRecord, error)
+	// BoostingRefs lists the item keys held by the Learner's Boosting
+	// Lists (issue #12). Duplicates are allowed — the Service dedupes by
+	// item — and refs may include items that are not (yet) Known Items:
+	// those simply never match a scored item.
+	BoostingRefs(ctx context.Context, userID uuid.UUID) ([]ItemKey, error)
 }
 
 // ScoredItem is one Known Item with its Mastery and rotation state.
@@ -289,6 +311,16 @@ func (s *Service) Score(ctx context.Context, userID uuid.UUID) ([]ScoredItem, er
 	for _, w := range signals {
 		signalsBy[w.Key] = append(signalsBy[w.Key], w)
 	}
+	// Boosting List membership is a set: one boost per item no matter how
+	// many Boosting Lists hold it.
+	refs, err := s.store.BoostingRefs(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	boosted := make(map[ItemKey]bool, len(refs))
+	for _, k := range refs {
+		boosted[k] = true
+	}
 
 	now := s.opts.Now()
 	out := make([]ScoredItem, 0, len(items))
@@ -301,7 +333,7 @@ func (s *Service) Score(ctx context.Context, userID uuid.UUID) ([]ScoredItem, er
 		sort.SliceStable(pr, func(i, j int) bool { return pr[i].AnsweredAt.Before(pr[j].AnsweredAt) })
 		scored := ScoredItem{
 			Item:      it,
-			Mastery:   s.scoreItem(it, trend, pr, signalsBy[it.Key], now),
+			Mastery:   s.scoreItem(it, trend, pr, signalsBy[it.Key], boosted[it.Key], now),
 			Graduated: graduated(pr, s.opts.GraduateStreak, s.opts.GraduateMinDays),
 		}
 		scored.NewlyObservedGrammar = newlyObservedGrammar(it, s.opts.NewGrammarWindow, now)
@@ -356,8 +388,10 @@ func (s *Service) FocusSet(ctx context.Context, userID uuid.UUID) (FocusSet, err
 // Trend, Practice Record) over just those with stored evidence, then
 // subtracts the Weak Signal penalty — so a Weak Signal can only ever lower
 // Mastery, never pull a weak item up. Items with no evidence at all sit at
-// NoEvidenceMastery. The result is clamped to 0–1.
-func (s *Service) scoreItem(it KnownItem, trend *LevelTrend, practice []PracticeRecord, signals []WeakSignalRecord, now time.Time) float64 {
+// NoEvidenceMastery. Boosting List membership then costs BoostingBonus,
+// exactly once per item — the deliberate focus nudge of issue #12. The
+// result is clamped to 0–1.
+func (s *Service) scoreItem(it KnownItem, trend *LevelTrend, practice []PracticeRecord, signals []WeakSignalRecord, boosted bool, now time.Time) float64 {
 	var num, den float64
 
 	if it.SRSLevel != nil {
@@ -398,6 +432,10 @@ func (s *Service) scoreItem(it KnownItem, trend *LevelTrend, practice []Practice
 		// Weights.WeakSignals is the cost of one fresh signal; it halves
 		// every WeakSignalHalfLife.
 		penalty += s.opts.Weights.WeakSignals * decay(now.Sub(w.OccurredAt), s.opts.WeakSignalHalfLife)
+	}
+	if boosted {
+		// One membership's worth of boost, deduped by the caller's set.
+		penalty += s.opts.BoostingBonus
 	}
 	return clamp01(base - penalty)
 }

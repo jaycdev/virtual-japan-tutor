@@ -433,14 +433,32 @@ func (s *Service) PutSettings(ctx context.Context, userID uuid.UUID, us UserSett
 	return us, nil
 }
 
-// ReadingSettings is the reader-behaviour preference set (issue #11), kept
-// apart from UserSettings: story settings steer generation and are rewritten
-// wholesale by the settings form, while the Blur Translation flag belongs to
-// the reader and is written on its own whenever the Learner clicks it.
+// ReadingSettings is the reader-behaviour preference set (issue #11, with
+// the issue #12 lookup-hold threshold), kept apart from UserSettings: story
+// settings steer generation and are rewritten wholesale by the settings
+// form, while these flags belong to the reader and are written on their own.
 type ReadingSettings struct {
 	// BlurTranslation: story translations start blurred in the Reading
 	// Panel; the Learner's reveal click flips this stored flag.
 	BlurTranslation bool
+	// LookupHoldMs is how long a dictionary lookup must stay open before
+	// the reader reports it as a Weak Signal (issue #12). 0 signals every
+	// lookup; the stored default is 800.
+	LookupHoldMs int
+}
+
+// DefaultLookupHoldMs is the learner-configurable Weak Signal threshold
+// until they choose another (issue #12).
+const DefaultLookupHoldMs = 800
+
+// ReadingSettingsUpdate is the PUT body's shape on the service side: an
+// omitted lookupHoldMs (nil) keeps the stored threshold. 0 is a legitimate
+// stored value ("signal every lookup"), so the field cannot be a plain int
+// — an absent JSON field would decode to exactly the value it must not
+// imply.
+type ReadingSettingsUpdate struct {
+	BlurTranslation bool
+	LookupHoldMs    *int
 }
 
 // GetReadingSettings returns the user's reading settings.
@@ -449,13 +467,29 @@ func (s *Service) GetReadingSettings(ctx context.Context, userID uuid.UUID) (Rea
 	if err != nil {
 		return ReadingSettings{}, err
 	}
-	return ReadingSettings{BlurTranslation: blur}, nil
+	hold, err := s.store.LookupHoldMs(ctx, userID)
+	if err != nil {
+		return ReadingSettings{}, err
+	}
+	return ReadingSettings{BlurTranslation: blur, LookupHoldMs: hold}, nil
 }
 
-// PutReadingSettings updates the user's reading settings. There is nothing
-// to validate: blurTranslation is a plain boolean.
-func (s *Service) PutReadingSettings(ctx context.Context, userID uuid.UUID, rs ReadingSettings) (ReadingSettings, error) {
+// PutReadingSettings applies the update over the stored settings: a nil
+// LookupHoldMs keeps what is stored. Range validation lives at the HTTP
+// edge; the store just keeps what it is given.
+func (s *Service) PutReadingSettings(ctx context.Context, userID uuid.UUID, u ReadingSettingsUpdate) (ReadingSettings, error) {
+	rs, err := s.GetReadingSettings(ctx, userID)
+	if err != nil {
+		return ReadingSettings{}, err
+	}
+	rs.BlurTranslation = u.BlurTranslation
+	if u.LookupHoldMs != nil {
+		rs.LookupHoldMs = *u.LookupHoldMs
+	}
 	if err := s.store.SetBlurTranslation(ctx, userID, rs.BlurTranslation); err != nil {
+		return ReadingSettings{}, err
+	}
+	if err := s.store.SetLookupHoldMs(ctx, userID, rs.LookupHoldMs); err != nil {
 		return ReadingSettings{}, err
 	}
 	return rs, nil

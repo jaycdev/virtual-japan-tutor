@@ -333,6 +333,54 @@ func TestPostgresStoreAgainstPostgres(t *testing.T) {
 	}
 }
 
+// The PUT pointer-merge (issue #12 fix) over the real schema: an update
+// without lookupHoldMs keeps the stored threshold in Postgres, exactly as
+// the fakeStore round-trip proves it in memory. Only the settings path of
+// the service runs here, so the generation seams stay nil.
+func TestPostgresReadingSettingsKeepsHoldWhenAbsent(t *testing.T) {
+	pool := dbtest.New(t)
+	ctx := context.Background()
+	svc := NewService(NewPostgresStore(pool), nil, nil, nil, nil, Settings{}, nil)
+
+	user := uuid.New()
+	if _, err := pool.Exec(ctx, `INSERT INTO users (id, username, password_hash) VALUES ($1, 'settings', 'x')`, user); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+
+	hold := 1500
+	got, err := svc.PutReadingSettings(ctx, user, ReadingSettingsUpdate{BlurTranslation: true, LookupHoldMs: &hold})
+	if err != nil {
+		t.Fatalf("PutReadingSettings(hold 1500): %v", err)
+	}
+	if got.LookupHoldMs != 1500 {
+		t.Fatalf("first put returned hold = %d, want 1500", got.LookupHoldMs)
+	}
+
+	got, err = svc.PutReadingSettings(ctx, user, ReadingSettingsUpdate{BlurTranslation: false})
+	if err != nil {
+		t.Fatalf("PutReadingSettings(no hold): %v", err)
+	}
+	if got.LookupHoldMs != 1500 {
+		t.Errorf("hold after omitted-field put = %d, want the stored 1500 kept", got.LookupHoldMs)
+	}
+	if got.BlurTranslation {
+		t.Errorf("blur = true, want the sent false")
+	}
+	if s, err := svc.GetReadingSettings(ctx, user); err != nil || s.LookupHoldMs != 1500 || s.BlurTranslation {
+		t.Errorf("Get after omitted-field put = %+v/%v, want hold 1500 and blur false", s, err)
+	}
+
+	// Explicit 0 still lands (present field, meaningful value).
+	zero := 0
+	got, err = svc.PutReadingSettings(ctx, user, ReadingSettingsUpdate{BlurTranslation: false, LookupHoldMs: &zero})
+	if err != nil {
+		t.Fatalf("PutReadingSettings(hold 0): %v", err)
+	}
+	if got.LookupHoldMs != 0 {
+		t.Errorf("hold after explicit-0 put = %d, want 0", got.LookupHoldMs)
+	}
+}
+
 // The 00009 schema's guards, against the real schema: the SRS Level CHECK,
 // the withdrawn-entry behaviour of story_tokens.ent_seq, and the two
 // lookup indexes the read paths need.
@@ -571,3 +619,52 @@ func ids(stories []*Story) []uuid.UUID {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// TestPostgresMasteryFocusIgnoresItemLists is the Postgres lock on the
+// issue #12 invariant: the gate's KnownSource (MasteryFocus) reads the
+// knowledge tables only. An item held ONLY by a Boosting List is not a
+// Known Item — neither for the coverage membership check nor in the
+// prompt's Known Items list — even though its jmdict link means the lookup
+// half succeeds (the issue #10 unlinked case is covered separately).
+func TestPostgresMasteryFocusIgnoresItemLists(t *testing.T) {
+	pool := dbtest.New(t)
+	ctx := context.Background()
+
+	user := uuid.New()
+	if _, err := pool.Exec(ctx, `INSERT INTO users (id, username, password_hash) VALUES ($1, 'focus-lists', 'x')`, user); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO jmdict_entries (ent_seq, is_common) VALUES (5570001, true) ON CONFLICT DO NOTHING`); err != nil {
+		t.Fatalf("seed jmdict: %v", err)
+	}
+	listID := uuid.New()
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO item_lists (id, user_id, name, boosting) VALUES ($1, $2, 'Boosted', true)`,
+		listID, user); err != nil {
+		t.Fatalf("seed boosting list: %v", err)
+	}
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO item_list_items (list_id, item_kind, item_ref) VALUES ($1, 'vocabulary', '5570001')`,
+		listID); err != nil {
+		t.Fatalf("seed membership: %v", err)
+	}
+	// Deliberately NO marumori_known_items row: the boosting list is the
+	// only thing holding this item.
+
+	f := NewMasteryFocus(pool, nil) // ms is only used by FocusFor
+
+	known, err := f.KnownVocab(ctx, user, []int64{5570001})
+	if err != nil {
+		t.Fatalf("KnownVocab: %v", err)
+	}
+	if v, ok := known[5570001]; ok && v.IsKnown {
+		t.Errorf("KnownVocab(5570001) = %+v, want unknown: a Boosting List member is not a Known Item", v)
+	}
+	words, err := f.KnownWords(ctx, user, 20)
+	if err != nil {
+		t.Fatalf("KnownWords: %v", err)
+	}
+	if len(words) != 0 {
+		t.Errorf("KnownWords = %+v, want empty — the prompt's Known Items must not grow from lists", words)
+	}
+}

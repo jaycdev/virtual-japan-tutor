@@ -165,6 +165,68 @@ func TestGenerateRetryThenAccept(t *testing.T) {
 	}
 }
 
+// TestGenerateBoostingListMemberStillUnknown locks the story half of the
+// issue #12 invariant: Boosting Lists feed Practice and Mastery only — the
+// coverage gate asks exactly one membership question (KnownSource, backed by
+// the knowledge tables; see TestPostgresMasteryFocusIgnoresItemLists for the
+// Postgres lock), and a not-yet-Known Item sitting in a Boosting List stays
+// UNKNOWN there. Unlike the usual dirty-climate plant ほん in these tests,
+// ほん here is LINKED: the only channel that could have marked it Known is
+// list membership — and the gate never consults it.
+func TestGenerateBoostingListMemberStillUnknown(t *testing.T) {
+	const bookClause = "ねこはほんをみつけました。"
+	client := &fakeChat{responses: [][]byte{
+		fixture(t, "travel", bookClause, bookClause, bookClause, bookClause),
+	}}
+	req := baseRequest()
+	req.Settings.MaxAttempts = 1
+	req.Known = fakeKnown{1: {IsKnown: true, SRSLevel: 5}, 2: {IsKnown: true, SRSLevel: 4}}
+
+	lookup := cleanLookup()
+	lookup["ほん"] = VocabHit{EntSeq: 3, JA: "ほん", EN: "book"}
+	st, err := NewGenerator(lookup).Generate(context.Background(), client, req)
+	if err == nil {
+		t.Fatal("want rejection while ほん stays unknown")
+	}
+	if !strings.Contains(err.Error(), "known-word coverage") {
+		t.Fatalf("error = %q, want the coverage rejection", err)
+	}
+	if st == nil {
+		t.Fatal("want the rejected candidate with its counts")
+	}
+	// 4 sentences x 12 clauses x 3 content words = 144, 96 known: coverage is
+	// exactly 2/3 under the 0.95 bar, membership in a Boosting List or not.
+	if st.ContentWords != 144 || st.KnownWords != 96 {
+		t.Fatalf("counts known=%d content=%d, want 96/144", st.KnownWords, st.ContentWords)
+	}
+	if cov := float64(st.KnownWords) / float64(st.ContentWords); cov != 2.0/3.0 {
+		t.Fatalf("coverage = %v, want exactly 2/3 — list membership must never lift it", cov)
+	}
+
+	// The counterexample the invariant demands: make ほん genuinely Known and
+	// nothing else changes — the story passes. It was exactly that one item
+	// keeping coverage under the threshold.
+	client2 := &fakeChat{responses: [][]byte{
+		fixture(t, "travel", bookClause, bookClause, bookClause, bookClause),
+	}}
+	req2 := baseRequest()
+	req2.Known = fakeKnown{
+		1: {IsKnown: true, SRSLevel: 5},
+		2: {IsKnown: true, SRSLevel: 4},
+		3: {IsKnown: true, SRSLevel: 3},
+	}
+	st2, err2 := NewGenerator(lookup).Generate(context.Background(), client2, req2)
+	if err2 != nil {
+		t.Fatalf("want acceptance once ほん is Known: %v", err2)
+	}
+	if !st2.Validated {
+		t.Fatalf("validated=false after acceptance, want true: %v", err2)
+	}
+	if st2.KnownWords != st2.ContentWords || st2.ContentWords != 144 {
+		t.Fatalf("accepted story counts known=%d content=%d, want 144/144", st2.KnownWords, st2.ContentWords)
+	}
+}
+
 func TestGenerateExhaustionStoresCounts(t *testing.T) {
 	// Failed-story policy: every attempt fails, but the last candidate is
 	// returned with Validated false and its gate counts, alongside an error.

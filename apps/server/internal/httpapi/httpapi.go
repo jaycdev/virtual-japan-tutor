@@ -16,6 +16,7 @@ import (
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/auth"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/dictionary"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/grammar"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/itemlist"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/knowngrammar"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/marumorisync"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/mastery"
@@ -54,6 +55,7 @@ type server struct {
 	practice     *practice.Service
 	story        *story.Service
 	dictionary   *dictionary.Service
+	itemLists    *itemlist.Service
 	maxBody      int64
 }
 
