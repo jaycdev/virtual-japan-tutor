@@ -322,6 +322,48 @@ func TestUnmatchedObservationRematchesAfterCatalogueGrows(t *testing.T) {
 	}
 }
 
+// One permanently absent pattern must not stall the rest of the pending list:
+// every still-unmatched observation is retried on every Sync, so a second one
+// that the catalogue has since gained still becomes a Known Item.
+func TestRematchPendingContinuesPastStillUnmatchedObservation(t *testing.T) {
+	ctx := context.Background()
+	store := knowngrammartest.NewMemStore()
+	catalogue := &fakeCatalogue{points: seedPoints()}
+	svc := knowngrammar.NewService(store, catalogue, refdata.NormalisePattern)
+	user := uuid.New()
+
+	// Both stay pending. MemStore returns observations ordered by MaruMori id,
+	// so the one that will never match is retried first.
+	if _, err := svc.SyncObserved(ctx, user, []marumori.GrammarObservation{
+		observation("Grammar/907", "ものではない", "N3", ptr(2)),
+		observation("Grammar/908", "わけではない", "N3", ptr(1)),
+	}); err != nil {
+		t.Fatalf("first SyncObserved: %v", err)
+	}
+	catalogue.points = append(catalogue.points, point(18, refdata.N3, 1, "わけではない"))
+
+	res, err := svc.SyncObserved(ctx, user, nil)
+	if err != nil {
+		t.Fatalf("second SyncObserved: %v", err)
+	}
+	if res.Matched != 1 || res.NewlyKnown != 1 {
+		t.Fatalf("res = %+v, want the second pending observation re-matched", res)
+	}
+	if _, ok, _ := store.KnownPoint(ctx, user, 18); !ok {
+		t.Error("the re-matched point did not become a Known Item")
+	}
+	obs, _ := store.Observations(ctx, user)
+	if len(obs) != 2 {
+		t.Fatalf("observations = %+v, want both still recorded", obs)
+	}
+	if obs[0].MaruMoriID != "Grammar/907" || obs[0].MatchedPoint != 0 || !obs[0].Flagged {
+		t.Errorf("the still-unmatched observation changed: %+v", obs[0])
+	}
+	if obs[1].MaruMoriID != "Grammar/908" || obs[1].MatchedPoint != 18 || obs[1].Flagged {
+		t.Errorf("the matchable observation = %+v, want resolved to 18 unflagged", obs[1])
+	}
+}
+
 // An observation of a point that was already Seeded promotes it to Observed
 // without touching its Mastery: that is Practice's to own.
 func TestObservedConfirmationPromotesSeededPoint(t *testing.T) {

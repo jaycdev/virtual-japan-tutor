@@ -112,7 +112,8 @@ type Store interface {
 
 	// PutObservation upserts one observation with its matching outcome.
 	PutObservation(ctx context.Context, userID uuid.UUID, o Observation) error
-	// Observations returns every observation recorded for the Learner.
+	// Observations returns every observation recorded for the Learner, oldest
+	// first (observed_at, MaruMori id as tie-break).
 	Observations(ctx context.Context, userID uuid.UUID) ([]Observation, error)
 	// ResolveObservation re-points an observation at a catalogue point (used
 	// when a later Sync finds a match the earlier one missed).
@@ -246,8 +247,14 @@ func (s *Service) rematchPending(ctx context.Context, userID uuid.UUID) (SyncRes
 			continue
 		}
 		match, err := s.match(ctx, o.Pattern, o.JLPTLevel)
-		if err != nil || match.pointID == 0 {
+		if err != nil {
 			return res, err
+		}
+		if match.pointID == 0 {
+			// Still no catalogue entry for it: it stays flagged on the
+			// "review these" list for the next Sync, but it must not stop
+			// the other pending observations from being re-matched.
+			continue
 		}
 		if err := s.store.ResolveObservation(ctx, userID, o.MaruMoriID, match.pointID, match.flagged); err != nil {
 			return res, err

@@ -5,6 +5,7 @@ package knowngrammartest
 
 import (
 	"context"
+	"sort"
 	"sync"
 
 	"github.com/google/uuid"
@@ -117,6 +118,9 @@ func (m *MemStore) Observations(ctx context.Context, userID uuid.UUID) ([]knowng
 	for _, o := range m.obsFor(userID) {
 		out = append(out, o)
 	}
+	// Deterministic, like the Postgres store's ORDER BY (which also leads with
+	// observed_at; the double has no clock, so the MaruMori id alone).
+	sort.Slice(out, func(i, j int) bool { return out[i].MaruMoriID < out[j].MaruMoriID })
 	return out, nil
 }
 
