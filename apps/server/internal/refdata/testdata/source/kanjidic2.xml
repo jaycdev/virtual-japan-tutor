@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE kanjidic2 [
+<!ELEMENT kanjidic2 (header,character*)>
+<!ELEMENT header (file_version,database_version,date_of_creation)>
+]>
+<kanjidic2>
+<header>
+<!-- Hand-made fixture in the shape of KANJIDIC2. -->
+<file_version>4</file_version>
+<database_version>2026-305</database_version>
+<date_of_creation>2026-11-01</date_of_creation>
+</header>
+<!-- Entry for Kanji: 食 -->
+<character>
+<literal>食</literal>
+<codepoint>
+<cp_value cp_type="ucs">98df</cp_value>
+</codepoint>
+<misc>
+<grade>2</grade>
+<stroke_count>9</stroke_count>
+<freq>328</freq>
+<jlpt>4</jlpt>
+</misc>
+<reading_meaning>
+<rmgroup>
+<reading r_type="pinyin">shi2</reading>
+<reading r_type="ja_on">ショク</reading>
+<reading r_type="ja_on">ジキ</reading>
+<reading r_type="ja_kun">く.う</reading>
+<reading r_type="ja_kun">た.べる</reading>
+<meaning>eat</meaning>
+<meaning>food</meaning>
+<meaning m_lang="fr">manger</meaning>
+<meaning m_lang="es">comida</meaning>
+</rmgroup>
+<nanori>ぐい</nanori>
+</reading_meaning>
+</character>
+<!-- Entry for Kanji: 鬱 -->
+<character>
+<literal>鬱</literal>
+<misc>
+<stroke_count>29</stroke_count>
+<stroke_count>28</stroke_count>
+</misc>
+<reading_meaning>
+<rmgroup>
+<reading r_type="ja_on">ウツ</reading>
+<meaning>depression</meaning>
+<meaning>gloom</meaning>
+</rmgroup>
+<rmgroup>
+<meaning>melancholy</meaning>
+</rmgroup>
+</reading_meaning>
+</character>
+<character>
+<literal>〆</literal>
+<misc>
+<grade>8</grade>
+<stroke_count>3</stroke_count>
+</misc>
+</character>
+<character>
+<literal>日</literal>
+<misc>
+<grade>1</grade>
+<stroke_count>4</stroke_count>
+<freq>1</freq>
+<jlpt>4</jlpt>
+</misc>
+<reading_meaning>
+<rmgroup>
+<reading r_type="ja_on">ニチ</reading>
+<reading r_type="ja_on">ジツ</reading>
+<reading r_type="ja_kun">ひ</reading>
+<meaning>day</meaning>
+<meaning>sun</meaning>
+</rmgroup>
+</reading_meaning>
+</character>
+</kanjidic2>

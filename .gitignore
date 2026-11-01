@@ -7,4 +7,7 @@ bin/
 .env
 .env.*
 !.env.example
+# Downloaded reference data if you point REFDATA_CACHE_DIR / REFDATA_SOURCE_DIR inside the repo.
+.refdata-cache/
+refdata-cache/
 .DS_Store

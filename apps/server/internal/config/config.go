@@ -4,7 +4,12 @@ package config
 import (
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
+
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/llm"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/secrets"
 )
 
 type Config struct {
@@ -18,6 +23,23 @@ type Config struct {
 	WriteTimeout time.Duration
 	// IdleTimeout bounds keep-alive idle connections (env HTTP_IDLE_TIMEOUT, default 60s).
 	IdleTimeout time.Duration
+	// MaxBodyBytes caps every request body (env HTTP_MAX_BODY_BYTES, default 1 MiB).
+	MaxBodyBytes int64
+	// SecretsKey is the 32-byte key for encrypting stored secrets (env SECRETS_KEY, base64, required).
+	SecretsKey []byte
+	// SessionTTL is how long a login session lasts (env SESSION_TTL, default 720h = 30 days).
+	SessionTTL time.Duration
+	// BootstrapUsername and BootstrapPassword (env VJT_BOOTSTRAP_USERNAME / VJT_BOOTSTRAP_PASSWORD)
+	// create the first account on boot, only while there are no users. Both or neither.
+	BootstrapUsername string
+	BootstrapPassword string
+	// AIDefault* (env AI_DEFAULT_BASE_URL / AI_DEFAULT_MODEL / AI_DEFAULT_API_KEY) describe an
+	// optional "Default" AI Provider, created on boot for the only user while they have none.
+	// Base URL and model go together; the key is optional (keyless local endpoints).
+	// AIDefaultBaseURL is already normalised.
+	AIDefaultBaseURL string
+	AIDefaultModel   string
+	AIDefaultAPIKey  string
 }
 
 // Load builds a Config using getenv (typically os.Getenv).
@@ -25,6 +47,9 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg := Config{
 		HTTPAddr:    getenv("HTTP_ADDR"),
 		DatabaseURL: getenv("DATABASE_URL"),
+
+		BootstrapUsername: getenv("VJT_BOOTSTRAP_USERNAME"),
+		BootstrapPassword: getenv("VJT_BOOTSTRAP_PASSWORD"),
 	}
 	if cfg.HTTPAddr == "" {
 		cfg.HTTPAddr = ":8080"
@@ -43,7 +68,41 @@ func Load(getenv func(string) string) (Config, error) {
 	if cfg.IdleTimeout, err = duration(getenv, "HTTP_IDLE_TIMEOUT", 60*time.Second); err != nil {
 		return Config{}, err
 	}
+	if cfg.MaxBodyBytes, err = positiveInt(getenv, "HTTP_MAX_BODY_BYTES", 1<<20); err != nil {
+		return Config{}, err
+	}
+	if cfg.SessionTTL, err = duration(getenv, "SESSION_TTL", 30*24*time.Hour); err != nil {
+		return Config{}, err
+	}
+	if cfg.SecretsKey, err = secrets.ParseKey(getenv(secrets.KeyEnv)); err != nil {
+		return Config{}, err
+	}
+	if (cfg.BootstrapUsername == "") != (cfg.BootstrapPassword == "") {
+		return Config{}, errors.New("VJT_BOOTSTRAP_USERNAME and VJT_BOOTSTRAP_PASSWORD must be set together")
+	}
+	if err := loadAIDefault(getenv, &cfg); err != nil {
+		return Config{}, err
+	}
 	return cfg, nil
+}
+
+// loadAIDefault validates the AI_DEFAULT_* trio. Errors never include the key.
+func loadAIDefault(getenv func(string) string, cfg *Config) error {
+	base := strings.TrimSpace(getenv("AI_DEFAULT_BASE_URL"))
+	model := strings.TrimSpace(getenv("AI_DEFAULT_MODEL"))
+	key := strings.TrimSpace(getenv("AI_DEFAULT_API_KEY"))
+	if base == "" && model == "" && key == "" {
+		return nil
+	}
+	if base == "" || model == "" {
+		return errors.New("AI_DEFAULT_BASE_URL and AI_DEFAULT_MODEL must be set together (AI_DEFAULT_API_KEY is optional)")
+	}
+	norm, err := llm.NormalizeBaseURL(base)
+	if err != nil {
+		return fmt.Errorf("AI_DEFAULT_BASE_URL: %w", err)
+	}
+	cfg.AIDefaultBaseURL, cfg.AIDefaultModel, cfg.AIDefaultAPIKey = norm, model, key
+	return nil
 }
 
 // duration parses a positive Go duration (e.g. "15s") from key, or returns def if unset.
@@ -60,4 +119,20 @@ func duration(getenv func(string) string, key string, def time.Duration) (time.D
 		return 0, fmt.Errorf("%s must be positive, got %q", key, v)
 	}
 	return d, nil
+}
+
+// positiveInt parses a positive integer from key, or returns def if unset.
+func positiveInt(getenv func(string) string, key string, def int64) (int64, error) {
+	v := getenv(key)
+	if v == "" {
+		return def, nil
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", key, err)
+	}
+	if n <= 0 {
+		return 0, fmt.Errorf("%s must be positive, got %q", key, v)
+	}
+	return n, nil
 }

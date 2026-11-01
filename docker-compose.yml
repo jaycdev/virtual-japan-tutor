@@ -16,12 +16,23 @@ services:
       retries: 20
 
   server:
-    build: ./apps/server
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+      target: server
     depends_on:
       db:
         condition: service_healthy
     environment:
       HTTP_ADDR: ":8080"
+      SECRETS_KEY: ${SECRETS_KEY:?set SECRETS_KEY (generate one with `openssl rand -base64 32`)}
+      SESSION_TTL: ${SESSION_TTL:-720h}
+      HTTP_MAX_BODY_BYTES: ${HTTP_MAX_BODY_BYTES:-1048576}
+      VJT_BOOTSTRAP_USERNAME: ${VJT_BOOTSTRAP_USERNAME:-}
+      VJT_BOOTSTRAP_PASSWORD: ${VJT_BOOTSTRAP_PASSWORD:-}
+      AI_DEFAULT_BASE_URL: ${AI_DEFAULT_BASE_URL:-}
+      AI_DEFAULT_API_KEY: ${AI_DEFAULT_API_KEY:-}
+      AI_DEFAULT_MODEL: ${AI_DEFAULT_MODEL:-}
       DATABASE_URL: postgres://${POSTGRES_USER:-vjt}:${POSTGRES_PASSWORD:-vjt_dev_password}@db:5432/${POSTGRES_DB:-vjt}?sslmode=disable
     ports:
       - "${SERVER_PORT:-8080}:8080"
@@ -31,5 +42,24 @@ services:
       timeout: 3s
       retries: 10
 
+  # One-off reference data import (JMdict, KANJIDIC2, JLPT lists, Kanjium pitch accents, Grammar
+  # Catalogue). Not started by `up`. Run it with:
+  #   docker --context docker-dev compose run --rm import [--only grammar] [--refresh]
+  # Downloads are cached in the refdata-cache volume, so a re-run does not download again.
+  import:
+    profiles: ["import"]
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+      target: import
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-vjt}:${POSTGRES_PASSWORD:-vjt_dev_password}@db:5432/${POSTGRES_DB:-vjt}?sslmode=disable
+    volumes:
+      - refdata-cache:/var/cache/vjt-refdata
+
 volumes:
   pgdata:
+  refdata-cache:

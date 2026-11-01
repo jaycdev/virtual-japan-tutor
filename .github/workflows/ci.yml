@@ -51,7 +51,7 @@ jobs:
       - name: go test
         run: go test ./...
       - name: go build
-        run: go build -o bin/ ./cmd/server
+        run: go build -o bin/ ./cmd/server ./cmd/import
 
   node:
     name: Node packages and generated code

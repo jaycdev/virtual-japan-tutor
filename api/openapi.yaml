@@ -7,10 +7,15 @@ info:
     client are both generated from this file (run `pnpm generate`).
 servers:
   - url: http://localhost:8080
+# Authenticated by default: every operation requires a bearer session token unless it
+# explicitly opts out with `security: []` (only /health and /auth/login do).
+security:
+  - bearerAuth: []
 paths:
   /health:
     get:
       operationId: getHealth
+      security: []
       summary: Liveness and database connectivity check
       responses:
         "200":
@@ -25,8 +30,452 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Health"
+  /auth/login:
+    post:
+      operationId: login
+      summary: Exchange a username and password for a session token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Logged in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "400":
+          description: Malformed request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Unknown user or wrong password (indistinguishable by design)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Too many failed attempts; retry after the number of seconds in Retry-After
+          headers:
+            Retry-After:
+              required: true
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /auth/logout:
+    post:
+      operationId: logout
+      summary: Invalidate the current session token
+      responses:
+        "204":
+          description: Session deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /me:
+    get:
+      operationId: getMe
+      summary: The authenticated user
+      responses:
+        "200":
+          description: The current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /ai-providers:
+    get:
+      operationId: listAiProviders
+      summary: The Learner's saved AI Providers
+      responses:
+        "200":
+          description: All providers, oldest first. API keys are never included.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AiProvider"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createAiProvider
+      summary: Save a new AI Provider
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiProviderCreate"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiProvider"
+        "400":
+          description: Invalid name, base URL or model (code `invalid_provider`) or malformed body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: A provider with this name already exists (code `name_taken`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /ai-providers/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ProviderId"
+    get:
+      operationId: getAiProvider
+      summary: One AI Provider
+      responses:
+        "200":
+          description: The provider (without its key)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiProvider"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateAiProvider
+      summary: Change an AI Provider
+      description: >
+        Only the fields present are changed. `apiKey` omitted keeps the stored key; `null` or
+        an empty string removes it (keyless endpoints such as Ollama need none).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiProviderUpdate"
+      responses:
+        "200":
+          description: The updated provider
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiProvider"
+        "400":
+          description: Invalid name, base URL or model (code `invalid_provider`) or malformed body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Another provider already has this name (code `name_taken`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      operationId: deleteAiProvider
+      summary: Remove an AI Provider
+      description: Rejected with 409 while the provider is assigned to a task; reassign the task first.
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The provider is assigned to a task (code `provider_in_use`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /ai-providers/{id}/test:
+    parameters:
+      - $ref: "#/components/parameters/ProviderId"
+    post:
+      operationId: testAiProvider
+      summary: Check that the provider answers a tiny chat request
+      description: >
+        Always answers 200 when the provider exists; a failed check is `ok: false` with a
+        readable `message`, not an HTTP error.
+      responses:
+        "200":
+          description: The outcome of the check
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiProviderTestResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /ai-tasks:
+    get:
+      operationId: listAiTasks
+      summary: Which AI Provider each task uses
+      responses:
+        "200":
+          description: One entry per task, in a stable order; `providerId` is null when unassigned
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AiTaskAssignment"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /ai-tasks/{task}:
+    put:
+      operationId: setAiTask
+      summary: Choose the AI Provider for a task
+      parameters:
+        - name: task
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/AiTask"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [providerId]
+              properties:
+                providerId:
+                  type: string
+                  format: uuid
+      responses:
+        "200":
+          description: The new assignment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiTaskAssignment"
+        "400":
+          description: Malformed body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Unknown task, or no such provider (code `not_found`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      operationId: clearAiTask
+      summary: Leave a task without an AI Provider
+      parameters:
+        - name: task
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/AiTask"
+      responses:
+        "200":
+          description: The task, now unassigned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiTaskAssignment"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Unknown task (code `not_found`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 components:
+  parameters:
+    ProviderId:
+      name: id
+      in: path
+      required: true
+      description: >
+        An AI Provider's UUID. Declared as a plain string on purpose: the generated router binds
+        `format: uuid` parameters before the auth middleware runs, so a malformed id would be
+        answered 400 to an unauthenticated caller. The handler parses it (404 if malformed).
+      schema:
+        type: string
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: "Opaque session token from POST /auth/login, sent as `Authorization: Bearer <token>`."
+  responses:
+    Unauthorized:
+      description: Missing, invalid or expired session token
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: No such resource for the authenticated user (code `not_found`)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
   schemas:
+    AiTask:
+      type: string
+      description: A job the app delegates to an AI Provider. Fixed set.
+      enum: [story, grammar_content]
+    AiProvider:
+      type: object
+      description: A saved OpenAI-compatible endpoint. The API key is write-only and never returned.
+      required: [id, name, baseUrl, model, hasApiKey, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        baseUrl:
+          type: string
+          description: Normalised OpenAI-compatible base URL, e.g. https://api.openai.com/v1
+        model:
+          type: string
+        hasApiKey:
+          type: boolean
+          description: Whether a key is stored. The key itself is never exposed, not even partially.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    AiProviderCreate:
+      type: object
+      required: [name, baseUrl, model]
+      properties:
+        name:
+          type: string
+          description: Unique per Learner (case-insensitive).
+        baseUrl:
+          type: string
+          description: Any http(s) OpenAI-compatible endpoint, including private/LAN/localhost addresses. A missing /v1 is added.
+        model:
+          type: string
+        apiKey:
+          type: string
+          nullable: true
+          format: password
+          description: Omit, null or empty for endpoints that need no key.
+          x-go-type: stdjson.RawMessage
+          x-go-type-import:
+            path: encoding/json
+            name: stdjson
+          x-go-type-skip-optional-pointer: true
+    AiProviderUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        baseUrl:
+          type: string
+        model:
+          type: string
+        apiKey:
+          type: string
+          nullable: true
+          format: password
+          description: Omitted keeps the stored key; null or empty removes it; any other value replaces it.
+          x-go-type: stdjson.RawMessage
+          x-go-type-import:
+            path: encoding/json
+            name: stdjson
+          x-go-type-skip-optional-pointer: true
+    AiProviderTestResult:
+      type: object
+      required: [ok, latencyMs, message]
+      properties:
+        ok:
+          type: boolean
+        latencyMs:
+          type: integer
+          format: int64
+          description: Round-trip time of the connection check in milliseconds.
+        message:
+          type: string
+          description: Human-readable outcome, e.g. "Connected" or why it failed.
+        structuredOutput:
+          type: string
+          description: >
+            How the endpoint handles JSON output, when the connection works: json_schema (best),
+            json_object, prompt_only (JSON extracted from plain replies) or unavailable.
+          enum: [json_schema, json_object, prompt_only, unavailable]
+    AiTaskAssignment:
+      type: object
+      required: [task, providerId]
+      properties:
+        task:
+          $ref: "#/components/schemas/AiTask"
+        providerId:
+          type: string
+          format: uuid
+          nullable: true
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: Stable machine-readable error code (e.g. unauthorized, invalid_credentials, too_many_attempts).
+        message:
+          type: string
+    User:
+      type: object
+      required: [id, username]
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+    LoginResponse:
+      type: object
+      required: [token, expires_at, user]
+      properties:
+        token:
+          type: string
+          description: Opaque bearer token. Shown once; the server stores only its hash.
+        expires_at:
+          type: string
+          format: date-time
+        user:
+          $ref: "#/components/schemas/User"
     Health:
       type: object
       required: [status, database]

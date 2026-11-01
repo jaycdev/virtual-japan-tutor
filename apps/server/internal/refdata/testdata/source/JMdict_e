@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Hand-made fixture in the shape of EDRDG's JMdict_e. Not the real dictionary. -->
+<!DOCTYPE JMdict [
+<!ELEMENT JMdict (entry*)>
+<!ELEMENT entry (ent_seq, k_ele*, r_ele+, sense+)>
+<!-- entities -->
+<!ENTITY n "noun (common) (futsuumeishi)">
+<!ENTITY v1 "Ichidan verb">
+<!ENTITY vt "transitive verb">
+<!ENTITY adj-i "adjective (keiyoushi)">
+<!ENTITY uk "word usually written using kana alone">
+<!ENTITY v5u "Godan verb with 'u' ending">
+<!ENTITY vi "intransitive verb">
+<!ENTITY adj-pn "pre-noun adjectival (rentaishi)">
+<!ENTITY sK "search-only kanji form">
+<!ENTITY ksb "Kansai-ben">
+<!ENTITY ok "out-dated or obsolete kana usage">
+<!ENTITY food "food term">
+]>
+<!-- JMdict created: 2026-11-01 -->
+<JMdict>
+<entry>
+<ent_seq>1358280</ent_seq>
+<k_ele>
+<keb>食べる</keb>
+<ke_pri>ichi1</ke_pri>
+<ke_pri>news2</ke_pri>
+<ke_pri>nf25</ke_pri>
+</k_ele>
+<k_ele>
+<keb>喰べる</keb>
+<ke_inf>&sK;</ke_inf>
+</k_ele>
+<r_ele>
+<reb>たべる</reb>
+<re_pri>ichi1</re_pri>
+<re_pri>news2</re_pri>
+<re_pri>nf25</re_pri>
+</r_ele>
+<sense>
+<pos>&v1;</pos>
+<pos>&vt;</pos>
+<field>&food;</field>
+<gloss>to eat</gloss>
+</sense>
+<sense>
+<gloss>to live on (e.g. a salary)</gloss>
+<gloss>to live off</gloss>
+<gloss xml:lang="ger">leben von</gloss>
+</sense>
+</entry>
+<entry>
+<ent_seq>1000090</ent_seq>
+<k_ele>
+<keb>悪どい</keb>
+</k_ele>
+<r_ele>
+<reb>あくどい</reb>
+</r_ele>
+<sense>
+<pos>&adj-i;</pos>
+<misc>&uk;</misc>
+<dial>&ksb;</dial>
+<s_inf>often used of tactics</s_inf>
+<stagk>悪どい</stagk>
+<xref>阿漕・あこぎ</xref>
+<ant>善い</ant>
+<gloss>gaudy</gloss>
+<gloss g_type="expl">excessive</gloss>
+</sense>
+</entry>
+<entry>
+<ent_seq>1000110</ent_seq>
+<k_ele>
+<keb>ＣＤプレーヤー</keb>
+<ke_pri>spec1</ke_pri>
+</k_ele>
+<k_ele>
+<keb>ＣＤプレイヤー</keb>
+</k_ele>
+<r_ele>
+<reb>シーディープレーヤー</reb>
+<re_restr>ＣＤプレーヤー</re_restr>
+<re_pri>spec1</re_pri>
+</r_ele>
+<r_ele>
+<reb>シーディープレイヤー</reb>
+<re_restr>ＣＤプレイヤー</re_restr>
+</r_ele>
+<sense>
+<pos>&n;</pos>
+<gloss>CD player</gloss>
+</sense>
+</entry>
+<entry>
+<ent_seq>1000300</ent_seq>
+<k_ele>
+<keb>仝</keb>
+</k_ele>
+<r_ele>
+<reb>どうじ</reb>
+<re_nokanji/>
+</r_ele>
+<r_ele>
+<reb>おなじ</reb>
+<re_inf>&ok;</re_inf>
+</r_ele>
+<sense>
+<pos>&n;</pos>
+<gloss>ditto mark</gloss>
+</sense>
+</entry>
+<entry>
+<ent_seq>1198180</ent_seq>
+<k_ele>
+<keb>会う</keb>
+<ke_pri>ichi1</ke_pri>
+</k_ele>
+<r_ele>
+<reb>あう</reb>
+<re_pri>ichi1</re_pri>
+</r_ele>
+<sense>
+<pos>&v5u;</pos>
+<pos>&vi;</pos>
+<gloss>to meet</gloss>
+<gloss>to encounter</gloss>
+</sense>
+</entry>
+<entry>
+<ent_seq>1417030</ent_seq>
+<k_ele>
+<keb>合う</keb>
+<ke_pri>ichi1</ke_pri>
+</k_ele>
+<r_ele>
+<reb>あう</reb>
+<re_pri>ichi1</re_pri>
+</r_ele>
+<sense>
+<pos>&v5u;</pos>
+<pos>&vi;</pos>
+<gloss>to match</gloss>
+<gloss>to fit</gloss>
+</sense>
+</entry>
+<entry>
+<ent_seq>2085150</ent_seq>
+<k_ele>
+<keb>土曜</keb>
+</k_ele>
+<r_ele>
+<reb>どよう</reb>
+</r_ele>
+<sense>
+<pos>&n;</pos>
+<gloss>Saturday</gloss>
+</sense>
+</entry>
+<entry>
+<ent_seq>1417040</ent_seq>
+<k_ele>
+<keb>土曜日</keb>
+<ke_pri>ichi1</ke_pri>
+</k_ele>
+<r_ele>
+<reb>どようび</reb>
+<re_pri>ichi1</re_pri>
+</r_ele>
+<sense>
+<pos>&n;</pos>
+<gloss>Saturday</gloss>
+</sense>
+</entry>
+<entry>
+<ent_seq>1000420</ent_seq>
+<k_ele>
+<keb>彼の</keb>
+</k_ele>
+<r_ele>
+<reb>あの</reb>
+</r_ele>
+<sense>
+<pos>&adj-pn;</pos>
+<misc>&uk;</misc>
+<gloss>that</gloss>
+<gloss>those</gloss>
+</sense>
+</entry>
+</JMdict>
