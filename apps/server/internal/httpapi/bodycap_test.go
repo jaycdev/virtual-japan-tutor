@@ -43,3 +43,15 @@ func TestBodyCapAppliesWithoutAContentLength(t *testing.T) {
 	rec := serve(e.h, req)
 	wantError(t, rec, http.StatusRequestEntityTooLarge, "payload_too_large")
 }
+
+func TestOverLengthPasswordGivesKnownAndUnknownUsersTheSameResponse(t *testing.T) {
+	e := bodyCapEnv(t)
+	long := strings.Repeat("p", 2000)
+	known := e.do(t, "POST", "/auth/login", "", map[string]string{"username": "alice", "password": long})
+	unknown := e.do(t, "POST", "/auth/login", "", map[string]string{"username": "ghost", "password": long})
+	wantError(t, known, http.StatusUnauthorized, "invalid_credentials")
+	wantError(t, unknown, http.StatusUnauthorized, "invalid_credentials")
+	if known.Body.String() != unknown.Body.String() {
+		t.Fatalf("bodies differ: %q vs %q", known.Body, unknown.Body)
+	}
+}

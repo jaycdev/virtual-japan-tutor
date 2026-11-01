@@ -74,7 +74,8 @@ const (
 	maxPasswordBytes = 1024
 	minPasswordRunes = 10
 	maxUsernameRunes = 64
-	maxTrackedNames  = 10_000
+	// DefaultMaxTracked bounds how many usernames the failure table remembers.
+	DefaultMaxTracked = 10_000
 )
 
 // Options configures a Service. Zero values select defaults (TTL has none: it is required).
@@ -85,6 +86,9 @@ type Options struct {
 	Now func() time.Time
 	// MaxFailures consecutive failures lock a username out (default 5).
 	MaxFailures int
+	// MaxTracked caps how many usernames the failure table holds (default 10,000); when
+	// full, the oldest entries (unlocked ones first) are evicted.
+	MaxTracked int
 	// LockBase is the first lockout; each further failure doubles it up to LockMax.
 	LockBase, LockMax time.Duration
 }
@@ -115,6 +119,9 @@ func NewService(store Store, opts Options) *Service {
 	if opts.MaxFailures <= 0 {
 		opts.MaxFailures = DefaultMaxFailures
 	}
+	if opts.MaxTracked <= 0 {
+		opts.MaxTracked = DefaultMaxTracked
+	}
 	if opts.LockBase <= 0 {
 		opts.LockBase = DefaultLockBase
 	}
@@ -126,13 +133,21 @@ func NewService(store Store, opts Options) *Service {
 
 // Login verifies the credentials and starts a session.
 func (s *Service) Login(ctx context.Context, username, password string) (Session, error) {
+	// One normalised name serves both the lookup and the lockout table, so every spelling
+	// of an account ("Alice", " alice ") hits the same row and the same counter.
 	key := nameKey(username)
 	now := s.opts.Now()
 	if wait := s.lockedFor(key, now); wait > 0 {
 		return Session{}, &LockedError{RetryAfter: wait}
 	}
+	// Over-length passwords are refused before the user is looked up, so known and unknown
+	// usernames take exactly the same path (no hash is computed for either).
+	if len(password) > maxPasswordBytes {
+		s.recordFailure(key, now)
+		return Session{}, ErrInvalidCredentials
+	}
 
-	user, hash, err := s.store.UserByUsername(ctx, username)
+	user, hash, err := s.store.UserByUsername(ctx, key)
 	switch {
 	case errors.Is(err, ErrNotFound):
 		// Spend the same CPU as a real check so timing does not reveal the username.
@@ -143,12 +158,9 @@ func (s *Service) Login(ctx context.Context, username, password string) (Session
 		return Session{}, err
 	}
 
-	ok := false
-	if len(password) <= maxPasswordBytes {
-		ok, err = VerifyPassword(password, hash)
-		if err != nil {
-			return Session{}, fmt.Errorf("verify password for user %s: %w", user.ID, err)
-		}
+	ok, err := VerifyPassword(password, hash)
+	if err != nil {
+		return Session{}, fmt.Errorf("verify password for user %s: %w", user.ID, err)
 	}
 	if !ok {
 		s.recordFailure(key, now)
@@ -275,15 +287,9 @@ func (s *Service) lockedFor(key string, now time.Time) time.Duration {
 func (s *Service) recordFailure(key string, now time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if len(s.failures) >= maxTrackedNames {
-		for k, st := range s.failures { // bound memory: drop stale entries
-			if now.Sub(st.last) > s.opts.LockMax {
-				delete(s.failures, k)
-			}
-		}
-	}
 	st := s.failures[key]
 	if st == nil {
+		s.makeRoom(now)
 		st = &failureState{}
 		s.failures[key] = st
 	}
@@ -313,4 +319,40 @@ func newToken() (token string, hash []byte, err error) {
 func hashToken(token string) []byte {
 	sum := sha256.Sum256([]byte(token))
 	return sum[:]
+}
+
+// makeRoom frees a slot before a new name is tracked, so the table never exceeds MaxTracked
+// (a flood of fresh usernames cannot grow memory). Stale entries go first, then the oldest
+// unlocked entry, and only if every entry is locked the oldest of those. Caller holds s.mu.
+func (s *Service) makeRoom(now time.Time) {
+	if len(s.failures) < s.opts.MaxTracked {
+		return
+	}
+	for k, st := range s.failures {
+		if now.Sub(st.last) > s.opts.LockMax && !now.Before(st.lockedUntil) {
+			delete(s.failures, k)
+		}
+	}
+	for len(s.failures) >= s.opts.MaxTracked {
+		var victim string
+		var victimState *failureState
+		victimLocked := false
+		for k, st := range s.failures {
+			locked := now.Before(st.lockedUntil)
+			better := victimState == nil ||
+				(victimLocked && !locked) || // unlocked entries are evicted before locked ones
+				(victimLocked == locked && st.last.Before(victimState.last)) // then oldest first
+			if better {
+				victim, victimState, victimLocked = k, st, locked
+			}
+		}
+		delete(s.failures, victim)
+	}
+}
+
+// TrackedNames reports how many usernames currently have failure state (diagnostics, tests).
+func (s *Service) TrackedNames() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.failures)
 }
