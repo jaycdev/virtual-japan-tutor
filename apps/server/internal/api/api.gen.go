@@ -11,7 +11,9 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"path"
@@ -67,6 +69,51 @@ func (e AiTask) Valid() bool {
 	}
 }
 
+// Defines values for GrammarExampleSource.
+const (
+	Ai     GrammarExampleSource = "ai"
+	Manual GrammarExampleSource = "manual"
+)
+
+// Valid indicates whether the value is a known member of the GrammarExampleSource enum.
+func (e GrammarExampleSource) Valid() bool {
+	switch e {
+	case Ai:
+		return true
+	case Manual:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GrammarJLPTLevel.
+const (
+	GrammarJLPTLevelN1 GrammarJLPTLevel = "N1"
+	GrammarJLPTLevelN2 GrammarJLPTLevel = "N2"
+	GrammarJLPTLevelN3 GrammarJLPTLevel = "N3"
+	GrammarJLPTLevelN4 GrammarJLPTLevel = "N4"
+	GrammarJLPTLevelN5 GrammarJLPTLevel = "N5"
+)
+
+// Valid indicates whether the value is a known member of the GrammarJLPTLevel enum.
+func (e GrammarJLPTLevel) Valid() bool {
+	switch e {
+	case GrammarJLPTLevelN1:
+		return true
+	case GrammarJLPTLevelN2:
+		return true
+	case GrammarJLPTLevelN3:
+		return true
+	case GrammarJLPTLevelN4:
+		return true
+	case GrammarJLPTLevelN5:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for HealthDatabase.
 const (
 	Connected   HealthDatabase = "connected"
@@ -97,6 +144,33 @@ func (e HealthStatus) Valid() bool {
 	case Degraded:
 		return true
 	case Ok:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListGrammarPointsParamsLevel.
+const (
+	ListGrammarPointsParamsLevelN1 ListGrammarPointsParamsLevel = "N1"
+	ListGrammarPointsParamsLevelN2 ListGrammarPointsParamsLevel = "N2"
+	ListGrammarPointsParamsLevelN3 ListGrammarPointsParamsLevel = "N3"
+	ListGrammarPointsParamsLevelN4 ListGrammarPointsParamsLevel = "N4"
+	ListGrammarPointsParamsLevelN5 ListGrammarPointsParamsLevel = "N5"
+)
+
+// Valid indicates whether the value is a known member of the ListGrammarPointsParamsLevel enum.
+func (e ListGrammarPointsParamsLevel) Valid() bool {
+	switch e {
+	case ListGrammarPointsParamsLevelN1:
+		return true
+	case ListGrammarPointsParamsLevelN2:
+		return true
+	case ListGrammarPointsParamsLevelN3:
+		return true
+	case ListGrammarPointsParamsLevelN4:
+		return true
+	case ListGrammarPointsParamsLevelN5:
 		return true
 	default:
 		return false
@@ -166,11 +240,122 @@ type AiTaskAssignment struct {
 	Task AiTask `json:"task"`
 }
 
+// CandidateRejection defines model for CandidateRejection.
+type CandidateRejection struct {
+	// Code Stable reason code, e.g. unknown_word (the sentence or span is not in JMdict), span_text_mismatch, span_not_in_pattern, too_short, too_long, disallowed_characters, missing_translation.
+	Code    string `json:"code"`
+	Message string `json:"message"`
+
+	// Sentence The rejected candidate sentence, when the provider supplied one.
+	Sentence *string `json:"sentence,omitempty"`
+}
+
 // Error defines model for Error.
 type Error struct {
 	// Code Stable machine-readable error code (e.g. unauthorized, invalid_credentials, too_many_attempts).
 	Code    string `json:"code"`
 	Message string `json:"message"`
+}
+
+// GenerateExamplesRequest defines model for GenerateExamplesRequest.
+type GenerateExamplesRequest struct {
+	// Count How many validated examples to add (default 10).
+	Count *int `json:"count,omitempty"`
+}
+
+// GenerationResult defines model for GenerationResult.
+type GenerationResult struct {
+	// Examples Every example sentence stored on the point after generation.
+	Examples []GrammarExample `json:"examples"`
+
+	// Generated Candidates that passed validation this call.
+	Generated int `json:"generated"`
+
+	// Note Present when generation stopped early, e.g. the per-point example cap was reached.
+	Note *string `json:"note,omitempty"`
+
+	// Rejected Candidates discarded by validation.
+	Rejected   int                  `json:"rejected"`
+	Rejections []CandidateRejection `json:"rejections"`
+
+	// Stored New examples actually stored (duplicates already on the point are not counted).
+	Stored int `json:"stored"`
+}
+
+// GrammarExample defines model for GrammarExample.
+type GrammarExample struct {
+	Id         openapi_types.UUID   `json:"id"`
+	SentenceJa string               `json:"sentenceJa"`
+	Source     GrammarExampleSource `json:"source"`
+
+	// SpanEnd Rune offset just past the last character of the grammar span.
+	SpanEnd int `json:"spanEnd"`
+
+	// SpanStart First rune offset (0-based) of the grammar span in sentenceJa.
+	SpanStart int `json:"spanStart"`
+
+	// SpanText sentenceJa[spanStart:spanEnd]; the part of the sentence the point explains.
+	SpanText      string `json:"spanText"`
+	TranslationEn string `json:"translationEn"`
+}
+
+// GrammarExampleSource defines model for GrammarExample.Source.
+type GrammarExampleSource string
+
+// GrammarJLPTLevel JLPT difficulty band the grammar point is catalogued under.
+type GrammarJLPTLevel string
+
+// GrammarPointDetail defines model for GrammarPointDetail.
+type GrammarPointDetail struct {
+	CatalogueNumber int              `json:"catalogueNumber"`
+	Examples        []GrammarExample `json:"examples"`
+
+	// Explanation Markdown generated by the assigned AI Provider or edited by the Learner. Empty when the point has no explanation yet (no assigned provider, or generation never succeeded).
+	Explanation string `json:"explanation"`
+
+	// ExplanationEdited True when the Learner edited the explanation; regeneration keeps such edits.
+	ExplanationEdited bool  `json:"explanationEdited"`
+	Id                int64 `json:"id"`
+
+	// JlptLevel JLPT difficulty band the grammar point is catalogued under.
+	JlptLevel GrammarJLPTLevel `json:"jlptLevel"`
+	Meaning   string           `json:"meaning"`
+	Pattern   string           `json:"pattern"`
+	Variants  []string         `json:"variants"`
+}
+
+// GrammarPointPage defines model for GrammarPointPage.
+type GrammarPointPage struct {
+	Items  []GrammarPointSummary `json:"items"`
+	Limit  int                   `json:"limit"`
+	Offset int                   `json:"offset"`
+
+	// Total Total grammar points matching the filter, before pagination.
+	Total int `json:"total"`
+}
+
+// GrammarPointSummary defines model for GrammarPointSummary.
+type GrammarPointSummary struct {
+	CatalogueNumber int `json:"catalogueNumber"`
+
+	// ExampleCount Number of stored, JMdict-validated example sentences.
+	ExampleCount   int  `json:"exampleCount"`
+	HasExplanation bool `json:"hasExplanation"`
+
+	// Id Stable catalogue id (the grammar point's number in its level).
+	Id int64 `json:"id"`
+
+	// JlptLevel JLPT difficulty band the grammar point is catalogued under.
+	JlptLevel GrammarJLPTLevel `json:"jlptLevel"`
+	Meaning   string           `json:"meaning"`
+
+	// Pattern The teaching pattern, e.g. 〜てしまう.
+	Pattern string `json:"pattern"`
+}
+
+// GrammarPointUpdate defines model for GrammarPointUpdate.
+type GrammarPointUpdate struct {
+	Explanation string `json:"explanation"`
 }
 
 // Health defines model for Health.
@@ -206,6 +391,9 @@ type User struct {
 	Username string             `json:"username"`
 }
 
+// GrammarPointId defines model for GrammarPointId.
+type GrammarPointId = string
+
 // ProviderId defines model for ProviderId.
 type ProviderId = string
 
@@ -220,6 +408,17 @@ type SetAiTaskJSONBody struct {
 	ProviderId openapi_types.UUID `json:"providerId"`
 }
 
+// ListGrammarPointsParams defines parameters for ListGrammarPoints.
+type ListGrammarPointsParams struct {
+	Level  *ListGrammarPointsParamsLevel `form:"level,omitempty" json:"level,omitempty"`
+	Q      *string                       `form:"q,omitempty" json:"q,omitempty"`
+	Limit  *int                          `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *int                          `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// ListGrammarPointsParamsLevel defines parameters for ListGrammarPoints.
+type ListGrammarPointsParamsLevel string
+
 // CreateAiProviderJSONRequestBody defines body for CreateAiProvider for application/json ContentType.
 type CreateAiProviderJSONRequestBody = AiProviderCreate
 
@@ -231,6 +430,12 @@ type SetAiTaskJSONRequestBody SetAiTaskJSONBody
 
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody = LoginRequest
+
+// UpdateGrammarPointJSONRequestBody defines body for UpdateGrammarPoint for application/json ContentType.
+type UpdateGrammarPointJSONRequestBody = GrammarPointUpdate
+
+// GenerateGrammarExamplesJSONRequestBody defines body for GenerateGrammarExamples for application/json ContentType.
+type GenerateGrammarExamplesJSONRequestBody = GenerateExamplesRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -267,6 +472,21 @@ type ServerInterface interface {
 	// Logout Invalidate the current session token
 	// (POST /auth/logout)
 	Logout(w http.ResponseWriter, r *http.Request)
+	// ListGrammarPoints Grammar points in catalogue order (level N5→N1, then catalogue number)
+	// (GET /grammar/points)
+	ListGrammarPoints(w http.ResponseWriter, r *http.Request, params ListGrammarPointsParams)
+	// GetGrammarPoint Read a grammar point, generating a missing explanation on first read
+	// (GET /grammar/points/{id})
+	GetGrammarPoint(w http.ResponseWriter, r *http.Request, id GrammarPointId)
+	// UpdateGrammarPoint Edit the explanation of a grammar point
+	// (PATCH /grammar/points/{id})
+	UpdateGrammarPoint(w http.ResponseWriter, r *http.Request, id GrammarPointId)
+	// GenerateGrammarExamples Generate example sentences, validating each against JMdict before storing it
+	// (POST /grammar/points/{id}/examples)
+	GenerateGrammarExamples(w http.ResponseWriter, r *http.Request, id GrammarPointId)
+	// RegenerateGrammarExplanation Regenerate the explanation, replacing any existing one
+	// (POST /grammar/points/{id}/explanation/regenerate)
+	RegenerateGrammarExplanation(w http.ResponseWriter, r *http.Request, id GrammarPointId)
 	// GetHealth Liveness and database connectivity check
 	// (GET /health)
 	GetHealth(w http.ResponseWriter, r *http.Request)
@@ -510,6 +730,182 @@ func (siw *ServerInterfaceWrapper) Logout(w http.ResponseWriter, r *http.Request
 	handler.ServeHTTP(w, r)
 }
 
+// ListGrammarPoints operation middleware
+func (siw *ServerInterfaceWrapper) ListGrammarPoints(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListGrammarPointsParams
+
+	// ------------- Optional query parameter "level" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "level", r.URL.Query(), &params.Level, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "level"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "level", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "q", r.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "q"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListGrammarPoints(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetGrammarPoint operation middleware
+func (siw *ServerInterfaceWrapper) GetGrammarPoint(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id GrammarPointId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetGrammarPoint(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateGrammarPoint operation middleware
+func (siw *ServerInterfaceWrapper) UpdateGrammarPoint(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id GrammarPointId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateGrammarPoint(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GenerateGrammarExamples operation middleware
+func (siw *ServerInterfaceWrapper) GenerateGrammarExamples(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id GrammarPointId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GenerateGrammarExamples(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RegenerateGrammarExplanation operation middleware
+func (siw *ServerInterfaceWrapper) RegenerateGrammarExplanation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id GrammarPointId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RegenerateGrammarExplanation(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetHealth operation middleware
 func (siw *ServerInterfaceWrapper) GetHealth(w http.ResponseWriter, r *http.Request) {
 
@@ -662,6 +1058,11 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/auth/login", wrapper.Login)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/auth/logout", wrapper.Logout)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/me", wrapper.GetMe)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/grammar/points", wrapper.ListGrammarPoints)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/grammar/points/{id}", wrapper.GetGrammarPoint)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/grammar/points/{id}", wrapper.UpdateGrammarPoint)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/grammar/points/{id}/examples", wrapper.GenerateGrammarExamples)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/grammar/points/{id}/explanation/regenerate", wrapper.RegenerateGrammarExplanation)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/ai-providers", wrapper.ListAiProviders)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/ai-providers", wrapper.CreateAiProvider)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/ai-providers/{id}", wrapper.DeleteAiProvider)
@@ -1266,6 +1667,314 @@ func (response Logout401JSONResponse) VisitLogoutResponse(w http.ResponseWriter)
 	return err
 }
 
+type ListGrammarPointsRequestObject struct {
+	Params ListGrammarPointsParams
+}
+
+type ListGrammarPointsResponseObject interface {
+	VisitListGrammarPointsResponse(w http.ResponseWriter) error
+}
+
+type ListGrammarPoints200JSONResponse GrammarPointPage
+
+func (response ListGrammarPoints200JSONResponse) VisitListGrammarPointsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListGrammarPoints400JSONResponse Error
+
+func (response ListGrammarPoints400JSONResponse) VisitListGrammarPointsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListGrammarPoints401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListGrammarPoints401JSONResponse) VisitListGrammarPointsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGrammarPointRequestObject struct {
+	Id GrammarPointId `json:"id"`
+}
+
+type GetGrammarPointResponseObject interface {
+	VisitGetGrammarPointResponse(w http.ResponseWriter) error
+}
+
+type GetGrammarPoint200JSONResponse GrammarPointDetail
+
+func (response GetGrammarPoint200JSONResponse) VisitGetGrammarPointResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGrammarPoint401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetGrammarPoint401JSONResponse) VisitGetGrammarPointResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGrammarPoint404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetGrammarPoint404JSONResponse) VisitGetGrammarPointResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateGrammarPointRequestObject struct {
+	Id   GrammarPointId `json:"id"`
+	Body *UpdateGrammarPointJSONRequestBody
+}
+
+type UpdateGrammarPointResponseObject interface {
+	VisitUpdateGrammarPointResponse(w http.ResponseWriter) error
+}
+
+type UpdateGrammarPoint200JSONResponse GrammarPointDetail
+
+func (response UpdateGrammarPoint200JSONResponse) VisitUpdateGrammarPointResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateGrammarPoint400JSONResponse Error
+
+func (response UpdateGrammarPoint400JSONResponse) VisitUpdateGrammarPointResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateGrammarPoint401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response UpdateGrammarPoint401JSONResponse) VisitUpdateGrammarPointResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateGrammarPoint404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UpdateGrammarPoint404JSONResponse) VisitUpdateGrammarPointResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GenerateGrammarExamplesRequestObject struct {
+	Id   GrammarPointId `json:"id"`
+	Body *GenerateGrammarExamplesJSONRequestBody
+}
+
+type GenerateGrammarExamplesResponseObject interface {
+	VisitGenerateGrammarExamplesResponse(w http.ResponseWriter) error
+}
+
+type GenerateGrammarExamples200JSONResponse GenerationResult
+
+func (response GenerateGrammarExamples200JSONResponse) VisitGenerateGrammarExamplesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GenerateGrammarExamples400JSONResponse Error
+
+func (response GenerateGrammarExamples400JSONResponse) VisitGenerateGrammarExamplesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GenerateGrammarExamples401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GenerateGrammarExamples401JSONResponse) VisitGenerateGrammarExamplesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GenerateGrammarExamples404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GenerateGrammarExamples404JSONResponse) VisitGenerateGrammarExamplesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GenerateGrammarExamples409JSONResponse Error
+
+func (response GenerateGrammarExamples409JSONResponse) VisitGenerateGrammarExamplesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegenerateGrammarExplanationRequestObject struct {
+	Id GrammarPointId `json:"id"`
+}
+
+type RegenerateGrammarExplanationResponseObject interface {
+	VisitRegenerateGrammarExplanationResponse(w http.ResponseWriter) error
+}
+
+type RegenerateGrammarExplanation200JSONResponse GrammarPointDetail
+
+func (response RegenerateGrammarExplanation200JSONResponse) VisitRegenerateGrammarExplanationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegenerateGrammarExplanation401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response RegenerateGrammarExplanation401JSONResponse) VisitRegenerateGrammarExplanationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegenerateGrammarExplanation404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response RegenerateGrammarExplanation404JSONResponse) VisitRegenerateGrammarExplanationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegenerateGrammarExplanation409JSONResponse Error
+
+func (response RegenerateGrammarExplanation409JSONResponse) VisitRegenerateGrammarExplanationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetHealthRequestObject struct {
 }
 
@@ -1371,6 +2080,21 @@ type StrictServerInterface interface {
 	// Logout Invalidate the current session token
 	// (POST /auth/logout)
 	Logout(ctx context.Context, request LogoutRequestObject) (LogoutResponseObject, error)
+	// ListGrammarPoints Grammar points in catalogue order (level N5→N1, then catalogue number)
+	// (GET /grammar/points)
+	ListGrammarPoints(ctx context.Context, request ListGrammarPointsRequestObject) (ListGrammarPointsResponseObject, error)
+	// GetGrammarPoint Read a grammar point, generating a missing explanation on first read
+	// (GET /grammar/points/{id})
+	GetGrammarPoint(ctx context.Context, request GetGrammarPointRequestObject) (GetGrammarPointResponseObject, error)
+	// UpdateGrammarPoint Edit the explanation of a grammar point
+	// (PATCH /grammar/points/{id})
+	UpdateGrammarPoint(ctx context.Context, request UpdateGrammarPointRequestObject) (UpdateGrammarPointResponseObject, error)
+	// GenerateGrammarExamples Generate example sentences, validating each against JMdict before storing it
+	// (POST /grammar/points/{id}/examples)
+	GenerateGrammarExamples(ctx context.Context, request GenerateGrammarExamplesRequestObject) (GenerateGrammarExamplesResponseObject, error)
+	// RegenerateGrammarExplanation Regenerate the explanation, replacing any existing one
+	// (POST /grammar/points/{id}/explanation/regenerate)
+	RegenerateGrammarExplanation(ctx context.Context, request RegenerateGrammarExplanationRequestObject) (RegenerateGrammarExplanationResponseObject, error)
 	// GetHealth Liveness and database connectivity check
 	// (GET /health)
 	GetHealth(ctx context.Context, request GetHealthRequestObject) (GetHealthResponseObject, error)
@@ -1722,6 +2446,153 @@ func (sh *strictHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ListGrammarPoints operation middleware
+func (sh *strictHandler) ListGrammarPoints(w http.ResponseWriter, r *http.Request, params ListGrammarPointsParams) {
+	var request ListGrammarPointsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListGrammarPoints(ctx, request.(ListGrammarPointsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListGrammarPoints")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListGrammarPointsResponseObject); ok {
+		if err := validResponse.VisitListGrammarPointsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetGrammarPoint operation middleware
+func (sh *strictHandler) GetGrammarPoint(w http.ResponseWriter, r *http.Request, id GrammarPointId) {
+	var request GetGrammarPointRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetGrammarPoint(ctx, request.(GetGrammarPointRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetGrammarPoint")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetGrammarPointResponseObject); ok {
+		if err := validResponse.VisitGetGrammarPointResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateGrammarPoint operation middleware
+func (sh *strictHandler) UpdateGrammarPoint(w http.ResponseWriter, r *http.Request, id GrammarPointId) {
+	var request UpdateGrammarPointRequestObject
+
+	request.Id = id
+
+	var body UpdateGrammarPointJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateGrammarPoint(ctx, request.(UpdateGrammarPointRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateGrammarPoint")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateGrammarPointResponseObject); ok {
+		if err := validResponse.VisitUpdateGrammarPointResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GenerateGrammarExamples operation middleware
+func (sh *strictHandler) GenerateGrammarExamples(w http.ResponseWriter, r *http.Request, id GrammarPointId) {
+	var request GenerateGrammarExamplesRequestObject
+
+	request.Id = id
+
+	var body GenerateGrammarExamplesJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		if !errors.Is(err, io.EOF) {
+			sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+			return
+		}
+	} else {
+		request.Body = &body
+	}
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GenerateGrammarExamples(ctx, request.(GenerateGrammarExamplesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GenerateGrammarExamples")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GenerateGrammarExamplesResponseObject); ok {
+		if err := validResponse.VisitGenerateGrammarExamplesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RegenerateGrammarExplanation operation middleware
+func (sh *strictHandler) RegenerateGrammarExplanation(w http.ResponseWriter, r *http.Request, id GrammarPointId) {
+	var request RegenerateGrammarExplanationRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RegenerateGrammarExplanation(ctx, request.(RegenerateGrammarExplanationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RegenerateGrammarExplanation")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RegenerateGrammarExplanationResponseObject); ok {
+		if err := validResponse.VisitRegenerateGrammarExplanationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetHealth operation middleware
 func (sh *strictHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 	var request GetHealthRequestObject
@@ -1775,55 +2646,84 @@ func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"HDrsbz4BHH43+G7A1rfrfw8A",
+	"7Dzdchu3eq/yzbYzR5pZkXTsdM6hr3Qcx3Eqyx5J7rlIPCK4+MiFtQtsAKwk1sOZk5vzAO1Fb3rdx+jD",
+	"nLxI5wOwf9wlJcUWk2l7k8i7WOD7/wc/RYnKCyVRWhNNP0UF0yxHi9r965Vmec70OyWkfc3pCUeTaFFY",
+	"oWQ0jY5h6VdAQUv+YCBhlmVqWSIIPoJvMMmYRg7MAIMiY0KCsVrIJSyUBpsiGJYjaGRGSVr1TqtrwVG/",
+	"5lP3eokSNbPIQavSooa5kNxAwWwKDawwx4XSCKy0aQxGuU9TJnmGmpYZNCAsCGswW8DBs8kzEAvIWbZQ",
+	"Okd+OPpRRnEkCCXaOYojyXKMppHgURxp/KkUGnk0tbrEODJJijkjathVQas8StF6HUcN/APUknD8usbw",
+	"Dwbev3/9zU4iKQlFqQtlcCc1ZoQGs1MoS8FnA3SxqacN5ILzDG+YRtClNI5WrCEECA43qsw4zBGYNDdI",
+	"cD2bTMAqYBJKSbugtCJxUCQsy1CP4GKQ3I9H5zUtNoWSBp2cnir7rSqlo3mipEVp6U9WFBlBKpQcfzTE",
+	"g0+tTf9R4yKaRv8wbjRg7N+a8UutlfYHdXl4qsCUSQoajSp1grUcdwlTGtRwkCiOMJPKXi4IutlhtI6j",
+	"946GSot/xT3A+0YYI+QyBiGvWSY4KA14WxCZwaAxQkmw6gqlk96wHZ12LCpBHVJ7w66Rw9sC5fHrI4KH",
+	"WTHPEFByZwm8SBy/ew1XuAJh4EYLi0dKZitgkoPEa9Sg0ZZaIh9FcVRoVaC2wjN0zgy+11n/6FOS9EyY",
+	"wdPpK3h/dhIDjpYjSK0tzHQ8ZoUYqQIlE6NE5ePrJ1G8KVFxlGgkzh07Rnh9iqYRZxaPrMhx6JOUmeNC",
+	"/DOu+mD+JUWbogZW4W+s0sg9Wdwjb4qECaTAW9JyHoNUFvAaJemRFSzLVqPm7LlSGTJJhwveAZQ0fwjG",
+	"XHHMBlSo0ryBF2XBH0aJdVt1f/C67HaPaz5WgLSJ1qZ5+9QP9QFq/hETSzA10vjCfeNcVUdi2BZOvM2F",
+	"jUGWWeZEPy/syulsJakGbMosSEQOUhFviN412gUz5kZph1KZZWyeYWWeulSIo9ujpTqqH3JS4NEZu3mD",
+	"xrAlthccibxQ2tE32L+wPoq9XZxGKBPFhVx6O7Buf2yuRHGkHH4sO3JIoPZArePtmnMsV04jDszhDsUl",
+	"Q5FkJR0NhRbXzOL45Ph0nKmEZakyFhjnGo1BM4JjyL15gfH1E5JlxrnX5l8hh11o30vxU4lQoIYTZFo6",
+	"c8oMHglpUBphxTUeju6UxS1iuFvELtDYMzRlZvtiljGLMlm9MX2Qz8jGH1ktCiA9AbVwjiFRUmJCayBJ",
+	"MbkCISEXGdmwREluOuImpP2nZw1WxNolakfAIEa9Y78rcyaPNDJOwgmqtInKMZjAH6MX/njkP0akADcp",
+	"2R5YMJFt4ZS6arGpZXCM1WViS438bWmL0g5Aom4cxpUshZDAwPfnb08JsKK0MdykKDcJc6P0lZkCyfql",
+	"90FwMEdjD2P/zHMphkKrvLCXzo0cuF3x1mpG6MFCqzxETxqLTKA5JIRLya6ZcIrrow+UZU6i0TosiqPW",
+	"Md4ZVeeQaWq2iD70KLYhceoqiltS0jBut8y9d+bvYWaNsL5CLIwPpJ2HIQP2fMPcaczVtQvJngOTK1DO",
+	"NV2zrERHKpa4l/9r7N7nO8H1IK8umLkaCoY+qrkPAYsCOGa4ZBZNiJhbAf8IvhW3Luyyo5YcEt9IykIm",
+	"dVnFgx8GdNPDcGyMWMo8BI1deSk6+cdmeLCblYR1QHFXrBkIsSn47tO4DcCQxL9gkgsS9TP86JW/jwOF",
+	"zX06n1tn30KqSGuCjSvllVQ38pLEFQ6cKiCRMEFSAVMw6cIsZcnyfv+Gi4TsCj2/tHhrL3NhcmaTNDyj",
+	"cF3Iy4JZi1rGYJW6NKnS1v+ZKYqmuTAsy9QN8sskZc4CaRNX7vDSaiZN5gJ5b3T6ItmY8967Cvw+DSh6",
+	"1I5wLvkKpKzxbRnXig1gSkoqkIOSeLe/dKTfbbN8qvEwpuUsSYXExkshbeKYCAeBiU1WVCcrl4lGjpLC",
+	"YOOpnzO5uiTO5IU1h6OHUfbhuL4K+fbLW5YXGZoz/KlEY4ewL+UWj0ggg0PHZYYYtnL2gXM44LhgZWbh",
+	"ycThk7NbkZNleDqJo1xI/48n/ZBgvR1eoeS2+KU6vg/ry2vUqwq8RoWCW1FBrJxfZwuLuipGkIxHcSQs",
+	"5uYu0xHqSYGcUYMC05qt6N91haMPYG06QshOLgp5RVqXyKbCuJrEaDCEksoOiOg7jYSsV50GJ0K8KIhh",
+	"TGerYGocCVB751PTKmEF3DBDpilJt0RVldbuRIsLkzDNkcN81cJrGBtdGVBH9XuRf8D4DrDAc3wg9cab",
+	"RnpZYktKTiv5OOClr13Qu4z0fLUhMxqdDXaaQqWgaFCk2wrayEINVIuQHQrEjWAP6nFX7npacc9kulKK",
+	"79mw3XYVIXpV+XYmnEbLkmWD/pwczks5QOuzUlICsTBo4WNpnLBbR82M/qh9TpVkVGVY2nBYXOjNuWV6",
+	"wEp9K7SxoFtHHkyOKJ7ih0P7kxttKLH9tAu8HTis+fKHGqRpoMOH515gmLbVwdXyliThrYvyzaCetTzv",
+	"S3m3D3B8brF1c4M23Rp2tfCrub5D7L4/eXdxgtc4kJTTK+BisRBJmdkVzJnkHYJ7lEWrsM6hlBRNtkLI",
+	"06+jODqlvPH0Kf3nK/rPk0GJa1f0v0HLRDbgzKqjTst87ut/fQ63HckXsv2OsZJVQeFGIZPpK65uZKsG",
+	"Pl/5sNuFw8jbsbZLfrhorQpVhBG8dDlREyiFTNWAVNCCAFakB1I121chVUybtxyFL+CZMkkQeV3k7lG+",
+	"tfdLB9lAeKdLbCALEFd40KPWHs9BYwsInwe60jStN/cqGm6vNnzMCluL7D242oi4i8CYJKSHbGQIqwff",
+	"XTMtmLRdkeqt6krNkD43wMc9WW4gaOBsndwVwiGm3c/TOP16F8LQDV9TYfYQrXH7nZf052pIdTKRCzus",
+	"qN6kD7+zyrIBq3RBj7smyIDLkajWR4K4EJklTQj9pYIthdwaq2zyyOFdHV7BXgN6F1UrKnyW2XoxHK/7",
+	"L8n3+HgjDvniUS9+rx2TGXaAKTMvu+ZsmzYOJkztNqrPaTcbrdKDKiQIayAjcT+8ZylxH8rdz1stMi8/",
+	"dWbtQupf/vqfv/z8X7/8/B+//Pzfv/z8t9H92gsPV/ENhmxIwl1Ct608t+GycnZ7gnJp02j69WTiE7jq",
+	"wZO7EGvvNQTPd8gym/Zh4MwyitbagWdSVX1d+dIlJlvKl3FkLLOlaX/tapgcl5px5HeXPMMGcQPJEPgn",
+	"aink1gS6rje2/VPRFCH7XSqDenv1rg1evTJuNtwBoG8rD7JaaDSX7AEdQt9Z7RdvC0bNjTkyjdq3X0dw",
+	"nlJ0o2SCz0Pkq11cYZVGA67kTZqeMpOOthHkLoV+bwbssQcybiMYdhui0vtwzK9KoO7PNPd9vbwPiMvG",
+	"klILuzon5ELb2FH0uLTpVqJ3mt6+afDu7fkFjKn+NM5IBmJn3IEZmB2HopTTyin82XPsx3IyeZq4Hdyf",
+	"OCOOOCI7E+9WNfhT18335oVcqAGb7ycJKOPRNKRRjRR8d3HxjnroI3ilGnEo5waqLOFiVeC52wmSTGBI",
+	"s+fKpq0w2eHoSiMLkSEc6FLCrJBFXq+ZVTGrsJQdR/8iNGX38D2jdO+itEoTHBQooTYe6MnoyWji4osC",
+	"JStENI2ejiajp6GU79gxZuKoiprdg6UPREhyHEWpSh2dCGObRoiJNmY7vppMHjQmca+wqjlvIKTsDVEc",
+	"Z1kd/ZsYVMbRWFgIbeyoGnIwjvQ+F/AtVKoErePo2eTJNmhqPMedoRAn3FWUE100qcAfTBi8aGU6xjle",
+	"ZQYI61vlLVS9iqGxf1Z89cVmT3q9+XVXmUODZoOpTx7h/CHeeZi458Tk8QduXoc5G7JbcT2RQimj60JV",
+	"Q0FVhbsSq5lrVjaDWHPi0K+THvroT4+P6HHTY7gRNvUWhrCu6394K4w1Fcb06tKyK5Szww0RP2fXCAwk",
+	"3rQl2y3qmJDxJ8HX3n5mOFTLPat6Iw6iZ5M/wU1KNq/TERGmyemtAgbUuXruGkv01C2mR0HBo3hDrb5x",
+	"h2+oVUe2n/Uh8x/xz2Dps7s/qsfg9iUDF3fSteJ+tYpaa6XBngicuR71RsfUNwQGLNsrtLvoP9mTbemg",
+	"f0Ayp0o3ZUoO4XBfvO7Q8a3ETQq2R3p/GN62WTJuDbCuP9DHNhkKpigc9YUAzLiBIjRRyAcmKZNLmnWb",
+	"+eGFGaidwwoz6krPyPwxGSYWwvhrM7gAB1e4ytCY1tyWK3YxA2+zjOWsmuCSGIKZrsT4BG6PvtAfeD9f",
+	"uE95DXN2ULQk5P+QY/w9WtFj6SdyalNSOVCqSjdu9W4/+sJpXs+IDrrRsa3y8M8yDyHw3IyXb9jKhAFy",
+	"A19NJgODCT46eA4sDKNV03EGZupqCguWGZx5R86gHhyYhXb9zE/KMumzJDdPMKT3NMu3b1fRmh/cooRh",
+	"SK8eESTMfxN38cLR3LXTO8ypWMfACrkik24h2Mtansi935XVXbg1+8noNkaj7pHXkbNEafXKzZkSPjR6",
+	"AgyMr8IqzVE/b4KX13xG8umm65xAl7KKeL5EpveXVCRpp4tFdTsfRpVEuw7lx5/ofxvh8EYCmCHTnjBR",
+	"Lw4YuIURRri238O411jYh0dVsk0uDyuY56VUN5/PolrBHtcJvPdTbJ2guXNzpCMqJ+hTJre6Cjz7wXMY",
+	"0+1KxTna30Ymfl249ZD5xt01xZ2jifuO0+4nx5QSs45N20us9uaLhlv7UxzXmpfhilaTmd2lTS9SpYyv",
+	"ErStL9VhvYoFy1tXiJ0kDtbcXBPhkZKLTgdlzwLbbY4MsOFELZfIQcjfQEgDsTeFdT9y56760c0KrVxz",
+	"03eY4EBILowVclkK45pvNInCkXTZlwa+2keBRik/gBpi7Gp0lspdFPf4SU4SfNm0vv29FIqEzmjR0TEt",
+	"iuIoRVYV8tsvpp/uvrnZzAKs262baPrDh7YivrxNQgoDVe/H9TpqqnqV7F9crHVTlXanctL7+9TrzsMR",
+	"/LPqdh0rExJgZr2lSUqtUdohZEKvf+wLHTtD7HaT2mxx6D+V6G4YBI+ehb55w6QHz5Gt4+Gtf+ps2+qG",
+	"P5lM7r1JNQ/S2ciPQX81uXMoenjPMFvS2bTaZjKwzWPGsL0RoeHiOlu6/HBjCieU2lFoCMBAaL/vy+xW",
+	"ds+JERk+VdojtTjSTnEd88bVGKl3vHPGL4OJnh1+CU161aWJkK15GZezwYGH7vTrv//t306fxESx9iJv",
+	"7A6HtK3uMQSV693rvXtsMG737ylV60UW7To5vZttXP6Z+cCeTF/o/9Mqn5TTtUt/eivub0NAX7Ve9eYX",
+	"/XVkkWXNDX9XoXGVlqoCO2vtOBsqrLzCju2J9qQwYWZ1S7jcnZp1GAlretTZMc31m1RhzpBxYF3o43rE",
+	"VC6B1Rdt26go6VtUrjr28Er/xo977Kj2v3ET7H6w1JX4r7Cw0+4AKtGVlVYd9SZj1TVqd/1/U1Bd2Yku",
+	"ToQJ1xQ1bq/d96TtywfYAxNfew6z7y/qVR2/IzR7cwJ+iLojjJtF+i9p/T9PvWhyd3N8mlwr2yTeFm8w",
+	"bs+6f76ODZbMW7eASMGa6R2balUu0+2T7qR4zcWhqs7uI/725ajezUhS5s69jrw01oehwiAIaRV4V++H",
+	"YOmWNjfBudXrE1LvzpWNer6TIPPDqRQE+uVzhK///td/fzZp7rCYwxGc9S41ejpoLJSubENcjdr739IY",
+	"dEqebN27BuaxzMWW24Hr9fpRbcTmJb/ttaPmflZ9cavISuMvYRliWP826f4iybftwNGB9DuzInvq/52q",
+	"jkJvzFHsiA/rwtYlE62G6Wa0HMS0H+zEtX2QS99rYEsmpLGVxofxfpIhWiJ22sjato7rwAC/qMXs6vpZ",
+	"fUit7e3x7t9vNCrdPcoG1v8X5gcIc8P1TY8eh9+ycPGyDNNnwv2IGnqxTesB+m1DRWHE/hGlJ5wwQLhz",
+	"ny8KA2VRD/hWE/X0uJniX8fR15On+4ZpXtoeTO27BbsKeyfiGiUaP7lcb1D9Asy1sKuqCU6MynEXk97g",
+	"YzIojMgPKnRVsnPD8V9otLf/u3HRZom0O9f+wweyib664C1qqbMwZT4dNz/UNP3j5I+TaP1h/T8DAA==",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

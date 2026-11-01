@@ -72,6 +72,93 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/grammar/points": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Grammar points in catalogue order (level N5→N1, then catalogue number) */
+        get: operations["listGrammarPoints"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/grammar/points/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A grammar point's catalogue id. Declared as a plain string for the same reason as ProviderId: the generated router binds path parameters before auth, so the handler parses it itself (404 if malformed). */
+                id: components["parameters"]["GrammarPointId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Read a grammar point, generating a missing explanation on first read
+         * @description When the point has no explanation yet, the server asks the AI Provider assigned to the `grammar_content` task and stores the answer. A point without an explanation and without an assigned provider is still answered 200 with an empty `explanation`.
+         */
+        get: operations["getGrammarPoint"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Edit the explanation of a grammar point
+         * @description Manual edits are kept: regeneration and auto-generation never overwrite an explanation that was edited here.
+         */
+        patch: operations["updateGrammarPoint"];
+        trace?: never;
+    };
+    "/grammar/points/{id}/examples": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A grammar point's catalogue id. Declared as a plain string for the same reason as ProviderId: the generated router binds path parameters before auth, so the handler parses it itself (404 if malformed). */
+                id: components["parameters"]["GrammarPointId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate example sentences, validating each against JMdict before storing it
+         * @description Candidates are generated through the assigned AI Provider and discarded when they fail validation (the sentence or its grammar span must tokenise into known JMdict words, the span must cover part of the pattern, and its length must be 5–40 characters). Rejected candidates are reported here, never stored.
+         */
+        post: operations["generateGrammarExamples"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/grammar/points/{id}/explanation/regenerate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A grammar point's catalogue id. Declared as a plain string for the same reason as ProviderId: the generated router binds path parameters before auth, so the handler parses it itself (404 if malformed). */
+                id: components["parameters"]["GrammarPointId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Regenerate the explanation, replacing any existing one */
+        post: operations["regenerateGrammarExplanation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ai-providers": {
         parameters: {
             query?: never;
@@ -270,6 +357,88 @@ export interface components {
             /** @enum {string} */
             database: "connected" | "unreachable";
         };
+        /**
+         * @description JLPT difficulty band the grammar point is catalogued under.
+         * @enum {string}
+         */
+        GrammarJLPTLevel: "N5" | "N4" | "N3" | "N2" | "N1";
+        GrammarPointSummary: {
+            /**
+             * Format: int64
+             * @description Stable catalogue id (the grammar point's number in its level).
+             */
+            id: number;
+            jlptLevel: components["schemas"]["GrammarJLPTLevel"];
+            catalogueNumber: number;
+            /** @description The teaching pattern, e.g. 〜てしまう. */
+            pattern: string;
+            meaning: string;
+            hasExplanation: boolean;
+            /** @description Number of stored, JMdict-validated example sentences. */
+            exampleCount: number;
+        };
+        GrammarPointPage: {
+            items: components["schemas"]["GrammarPointSummary"][];
+            /** @description Total grammar points matching the filter, before pagination. */
+            total: number;
+            limit: number;
+            offset: number;
+        };
+        GrammarExample: {
+            /** Format: uuid */
+            id: string;
+            sentenceJa: string;
+            translationEn: string;
+            /** @description First rune offset (0-based) of the grammar span in sentenceJa. */
+            spanStart: number;
+            /** @description Rune offset just past the last character of the grammar span. */
+            spanEnd: number;
+            /** @description sentenceJa[spanStart:spanEnd]; the part of the sentence the point explains. */
+            spanText: string;
+            /** @enum {string} */
+            source: "ai" | "manual";
+        };
+        GrammarPointDetail: {
+            /** Format: int64 */
+            id: number;
+            jlptLevel: components["schemas"]["GrammarJLPTLevel"];
+            catalogueNumber: number;
+            pattern: string;
+            meaning: string;
+            variants: string[];
+            /** @description Markdown generated by the assigned AI Provider or edited by the Learner. Empty when the point has no explanation yet (no assigned provider, or generation never succeeded). */
+            explanation: string;
+            /** @description True when the Learner edited the explanation; regeneration keeps such edits. */
+            explanationEdited: boolean;
+            examples: components["schemas"]["GrammarExample"][];
+        };
+        GrammarPointUpdate: {
+            explanation: string;
+        };
+        GenerateExamplesRequest: {
+            /** @description How many validated examples to add (default 10). */
+            count?: number;
+        };
+        CandidateRejection: {
+            /** @description Stable reason code, e.g. unknown_word (the sentence or span is not in JMdict), span_text_mismatch, span_not_in_pattern, too_short, too_long, disallowed_characters, missing_translation. */
+            code: string;
+            message: string;
+            /** @description The rejected candidate sentence, when the provider supplied one. */
+            sentence?: string;
+        };
+        GenerationResult: {
+            /** @description Candidates that passed validation this call. */
+            generated: number;
+            /** @description New examples actually stored (duplicates already on the point are not counted). */
+            stored: number;
+            /** @description Candidates discarded by validation. */
+            rejected: number;
+            rejections: components["schemas"]["CandidateRejection"][];
+            /** @description Present when generation stopped early, e.g. the per-point example cap was reached. */
+            note?: string;
+            /** @description Every example sentence stored on the point after generation. */
+            examples: components["schemas"]["GrammarExample"][];
+        };
     };
     responses: {
         /** @description Missing, invalid or expired session token */
@@ -294,6 +463,8 @@ export interface components {
     parameters: {
         /** @description An AI Provider's UUID. Declared as a plain string on purpose: the generated router binds `format: uuid` parameters before the auth middleware runs, so a malformed id would be answered 400 to an unauthenticated caller. The handler parses it (404 if malformed). */
         ProviderId: string;
+        /** @description A grammar point's catalogue id. Declared as a plain string for the same reason as ProviderId: the generated router binds path parameters before auth, so the handler parses it itself (404 if malformed). */
+        GrammarPointId: string;
     };
     requestBodies: never;
     headers: never;
@@ -420,6 +591,185 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    listGrammarPoints: {
+        parameters: {
+            query?: {
+                level?: "N5" | "N4" | "N3" | "N2" | "N1";
+                q?: string;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of grammar points with their content status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrammarPointPage"];
+                };
+            };
+            /** @description Unknown level or out-of-range limit/offset (code `bad_request`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    getGrammarPoint: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A grammar point's catalogue id. Declared as a plain string for the same reason as ProviderId: the generated router binds path parameters before auth, so the handler parses it itself (404 if malformed). */
+                id: components["parameters"]["GrammarPointId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The grammar point with its explanation and validated example sentences */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrammarPointDetail"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateGrammarPoint: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A grammar point's catalogue id. Declared as a plain string for the same reason as ProviderId: the generated router binds path parameters before auth, so the handler parses it itself (404 if malformed). */
+                id: components["parameters"]["GrammarPointId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GrammarPointUpdate"];
+            };
+        };
+        responses: {
+            /** @description The updated grammar point */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrammarPointDetail"];
+                };
+            };
+            /** @description Empty explanation or malformed body (code `bad_request`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    generateGrammarExamples: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A grammar point's catalogue id. Declared as a plain string for the same reason as ProviderId: the generated router binds path parameters before auth, so the handler parses it itself (404 if malformed). */
+                id: components["parameters"]["GrammarPointId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["GenerateExamplesRequest"];
+            };
+        };
+        responses: {
+            /** @description The newly stored examples plus counts of rejected candidates */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationResult"];
+                };
+            };
+            /** @description Out-of-range count or malformed body (code `bad_request`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description No AI Provider is assigned to the `grammar_content` task (code `no_ai_provider`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    regenerateGrammarExplanation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A grammar point's catalogue id. Declared as a plain string for the same reason as ProviderId: the generated router binds path parameters before auth, so the handler parses it itself (404 if malformed). */
+                id: components["parameters"]["GrammarPointId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The grammar point with its new explanation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrammarPointDetail"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description No AI Provider is assigned to the `grammar_content` task (code `no_ai_provider`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     listAiProviders: {

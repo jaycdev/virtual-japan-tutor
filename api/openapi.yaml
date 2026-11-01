@@ -93,6 +93,164 @@ paths:
                 $ref: "#/components/schemas/User"
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /grammar/points:
+    get:
+      operationId: listGrammarPoints
+      summary: Grammar points in catalogue order (level N5→N1, then catalogue number)
+      parameters:
+        - name: level
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [N5, N4, N3, N2, N1]
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 100
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        "200":
+          description: A page of grammar points with their content status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GrammarPointPage"
+        "400":
+          description: Unknown level or out-of-range limit/offset (code `bad_request`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /grammar/points/{id}:
+    parameters:
+      - $ref: "#/components/parameters/GrammarPointId"
+    get:
+      operationId: getGrammarPoint
+      summary: Read a grammar point, generating a missing explanation on first read
+      description: >
+        When the point has no explanation yet, the server asks the AI Provider assigned to the
+        `grammar_content` task and stores the answer. A point without an explanation and without
+        an assigned provider is still answered 200 with an empty `explanation`.
+      responses:
+        "200":
+          description: The grammar point with its explanation and validated example sentences
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GrammarPointDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateGrammarPoint
+      summary: Edit the explanation of a grammar point
+      description: >
+        Manual edits are kept: regeneration and auto-generation never overwrite an explanation
+        that was edited here.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GrammarPointUpdate"
+      responses:
+        "200":
+          description: The updated grammar point
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GrammarPointDetail"
+        "400":
+          description: Empty explanation or malformed body (code `bad_request`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /grammar/points/{id}/examples:
+    parameters:
+      - $ref: "#/components/parameters/GrammarPointId"
+    post:
+      operationId: generateGrammarExamples
+      summary: Generate example sentences, validating each against JMdict before storing it
+      description: >
+        Candidates are generated through the assigned AI Provider and discarded when they fail
+        validation (the sentence or its grammar span must tokenise into known JMdict words, the
+        span must cover part of the pattern, and its length must be 5–40 characters). Rejected
+        candidates are reported here, never stored.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateExamplesRequest"
+      responses:
+        "200":
+          description: The newly stored examples plus counts of rejected candidates
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerationResult"
+        "400":
+          description: Out-of-range count or malformed body (code `bad_request`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: No AI Provider is assigned to the `grammar_content` task (code `no_ai_provider`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /grammar/points/{id}/explanation/regenerate:
+    parameters:
+      - $ref: "#/components/parameters/GrammarPointId"
+    post:
+      operationId: regenerateGrammarExplanation
+      summary: Regenerate the explanation, replacing any existing one
+      responses:
+        "200":
+          description: The grammar point with its new explanation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GrammarPointDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: No AI Provider is assigned to the `grammar_content` task (code `no_ai_provider`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /ai-providers:
     get:
       operationId: listAiProviders
@@ -320,6 +478,16 @@ components:
         answered 400 to an unauthenticated caller. The handler parses it (404 if malformed).
       schema:
         type: string
+    GrammarPointId:
+      name: id
+      in: path
+      required: true
+      description: >
+        A grammar point's catalogue id. Declared as a plain string for the same reason as
+        ProviderId: the generated router binds path parameters before auth, so the handler
+        parses it itself (404 if malformed).
+      schema:
+        type: string
   securitySchemes:
     bearerAuth:
       type: http
@@ -486,3 +654,154 @@ components:
         database:
           type: string
           enum: [connected, unreachable]
+    GrammarJLPTLevel:
+      type: string
+      description: JLPT difficulty band the grammar point is catalogued under.
+      enum: [N5, N4, N3, N2, N1]
+    GrammarPointSummary:
+      type: object
+      required: [id, jlptLevel, catalogueNumber, pattern, meaning, hasExplanation, exampleCount]
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Stable catalogue id (the grammar point's number in its level).
+        jlptLevel:
+          $ref: "#/components/schemas/GrammarJLPTLevel"
+        catalogueNumber:
+          type: integer
+        pattern:
+          type: string
+          description: The teaching pattern, e.g. 〜てしまう.
+        meaning:
+          type: string
+        hasExplanation:
+          type: boolean
+        exampleCount:
+          type: integer
+          description: Number of stored, JMdict-validated example sentences.
+    GrammarPointPage:
+      type: object
+      required: [items, total, limit, offset]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/GrammarPointSummary"
+        total:
+          type: integer
+          description: Total grammar points matching the filter, before pagination.
+        limit:
+          type: integer
+        offset:
+          type: integer
+    GrammarExample:
+      type: object
+      required: [id, sentenceJa, translationEn, spanStart, spanEnd, spanText, source]
+      properties:
+        id:
+          type: string
+          format: uuid
+        sentenceJa:
+          type: string
+        translationEn:
+          type: string
+        spanStart:
+          type: integer
+          description: First rune offset (0-based) of the grammar span in sentenceJa.
+        spanEnd:
+          type: integer
+          description: Rune offset just past the last character of the grammar span.
+        spanText:
+          type: string
+          description: sentenceJa[spanStart:spanEnd]; the part of the sentence the point explains.
+        source:
+          type: string
+          enum: [ai, manual]
+    GrammarPointDetail:
+      type: object
+      required: [id, jlptLevel, catalogueNumber, pattern, meaning, variants, explanation, explanationEdited, examples]
+      properties:
+        id:
+          type: integer
+          format: int64
+        jlptLevel:
+          $ref: "#/components/schemas/GrammarJLPTLevel"
+        catalogueNumber:
+          type: integer
+        pattern:
+          type: string
+        meaning:
+          type: string
+        variants:
+          type: array
+          items:
+            type: string
+        explanation:
+          type: string
+          description: >
+            Markdown generated by the assigned AI Provider or edited by the Learner. Empty when the
+            point has no explanation yet (no assigned provider, or generation never succeeded).
+        explanationEdited:
+          type: boolean
+          description: True when the Learner edited the explanation; regeneration keeps such edits.
+        examples:
+          type: array
+          items:
+            $ref: "#/components/schemas/GrammarExample"
+    GrammarPointUpdate:
+      type: object
+      required: [explanation]
+      properties:
+        explanation:
+          type: string
+          minLength: 1
+          maxLength: 5000
+    GenerateExamplesRequest:
+      type: object
+      properties:
+        count:
+          type: integer
+          minimum: 1
+          maximum: 30
+          description: How many validated examples to add (default 10).
+    CandidateRejection:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: >
+            Stable reason code, e.g. unknown_word (the sentence or span is not in JMdict),
+            span_text_mismatch, span_not_in_pattern, too_short, too_long, disallowed_characters,
+            missing_translation.
+        message:
+          type: string
+        sentence:
+          type: string
+          description: The rejected candidate sentence, when the provider supplied one.
+    GenerationResult:
+      type: object
+      required: [generated, stored, rejected, rejections, examples]
+      properties:
+        generated:
+          type: integer
+          description: Candidates that passed validation this call.
+        stored:
+          type: integer
+          description: New examples actually stored (duplicates already on the point are not counted).
+        rejected:
+          type: integer
+          description: Candidates discarded by validation.
+        rejections:
+          type: array
+          items:
+            $ref: "#/components/schemas/CandidateRejection"
+        note:
+          type: string
+          description: Present when generation stopped early, e.g. the per-point example cap was reached.
+        examples:
+          type: array
+          items:
+            $ref: "#/components/schemas/GrammarExample"
+          description: Every example sentence stored on the point after generation.

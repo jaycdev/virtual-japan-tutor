@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/aiprovider"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/grammar/grammartest"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/llm"
@@ -30,7 +32,10 @@ type scriptedCall struct {
 	rejectStatus int
 	status       int    // response status; default 200
 	content      string // assistant message content; default {}
-	latency      time.Duration
+	// contentFor, when non-nil, answers from the request itself (used when the
+	// order provider calls land in is not deterministic, e.g. single-flight tests).
+	contentFor func(messages []llm.Message) string
+	latency    time.Duration
 }
 
 type recordedCall struct {
@@ -118,6 +123,9 @@ func (f *fakeProvider) handle(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"error":{"message":"fake provider failure"}}`))
 	default:
 		content := call.content
+		if call.contentFor != nil {
+			content = call.contentFor(body.Messages)
+		}
 		if content == "" {
 			content = `{}`
 		}
@@ -148,9 +156,28 @@ func (f *fakeProvider) call(i int) recordedCall {
 func (f *fakeProvider) lastPrompt() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	last := f.calls[len(f.calls)-1]
+	return userPrompt(f.calls[len(f.calls)-1].Messages)
+}
+
+// countCallsWith counts recorded calls whose user prompt contains part.
+func (f *fakeProvider) countCallsWith(part string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := 0
+	for _, c := range f.calls {
+		for _, m := range c.Messages {
+			if m.Role == llm.RoleUser && strings.Contains(m.Content, part) {
+				n++
+				break
+			}
+		}
+	}
+	return n
+}
+
+func userPrompt(messages []llm.Message) string {
 	var parts []string
-	for _, m := range last.Messages {
+	for _, m := range messages {
 		if m.Role == llm.RoleUser {
 			parts = append(parts, m.Content)
 		}
@@ -169,23 +196,31 @@ func slicesContain(xs []string, x string) bool {
 
 // --- fake resolver ---
 
+// testUser stands for the authenticated Learner whose settings the generator resolves.
+var testUser = uuid.MustParse("7c4a1c8a-2c5f-4c8a-8a9a-6d3f0e1b2c34")
+
+// fakeResolver mirrors aiprovider.Service.ResolveProvider exactly (same uuid
+// user, same aiprovider.Task), so the generator can later be wired to the real
+// service without any adapter.
 type fakeResolver struct {
 	mu      sync.Mutex
-	clients map[string]*llm.Client
-	calls   map[string]int
+	clients map[aiprovider.Task]*llm.Client
+	calls   map[aiprovider.Task]int
+	users   []uuid.UUID
 }
 
-func newFakeResolver(clients map[string]*llm.Client) *fakeResolver {
+func newFakeResolver(clients map[aiprovider.Task]*llm.Client) *fakeResolver {
 	if clients == nil {
-		clients = map[string]*llm.Client{}
+		clients = map[aiprovider.Task]*llm.Client{}
 	}
-	return &fakeResolver{clients: clients, calls: map[string]int{}}
+	return &fakeResolver{clients: clients, calls: map[aiprovider.Task]int{}}
 }
 
-func (r *fakeResolver) ResolveProvider(_ context.Context, userID int64, task string) (aiprovider.Resolved, error) {
+func (r *fakeResolver) ResolveProvider(_ context.Context, userID uuid.UUID, task aiprovider.Task) (aiprovider.Resolved, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.calls[task]++
+	r.users = append(r.users, userID)
 	client, ok := r.clients[task]
 	if !ok {
 		return aiprovider.Resolved{}, aiprovider.ErrNotAssigned
@@ -193,10 +228,21 @@ func (r *fakeResolver) ResolveProvider(_ context.Context, userID int64, task str
 	return aiprovider.Resolved{Client: client}, nil
 }
 
-func (r *fakeResolver) taskCalls(task string) int {
+func (r *fakeResolver) taskCalls(task aiprovider.Task) int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.calls[task]
+}
+
+func (r *fakeResolver) sawUser(want uuid.UUID) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, u := range r.users {
+		if u == want {
+			return true
+		}
+	}
+	return false
 }
 
 // --- scripted example payloads ---

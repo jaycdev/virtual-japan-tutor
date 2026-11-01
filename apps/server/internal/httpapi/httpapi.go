@@ -14,6 +14,7 @@ import (
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/aiprovider"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/api"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/auth"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/grammar"
 )
 
 // Pinger reports whether the database is reachable.
@@ -36,10 +37,12 @@ var publicRoutes = map[string]bool{
 const DefaultMaxBodyBytes = 1 << 20
 
 type server struct {
-	db      Pinger
-	auth    *auth.Service
-	ai      *aiprovider.Service
-	maxBody int64
+	db         Pinger
+	auth       *auth.Service
+	ai         *aiprovider.Service
+	grammar    grammar.Store
+	grammarGen *grammar.Generator
+	maxBody    int64
 }
 
 // WithMaxBodyBytes sets the cap applied to every request body (default 1 MiB).

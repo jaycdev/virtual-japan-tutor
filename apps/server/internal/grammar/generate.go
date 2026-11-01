@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/google/uuid"
 	"golang.org/x/sync/singleflight"
 
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/aiprovider"
@@ -18,14 +19,13 @@ import (
 // fake. aiprovider.ErrNotAssigned passes through untouched so the HTTP layer
 // can answer 409.
 type ProviderResolver interface {
-	ResolveProvider(ctx context.Context, userID int64, task string) (aiprovider.Resolved, error)
+	ResolveProvider(ctx context.Context, userID uuid.UUID, task aiprovider.Task) (aiprovider.Resolved, error)
 }
 
-// Generation tasks looked up in the Learner's AI Provider settings.
-const (
-	TaskExplanation = "grammar_explanation"
-	TaskExamples    = "grammar_examples"
-)
+// TaskGrammarContent is the single AI task both generation flows resolve:
+// explanations and example sentences come from the provider the Learner
+// assigned to it in their AI settings.
+const TaskGrammarContent = aiprovider.TaskGrammarContent
 
 // Generation bounds. One provider call asks for exampleBatch candidates; a
 // single GenerateExamples request makes at most maxProviderCalls calls.
@@ -98,7 +98,7 @@ func (gen *Generator) do(key string, run func() flightResult) flightResult {
 // EnsureExplanation returns a point's explanation, generating and storing one
 // only when the point has none. An existing explanation is never touched here:
 // replacing it is RegenerateExplanation's job.
-func (gen *Generator) EnsureExplanation(ctx context.Context, pointID, userID int64) (string, error) {
+func (gen *Generator) EnsureExplanation(ctx context.Context, pointID int64, userID uuid.UUID) (string, error) {
 	content, err := gen.store.Content(ctx, pointID)
 	if err != nil {
 		return "", err
@@ -122,7 +122,7 @@ func (gen *Generator) EnsureExplanation(ctx context.Context, pointID, userID int
 }
 
 // RegenerateExplanation generates a new explanation and replaces the stored one.
-func (gen *Generator) RegenerateExplanation(ctx context.Context, pointID, userID int64) (string, error) {
+func (gen *Generator) RegenerateExplanation(ctx context.Context, pointID int64, userID uuid.UUID) (string, error) {
 	res := gen.do(fmt.Sprintf("explanation:%d", pointID), func() flightResult {
 		text, err := gen.explain(ctx, pointID, userID, true)
 		return flightResult{text: text, err: err}
@@ -130,8 +130,8 @@ func (gen *Generator) RegenerateExplanation(ctx context.Context, pointID, userID
 	return res.text, res.err
 }
 
-func (gen *Generator) explain(ctx context.Context, pointID, userID int64, fresh bool) (string, error) {
-	resolved, err := gen.resolve.ResolveProvider(ctx, userID, TaskExplanation)
+func (gen *Generator) explain(ctx context.Context, pointID int64, userID uuid.UUID, fresh bool) (string, error) {
+	resolved, err := gen.resolve.ResolveProvider(ctx, userID, TaskGrammarContent)
 	if err != nil {
 		return "", err
 	}
@@ -186,7 +186,7 @@ Cover: how the pattern is formed, what it means, when it is used. Keep it under 
 // batches of exampleBatch, with at most maxProviderCalls provider calls.
 // Validated candidates are stored; rejected ones are discarded and reported.
 // Existing examples are kept: generation only appends.
-func (gen *Generator) GenerateExamples(ctx context.Context, pointID, userID int64, n int) (Generation, error) {
+func (gen *Generator) GenerateExamples(ctx context.Context, pointID int64, userID uuid.UUID, n int) (Generation, error) {
 	if n <= 0 || n > MaxExamplesPerRequest {
 		return Generation{}, fmt.Errorf("grammar: count must be between 1 and %d", MaxExamplesPerRequest)
 	}
@@ -197,8 +197,8 @@ func (gen *Generator) GenerateExamples(ctx context.Context, pointID, userID int6
 	return res.generation, res.err
 }
 
-func (gen *Generator) generateExamples(ctx context.Context, pointID, userID int64, n int) (Generation, error) {
-	resolved, err := gen.resolve.ResolveProvider(ctx, userID, TaskExamples)
+func (gen *Generator) generateExamples(ctx context.Context, pointID int64, userID uuid.UUID, n int) (Generation, error) {
+	resolved, err := gen.resolve.ResolveProvider(ctx, userID, TaskGrammarContent)
 	if err != nil {
 		return Generation{}, err
 	}

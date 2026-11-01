@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/aiprovider"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/grammar"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/grammar/grammartest"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/llm"
@@ -30,10 +31,10 @@ func TestGenerateExamplesStoresValidAndReportsRejections(t *testing.T) {
 			genExample{Sentence: "たべて", Translation: "I ate.", Start: 0, Length: 3},
 		}, validExamples(0, 2)...)...,
 	)})
-	resolve := newFakeResolver(map[string]*llm.Client{grammar.TaskExamples: provider.client(t)})
+	resolve := newFakeResolver(map[aiprovider.Task]*llm.Client{aiprovider.TaskGrammarContent: provider.client(t)})
 	gen := newGenerator(store, dakeDict(), resolve)
 
-	out, err := gen.GenerateExamples(ctx, dake.ID, 7, 2)
+	out, err := gen.GenerateExamples(ctx, dake.ID, testUser, 2)
 	if err != nil {
 		t.Fatalf("GenerateExamples: %v", err)
 	}
@@ -99,10 +100,10 @@ func TestEnsureExplanationGeneratesOnlyWhenMissing(t *testing.T) {
 	store := grammartest.NewMemStore(dake)
 	text := "**〜だけ** means “only, just”. Attach it to a noun or the て-form of a verb."
 	provider := newFakeProvider(t, scriptedCall{content: explanationReply(text)})
-	resolve := newFakeResolver(map[string]*llm.Client{grammar.TaskExplanation: provider.client(t)})
+	resolve := newFakeResolver(map[aiprovider.Task]*llm.Client{aiprovider.TaskGrammarContent: provider.client(t)})
 	gen := newGenerator(store, dakeDict(), resolve)
 
-	got, err := gen.EnsureExplanation(ctx, dake.ID, 7)
+	got, err := gen.EnsureExplanation(ctx, dake.ID, testUser)
 	if err != nil {
 		t.Fatalf("EnsureExplanation: %v", err)
 	}
@@ -121,7 +122,7 @@ func TestEnsureExplanationGeneratesOnlyWhenMissing(t *testing.T) {
 	}
 
 	// The second read finds stored content and spends nothing.
-	got2, err := gen.EnsureExplanation(ctx, dake.ID, 7)
+	got2, err := gen.EnsureExplanation(ctx, dake.ID, testUser)
 	if err != nil {
 		t.Fatalf("second EnsureExplanation: %v", err)
 	}
@@ -131,8 +132,11 @@ func TestEnsureExplanationGeneratesOnlyWhenMissing(t *testing.T) {
 	if provider.callCount() != 1 {
 		t.Fatalf("provider calls = %d, want exactly 1", provider.callCount())
 	}
-	if resolve.taskCalls(grammar.TaskExplanation) != 1 {
-		t.Fatalf("resolver calls = %d, want exactly 1", resolve.taskCalls(grammar.TaskExplanation))
+	if resolve.taskCalls(aiprovider.TaskGrammarContent) != 1 {
+		t.Fatalf("resolver calls = %d, want exactly 1", resolve.taskCalls(aiprovider.TaskGrammarContent))
+	}
+	if !resolve.sawUser(testUser) {
+		t.Fatalf("resolver must receive the caller's user id, got %v", resolve.users)
 	}
 	if call := provider.call(0); call.Mode != "json_schema" {
 		t.Fatalf("mode = %q, want json_schema", call.Mode)
@@ -142,7 +146,7 @@ func TestEnsureExplanationGeneratesOnlyWhenMissing(t *testing.T) {
 		t.Fatalf("prompt lacks pattern/level:\n%s", prompt)
 	}
 
-	if _, err := gen.EnsureExplanation(ctx, 999, 7); !errors.Is(err, grammar.ErrPointNotFound) {
+	if _, err := gen.EnsureExplanation(ctx, 999, testUser); !errors.Is(err, grammar.ErrPointNotFound) {
 		t.Fatalf("unknown point err = %v, want ErrPointNotFound", err)
 	}
 	if provider.callCount() != 1 {
@@ -157,10 +161,10 @@ func TestRegenerateExplanationReplacesStoredContent(t *testing.T) {
 		t.Fatalf("SetExplanation: %v", err)
 	}
 	provider := newFakeProvider(t, scriptedCall{content: explanationReply("a brand new explanation")})
-	resolve := newFakeResolver(map[string]*llm.Client{grammar.TaskExplanation: provider.client(t)})
+	resolve := newFakeResolver(map[aiprovider.Task]*llm.Client{aiprovider.TaskGrammarContent: provider.client(t)})
 	gen := newGenerator(store, dakeDict(), resolve)
 
-	got, err := gen.RegenerateExplanation(ctx, dake.ID, 7)
+	got, err := gen.RegenerateExplanation(ctx, dake.ID, testUser)
 	if err != nil {
 		t.Fatalf("RegenerateExplanation: %v", err)
 	}
@@ -182,7 +186,7 @@ func TestRegenerateExplanationReplacesStoredContent(t *testing.T) {
 	}
 
 	// EnsureExplanation then keeps the regenerated text.
-	if again, err := gen.EnsureExplanation(ctx, dake.ID, 7); err != nil || again != got {
+	if again, err := gen.EnsureExplanation(ctx, dake.ID, testUser); err != nil || again != got {
 		t.Fatalf("EnsureExplanation after regenerate = %q, %v", again, err)
 	}
 	if provider.callCount() != 1 {
@@ -196,10 +200,10 @@ func TestGenerationWithoutAssignedProvider(t *testing.T) {
 	resolve := newFakeResolver(nil) // nothing assigned
 	gen := newGenerator(store, dakeDict(), resolve)
 
-	if _, err := gen.EnsureExplanation(ctx, dake.ID, 7); !errors.Is(err, grammar.ErrNotAssigned) {
+	if _, err := gen.EnsureExplanation(ctx, dake.ID, testUser); !errors.Is(err, grammar.ErrNotAssigned) {
 		t.Fatalf("EnsureExplanation err = %v, want ErrNotAssigned", err)
 	}
-	if _, err := gen.GenerateExamples(ctx, dake.ID, 7, 5); !errors.Is(err, grammar.ErrNotAssigned) {
+	if _, err := gen.GenerateExamples(ctx, dake.ID, testUser, 5); !errors.Is(err, grammar.ErrNotAssigned) {
 		t.Fatalf("GenerateExamples err = %v, want ErrNotAssigned", err)
 	}
 	content, err := store.Content(ctx, dake.ID)
@@ -229,10 +233,10 @@ func TestGenerateExamplesBatchesWithinACallBudget(t *testing.T) {
 			script = append(script, scriptedCall{content: examplesReply(validExamples(batch*10, 10)...)})
 		}
 		provider := newFakeProvider(t, script...)
-		resolve := newFakeResolver(map[string]*llm.Client{grammar.TaskExamples: provider.client(t)})
+		resolve := newFakeResolver(map[aiprovider.Task]*llm.Client{aiprovider.TaskGrammarContent: provider.client(t)})
 		gen := newGenerator(store, dakeDict(), resolve)
 
-		out, err := gen.GenerateExamples(ctx, dake.ID, 7, tc.n)
+		out, err := gen.GenerateExamples(ctx, dake.ID, testUser, tc.n)
 		if err != nil {
 			t.Fatalf("n=%d: %v", tc.n, err)
 		}
@@ -254,9 +258,9 @@ func TestGenerateExamplesBatchesWithinACallBudget(t *testing.T) {
 		scriptedCall{content: examplesReply(validExamples(0, 10)...)},
 		scriptedCall{content: examplesReply(validExamples(10, 10)...)},
 	)
-	resolve := newFakeResolver(map[string]*llm.Client{grammar.TaskExamples: provider.client(t)})
+	resolve := newFakeResolver(map[aiprovider.Task]*llm.Client{aiprovider.TaskGrammarContent: provider.client(t)})
 	gen := newGenerator(store, dakeDict(), resolve)
-	if _, err := gen.GenerateExamples(ctx, dake.ID, 7, 12); err != nil {
+	if _, err := gen.GenerateExamples(ctx, dake.ID, testUser, 12); err != nil {
 		t.Fatalf("GenerateExamples: %v", err)
 	}
 	if !strings.Contains(provider.lastPrompt(), "2 new example sentences") {
@@ -266,10 +270,10 @@ func TestGenerateExamplesBatchesWithinACallBudget(t *testing.T) {
 	// Out-of-range counts never reach the provider.
 	store = grammartest.NewMemStore(dake)
 	provider = newFakeProvider(t)
-	resolve = newFakeResolver(map[string]*llm.Client{grammar.TaskExamples: provider.client(t)})
+	resolve = newFakeResolver(map[aiprovider.Task]*llm.Client{aiprovider.TaskGrammarContent: provider.client(t)})
 	gen = newGenerator(store, dakeDict(), resolve)
 	for _, n := range []int{0, -1, grammar.MaxExamplesPerRequest + 1} {
-		if _, err := gen.GenerateExamples(ctx, dake.ID, 7, n); err == nil {
+		if _, err := gen.GenerateExamples(ctx, dake.ID, testUser, n); err == nil {
 			t.Fatalf("n=%d accepted, want error", n)
 		}
 	}
@@ -287,10 +291,10 @@ func TestGenerateExamplesRespectsPerPointCap(t *testing.T) {
 		}
 	}
 	provider := newFakeProvider(t, scriptedCall{content: examplesReply(validExamples(28, 10)...)})
-	resolve := newFakeResolver(map[string]*llm.Client{grammar.TaskExamples: provider.client(t)})
+	resolve := newFakeResolver(map[aiprovider.Task]*llm.Client{aiprovider.TaskGrammarContent: provider.client(t)})
 	gen := newGenerator(store, dakeDict(), resolve)
 
-	out, err := gen.GenerateExamples(ctx, dake.ID, 7, 10)
+	out, err := gen.GenerateExamples(ctx, dake.ID, testUser, 10)
 	if err != nil {
 		t.Fatalf("GenerateExamples: %v", err)
 	}
@@ -309,9 +313,9 @@ func TestGenerateExamplesRespectsPerPointCap(t *testing.T) {
 
 	// A full point never spends provider quota.
 	provider2 := newFakeProvider(t)
-	resolve2 := newFakeResolver(map[string]*llm.Client{grammar.TaskExamples: provider2.client(t)})
+	resolve2 := newFakeResolver(map[aiprovider.Task]*llm.Client{aiprovider.TaskGrammarContent: provider2.client(t)})
 	gen2 := newGenerator(store, dakeDict(), resolve2)
-	out, err = gen2.GenerateExamples(ctx, dake.ID, 7, 5)
+	out, err = gen2.GenerateExamples(ctx, dake.ID, testUser, 5)
 	if err != nil {
 		t.Fatalf("GenerateExamples at cap: %v", err)
 	}
@@ -330,10 +334,10 @@ func TestProviderWithoutStructuredOutputSupportFallsBack(t *testing.T) {
 		scriptedCall{allowModes: []string{"json_object", ""}}, // rejects json_schema with 400
 		scriptedCall{content: examplesReply(validExamples(0, 1)...)},
 	)
-	resolve := newFakeResolver(map[string]*llm.Client{grammar.TaskExamples: provider.client(t)})
+	resolve := newFakeResolver(map[aiprovider.Task]*llm.Client{aiprovider.TaskGrammarContent: provider.client(t)})
 	gen := newGenerator(store, dakeDict(), resolve)
 
-	out, err := gen.GenerateExamples(ctx, dake.ID, 7, 1)
+	out, err := gen.GenerateExamples(ctx, dake.ID, testUser, 1)
 	if err != nil {
 		t.Fatalf("GenerateExamples: %v", err)
 	}
@@ -352,10 +356,10 @@ func TestProviderFailurePropagatesAndStoresNothing(t *testing.T) {
 	ctx := context.Background()
 	store := grammartest.NewMemStore(dake)
 	provider := newFakeProvider(t, scriptedCall{status: http.StatusTooManyRequests})
-	resolve := newFakeResolver(map[string]*llm.Client{grammar.TaskExamples: provider.client(t)})
+	resolve := newFakeResolver(map[aiprovider.Task]*llm.Client{aiprovider.TaskGrammarContent: provider.client(t)})
 	gen := newGenerator(store, dakeDict(), resolve)
 
-	_, err := gen.GenerateExamples(ctx, dake.ID, 7, 5)
+	_, err := gen.GenerateExamples(ctx, dake.ID, testUser, 5)
 	if !errors.Is(err, llm.ErrRateLimited) {
 		t.Fatalf("err = %v, want llm.ErrRateLimited", err)
 	}
@@ -370,9 +374,9 @@ func TestProviderFailurePropagatesAndStoresNothing(t *testing.T) {
 		scriptedCall{content: "I am unable to help with that."},
 		scriptedCall{content: "I am unable to help with that."},
 	)
-	resolve2 := newFakeResolver(map[string]*llm.Client{grammar.TaskExamples: provider2.client(t)})
+	resolve2 := newFakeResolver(map[aiprovider.Task]*llm.Client{aiprovider.TaskGrammarContent: provider2.client(t)})
 	gen2 := newGenerator(store, dakeDict(), resolve2)
-	if _, err := gen2.GenerateExamples(ctx, dake.ID, 7, 5); err == nil {
+	if _, err := gen2.GenerateExamples(ctx, dake.ID, testUser, 5); err == nil {
 		t.Fatalf("prose-only provider must fail")
 	}
 	if provider2.callCount() != 3 {
@@ -387,16 +391,21 @@ func TestConcurrentRequestsForOnePointShareOneGeneration(t *testing.T) {
 	ctx := context.Background()
 	store := grammartest.NewMemStore(dake)
 	slow := 60 * time.Millisecond
-	expl := newFakeProvider(t, scriptedCall{latency: slow, content: explanationReply("shared explanation")})
-	examplesReply3 := examplesReply(validExamples(0, 3)...)
-	examples := newFakeProvider(t,
-		scriptedCall{latency: slow, content: examplesReply3},
-		scriptedCall{content: examplesReply3}, // the later second flight re-runs the same batch
+	examplesBatch := examplesReply(validExamples(0, 3)...)
+	// One provider answers from the prompt itself: with single-flight the order
+	// in which the explanation and examples flights reach it is not fixed.
+	teach := func(messages []llm.Message) string {
+		if strings.Contains(userPrompt(messages), "example sentences") {
+			return examplesBatch
+		}
+		return explanationReply("shared explanation")
+	}
+	provider := newFakeProvider(t,
+		scriptedCall{latency: slow, contentFor: teach},
+		scriptedCall{latency: slow, contentFor: teach},
+		scriptedCall{contentFor: teach}, // the later second examples flight re-runs the same batch
 	)
-	resolve := newFakeResolver(map[string]*llm.Client{
-		grammar.TaskExplanation: expl.client(t),
-		grammar.TaskExamples:    examples.client(t),
-	})
+	resolve := newFakeResolver(map[aiprovider.Task]*llm.Client{aiprovider.TaskGrammarContent: provider.client(t)})
 	gen := newGenerator(store, dakeDict(), resolve)
 
 	start := make(chan struct{})
@@ -413,7 +422,7 @@ func TestConcurrentRequestsForOnePointShareOneGeneration(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			text, err := gen.EnsureExplanation(ctx, dake.ID, 7)
+			text, err := gen.EnsureExplanation(ctx, dake.ID, testUser)
 			if err != nil {
 				t.Errorf("EnsureExplanation: %v", err)
 				return
@@ -426,7 +435,7 @@ func TestConcurrentRequestsForOnePointShareOneGeneration(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			out, err := gen.GenerateExamples(ctx, dake.ID, 7, 3)
+			out, err := gen.GenerateExamples(ctx, dake.ID, testUser, 3)
 			if err != nil {
 				t.Errorf("GenerateExamples: %v", err)
 				return
@@ -437,11 +446,11 @@ func TestConcurrentRequestsForOnePointShareOneGeneration(t *testing.T) {
 	close(start)
 	wg.Wait()
 
-	if expl.callCount() != 1 {
-		t.Fatalf("explanation provider calls = %d, want 1 (single-flight)", expl.callCount())
+	if provider.countCallsWith("Write the explanation") != 1 {
+		t.Fatalf("explanation provider calls = %d, want 1 (single-flight)", provider.countCallsWith("Write the explanation"))
 	}
-	if examples.callCount() != 1 {
-		t.Fatalf("examples provider calls = %d, want 1 (single-flight)", examples.callCount())
+	if provider.countCallsWith("example sentences") != 1 {
+		t.Fatalf("examples provider calls = %d, want 1 (single-flight)", provider.countCallsWith("example sentences"))
 	}
 	if results["shared explanation"] != 4 {
 		t.Fatalf("all callers must share the explanation: %v", results)
@@ -454,14 +463,14 @@ func TestConcurrentRequestsForOnePointShareOneGeneration(t *testing.T) {
 	}
 
 	// After a flight finishes, a later request runs a new generation.
-	out, err := gen.GenerateExamples(ctx, dake.ID, 7, 3)
+	out, err := gen.GenerateExamples(ctx, dake.ID, testUser, 3)
 	if err != nil {
 		t.Fatalf("later GenerateExamples: %v", err)
 	}
 	if out.Generated != 3 || out.Stored != 0 {
 		t.Fatalf("later generation should accept only duplicates: %+v", out)
 	}
-	if examples.callCount() != 2 {
-		t.Fatalf("examples provider calls = %d, want 2 (new flight after the first completed)", examples.callCount())
+	if provider.countCallsWith("example sentences") != 2 {
+		t.Fatalf("examples provider calls = %d, want 2 (new flight after the first completed)", provider.countCallsWith("example sentences"))
 	}
 }
