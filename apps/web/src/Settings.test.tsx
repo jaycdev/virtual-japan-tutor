@@ -68,11 +68,15 @@ function fakeApi(
     rejectKey?: boolean;
     syncOutcome?: ReturnType<typeof syncRun>;
     maruMori?: Partial<Maru>;
+    startingLevel?: Record<string, unknown>;
+    reviewItems?: Record<string, unknown>[];
   } = {},
 ) {
   const providers: P[] = [mk(A, "OpenAI", true), mk(B, "Local Ollama", false, "llama3")];
   const tasks: Record<string, string | null> = { story: A, grammar_content: null };
   const requests: { method: string; path: string; body: unknown }[] = [];
+  let startingLevel: Record<string, unknown> = opts.startingLevel ?? { configured: false, level: null };
+  const reviewItems = opts.reviewItems ?? [];
   const taskList = () => Object.entries(tasks).map(([task, providerId]) => ({ task, providerId }));
   const maru: Maru = {
     connected: false,
@@ -169,6 +173,12 @@ function fakeApi(
         return json(200, run);
       }
       if (key === "GET /marumori/syncs") return json(200, maru.runs);
+      if (key === "GET /starting-level") return json(200, startingLevel);
+      if (key === "PUT /starting-level") {
+        startingLevel = { configured: true, level: body.level, added: 120, removed: 0 };
+        return json(200, startingLevel);
+      }
+      if (key === "GET /grammar/review") return json(200, reviewItems);
       throw new Error(`unexpected ${key}`);
     },
   });
@@ -325,8 +335,10 @@ describe("Settings", () => {
     render(<Settings client={client} />);
     expect(await screen.findByText(/Cannot load settings/)).toBeTruthy();
     expect(await screen.findByText(/Cannot load MaruMori status/)).toBeTruthy();
-    // Both sections offer a retry; the Learner is never logged out by a transport failure.
-    expect(screen.getAllByRole("button", { name: "Retry" }).length).toBe(2);
+    expect(await screen.findByText(/Cannot load your Starting Level/)).toBeTruthy();
+    expect(await screen.findByText(/Cannot load the review list/)).toBeTruthy();
+    // Every section offers a retry; the Learner is never logged out by a transport failure.
+    expect(screen.getAllByRole("button", { name: "Retry" }).length).toBe(4);
   });
 });
 
@@ -437,5 +449,54 @@ describe("Settings — MaruMori section", () => {
     const text = items.map((li) => li.textContent).join("\n");
     expect(text).toContain("ok");
     expect(text).toContain("MaruMori request failed: timeout");
+  });
+});
+
+describe("Settings — Starting Level section", () => {
+  it("shows the level not chosen, then the chosen level after saving", async () => {
+    const api = await renderSettings();
+    expect(await screen.findByText(/Not chosen yet/)).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Level"), { target: { value: "N4" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save level" }));
+
+    expect(await screen.findByText("Starting level: N4")).toBeTruthy();
+    expect(last(api, "PUT")).toMatchObject({ path: "/starting-level", body: { level: "N4" } });
+    expect((await screen.findByRole("status")).textContent).toContain("120 added");
+  });
+
+  it("starts from the stored level and saves a new one", async () => {
+    const api = await renderSettings({ startingLevel: { configured: true, level: "N3" } });
+    expect(await screen.findByText("Starting level: N3")).toBeTruthy();
+    expect((screen.getByLabelText("Level") as HTMLSelectElement).value).toBe("N3");
+
+    fireEvent.change(screen.getByLabelText("Level"), { target: { value: "N2" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save level" }));
+    await waitFor(() => expect(lastBody(api, "PUT").level).toBe("N2"));
+    expect(await screen.findByText("Starting level: N2")).toBeTruthy();
+  });
+});
+
+describe("Settings — grammar review list", () => {
+  it("says when there is nothing to review", async () => {
+    await renderSettings();
+    expect(await screen.findByText("Nothing needs a second look.")).toBeTruthy();
+  });
+
+  it("lists flagged observations with their match outcome", async () => {
+    await renderSettings({
+      reviewItems: [
+        { marumoriId: "Grammar/904", pattern: "ものではない", flagged: true },
+        { marumoriId: "Grammar/6578", pattern: "〜ちゃいけない", jlptLevel: "N5", matchedPointId: 12, flagged: true },
+      ],
+    });
+    const heading = await screen.findByRole("heading", { name: "Review these grammar matches" });
+    const section = heading.closest("section");
+    if (!section) throw new Error("review section not found");
+    const items = within(section).getAllByRole("listitem");
+    expect(items.map((li) => li.textContent)).toEqual([
+      "ものではない — no Grammar Catalogue match",
+      "〜ちゃいけない (MaruMori level N5) — matched point 12, level was ambiguous",
+    ]);
   });
 });

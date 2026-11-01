@@ -1,5 +1,5 @@
 import type { ApiClient } from "@vjt/api-client";
-import { useAuth, useHealth, type Auth, type TokenStorage } from "@vjt/core";
+import { STARTING_LEVELS, useAuth, useHealth, useStartingLevel, type Auth, type StartingLevel, type TokenStorage } from "@vjt/core";
 import { useState, type FormEvent } from "react";
 import { Grammar } from "./Grammar.tsx";
 import { Settings } from "./Settings.tsx";
@@ -83,6 +83,7 @@ function Shell({
   onLogout: () => Promise<void>;
 }) {
   const health = useHealth(client);
+  const startingLevel = useStartingLevel(client);
   const [page, setPage] = useState<"home" | "grammar" | "settings">("home");
 
   return (
@@ -103,6 +104,7 @@ function Shell({
       {page === "grammar" && <Grammar client={client} />}
       {page === "home" && (
         <>
+          <Onboarding level={startingLevel} onOpenSettings={() => setPage("settings")} />
           {health.state === "loading" && <p>Checking server…</p>}
           {(health.state === "ok" || health.state === "degraded") && (
             <p>
@@ -115,6 +117,57 @@ function Shell({
       <button type="button" onClick={() => void onLogout()}>
         Log out
       </button>
+    </section>
+  );
+}
+
+/**
+ * First-run onboarding (issue #6): while no Starting Level is chosen, the home page
+ * shows the level picker. The MaruMori key and AI Provider live in Settings.
+ */
+function Onboarding({
+  level,
+  onOpenSettings,
+}: {
+  level: ReturnType<typeof useStartingLevel>;
+  onOpenSettings: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | undefined>();
+
+  if (level.state.status === "loading") return <p>Loading your Starting Level…</p>;
+  if (level.state.status === "error") return <p>Cannot load your Starting Level: {level.state.message}</p>;
+  if (level.state.level.configured) return null;
+
+  const choose = async (startingLevel: StartingLevel) => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      const res = await level.setLevel(startingLevel);
+      if ("status" in res && res.status === "error") setError(res.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section>
+      <h2>Welcome</h2>
+      <p>Choose your starting level. Every Grammar Point at or below it counts as known.</p>
+      <p>
+        {STARTING_LEVELS.map((l) => (
+          <button key={l} type="button" disabled={busy} onClick={() => void choose(l)}>
+            {l}
+          </button>
+        ))}
+      </p>
+      {error && <p role="alert">{error}</p>}
+      <p>
+        You can also connect MaruMori and add an AI Provider.{" "}
+        <button type="button" onClick={onOpenSettings}>
+          Open Settings
+        </button>
+      </p>
     </section>
   );
 }

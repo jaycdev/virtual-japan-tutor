@@ -1,5 +1,13 @@
-import type { AiProvider, AiProviderTestResult, AiTask, ApiClient, MaruMoriSyncRun } from "@vjt/api-client";
-import { useAiSettings, useMarumori, type ActionResult } from "@vjt/core";
+import type { AiProvider, AiProviderTestResult, AiTask, ApiClient, GrammarReviewItem, MaruMoriSyncRun } from "@vjt/api-client";
+import {
+  STARTING_LEVELS,
+  useAiSettings,
+  useGrammarReview,
+  useMarumori,
+  useStartingLevel,
+  type ActionResult,
+  type StartingLevel,
+} from "@vjt/core";
 import { useState, type FormEvent } from "react";
 
 const TASK_LABELS: Record<AiTask, string> = {
@@ -242,13 +250,133 @@ function AiProviders({ client }: { client: ApiClient }) {
   );
 }
 
-/** The Settings page: AI providers and the MaruMori connection. */
+/** The Settings page: AI providers, the Starting Level, the MaruMori connection and flagged grammar. */
 export function Settings({ client }: { client: ApiClient }) {
   return (
     <>
       <AiProviders client={client} />
+      <StartingLevelSettings client={client} />
       <MaruMoriSettings client={client} />
+      <GrammarReviewSettings client={client} />
     </>
+  );
+}
+
+/** Starting Level (issue #6): choosing or changing it re-applies Seeded Grammar. */
+function StartingLevelSettings({ client }: { client: ApiClient }) {
+  const level = useStartingLevel(client);
+  const [choice, setChoice] = useState<StartingLevel | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | undefined>();
+  const [result, setResult] = useState<string | undefined>();
+
+  const stored = level.state.status === "ready" ? level.state.level.level : null;
+  const selected = choice ?? stored ?? "N5";
+
+  return (
+    <section>
+      <h2>Starting Level</h2>
+      {level.state.status === "loading" && <p>Loading…</p>}
+      {level.state.status === "error" && (
+        <>
+          <p>Cannot load your Starting Level: {level.state.message}</p>
+          <button type="button" onClick={level.reload}>
+            Retry
+          </button>
+        </>
+      )}
+      {level.state.status === "ready" && (
+        <>
+          <p>
+            {level.state.level.configured
+              ? `Starting level: ${level.state.level.level}`
+              : "Not chosen yet. Pick one to mark everything at or below it as known."}
+          </p>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void (async () => {
+                setBusy(true);
+                setError(undefined);
+                setResult(undefined);
+                try {
+                  const res = await level.setLevel(selected);
+                  if ("status" in res) setError(res.message);
+                  else setResult(`Grammar updated: ${res.added ?? 0} added, ${res.removed ?? 0} removed.`);
+                } finally {
+                  setBusy(false);
+                }
+              })();
+            }}
+          >
+            <p>
+              <label>
+                Level
+                <select
+                  name="level"
+                  value={selected}
+                  disabled={busy}
+                  onChange={(e) => setChoice(e.target.value as StartingLevel)}
+                >
+                  {STARTING_LEVELS.map((l) => (
+                    <option key={l} value={l}>
+                      {l}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </p>
+            <button type="submit" disabled={busy}>
+              Save level
+            </button>
+          </form>
+          {result && (
+            <p role="status" className="test-result ok">
+              {result}
+            </p>
+          )}
+          {error && <p role="alert">{error}</p>}
+        </>
+      )}
+    </section>
+  );
+}
+
+const reviewText = (item: GrammarReviewItem): string =>
+  `${item.pattern || item.marumoriId}` +
+  (item.jlptLevel ? ` (MaruMori level ${item.jlptLevel})` : "") +
+  (item.matchedPointId ? ` — matched point ${item.matchedPointId}, level was ambiguous` : " — no Grammar Catalogue match");
+
+/** The "review these" list (issue #6): grammar Syncs the Catalogue Matching flagged. */
+function GrammarReviewSettings({ client }: { client: ApiClient }) {
+  const review = useGrammarReview(client);
+
+  return (
+    <section>
+      <h2>Review these grammar matches</h2>
+      {review.state.status === "loading" && <p>Loading…</p>}
+      {review.state.status === "error" && (
+        <>
+          <p>Cannot load the review list: {review.state.message}</p>
+          <button type="button" onClick={review.reload}>
+            Retry
+          </button>
+        </>
+      )}
+      {review.state.status === "ready" &&
+        (review.state.items.length === 0 ? (
+          <p>Nothing needs a second look.</p>
+        ) : (
+          <>
+            <p>These MaruMori grammar points did not match the Catalogue cleanly. They re-check themselves on later Syncs.</p>
+            <ul>
+              {review.state.items.map((item) => (
+                <li key={item.marumoriId}>{reviewText(item)}</li>
+              ))}
+            </ul>
+          </>
+        ))}
+    </section>
   );
 }
 

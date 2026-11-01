@@ -19,6 +19,7 @@ function json(status: number, body: unknown) {
 /** A fake API: valid credentials are alice / right-password, valid token is tok-1. */
 function fakeApi() {
   const calls: string[] = [];
+  let startingLevel: Record<string, unknown> = { configured: false, level: null };
   const client = createApiClient({
     baseUrl: "http://api.test",
     fetch: async (req) => {
@@ -70,6 +71,16 @@ function fakeApi() {
                 offset: 0,
               })
             : json(401, { code: "unauthorized", message: "no" });
+        case "GET /starting-level":
+          return authed ? json(200, startingLevel) : json(401, { code: "unauthorized", message: "no" });
+        case "PUT /starting-level": {
+          if (!authed) return json(401, { code: "unauthorized", message: "no" });
+          const body = (await req.json()) as { level: string };
+          startingLevel = { configured: true, level: body.level, added: 120, removed: 0 };
+          return json(200, startingLevel);
+        }
+        case "GET /grammar/review":
+          return authed ? json(200, []) : json(401, { code: "unauthorized", message: "no" });
         default:
           throw new Error(`unexpected ${req.method} ${path}`);
       }
@@ -162,6 +173,17 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Home" }));
     expect(await screen.findByText("Signed in as alice")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "AI providers" })).toBeNull();
+  });
+
+  it("shows onboarding on first run, and choosing a level seeds grammar and clears it", async () => {
+    localStorage.setItem("vjt.token", "tok-1");
+    const { calls } = renderApp();
+    await screen.findByRole("heading", { name: "Welcome" });
+
+    fireEvent.click(screen.getByRole("button", { name: "N4" }));
+
+    await waitFor(() => expect(calls).toContain("PUT /starting-level"));
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Welcome" })).toBeNull());
   });
 
   it("offers a retry instead of logging out when the server is unreachable", async () => {

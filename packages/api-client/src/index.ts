@@ -22,6 +22,9 @@ export type GrammarExample = components["schemas"]["GrammarExample"];
 export type GrammarPointDetail = components["schemas"]["GrammarPointDetail"];
 export type CandidateRejection = components["schemas"]["CandidateRejection"];
 export type GenerationResult = components["schemas"]["GenerationResult"];
+export type StartingLevelStatus = components["schemas"]["StartingLevelStatus"];
+export type StartingLevelUpdate = components["schemas"]["StartingLevelUpdate"];
+export type GrammarReviewItem = components["schemas"]["GrammarReviewItem"];
 export type ApiMiddleware = Middleware;
 
 export interface ApiClientOptions {

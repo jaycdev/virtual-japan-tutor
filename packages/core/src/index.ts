@@ -15,5 +15,14 @@ export type {
   GrammarLevelFilter,
   GrammarListState,
 } from "./useGrammar.ts";
+export { STARTING_LEVELS, useGrammarReview, useStartingLevel } from "./useOnboarding.ts";
+export type {
+  GrammarReview,
+  GrammarReviewState,
+  SetLevelOutcome,
+  StartingLevel,
+  StartingLevelHook,
+  StartingLevelState,
+} from "./useOnboarding.ts";
 export { memoryTokenStorage } from "./tokenStorage.ts";
 export type { TokenStorage } from "./tokenStorage.ts";
