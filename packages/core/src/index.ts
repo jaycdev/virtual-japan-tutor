@@ -4,5 +4,7 @@ export { useAuth } from "./useAuth.ts";
 export type { Auth, AuthState } from "./useAuth.ts";
 export { useAiSettings } from "./useAiSettings.ts";
 export type { ActionResult, AiSettings, AiSettingsState } from "./useAiSettings.ts";
+export { useMarumori } from "./useMarumori.ts";
+export type { MaruMori, MaruMoriRunsState, MaruMoriState, SyncOutcome } from "./useMarumori.ts";
 export { memoryTokenStorage } from "./tokenStorage.ts";
 export type { TokenStorage } from "./tokenStorage.ts";

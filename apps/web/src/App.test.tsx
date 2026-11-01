@@ -47,6 +47,10 @@ function fakeApi() {
                 { task: "grammar_content", providerId: null },
               ])
             : json(401, { code: "unauthorized", message: "no" });
+        case "GET /marumori":
+          return authed
+            ? json(200, { connected: false, connectedAt: null, lastSync: null, counts: null })
+            : json(401, { code: "unauthorized", message: "no" });
         default:
           throw new Error(`unexpected ${req.method} ${path}`);
       }
