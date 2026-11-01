@@ -1,0 +1,15 @@
+packages:
+  - apps/*
+  - packages/*
+
+# Single source of truth for versions shared across packages.
+# React/Expo versions are pinned to what Expo SDK 58 expects.
+catalog:
+  react: 19.3.0
+  react-dom: 19.3.0
+  "@types/react": ~19.3.0
+  "@types/react-dom": ~19.3.0
+  typescript: ~6.0.3
+  vitest: ^5.0.5
+  "@testing-library/react": ^16.3.0
+  jsdom: ^27.0.0
