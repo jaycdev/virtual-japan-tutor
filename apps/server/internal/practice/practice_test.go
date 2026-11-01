@@ -148,28 +148,29 @@ func TestStartSessionOrderSkipsAndOptions(t *testing.T) {
 	// Focus Set order is by ascending Mastery (nothing is pinned: the grammar
 	// is seeded, not Observed): vocab 1000 (SRS 2), kanji 水 (SRS 3), then
 	// seeded grammar 5 at the no-evidence mark. Grammar 6 (no example) and
-	// Vocab/9 (unlinked) are skipped.
+	// Vocab/9 (unlinked) are skipped. Only those three items are buildable,
+	// so the session tops up to its 10-item target by cycling them.
 	wantKinds := []string{practice.ExerciseRecognition, practice.ExerciseRecognition, practice.ExerciseGrammarCloze}
 	wantItems := []mastery.ItemKey{
 		{Kind: mastery.KindVocabulary, Ref: "1000"},
 		{Kind: mastery.KindKanji, Ref: "水"},
 		{Kind: mastery.KindGrammar, Ref: "5"},
 	}
-	if len(sess.Exercises) != len(wantKinds) {
-		t.Fatalf("exercises = %+v, want %d", sess.Exercises, len(wantKinds))
+	if len(sess.Exercises) != 10 {
+		t.Fatalf("exercises = %+v, want the 10-item target topped up from the three buildable items", sess.Exercises)
 	}
 	if sess.Skipped != 2 {
 		t.Errorf("skipped = %d, want 2 (grammar 6 has no example, Vocab/9 is unlinked)", sess.Skipped)
 	}
 	for i, ex := range sess.Exercises {
-		if want := "e" + string(rune('1'+i)); ex.ID != want {
+		if want := "e" + strconv.Itoa(i+1); ex.ID != want {
 			t.Errorf("exercise %d id = %q, want %q", i, ex.ID, want)
 		}
-		if ex.Kind != wantKinds[i] {
-			t.Errorf("exercise %s kind = %q, want %q", ex.ID, ex.Kind, wantKinds[i])
+		if ex.Kind != wantKinds[i%len(wantKinds)] {
+			t.Errorf("exercise %s kind = %q, want %q", ex.ID, ex.Kind, wantKinds[i%len(wantKinds)])
 		}
-		if ex.Item != wantItems[i] {
-			t.Errorf("exercise %s item = %+v, want %+v", ex.ID, ex.Item, wantItems[i])
+		if want := wantItems[i%len(wantItems)]; ex.Item != want {
+			t.Errorf("exercise %s item = %+v, want %+v", ex.ID, ex.Item, want)
 		}
 		if len(ex.Options) < 2 || len(ex.Options) > practice.OptionsPerExercise {
 			t.Errorf("exercise %s has %d options, want 2..%d", ex.ID, len(ex.Options), practice.OptionsPerExercise)
@@ -209,6 +210,84 @@ func contains(haystack, needle string) bool {
 		}
 	}
 	return false
+}
+
+// A short Focus Set still builds a session at the target size: the next-
+// weakest buildable Known Items beyond the set top it up, graduated items
+// stay out, and cycling the buildable items with fresh shuffles fills the
+// rest of the target.
+func TestStartSessionTopsUpAShortFocusSet(t *testing.T) {
+	clk := &clock{now: time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC)}
+	mem := masterytest.NewMemStore()
+	mopts := mastery.DefaultOptions()
+	mopts.Now = clk.Now
+	mopts.SetSize = 2 // only the two weakest items are Focus Set members
+	mopts.GraduateStreak = 1
+	mopts.GraduateMinDays = 1
+
+	content := practicetest.NewContent()
+	content.Meaning = []string{"water", "fire"}
+	content.AddVocab(1000, practice.Word{Display: "学校", Meanings: []string{"school"}, Level: "N5"})
+	content.AddKanji("水", practice.Word{Display: "水", Meanings: []string{"water"}, Level: "N5"})
+	content.AddVocab(1001, practice.Word{Display: "本", Meanings: []string{"book"}, Level: "N5"})
+	content.AddVocab(1002, practice.Word{Display: "火", Meanings: []string{"fire"}, Level: "N5"})
+
+	mem.AddKnownItem(alice, mastery.KnownItem{
+		Key: mastery.ItemKey{Kind: mastery.KindVocabulary, Ref: "1000"}, MaruMoriID: "Vocab/1",
+		SRSLevel: ptrInt(2), Source: mastery.SourceMaruMori,
+	})
+	mem.AddKnownItem(alice, mastery.KnownItem{
+		Key: mastery.ItemKey{Kind: mastery.KindKanji, Ref: "水"}, MaruMoriID: "Kanji/2",
+		SRSLevel: ptrInt(3), Source: mastery.SourceMaruMori,
+	})
+	// Beyond the two-item set: the top-up pick.
+	mem.AddKnownItem(alice, mastery.KnownItem{
+		Key: mastery.ItemKey{Kind: mastery.KindVocabulary, Ref: "1001"}, MaruMoriID: "Vocab/3",
+		SRSLevel: ptrInt(5), Source: mastery.SourceMaruMori,
+	})
+	// One correct answer at this threshold graduates the item: it must stay
+	// out of the session even though the set is short.
+	mem.AddKnownItem(alice, mastery.KnownItem{
+		Key: mastery.ItemKey{Kind: mastery.KindVocabulary, Ref: "1002"}, MaruMoriID: "Vocab/4",
+		SRSLevel: ptrInt(4), Source: mastery.SourceMaruMori,
+	})
+	mem.AddPractice(alice, mastery.PracticeRecord{
+		Key: mastery.ItemKey{Kind: mastery.KindVocabulary, Ref: "1002"}, Correct: true, AnsweredAt: clk.now,
+	})
+
+	svc := practice.NewService(mastery.NewService(mem, mopts), content,
+		practice.NewMemStore(time.Hour).WithClock(clk.Now), &practicetest.Results{},
+		practice.Options{SessionSize: 10, SessionTTL: time.Hour, Now: clk.Now})
+	sess := mustStart(t, &env{svc: svc, clock: clk}, alice, 4)
+
+	// Focus Set first (vocab 1000, kanji 水), then 1001 tops up; 1002 stays out
+	// as graduated. The remaining slots cycle the three buildable items.
+	wantRefs := []string{"1000", "水", "1001", "1000", "水", "1001", "1000", "水", "1001", "1000"}
+	if len(sess.Exercises) != len(wantRefs) {
+		t.Fatalf("exercises = %d, want the 10-item target:\n%+v", len(sess.Exercises), sess.Exercises)
+	}
+	for i, ex := range sess.Exercises {
+		if ex.Item.Ref != wantRefs[i] {
+			t.Errorf("exercise %s item = %q, want %q", ex.ID, ex.Item.Ref, wantRefs[i])
+		}
+	}
+
+	// A repeat is a fresh exercise, not a copy: the four vocabulary 1000
+	// exercises do not all carry the same option order.
+	orders := map[string]bool{}
+	for _, ex := range sess.Exercises {
+		if ex.Item.Ref != "1000" {
+			continue
+		}
+		var sig string
+		for _, o := range ex.Options {
+			sig += o.Text + "|"
+		}
+		orders[sig] = true
+	}
+	if len(orders) < 2 {
+		t.Errorf("repeats of vocab 1000 all share one option order, want a fresh shuffle")
+	}
 }
 
 // A Focus Set with nothing buildable refuses to start a session.

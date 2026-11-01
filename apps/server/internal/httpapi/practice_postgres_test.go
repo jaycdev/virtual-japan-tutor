@@ -139,14 +139,16 @@ func TestPracticeAgainstPostgres(t *testing.T) {
 	}
 	var sess api.PracticeSession
 	mustJSON(t, sessRec, &sess)
-	if len(sess.Exercises) != 3 {
-		t.Fatalf("exercises = %+v, want 3 (vocab, kanji, cloze)", sess.Exercises)
+	// alice knows only three buildable items, so the 10-item session tops up
+	// by cycling them in order.
+	if len(sess.Exercises) != 10 {
+		t.Fatalf("exercises = %d, want the 10-item target topped up from the three known items", len(sess.Exercises))
 	}
 	wantKinds := []api.PracticeExerciseKind{api.Recognition, api.Recognition, api.GrammarCloze}
 	wantRefs := []string{"990001", "水", strconv.FormatInt(pastPoint, 10)}
 	for i, ex := range sess.Exercises {
-		if ex.Kind != wantKinds[i] || ex.ItemRef != wantRefs[i] {
-			t.Errorf("exercise %d = %s/%s, want %s/%s", i, ex.Kind, ex.ItemRef, wantKinds[i], wantRefs[i])
+		if ex.Kind != wantKinds[i%3] || ex.ItemRef != wantRefs[i%3] {
+			t.Errorf("exercise %d = %s/%s, want %s/%s", i, ex.Kind, ex.ItemRef, wantKinds[i%3], wantRefs[i%3])
 		}
 		if ex.Options == nil || len(*ex.Options) < 2 || len(*ex.Options) > 4 {
 			t.Errorf("exercise %s options = %v, want 2..4 built from the reference data", ex.Id, ex.Options)
@@ -205,16 +207,22 @@ func TestPracticeAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 3 {
-		t.Fatalf("practice_records = %+v, want 3 rows", rows)
+	if len(rows) != 10 {
+		t.Fatalf("practice_records = %d rows, want 10 (the topped-up session)", len(rows))
 	}
 	for _, r := range rows {
 		if !r.Correct {
 			t.Errorf("record %+v, want correct=true", r)
 		}
 	}
+	// Each repeated exercise wrote its own row: the cycle [vocab, kanji,
+	// grammar] three times plus one more vocab.
 	var rawRefs []string
-	raw, err := pool.Query(ctx, `SELECT item_kind || ':' || item_ref FROM practice_records ORDER BY item_ref`)
+	raw, err := pool.Query(ctx, `
+		SELECT item_kind || ':' || item_ref || '=' || COUNT(*)::text
+		FROM practice_records
+		GROUP BY item_kind || ':' || item_ref
+		ORDER BY item_kind || ':' || item_ref`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,7 +234,12 @@ func TestPracticeAgainstPostgres(t *testing.T) {
 		rawRefs = append(rawRefs, s)
 	}
 	raw.Close()
-	if want := []string{"grammar:" + strconv.FormatInt(pastPoint, 10), "vocabulary:990001", "kanji:水"}; !reflect.DeepEqual(rawRefs, want) {
+	want := []string{
+		"grammar:" + strconv.FormatInt(pastPoint, 10) + "=3",
+		"kanji:水=3",
+		"vocabulary:990001=4",
+	}
+	if !reflect.DeepEqual(rawRefs, want) {
 		t.Errorf("practice_records rows = %v, want %v", rawRefs, want)
 	}
 

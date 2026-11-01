@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strconv"
 	"testing"
 	"time"
 
@@ -42,6 +43,12 @@ type practiceEnv struct {
 }
 
 func newPracticeEnv(t *testing.T) *practiceEnv {
+	return newPracticeEnvWith(t, nil, nil)
+}
+
+// newPracticeEnvWith builds the env with optional tweaks to the mastery and
+// practice options (a smaller Focus Set, a lower graduation threshold…).
+func newPracticeEnvWith(t *testing.T, mopts func(*mastery.Options), popts func(*practice.Options)) *practiceEnv {
 	t.Helper()
 	clock := authtest.NewFakeClock()
 	authSvc := auth.NewService(authtest.NewMemStore(), auth.Options{TTL: time.Hour, Now: clock.Now})
@@ -54,9 +61,12 @@ func newPracticeEnv(t *testing.T) *practiceEnv {
 	}
 
 	mem := masterytest.NewMemStore()
-	mopts := mastery.DefaultOptions()
-	mopts.Now = func() time.Time { return focusClock }
-	focusSvc := mastery.NewService(mem, mopts)
+	mo := mastery.DefaultOptions()
+	mo.Now = func() time.Time { return focusClock }
+	if mopts != nil {
+		mopts(&mo)
+	}
+	focusSvc := mastery.NewService(mem, mo)
 
 	content := practicetest.NewContent()
 	content.Meaning = []string{"water", "fire", "mountain"}
@@ -67,8 +77,11 @@ func newPracticeEnv(t *testing.T) *practiceEnv {
 		Sentence: "昨日、学校へ行きました。", SpanStart: 6, SpanEnd: 11, SpanText: "行きました", Level: "N5",
 	})
 
-	svc := practice.NewService(focusSvc, content, practice.NewMemStore(time.Hour), practiceWriter{mem},
-		practice.Options{SessionSize: 10, SessionTTL: time.Hour, Now: func() time.Time { return focusClock }})
+	po := practice.Options{SessionSize: 10, SessionTTL: time.Hour, Now: func() time.Time { return focusClock }}
+	if popts != nil {
+		popts(&po)
+	}
+	svc := practice.NewService(focusSvc, content, practice.NewMemStore(time.Hour), practiceWriter{mem}, po)
 
 	h := httpapi.New(fakeDB{}, authSvc, httpapi.WithFocusSet(focusSvc), httpapi.WithPractice(svc))
 	e := env{h: h, svc: authSvc, clock: clock}
@@ -154,21 +167,22 @@ func TestPracticeSessionViewShapeAndDeterminism(t *testing.T) {
 	}
 
 	// Focus Set order: ascending Mastery — vocab (2/9), kanji (3/9), then
-	// Seeded Grammar at the no-evidence mark.
+	// Seeded Grammar at the no-evidence mark. Those three are all alice
+	// knows, so the session tops up to its 10-item target by cycling them.
 	wantKinds := []api.PracticeExerciseKind{api.Recognition, api.Recognition, api.GrammarCloze}
 	wantRefs := []string{"1000", "水", "5"} // paired with kinds above by index
-	if len(sess.Exercises) != 3 {
-		t.Fatalf("exercises = %+v, want 3", sess.Exercises)
+	if len(sess.Exercises) != 10 {
+		t.Fatalf("exercises = %+v, want the 10-item target topped up from the three buildable items", sess.Exercises)
 	}
 	for i, ex := range sess.Exercises {
-		if ex.Id != "e"+string(rune('1'+i)) {
+		if ex.Id != "e"+strconv.Itoa(i+1) {
 			t.Errorf("exercise %d id = %q", i, ex.Id)
 		}
-		if ex.Kind != wantKinds[i] {
-			t.Errorf("exercise %s kind = %q, want %q", ex.Id, ex.Kind, wantKinds[i])
+		if ex.Kind != wantKinds[i%len(wantKinds)] {
+			t.Errorf("exercise %s kind = %q, want %q", ex.Id, ex.Kind, wantKinds[i%len(wantKinds)])
 		}
-		if ex.ItemRef != wantRefs[i] {
-			t.Errorf("exercise %s itemRef = %q, want %q", ex.Id, ex.ItemRef, wantRefs[i])
+		if want := wantRefs[i%len(wantRefs)]; ex.ItemRef != want {
+			t.Errorf("exercise %s itemRef = %q, want %q", ex.Id, ex.ItemRef, want)
 		}
 		if ex.Answered || ex.Correct != nil {
 			t.Errorf("exercise %s = %+v, want unanswered", ex.Id, ex)
@@ -264,15 +278,15 @@ func TestPracticeAnswersCompleteTheSessionAndMoveMastery(t *testing.T) {
 	if done.State != api.Complete {
 		t.Errorf("state = %q, want complete", done.State)
 	}
-	if done.Results == nil || done.Results.Total != 3 || done.Results.Correct != 3 {
-		t.Fatalf("results = %+v, want 3/3", done.Results)
+	if done.Results == nil || done.Results.Total != 10 || done.Results.Correct != 10 {
+		t.Fatalf("results = %+v, want 10/10", done.Results)
 	}
-	if done.Results.Items == nil || len(*done.Results.Items) != 3 {
-		t.Fatalf("results items = %v, want 3", done.Results.Items)
+	if done.Results.Items == nil || len(*done.Results.Items) != 10 {
+		t.Fatalf("results items = %v, want 10", done.Results.Items)
 	}
 
 	// Every answer went into the Practice Record...
-	if got := len(o.store.Practice[o.uid]); got != 3 {
+	if got := len(o.store.Practice[o.uid]); got != 10 {
 		t.Errorf("Practice Record has %d rows, want 3", got)
 	}
 	// ...and Mastery visibly moved for the items answered.
@@ -307,6 +321,83 @@ func getFocusSet(t *testing.T, e env, token string) []api.FocusSetItem {
 	var body api.FocusSet
 	mustJSON(t, rec, &body)
 	return body.Items
+}
+
+// The done-when asserted in full: a correctly answered session changes the
+// Focus Set's MEMBERSHIP, not only the per-item scores — graduated items
+// leave the set and previously excluded items backfill the freed slots. The
+// graduation threshold is configured at one correct answer to keep the
+// fixture small; the Focus Set holds two of the four Known Items, so two
+// backfill candidates exist outside it.
+func TestPracticeSessionChangesFocusSetMembership(t *testing.T) {
+	o := newPracticeEnvWith(t,
+		func(mo *mastery.Options) {
+			mo.SetSize = 2
+			mo.GraduateStreak = 1
+			mo.GraduateMinDays = 1
+		},
+		func(po *practice.Options) { po.SessionSize = 2 })
+	seedPracticeFixtures(o.store, o.uid)
+	// Two items outside the two-item set: seeded grammar 5 (no evidence →
+	// the 0.5 mark) and vocab 1001 (SRS 5 → 5/9), weakest first.
+	o.store.AddKnownItem(o.uid, mastery.KnownItem{
+		Key: mastery.ItemKey{Kind: mastery.KindVocabulary, Ref: "1001"}, MaruMoriID: "Vocab/3",
+		SRSLevel: ptrInt(5), Source: mastery.SourceMaruMori,
+	})
+
+	token := o.e.login(t, "alice")
+	before := getFocusSet(t, o.e, token)
+	if want := []string{"1000", "水"}; !refsOf(before, want) {
+		t.Fatalf("focus set before = %+v, want exactly the two weakest items", before)
+	}
+
+	sess := o.start(t, "alice", map[string]any{"seed": 3})
+	if len(sess.Exercises) != 2 {
+		t.Fatalf("exercises = %+v, want the two Focus Set members", sess.Exercises)
+	}
+	wantText := map[string]string{"1000": "school", "水": "water"}
+	for _, ex := range sess.Exercises {
+		pick := ""
+		for _, opt := range *ex.Options {
+			if opt.Text == wantText[ex.ItemRef] {
+				pick = opt.Id
+			}
+		}
+		if pick == "" {
+			t.Fatalf("exercise for %s has no option with the correct text", ex.ItemRef)
+		}
+		rec := o.answer(t, "alice", sess.Id, map[string]string{"exerciseId": ex.Id, "optionId": pick})
+		var res api.PracticeAnswerResult
+		mustJSON(t, rec, &res)
+		if rec.Code != http.StatusOK || !res.Correct {
+			t.Fatalf("answer %s = %d (%s), want correct", ex.Id, rec.Code, rec.Body)
+		}
+	}
+
+	after := getFocusSet(t, o.e, token)
+	// Both answered items now sit at the graduation threshold and leave the
+	// set; the excluded items backfill, weakest first.
+	if want := []string{"5", "1001"}; !refsOf(after, want) {
+		t.Errorf("focus set after = %+v, want [5 1001]: the graduated items gone and the excluded ones backfilled", after)
+	}
+	for _, ref := range []string{"1000", "水"} {
+		if _, ok := findRef(after, ref); ok {
+			t.Errorf("graduated item %s still in the focus set", ref)
+		}
+	}
+}
+
+// refsOf reports whether items' refs are exactly want, in order.
+func refsOf(items []api.FocusSetItem, want []string) bool {
+	if len(items) != len(want) {
+		return false
+	}
+	for i, it := range items {
+		if it.ItemRef != want[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // --- error paths ---

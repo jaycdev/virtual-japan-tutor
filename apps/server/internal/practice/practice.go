@@ -11,7 +11,10 @@
 // Sessions are short-lived server state behind the SessionStore interface:
 // today an in-memory TTL store, so a Postgres-backed store can come later
 // without touching this package's callers. Generation is deterministic for a
-// seed: the same Focus Set and seed build the same session.
+// seed: the same Focus Set and seed build the same session. The Focus Set is
+// capped, so when it yields fewer Exercises than the session target the
+// session tops up with the next-weakest Known Items beyond the set and, if
+// needed, repeats buildable items with a fresh shuffle.
 package practice
 
 import (
@@ -231,10 +234,15 @@ func NewService(focus *mastery.Service, content Content, sessions SessionStore, 
 	return &Service{focus: focus, content: content, sessions: sessions, results: results, opts: opts.withDefaults()}
 }
 
-// StartSession draws up to SessionSize exercises from the Focus Set, in Focus
-// Set order (newly Observed Grammar stays pinned to the front). seed==0 picks
-// a fresh seed; a non-zero seed makes generation deterministic. It returns
-// ErrNoItems when nothing in the set has content.
+// StartSession draws up to SessionSize exercises. The Focus Set comes first,
+// in Focus Set order (newly Observed Grammar stays pinned to the front). The
+// set is capped and may hold unbuildable items, so a pass over it can fall
+// short of the target: the session then tops up with the next-weakest
+// buildable Known Items beyond the set — graduated items keep their
+// exclusion — and if even those run out, cycles the buildable items again,
+// the seed-driven shuffle having advanced so a repeat gets a fresh option
+// order and distractor sampling. It returns ErrNoItems when nothing
+// buildable exists.
 func (s *Service) StartSession(ctx context.Context, userID uuid.UUID, seed int64) (string, error) {
 	set, err := s.focus.FocusSet(ctx, userID)
 	if err != nil {
@@ -249,18 +257,72 @@ func (s *Service) StartSession(ctx context.Context, userID uuid.UUID, seed int64
 
 	g := &generator{content: s.content, seed: seed}
 	skipped := 0
+	attempted := make(map[mastery.ItemKey]bool, len(set.Items))
+	buildable := make([]mastery.ItemKey, 0, len(set.Items))
 	for _, item := range set.Items {
 		if len(g.exercises) == s.opts.SessionSize {
 			break
 		}
-		ok, err := g.add(ctx, item.Item.Key)
+		key := item.Item.Key
+		attempted[key] = true
+		ok, err := g.add(ctx, key)
 		if err != nil {
 			return "", err
 		}
-		if !ok {
+		if ok {
+			buildable = append(buildable, key)
+		} else {
 			skipped++
 		}
 	}
+
+	// Top-up 1: Known Items just outside the set, weakest first. Score re-
+	// reads the same signals FocusSet used, so the ordering is stable.
+	if len(g.exercises) < s.opts.SessionSize {
+		scored, err := s.focus.Score(ctx, userID)
+		if err != nil {
+			return "", err
+		}
+		for _, it := range scored {
+			if len(g.exercises) == s.opts.SessionSize {
+				break
+			}
+			key := it.Item.Key
+			if it.Graduated || attempted[key] {
+				continue
+			}
+			attempted[key] = true
+			ok, err := g.add(ctx, key)
+			if err != nil {
+				return "", err
+			}
+			if ok {
+				buildable = append(buildable, key)
+			} else {
+				skipped++
+			}
+		}
+	}
+
+	// Top-up 2: fewer buildable Known Items than the target — cycle them
+	// until the session is full.
+	for len(g.exercises) < s.opts.SessionSize && len(buildable) > 0 {
+		added := false
+		for _, key := range buildable {
+			if len(g.exercises) == s.opts.SessionSize {
+				break
+			}
+			ok, err := g.add(ctx, key)
+			if err != nil {
+				return "", err
+			}
+			added = added || ok
+		}
+		if !added {
+			break // content vanished under us: no progress is possible
+		}
+	}
+
 	if len(g.exercises) == 0 {
 		return "", ErrNoItems
 	}
