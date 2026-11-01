@@ -986,6 +986,234 @@ paths:
                 $ref: "#/components/schemas/Error"
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /item-lists:
+    get:
+      operationId: getItemLists
+      summary: List the Learner's Item Lists
+      description: >
+        The Learner's Item Lists (issue #12) in creation order, each with its live item count
+        and a Boosting flag. The built-in Saved list always exists: reads seed it for Learners
+        who never touched the feature. `defaultListId` is the effective Save target — the
+        configured Default List, or Saved when none is configured.
+      responses:
+        "200":
+          description: The lists and the effective default
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemListsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createItemLists
+      summary: Create an Item List
+      description: >
+        Names are unique per Learner ignoring case. `boosting` marks the list a Boosting List:
+        its not-yet-Known members become Stretch Items in Practice Sessions, and saving a Known
+        Item into it records a Weak Signal.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ItemListCreateRequest"
+      responses:
+        "201":
+          description: The created list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemList"
+        "400":
+          description: Name blank or over 60 characters (`bad_request`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Another list already has that name, ignoring case (`duplicate_name`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /item-lists/default:
+    put:
+      operationId: setDefaultItemList
+      summary: Choose the Default List for saving
+      description: >
+        Points the one-tap Save at another list (issue #12). The list must be the Learner's own.
+        Deleting the configured default falls back to Saved until another is chosen.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [listId]
+              properties:
+                listId:
+                  type: string
+                  format: uuid
+                  description: The list every Save targets until changed.
+      responses:
+        "204":
+          description: The new Default List is stored
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /item-lists/{listId}:
+    put:
+      operationId: updateItemList
+      summary: Rename or re-flag an Item List
+      description: >
+        Both fields are optional; omitted fields keep their current value. The built-in Saved
+        list keeps its name forever (`reserved_list`) — its boosting flag is still editable.
+      parameters:
+        - $ref: "#/components/parameters/ListId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ItemListUpdateRequest"
+      responses:
+        "200":
+          description: The updated list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemList"
+        "400":
+          description: Name blank, over 60 characters, or a rename of Saved (`bad_request` / `reserved_list`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Another list already has that name, ignoring case (`duplicate_name`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      operationId: deleteItemList
+      summary: Delete an Item List
+      description: >
+        Drops the list and its memberships; the items stay in every other list holding them.
+        Saved cannot be deleted (`reserved_list`) — it is the fallback Save target.
+      parameters:
+        - $ref: "#/components/parameters/ListId"
+      responses:
+        "204":
+          description: The list is gone
+        "400":
+          description: Attempt to delete Saved (`reserved_list`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /item-lists/{listId}/items:
+    post:
+      operationId: addItemToList
+      summary: Save an item into one list
+      description: >
+        Places one Known Item (or any item the Learner taps) in the list — an item may sit in
+        several lists at once, and saving the same pair twice is a no-op. When the list is a
+        Boosting List and the item is already a Known Item, the save also records a Weak Signal
+        (`boosting_list`): the Learner just flagged it as shaky.
+      parameters:
+        - $ref: "#/components/parameters/ListId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ItemListAddRequest"
+      responses:
+        "204":
+          description: The membership is stored
+        "400":
+          description: Bad itemKind or blank itemRef (`bad_request`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: removeItemListItems
+      summary: Remove one item from one list
+      description: >
+        Drops a single membership. Other lists holding the item are untouched, and the Practice
+        Record keeps every answer given about it.
+      parameters:
+        - $ref: "#/components/parameters/ListId"
+        - name: itemKind
+          in: query
+          required: true
+          schema:
+            $ref: "#/components/schemas/ItemKind"
+        - name: itemRef
+          in: query
+          required: true
+          description: The item's stable ref, as everywhere items are addressed.
+          schema:
+            type: string
+      responses:
+        "204":
+          description: The membership is gone (deleting an absent pair is a no-op)
+        "400":
+          description: Bad itemKind (`bad_request`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /weak-signals:
+    post:
+      operationId: postWeakSignals
+      summary: Report reader Weak Signals
+      description: >
+        The story reader's uncertainty markers (issue #12): a dictionary lookup held past the
+        Learner's threshold, an opened Lookup Menu, and unblurring a Sentence Translation
+        (which flags the sentence's Focus Set items). Trust model, decided for the ticket:
+        the reader sees only server-rendered items, but keys arrive over the wire, so the
+        server validates every one is this Learner's Known Item before storing — unknown or
+        foreign keys are dropped silently. Only Known Items qualify: a plain lookup of an
+        unknown word is learning, not a signal, and needs no report.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WeakSignalBatchRequest"
+      responses:
+        "204":
+          description: All qualifying signals stored (others skipped)
+        "400":
+          description: Over 50 signals, bad kind, blank ref or unknown reason (`bad_request`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
   /dictionary/entries/{entSeq}:
     get:
       operationId: getDictionaryEntry
@@ -1075,6 +1303,15 @@ components:
         A grammar point's catalogue id. Declared as a plain string for the same reason as
         ProviderId: the generated router binds path parameters before auth, so the handler
         parses it itself (404 if malformed).
+      schema:
+        type: string
+    ListId:
+      name: listId
+      in: path
+      required: true
+      description: >
+        An Item List's UUID (issue #12). Plain string for the same reason as ProviderId: path
+        parameters bind before auth, so the handler parses it itself (404 if malformed).
       schema:
         type: string
   securitySchemes:
@@ -1636,6 +1873,97 @@ components:
       description: >
         The kind of a Known Item — the same three kinds the Knowledge Store, the Focus Set and
         the Practice Record address items by.
+    ItemList:
+      type: object
+      description: >
+        One Item List (issue #12): a named group of items the Learner assembled. `boosting`
+        marks a Boosting List — its not-yet-Known members become Stretch Items in Practice
+        Sessions, and its Known members carry one Mastery boost (counted once however many
+        Boosting Lists hold the item).
+      required: [id, name, boosting, isDefault, itemCount]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        boosting:
+          type: boolean
+        isDefault:
+          type: boolean
+          description: True for the effective Default List — the configured Save target, or Saved when none is configured.
+        itemCount:
+          type: integer
+          description: How many items the list holds right now.
+    ItemListsResponse:
+      type: object
+      description: The Learner's Item Lists plus the effective Default List id.
+      required: [items, defaultListId]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ItemList"
+        defaultListId:
+          type: string
+          format: uuid
+          description: The list a one-tap Save targets. Always resolves — Saved is the fallback.
+    ItemListCreateRequest:
+      type: object
+      required: [name, boosting]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 60
+          description: Unique per Learner ignoring case. "Saved" is reserved for the built-in list.
+        boosting:
+          type: boolean
+    ItemListUpdateRequest:
+      type: object
+      description: Omitted fields keep their current value.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 60
+        boosting:
+          type: boolean
+    ItemListAddRequest:
+      type: object
+      description: One item addressed the way every item in the app is addressed.
+      required: [itemKind, itemRef]
+      properties:
+        itemKind:
+          $ref: "#/components/schemas/ItemKind"
+        itemRef:
+          type: string
+          description: >
+            The item's stable ref: ent_seq text, kanji literal, MaruMori id or grammar point id.
+    WeakSignalBatchRequest:
+      type: object
+      required: [signals]
+      properties:
+        signals:
+          type: array
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/WeakSignalRequest"
+    WeakSignalRequest:
+      type: object
+      required: [itemKind, itemRef, reason]
+      properties:
+        itemKind:
+          $ref: "#/components/schemas/ItemKind"
+        itemRef:
+          type: string
+        reason:
+          type: string
+          enum: [lookup, menu_open, translation_unblur]
+          description: >
+            What the Learner did: held a lookup past their threshold, opened the Lookup Menu,
+            or unblurred a Sentence Translation (one signal per Focus Set item in the sentence).
+            `boosting_list` is written by the server on save-to-a-Boosting-List, never accepted here.
     PracticeSessionStart:
       type: object
       description: >
@@ -1989,15 +2317,24 @@ components:
     ReadingSettings:
       type: object
       description: >
-        Per-Learner reader preferences (issue #11), stored so the reading experience is
-        the same in every session and on every device.
-      required: [blurTranslation]
+        Per-Learner reader preferences (issue #11, extended by issue #12), stored so the
+        reading experience is the same in every session and on every device.
+      required: [blurTranslation, lookupHoldMs]
       properties:
         blurTranslation:
           type: boolean
           description: >
             Blur sentence translations in the Reading Panel until the Learner clicks to reveal
             them. Defaults to true.
+        lookupHoldMs:
+          type: integer
+          minimum: 0
+          maximum: 10000
+          description: >
+            How long the Learner must hold a dictionary lookup open before it counts as a Weak
+            Signal (issue #12): the Lookup Menu stays open past this many milliseconds, or the
+            menu is opened at all, and the item gets a signal. 0 signals every lookup; the
+            default is 800. The timer runs in the reader; only a threshold hit is reported.
     DictionaryEntry:
       type: object
       description: >

@@ -121,6 +121,13 @@ type Store interface {
 	BlurTranslation(ctx context.Context, userID uuid.UUID) (bool, error)
 	SetBlurTranslation(ctx context.Context, userID uuid.UUID, blur bool) error
 
+	// LookupHoldMs reads and SetLookupHoldMs write the lookup-hold threshold
+	// for reader Weak Signals (issue #12): milliseconds a Lookup Menu must
+	// stay open before the reader reports a signal. Default 800, stored on
+	// the user row.
+	LookupHoldMs(ctx context.Context, userID uuid.UUID) (int, error)
+	SetLookupHoldMs(ctx context.Context, userID uuid.UUID, holdMs int) error
+
 	// StoryPrefs reads and SetStoryPrefs write the Learner's preferred
 	// genre/theme for future stories ("" = "surprise me" / no theme).
 	StoryPrefs(ctx context.Context, userID uuid.UUID) (genre, theme string, err error)

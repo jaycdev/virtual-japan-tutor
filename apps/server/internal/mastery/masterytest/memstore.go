@@ -23,6 +23,7 @@ type MemStore struct {
 	Trends   map[uuid.UUID][]mastery.LevelTrend
 	Practice map[uuid.UUID][]mastery.PracticeRecord
 	Signals  map[uuid.UUID][]mastery.WeakSignalRecord
+	Boosting map[uuid.UUID][]mastery.ItemKey
 }
 
 var _ mastery.Store = (*MemStore)(nil)
@@ -33,10 +34,11 @@ func NewMemStore() *MemStore {
 		Trends:   map[uuid.UUID][]mastery.LevelTrend{},
 		Practice: map[uuid.UUID][]mastery.PracticeRecord{},
 		Signals:  map[uuid.UUID][]mastery.WeakSignalRecord{},
+		Boosting: map[uuid.UUID][]mastery.ItemKey{},
 	}
 }
 
-// AddKnownItem, AddTrend, AddPractice and AddSignal are fixtures for tests.
+// AddKnownItem, AddTrend, AddPractice, AddSignal and AddBoosting are fixtures for tests.
 func (m *MemStore) AddKnownItem(userID uuid.UUID, it mastery.KnownItem) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -59,6 +61,14 @@ func (m *MemStore) AddSignal(userID uuid.UUID, w mastery.WeakSignalRecord) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.Signals[userID] = append(m.Signals[userID], w)
+}
+
+// AddBoosting places an item in one of the user's Boosting Lists; repeating
+// the same key models membership in several lists (the boost dedupes).
+func (m *MemStore) AddBoosting(userID uuid.UUID, k mastery.ItemKey) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.Boosting[userID] = append(m.Boosting[userID], k)
 }
 
 func (m *MemStore) KnownItems(ctx context.Context, userID uuid.UUID) ([]mastery.KnownItem, error) {
@@ -95,4 +105,10 @@ func (m *MemStore) WeakSignals(ctx context.Context, userID uuid.UUID) ([]mastery
 	out := append([]mastery.WeakSignalRecord(nil), m.Signals[userID]...)
 	sort.Slice(out, func(i, j int) bool { return out[i].OccurredAt.Before(out[j].OccurredAt) })
 	return out, nil
+}
+
+func (m *MemStore) BoostingRefs(ctx context.Context, userID uuid.UUID) ([]mastery.ItemKey, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]mastery.ItemKey(nil), m.Boosting[userID]...), nil
 }

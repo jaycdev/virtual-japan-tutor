@@ -433,15 +433,23 @@ func (s *Service) PutSettings(ctx context.Context, userID uuid.UUID, us UserSett
 	return us, nil
 }
 
-// ReadingSettings is the reader-behaviour preference set (issue #11), kept
-// apart from UserSettings: story settings steer generation and are rewritten
-// wholesale by the settings form, while the Blur Translation flag belongs to
-// the reader and is written on its own whenever the Learner clicks it.
+// ReadingSettings is the reader-behaviour preference set (issue #11, with
+// the issue #12 lookup-hold threshold), kept apart from UserSettings: story
+// settings steer generation and are rewritten wholesale by the settings
+// form, while these flags belong to the reader and are written on their own.
 type ReadingSettings struct {
 	// BlurTranslation: story translations start blurred in the Reading
 	// Panel; the Learner's reveal click flips this stored flag.
 	BlurTranslation bool
+	// LookupHoldMs is how long a dictionary lookup must stay open before
+	// the reader reports it as a Weak Signal (issue #12). 0 signals every
+	// lookup; the stored default is 800.
+	LookupHoldMs int
 }
+
+// DefaultLookupHoldMs is the learner-configurable Weak Signal threshold
+// until they choose another (issue #12).
+const DefaultLookupHoldMs = 800
 
 // GetReadingSettings returns the user's reading settings.
 func (s *Service) GetReadingSettings(ctx context.Context, userID uuid.UUID) (ReadingSettings, error) {
@@ -449,13 +457,20 @@ func (s *Service) GetReadingSettings(ctx context.Context, userID uuid.UUID) (Rea
 	if err != nil {
 		return ReadingSettings{}, err
 	}
-	return ReadingSettings{BlurTranslation: blur}, nil
+	hold, err := s.store.LookupHoldMs(ctx, userID)
+	if err != nil {
+		return ReadingSettings{}, err
+	}
+	return ReadingSettings{BlurTranslation: blur, LookupHoldMs: hold}, nil
 }
 
-// PutReadingSettings updates the user's reading settings. There is nothing
-// to validate: blurTranslation is a plain boolean.
+// PutReadingSettings updates the user's reading settings. Range validation
+// lives at the HTTP edge; the store just keeps what it is given.
 func (s *Service) PutReadingSettings(ctx context.Context, userID uuid.UUID, rs ReadingSettings) (ReadingSettings, error) {
 	if err := s.store.SetBlurTranslation(ctx, userID, rs.BlurTranslation); err != nil {
+		return ReadingSettings{}, err
+	}
+	if err := s.store.SetLookupHoldMs(ctx, userID, rs.LookupHoldMs); err != nil {
 		return ReadingSettings{}, err
 	}
 	return rs, nil

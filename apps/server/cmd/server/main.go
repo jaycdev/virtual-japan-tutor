@@ -20,6 +20,7 @@ import (
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/dictionary"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/grammar"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/httpapi"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/itemlist"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/knowngrammar"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/marumori"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/marumorisync"
@@ -103,6 +104,11 @@ func run(args []string) error {
 	// ever reads stored stories. Gate bounds come from STORY_* env vars.
 	storySvc := story.NewPostgresService(pool, ai, focus, cfg.Story, nil)
 
+	// Item Lists and Weak Signals (issue #12): named lists feeding the
+	// boosting bonus and Stretch Items, plus the reader's held-lookup and
+	// unblur signals — validated against this Learner's Known Items.
+	itemListSvc := itemlist.NewService(itemlist.NewPostgresStore(pool))
+
 	// The grammar store doubles as the JMdict-backed dictionary the example
 	// validator checks words against.
 	grammarStore := grammar.NewPostgresStore(pool)
@@ -127,7 +133,7 @@ func run(args []string) error {
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.New(pool, svc, httpapi.WithAIProviders(ai), httpapi.WithMaruMori(maru), httpapi.WithGrammar(grammarStore, grammarGen), httpapi.WithKnownGrammar(knownGrammar), httpapi.WithFocusSet(focus), httpapi.WithPractice(practiceSvc), httpapi.WithStory(storySvc), httpapi.WithDictionary(dictionarySvc), httpapi.WithMaxBodyBytes(cfg.MaxBodyBytes)),
+		Handler:           httpapi.New(pool, svc, httpapi.WithAIProviders(ai), httpapi.WithMaruMori(maru), httpapi.WithGrammar(grammarStore, grammarGen), httpapi.WithKnownGrammar(knownGrammar), httpapi.WithFocusSet(focus), httpapi.WithPractice(practiceSvc), httpapi.WithStory(storySvc), httpapi.WithDictionary(dictionarySvc), httpapi.WithItemLists(itemListSvc), httpapi.WithMaxBodyBytes(cfg.MaxBodyBytes)),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       cfg.ReadTimeout,
 		WriteTimeout:      cfg.WriteTimeout,

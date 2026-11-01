@@ -219,6 +219,76 @@ func TestManyWeakSignalsFloorAtZeroButNeverBelow(t *testing.T) {
 	}
 }
 
+// --- Boosting Lists (issue #12) ---
+
+// The boost is additive and exact: a Known Item at the top of the SRS scale
+// in a Boosting List scores 1 − BoostingBonus.
+func TestMasteryBoostingBonusIsExact(t *testing.T) {
+	key := func(ref string) mastery.ItemKey { return mastery.ItemKey{Kind: mastery.KindVocabulary, Ref: ref} }
+	store := masterytest.NewMemStore()
+	store.AddKnownItem(userID, vocabItem("boosted", 9))
+	store.AddKnownItem(userID, vocabItem("plain", 9))
+	store.AddBoosting(userID, key("boosted"))
+	svc := newService(store, func(o *mastery.Options) { o.BoostingBonus = 0.15 })
+
+	if got := scoreOf(t, svc, key("boosted")); !near(got, 1.0-0.15) {
+		t.Fatalf("boosted score = %g, want exactly 0.85", got)
+	}
+	if got := scoreOf(t, svc, key("plain")); !near(got, 1.0) {
+		t.Fatalf("non-boosted score = %g, want 1", got)
+	}
+}
+
+// Membership in several Boosting Lists is worth exactly one boost — the
+// ticket's "ONE Focus Set priority boost regardless of number of lists".
+func TestMasteryBoostingListsCountOnce(t *testing.T) {
+	key := func(ref string) mastery.ItemKey { return mastery.ItemKey{Kind: mastery.KindVocabulary, Ref: ref} }
+	store := masterytest.NewMemStore()
+	store.AddKnownItem(userID, vocabItem("in-three-lists", 9))
+	// Three Boosting Lists holding the same item: three refs in the store.
+	store.AddBoosting(userID, key("in-three-lists"))
+	store.AddBoosting(userID, key("in-three-lists"))
+	store.AddBoosting(userID, key("in-three-lists"))
+	svc := newService(store, func(o *mastery.Options) { o.BoostingBonus = 0.15 })
+
+	if got := scoreOf(t, svc, key("in-three-lists")); !near(got, 1.0-0.15) {
+		t.Fatalf("three boosting lists scored %g, want exactly 0.85 (one boost, not three)", got)
+	}
+}
+
+// The boost's job is ordering: it pulls a Boosting List item ahead of a
+// stronger item in the Focus Set ranking — with exact intermediate values.
+func TestMasteryBoostingMovesRanking(t *testing.T) {
+	store := masterytest.NewMemStore()
+	store.AddKnownItem(userID, vocabItem("mid-boosted", 7)) // 7/9 − 0.15
+	store.AddKnownItem(userID, vocabItem("top-plain", 8))   // 8/9
+	store.AddBoosting(userID, mastery.ItemKey{Kind: mastery.KindVocabulary, Ref: "mid-boosted"})
+	svc := newService(store, func(o *mastery.Options) { o.BoostingBonus = 0.15 })
+
+	set, err := svc.FocusSet(context.Background(), userID)
+	if err != nil {
+		t.Fatalf("FocusSet: %v", err)
+	}
+	if len(set.Items) != 2 || set.Items[0].Key().Ref != "mid-boosted" {
+		t.Fatalf("set = %+v, want the boosted item first (0.628 < 0.889)", set.Items)
+	}
+	if !near(set.Items[0].Mastery, 7.0/9.0-0.15) || !near(set.Items[1].Mastery, 8.0/9.0) {
+		t.Fatalf("scores = %g, %g, want 7/9−0.15 and 8/9 exactly", set.Items[0].Mastery, set.Items[1].Mastery)
+	}
+}
+
+// Zero disables the boost entirely — withDefaults must not fill it in, so
+// an explicit 0 stays 0.
+func TestMasteryBoostingBonusZeroDisables(t *testing.T) {
+	store := masterytest.NewMemStore()
+	store.AddKnownItem(userID, vocabItem("listed", 9))
+	store.AddBoosting(userID, mastery.ItemKey{Kind: mastery.KindVocabulary, Ref: "listed"})
+	svc := newService(store, func(o *mastery.Options) { o.BoostingBonus = 0 })
+	if got := scoreOf(t, svc, mastery.ItemKey{Kind: mastery.KindVocabulary, Ref: "listed"}); !near(got, 1.0) {
+		t.Fatalf("bonus 0: score = %g, want 1 (withDefaults must not refill it)", got)
+	}
+}
+
 func TestWeightsAreConfigurable(t *testing.T) {
 	kV, kG := mastery.ItemKey{Kind: mastery.KindVocabulary, Ref: "srs-ace"}, mastery.ItemKey{Kind: mastery.KindGrammar, Ref: "gp-practised"}
 	store := masterytest.NewMemStore()

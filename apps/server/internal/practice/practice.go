@@ -43,6 +43,10 @@ const (
 	DefaultSessionSize = 20            // "around 20 exercises"
 	DefaultSessionTTL  = 4 * time.Hour // a session stops being resumable this long after it starts
 	OptionsPerExercise = 4             // one correct + three distractors
+	// DefaultStretchSlots is how many Stretch Items — not-yet-Known items
+	// from the Learner's Boosting Lists (issue #12) — a session reserves
+	// slots for ahead of the mastery top-ups. 0 disables them.
+	DefaultStretchSlots = 4
 )
 
 // Error carries an HTTP status through to the handler; match with errors.As.
@@ -75,6 +79,12 @@ type Options struct {
 	// SessionSize is the target number of exercises (the Focus Set may be
 	// shorter, and skipped items shorten the session further).
 	SessionSize int
+	// StretchSlots reserves room for Stretch Items — not-yet-Known items
+	// sitting in the Learner's Boosting Lists (issue #12) — after the
+	// Focus Set and before the mastery top-ups. Zero deliberately means
+	// "off" (withDefaults does not fill it); cmd/server passes
+	// DefaultStretchSlots through config.
+	StretchSlots int
 	// Now is the clock; nil uses time.Now.
 	Now func() time.Time
 }
@@ -124,6 +134,13 @@ type Content interface {
 	// ClozeDistractors returns Grammar Spans from other points at level,
 	// excluding spans equal to notText.
 	ClozeDistractors(ctx context.Context, level string, excludePoint int64, notText string, salt int64, limit int) ([]string, error)
+
+	// StretchItems lists the Stretch Items for a session (issue #12):
+	// items held by the Learner's Boosting Lists that are NOT yet Known
+	// Items, oldest membership first, at most limit. They are exercised
+	// for recognition but never enter the Known Item universe, so they
+	// cannot distort Story coverage.
+	StretchItems(ctx context.Context, userID uuid.UUID, limit int) ([]mastery.ItemKey, error)
 }
 
 // ResultWriter appends one Exercise result to the Practice Record. The
@@ -268,6 +285,38 @@ func (s *Service) StartSession(ctx context.Context, userID uuid.UUID, seed int64
 			buildable = append(buildable, key)
 		} else {
 			skipped++
+		}
+	}
+
+	// Stretch Items (issue #12): not-yet-Known items from the Boosting
+	// Lists get their slots after the Focus Set and before any top-up, so
+	// a full set never crowds them out and a short set still reserves the
+	// session's target. They answer into the Practice Record like every
+	// other exercise, but never join the Known Item universe.
+	if s.opts.StretchSlots > 0 && len(g.exercises) < s.opts.SessionSize {
+		limit := s.opts.StretchSlots
+		if room := s.opts.SessionSize - len(g.exercises); room < limit {
+			limit = room
+		}
+		stretch, err := s.content.StretchItems(ctx, userID, limit)
+		if err != nil {
+			return "", err
+		}
+		for _, key := range stretch {
+			if len(g.exercises) == s.opts.SessionSize {
+				break
+			}
+			if attempted[key] {
+				continue
+			}
+			attempted[key] = true
+			ok, err := g.add(ctx, key)
+			if err != nil {
+				return "", err
+			}
+			if !ok {
+				skipped++
+			}
 		}
 	}
 

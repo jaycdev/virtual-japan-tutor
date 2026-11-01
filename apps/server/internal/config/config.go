@@ -214,6 +214,17 @@ func loadMastery(getenv func(string) string, cfg *Config) error {
 	if opts.WeakSignalHalfLife, err = duration(getenv, "MASTERY_WEAK_SIGNAL_HALF_LIFE", def.WeakSignalHalfLife); err != nil {
 		return err
 	}
+	// The Boosting List bonus (issue #12): 0 legitimately disables the
+	// boost — withDefaults deliberately leaves zero alone, so the config
+	// default above is the only source of the 0.15. Capped at 0.35: the
+	// boost shares the penalty budget with Weak Signals, and beyond that
+	// the boost alone would floor every listed item's Mastery.
+	if opts.BoostingBonus, err = unitFloat(getenv, "MASTERY_BOOSTING_BONUS", def.BoostingBonus); err != nil {
+		return err
+	}
+	if opts.BoostingBonus > 0.35 {
+		return fmt.Errorf("MASTERY_BOOSTING_BONUS must be in [0, 0.35], got %v", opts.BoostingBonus)
+	}
 
 	if opts.SetSize, err = boundedInt(getenv, "FOCUS_SET_SIZE", def.SetSize, 15, 20); err != nil {
 		return err
@@ -243,6 +254,12 @@ func loadPractice(getenv func(string) string, cfg *Config) error {
 	// The issue asks for "around 20 exercises"; the bounds keep a mistake
 	// from turning a session into a marathon or a single question.
 	if cfg.Practice.SessionSize, err = boundedInt(getenv, "PRACTICE_SESSION_SIZE", practice.DefaultSessionSize, 5, 50); err != nil {
+		return err
+	}
+	// Stretch Item slots (issue #12): reserved between the Focus Set and
+	// the mastery top-ups. 0 disables them; they can never crowd out more
+	// than the whole session, so the upper bound is the session size.
+	if cfg.Practice.StretchSlots, err = boundedInt(getenv, "PRACTICE_STRETCH_SLOTS", practice.DefaultStretchSlots, 0, cfg.Practice.SessionSize); err != nil {
 		return err
 	}
 	if cfg.PracticeSessionTTL, err = duration(getenv, "PRACTICE_SESSION_TTL", practice.DefaultSessionTTL); err != nil {

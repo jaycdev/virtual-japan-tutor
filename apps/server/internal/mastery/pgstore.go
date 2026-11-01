@@ -181,3 +181,31 @@ func (s *PostgresStore) WeakSignals(ctx context.Context, userID uuid.UUID) ([]We
 	}
 	return out, rows.Err()
 }
+
+// boostingRefsSQL lists the items held by the Learner's Boosting Lists
+// (issue #12). DISTINCT does the dedup the mastery boost needs: an item in
+// several Boosting Lists is reported once. Membership is by ItemKey (kind +
+// ref), the same contract the rest of the app uses.
+const boostingRefsSQL = `
+	SELECT DISTINCT m.item_kind, m.item_ref
+	FROM item_list_items m
+	JOIN item_lists l ON l.id = m.list_id
+	WHERE l.user_id = $1 AND l.boosting
+	ORDER BY m.item_kind, m.item_ref`
+
+func (s *PostgresStore) BoostingRefs(ctx context.Context, userID uuid.UUID) ([]ItemKey, error) {
+	rows, err := s.pool.Query(ctx, boostingRefsSQL, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ItemKey
+	for rows.Next() {
+		var k ItemKey
+		if err := rows.Scan(&k.Kind, &k.Ref); err != nil {
+			return nil, err
+		}
+		out = append(out, k)
+	}
+	return out, rows.Err()
+}

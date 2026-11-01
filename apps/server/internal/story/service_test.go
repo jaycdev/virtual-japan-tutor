@@ -171,14 +171,15 @@ func (f *fakeFocus) SnapshotKeys(fs FocusSet) []string {
 // --- fake store ---
 
 type fakeStore struct {
-	mu        sync.Mutex
-	stories   map[uuid.UUID]*Story
-	users     map[uuid.UUID]bool
-	threshold map[uuid.UUID]int
-	blur      map[uuid.UUID]bool      // missing = default true, like the users column
-	prefs     map[uuid.UUID][2]string // genre, theme ("" = surprise-me / no theme)
-	snapshots map[uuid.UUID][]string
-	now       time.Time
+	mu           sync.Mutex
+	stories      map[uuid.UUID]*Story
+	users        map[uuid.UUID]bool
+	threshold    map[uuid.UUID]int
+	blur         map[uuid.UUID]bool      // missing = default true, like the users column
+	lookupHoldMs map[uuid.UUID]int       // missing = default 800, like the users column
+	prefs        map[uuid.UUID][2]string // genre, theme ("" = surprise-me / no theme)
+	snapshots    map[uuid.UUID][]string
+	now          time.Time
 
 	// setReadyConflict makes SetReady answer like the Postgres store when a
 	// concurrent generator took the one ready slot first (23505).
@@ -187,13 +188,14 @@ type fakeStore struct {
 
 func newFakeStore() *fakeStore {
 	return &fakeStore{
-		stories:   map[uuid.UUID]*Story{},
-		users:     map[uuid.UUID]bool{},
-		threshold: map[uuid.UUID]int{},
-		blur:      map[uuid.UUID]bool{},
-		prefs:     map[uuid.UUID][2]string{},
-		snapshots: map[uuid.UUID][]string{},
-		now:       time.Unix(1700000000, 0).UTC(),
+		stories:      map[uuid.UUID]*Story{},
+		users:        map[uuid.UUID]bool{},
+		threshold:    map[uuid.UUID]int{},
+		blur:         map[uuid.UUID]bool{},
+		lookupHoldMs: map[uuid.UUID]int{},
+		prefs:        map[uuid.UUID][2]string{},
+		snapshots:    map[uuid.UUID][]string{},
+		now:          time.Unix(1700000000, 0).UTC(),
 	}
 }
 
@@ -408,6 +410,23 @@ func (s *fakeStore) SetBlurTranslation(_ context.Context, userID uuid.UUID, blur
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.blur[userID] = blur
+	return nil
+}
+
+func (s *fakeStore) LookupHoldMs(_ context.Context, userID uuid.UUID) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	v, ok := s.lookupHoldMs[userID]
+	if !ok {
+		return DefaultLookupHoldMs, nil // the users column defaults to 800
+	}
+	return v, nil
+}
+
+func (s *fakeStore) SetLookupHoldMs(_ context.Context, userID uuid.UUID, holdMs int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lookupHoldMs[userID] = holdMs
 	return nil
 }
 
@@ -1211,6 +1230,9 @@ func TestReadingSettingsDefaultToBlurred(t *testing.T) {
 	if !s.BlurTranslation {
 		t.Errorf("BlurTranslation = false, want the default true")
 	}
+	if s.LookupHoldMs != DefaultLookupHoldMs {
+		t.Errorf("LookupHoldMs = %d, want the default %d", s.LookupHoldMs, DefaultLookupHoldMs)
+	}
 	// Sanity: the fake store models the users column, which defaults to TRUE.
 	if blur, err := store.BlurTranslation(context.Background(), uuid.New()); err != nil || !blur {
 		t.Errorf("store default = %v/%v, want true/nil", blur, err)
@@ -1247,6 +1269,21 @@ func TestReadingSettingsRoundTrip(t *testing.T) {
 	}
 	if !s.BlurTranslation {
 		t.Errorf("re-enabled BlurTranslation = false, want true")
+	}
+
+	// Issue #12: the lookup-hold threshold rides along and round-trips.
+	s, err = svc.PutReadingSettings(ctx, user, ReadingSettings{BlurTranslation: true, LookupHoldMs: 1500})
+	if err != nil {
+		t.Fatalf("PutReadingSettings(hold 1500): %v", err)
+	}
+	if s.LookupHoldMs != 1500 {
+		t.Errorf("returned LookupHoldMs = %d, want the saved 1500", s.LookupHoldMs)
+	}
+	if s, err = svc.GetReadingSettings(ctx, user); err != nil || s.LookupHoldMs != 1500 {
+		t.Errorf("GetReadingSettings hold = %d/%v, want 1500/nil", s.LookupHoldMs, err)
+	}
+	if hold, err := store.LookupHoldMs(ctx, user); err != nil || hold != 1500 {
+		t.Errorf("store LookupHoldMs = %d/%v, want 1500/nil", hold, err)
 	}
 }
 
