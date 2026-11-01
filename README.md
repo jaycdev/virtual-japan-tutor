@@ -215,8 +215,8 @@ openssl rand -base64 32
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ```
 
-Treat it like a password: losing or changing it makes stored secrets unreadable. Today the only stored
-secrets are [AI Provider](#ai-providers) API keys (a connection test then says "re-enter the key").
+Treat it like a password: losing or changing it makes stored secrets unreadable. Stored secrets today are
+[AI Provider](#ai-providers) API keys and the [MaruMori](#marumori-connection-and-sync) API key (both write-only).
 
 ## AI Providers
 
@@ -253,6 +253,30 @@ and model. The Learner manages them in the web app's **Settings** page and picks
   `Retry-After`, no retry on auth/validation errors), typed errors, and `ChatJSON`, which asks for `json_schema`
   structured output and falls back to `json_object`, then to prompt-only JSON extraction, per call (nothing is
   remembered per provider). Its tests use `httptest` fakes; it has not been exercised against a real provider.
+
+## MaruMori connection and Sync
+
+**MaruMori** ([GLOSSARY](GLOSSARY.md)) is a third-party study app. The Learner connects it in the web app's
+**Settings** page: the API key is write-only (`v1:` ciphertext in `marumori_settings.api_key_encrypted`, never
+returned, never logged), and a **Sync** reads the Learner's **knowledge state** into this server. See
+`api/openapi.yaml` (`/marumori`, `/marumori/key`, `/marumori/sync`, `/marumori/syncs`).
+
+- **Knowledge state only (ADR-0002).** A Sync reads the five knowledge-state endpoints (`/home` counters,
+  `/known/kanji`, `/known/vocabulary`, `/srs/grammar-lessons`, `/srs/grammar-reviews`) and stores only what MaruMori
+  *knows about the Learner*: SRS levels, per-Sync history (appeared / level changed / disappeared), grammar SRS
+  observations, and the home counters. Item **content** — meanings, definitions, readings, mnemonics, pitch,
+  examples, personal notes, even grammar point names — is never stored or forwarded. Unlinked vocabulary is counted,
+  not copied; unlinked kanji keep only the character itself.
+- **Linking.** Kanji resolve against KANJIDIC2 by literal; vocabulary resolves against JMdict by written text
+  (ambiguous picks go to the easiest JLPT level first). Sync counts record `linked`, `unlinked` and `ambiguous`.
+- **Scheduled + manual.** A background sweep Syncs every learner with a key every `MARUMORI_SYNC_INTERVAL`
+  (default 4 h, ±20 % jitter so accounts do not all fire together); `MARUMORI_SYNC_ENABLED=false` disables it.
+  `POST /marumori/sync` runs one immediately; a second concurrent attempt gets `409 sync_running`.
+- **Failed Syncs are data, not HTTP errors.** A run against a dead upstream finishes as `failed` with readable
+  learner-facing text (returned in a `200` body and listed by `/marumori/syncs`); the key never appears in it.
+- **Unofficial API.** MaruMori has no official public API; `internal/marumori` mirrors the community-documented
+  endpoints. Its tests run against fixtures in `internal/marumori/testdata` — nothing in this repo contacts the
+  real MaruMori. `MARUMORI_API_BASE_URL` points the client elsewhere (a local stand-in, for instance).
 
 ## Data conventions
 
