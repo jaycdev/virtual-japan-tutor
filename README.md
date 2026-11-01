@@ -40,7 +40,7 @@ Postgres-backed Go tests are skipped unless `TEST_DATABASE_URL` is set (CI sets 
 2. Run `pnpm generate`. This updates `apps/server/internal/api/api.gen.go` (oapi-codegen, strict server)
    and `packages/api-client/src/generated/schema.ts` (openapi-typescript).
 3. Implement any new methods on the Go `StrictServerInterface` (`apps/server/internal/httpapi`).
-4. Commit the generated files. CI re-runs generation and fails if they are stale.
+4. Commit the generated files. CI re-runs generation and `pnpm check:generated` fails on any modified or untracked generated file.
 
 ## Running with Docker Compose
 

@@ -9,7 +9,8 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "generate": "turbo run generate",
-    "generate:force": "turbo run generate --force"
+    "generate:force": "turbo run generate --force",
+    "check:generated": "node scripts/check-generated.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

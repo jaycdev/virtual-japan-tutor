@@ -72,7 +72,7 @@ jobs:
       - name: Regenerate from OpenAPI spec and fail if committed output is stale
         run: |
           pnpm generate:force
-          git diff --exit-code
+          pnpm check:generated
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
