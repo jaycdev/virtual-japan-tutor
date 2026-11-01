@@ -598,6 +598,25 @@ func TestGenerateExamplesRequestsForDifferentCountsDoNotShareAFlight(t *testing.
 // A generation in flight belongs to the point and the Learner, not to whichever
 // request happened to start it: one request going away must not cancel the
 // generation the others are waiting for.
+// The prompt must ask for exactly what the Validator accepts. A prompt that asks
+// for a narrower range than the validator enforces quietly throws away sentences
+// that would have passed (see validate_test.go for the bounds themselves).
+func TestExamplesPromptAsksForTheRangeTheValidatorAccepts(t *testing.T) {
+	ctx := context.Background()
+	store := grammartest.NewMemStore(dake)
+	provider := newFakeProvider(t, scriptedCall{content: examplesReply(validExamples(0, 1)...)})
+	resolve := newFakeResolver(map[aiprovider.Task]*llm.Client{aiprovider.TaskGrammarContent: provider.client(t)})
+	gen := newGenerator(store, dakeDict(), resolve)
+
+	if _, err := gen.GenerateExamples(ctx, dake.ID, testUser, 1); err != nil {
+		t.Fatalf("GenerateExamples: %v", err)
+	}
+	const rule = "Between 5 and 40 characters long."
+	if prompt := provider.lastPrompt(); !strings.Contains(prompt, rule) {
+		t.Fatalf("the prompt must state the Validator's bounds %q:\n%s", rule, prompt)
+	}
+}
+
 func TestACanceledRequestDoesNotCancelAGenerationInProgress(t *testing.T) {
 	ctx := context.Background()
 	store := grammartest.NewMemStore(dake)

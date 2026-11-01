@@ -360,7 +360,7 @@ Write %d new example sentences using the Grammar Point "%s" (JLPT level %s).
 %s
 Rules for every sentence:
 - Natural Japanese a learner at this level can read, in kana and kanji.
-- Between 6 and 30 characters long.
+- Between 5 and 40 characters long.
 - Plain text only: no markdown, no quotes, no brackets or parentheses.
 - Mark the span that realises the pattern: its start is the position of its first
   character (counting from 0) and its length is the number of characters. The span
