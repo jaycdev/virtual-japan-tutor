@@ -50,11 +50,17 @@ export function StoryReader({
   view,
   story,
   onBack,
+  measure: measureProp,
+  screenSize,
 }: {
   client: ApiClient;
   view: StoryView;
   story: Story;
   onBack: () => void;
+  /** Overrides the menu measuring (jsdom reports no geometry — tests inject rects). */
+  measure?: (testID: string, node: MeasurableNode | null) => Rect | null;
+  /** Overrides the measured viewport for menu anchoring (same reason). */
+  screenSize?: { width: number; height: number };
 }) {
   const colors = useColors();
   const reading = useReadingSettings(client);
@@ -188,16 +194,22 @@ export function StoryReader({
     setSheetToken(ref);
   };
 
-  const saveInto = async (listId: string | null, item: { kind: "vocabulary" | "grammar"; ref: string }) => {
-    const targetList = lists.state.status === "ready" ? lists.state.lists.find((l) => l.id === listId) : undefined;
-    if (!targetList) {
+  const saveInto = async (
+    listId: string | null,
+    item: { kind: "vocabulary" | "grammar"; ref: string },
+    nameHint?: string,
+  ) => {
+    if (!listId) {
       setSaveNote("Could not save — Your Item Lists are still loading");
       return;
     }
     setSaveNote(null);
-    const res = await lists.addToList(targetList.id, { itemKind: item.kind, itemRef: item.ref });
+    const res = await lists.addToList(listId, { itemKind: item.kind, itemRef: item.ref });
     if (res.ok) {
-      setSaveNote(`Saved to ${targetList.name}.`);
+      // A just-created list may not be in this callback's captured state yet —
+      // the create hands back its name, so the note is honest either way.
+      const found = lists.state.status === "ready" ? lists.state.lists.find((l) => l.id === listId)?.name : undefined;
+      setSaveNote(`Saved to ${found ?? nameHint ?? "your list"}.`);
       setSheetToken(null);
       setSheetError(null);
     } else {
@@ -246,14 +258,17 @@ export function StoryReader({
       : undefined;
   const topVocabLinked = top?.kind === "token" && topToken?.entSeq !== undefined;
 
-  const measure = useCallback((testID: string, node: MeasurableNode | null): Rect | null => {
-    if (!node) return null;
+  // Real measuring: RN hands refs a measureInWindow. The jsdom test host has
+  // neither that method nor a viewport, so tests inject both (see props).
+  const defaultMeasure = useCallback((testID: string, node: MeasurableNode | null): Rect | null => {
+    if (!node || typeof node.measureInWindow !== "function") return null;
     let rect: Rect | null = null;
     node.measureInWindow((x: number, y: number, width: number, height: number) => {
       rect = { x, y, width, height };
     });
     return rect;
   }, []);
+  const measure = measureProp ?? defaultMeasure;
 
   return (
     <View
@@ -336,13 +351,13 @@ export function StoryReader({
         onUnblur={onUnblur}
       />
 
-      {menu && screen.width > 0 ? (
+      {menu && (screenSize ?? screen).width > 0 ? (
         <TokenMenu
           options={menu.options}
           x={menu.x}
           y={menu.y}
-          screenWidth={screen.width}
-          screenHeight={screen.height}
+          screenWidth={(screenSize ?? screen).width}
+          screenHeight={(screenSize ?? screen).height}
           measure={measure}
           onRects={setMenuRects}
         />
@@ -386,7 +401,7 @@ export function StoryReader({
               .createList({ name, boosting: false })
               .then((created) => {
                 // Create-then-save only after a successful create, as on the web.
-                if (created.ok && created.list) return saveInto(created.list.id, item);
+                if (created.ok && created.list) return saveInto(created.list.id, item, created.list.name);
                 setSheetError(created.ok ? "the new list vanished" : created.message);
                 return undefined;
               })

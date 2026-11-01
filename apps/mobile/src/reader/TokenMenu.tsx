@@ -71,6 +71,7 @@ export function TokenMenu({
             testID={`menu-option-${option.id}`}
             accessibilityRole="button"
             accessibilityState={{ disabled: !option.enabled }}
+            disabled={!option.enabled}
             ref={(node) => {
               if (node) optionRefs.current.set(option.id, node);
               else optionRefs.current.delete(option.id);

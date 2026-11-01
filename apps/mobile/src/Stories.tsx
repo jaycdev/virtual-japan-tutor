@@ -6,18 +6,37 @@ import { useColors } from "./theme.ts";
 import { Card, ErrorText, Muted, StatusText, Title } from "./ui.tsx";
 import { pageSummary, RatingButtons } from "./reader/parts.tsx";
 import { StoryReader } from "./reader/StoryReader.tsx";
+import type { MeasurableNode, Rect } from "./reader/holdMenu.ts";
 
 /**
  * The Stories tab (issue #14): the Story Library — newest first, one page at
  * a time, each row rated — and the reader it drills into. Opening a row
  * fetches the full Story (questions and all); the hardware Back returns here.
  */
-export function Stories({ client }: { client: ApiClient }) {
+export function Stories({
+  client,
+  measure,
+  screenSize,
+}: {
+  client: ApiClient;
+  /** Passed to the reader: test hosts inject menu geometry the DOM cannot measure. */
+  measure?: (testID: string, node: MeasurableNode | null) => Rect | null;
+  screenSize?: { width: number; height: number };
+}) {
   const colors = useColors();
   const view = useStory(client);
 
   if (view.story) {
-    return <StoryReader client={client} view={view} story={view.story} onBack={() => view.close()} />;
+    return (
+      <StoryReader
+        client={client}
+        view={view}
+        story={view.story}
+        onBack={() => view.close()}
+        measure={measure}
+        screenSize={screenSize}
+      />
+    );
   }
 
   if (view.library.status === "loading")
@@ -59,7 +78,8 @@ export function Stories({ client }: { client: ApiClient }) {
             >
               <Text style={{ color: colors.label, fontSize: 17, fontWeight: "600" }}>{story.genre}</Text>
               <Text style={{ color: colors.subtle, fontSize: 14 }}>
-                {new Date(story.createdAt).toLocaleDateString()} · {Array.from(story.text).slice(0, 40).join("")}…
+                {new Date(story.createdAt).toLocaleDateString()} ·{" "}
+                <Text>{Array.from(story.text).slice(0, 40).join("")}…</Text>
               </Text>
             </Pressable>
             <RatingButtons view={view} storyId={story.id} rating={story.rating} />
