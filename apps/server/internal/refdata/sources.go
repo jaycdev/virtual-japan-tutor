@@ -49,7 +49,17 @@ type SourceFile struct {
 	// publishes no checksums); those are checksummed after download and the
 	// checksum is recorded in import_runs.
 	SHA256 string
+	// MaxBytes is the most a download of this file may be; anything larger is refused
+	// and discarded. Set to roughly 4x the size at the time of writing, so normal
+	// growth passes but a runaway or hostile response cannot fill the disk.
+	// Zero means defaultMaxDownloadBytes.
+	MaxBytes int64
 }
+
+const defaultMaxDownloadBytes = 256 << 20
+
+// errTooLarge marks a download that exceeded its size limit; retrying cannot help.
+var errTooLarge = errors.New("download exceeds its size limit")
 
 // DatasetInfo describes where a dataset comes from and under what terms.
 // THIRD_PARTY_NOTICES.md carries the full attribution text.
@@ -98,14 +108,16 @@ func Info(d Dataset) DatasetInfo {
 			Dataset: JMdict, Title: "JMdict (English glosses)",
 			SourceURL: "https://www.edrdg.org/jmdict/j_jmdict.html",
 			Licence:   edrdgLicence, LicenceURL: edrdgLicenceURL,
-			Files: []SourceFile{{Name: "JMdict_e.gz", URL: "https://www.edrdg.org/pub/Nihongo/JMdict_e.gz"}},
+			// ~10 MB today (JMdict_e.gz, 2026-11).
+			Files: []SourceFile{{Name: "JMdict_e.gz", URL: "https://www.edrdg.org/pub/Nihongo/JMdict_e.gz", MaxBytes: 48 << 20}},
 		}
 	case Kanjidic2:
 		return DatasetInfo{
 			Dataset: Kanjidic2, Title: "KANJIDIC2",
 			SourceURL: "https://www.edrdg.org/wiki/index.php/KANJIDIC_Project",
 			Licence:   edrdgLicence, LicenceURL: edrdgLicenceURL,
-			Files: []SourceFile{{Name: "kanjidic2.xml.gz", URL: "https://www.edrdg.org/pub/Nihongo/kanjidic2.xml.gz"}},
+			// ~1.4 MB today.
+			Files: []SourceFile{{Name: "kanjidic2.xml.gz", URL: "https://www.edrdg.org/pub/Nihongo/kanjidic2.xml.gz", MaxBytes: 8 << 20}},
 		}
 	case Waller:
 		// tanos.co.uk, the original home of the lists, did not resolve when this
@@ -123,11 +135,15 @@ func Info(d Dataset) DatasetInfo {
 					Name:   WallerVocabFile(l),
 					URL:    "https://git.pvv.ntnu.no/mugiten/jadb/raw/commit/" + wallerCommitVoc + "/data/tanos-jlpt/" + n + ".csv",
 					SHA256: wallerVocabSHA[n],
+					// Largest list (N1 vocabulary) is ~175 KB today.
+					MaxBytes: 2 << 20,
 				},
 				SourceFile{
 					Name:   WallerKanjiFile(l),
 					URL:    "https://raw.githubusercontent.com/Bluskyo/JLPT_Vocabulary/" + wallerCommitKan + "/data/kanji/parsedData/" + n + "_kanji.csv",
 					SHA256: wallerKanjiSHA[n],
+					// Small CSV lists, like the vocabulary ones.
+					MaxBytes: 2 << 20,
 				})
 		}
 		return info
@@ -137,9 +153,10 @@ func Info(d Dataset) DatasetInfo {
 			SourceURL: "https://github.com/mifunetoshiro/kanjium",
 			Licence:   "CC BY-SA 4.0", LicenceURL: "https://creativecommons.org/licenses/by-sa/4.0/",
 			Files: []SourceFile{{
-				Name:   "accents.txt",
-				URL:    "https://raw.githubusercontent.com/mifunetoshiro/kanjium/" + kanjiumCommit + "/data/source_files/raw/accents.txt",
-				SHA256: "8bd0dd127dab32ceec94cb03ab1ba6b68858ea73421dfa1731af2f373deb4f20",
+				Name:     "accents.txt",
+				URL:      "https://raw.githubusercontent.com/mifunetoshiro/kanjium/" + kanjiumCommit + "/data/source_files/raw/accents.txt",
+				SHA256:   "8bd0dd127dab32ceec94cb03ab1ba6b68858ea73421dfa1731af2f373deb4f20",
+				MaxBytes: 16 << 20, // ~3.1 MB today
 			}},
 		}
 	case Grammar:
@@ -280,6 +297,9 @@ func (f *Fetcher) download(ctx context.Context, file SourceFile, path string) er
 			return nil
 		}
 		f.log().Warn("download failed", "file", file.Name, "err", lastErr)
+		if errors.Is(lastErr, errTooLarge) {
+			break // the server will send the same oversized file again
+		}
 	}
 	return fmt.Errorf("download %s: %w", file.URL, lastErr)
 }
@@ -297,6 +317,13 @@ func (f *Fetcher) downloadOnce(ctx context.Context, client *http.Client, file So
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("HTTP %s", resp.Status)
 	}
+	limit := file.MaxBytes
+	if limit <= 0 {
+		limit = defaultMaxDownloadBytes
+	}
+	if resp.ContentLength > limit {
+		return fmt.Errorf("%w: server declares %d bytes, limit is %d", errTooLarge, resp.ContentLength, limit)
+	}
 
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".download-*")
 	if err != nil {
@@ -304,9 +331,15 @@ func (f *Fetcher) downloadOnce(ctx context.Context, client *http.Client, file So
 	}
 	defer os.Remove(tmp.Name())
 	h := sha256.New()
-	if _, err := io.Copy(io.MultiWriter(tmp, h), resp.Body); err != nil {
+	// Read one byte past the limit so "exactly at the limit" passes and "over" is detected.
+	n, err := io.Copy(io.MultiWriter(tmp, h), io.LimitReader(resp.Body, limit+1))
+	if err != nil {
 		tmp.Close()
 		return err
+	}
+	if n > limit {
+		tmp.Close()
+		return fmt.Errorf("%w: more than %d bytes received", errTooLarge, limit)
 	}
 	if err := tmp.Close(); err != nil {
 		return err
