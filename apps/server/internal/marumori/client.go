@@ -119,48 +119,67 @@ func sleepCtx(ctx context.Context, d time.Duration) error {
 	}
 }
 
+// homePayload carries the /home scalar counters. The live API nests them under
+// "data"; the community reference and our original fixtures show them at the top
+// level. Both shapes decode; when a "data" wrapper is present it wins wholesale, so
+// a wrapper with missing counters is not backfilled from the top level. Everything
+// else in the payload (level distributions, timeline, the of-the-day objects) is not
+// declared, so it is dropped at decode time (ADR-0002).
+type homePayload struct {
+	Counts *struct {
+		Total          int `json:"total"`
+		Lessons        int `json:"lessons"`
+		Reviews        int `json:"reviews"`
+		GrammarTotal   int `json:"grammarTotal"`
+		GrammarLessons int `json:"grammarLessons"`
+		GrammarReviews int `json:"grammarReviews"`
+	} `json:"counts"`
+	Stats *struct {
+		KanjiLearned           int `json:"kanjiLearned"`
+		VocabularyLearned      int `json:"vocabularyLearned"`
+		TotalGrammarLessonsDot int `json:"totalGrammarLessonsDone"`
+	} `json:"stats"`
+	Accuracy        *float64 `json:"accuracy"`
+	GrammarAccurary *float64 `json:"grammarAccurary"` // the reference docs' spelling
+	GrammarAccuracy *float64 `json:"grammarAccuracy"` // the live API's current spelling
+}
+
 // Home reads /home.
 func (c *Client) Home(ctx context.Context) (Home, error) {
 	var body struct {
 		successFlag
-		Counts *struct {
-			Total          int `json:"total"`
-			Lessons        int `json:"lessons"`
-			Reviews        int `json:"reviews"`
-			GrammarTotal   int `json:"grammarTotal"`
-			GrammarLessons int `json:"grammarLessons"`
-			GrammarReviews int `json:"grammarReviews"`
-		} `json:"counts"`
-		Stats *struct {
-			KanjiLearned           int `json:"kanjiLearned"`
-			VocabularyLearned      int `json:"vocabularyLearned"`
-			TotalGrammarLessonsDot int `json:"totalGrammarLessonsDone"`
-		} `json:"stats"`
-		Accuracy        *float64 `json:"accuracy"`
-		GrammarAccurary *float64 `json:"grammarAccurary"`
+		homePayload              // embedded: the documented top-level shape
+		Data        *homePayload `json:"data"` // the live shape nests under "data"
 	}
 	if err := c.getJSON(ctx, "/home", &body); err != nil {
 		return Home{}, err
 	}
+	p := body.homePayload
+	if body.Data != nil {
+		p = *body.Data
+	}
 	h := Home{}
-	if body.Counts != nil {
-		h.TotalLearned = body.Counts.Total
-		h.TotalGrammarLearned = body.Counts.GrammarTotal
-		h.PendingLessons = body.Counts.Lessons
-		h.PendingReviews = body.Counts.Reviews
-		h.PendingGrammarLessons = body.Counts.GrammarLessons
-		h.PendingGrammarReviews = body.Counts.GrammarReviews
+	if p.Counts != nil {
+		h.TotalLearned = p.Counts.Total
+		h.TotalGrammarLearned = p.Counts.GrammarTotal
+		h.PendingLessons = p.Counts.Lessons
+		h.PendingReviews = p.Counts.Reviews
+		h.PendingGrammarLessons = p.Counts.GrammarLessons
+		h.PendingGrammarReviews = p.Counts.GrammarReviews
 	}
-	if body.Stats != nil {
-		h.KanjiLearned = body.Stats.KanjiLearned
-		h.VocabularyLearned = body.Stats.VocabularyLearned
-		h.TotalGrammarDone = body.Stats.TotalGrammarLessonsDot
+	if p.Stats != nil {
+		h.KanjiLearned = p.Stats.KanjiLearned
+		h.VocabularyLearned = p.Stats.VocabularyLearned
+		h.TotalGrammarDone = p.Stats.TotalGrammarLessonsDot
 	}
-	if body.Accuracy != nil {
-		h.Accuracy = *body.Accuracy
+	if p.Accuracy != nil {
+		h.Accuracy = *p.Accuracy
 	}
-	if body.GrammarAccurary != nil {
-		h.GrammarAccuracy = *body.GrammarAccurary
+	switch {
+	case p.GrammarAccuracy != nil:
+		h.GrammarAccuracy = *p.GrammarAccuracy
+	case p.GrammarAccurary != nil:
+		h.GrammarAccuracy = *p.GrammarAccurary
 	}
 	return h, nil
 }
