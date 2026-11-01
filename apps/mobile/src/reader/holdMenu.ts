@@ -85,6 +85,15 @@ export interface Rect {
 }
 
 /**
+ * The slice of a rendered node the menu measures. RN hands refs as opaque
+ * ReactNativeElement instances carrying measureInWindow; naming just that
+ * method keeps the measuring function — and the injected test fake — honest.
+ */
+export interface MeasurableNode {
+  measureInWindow(callback: (x: number, y: number, width: number, height: number) => void): void;
+}
+
+/**
  * Which menu option (if any) the release point sits over. Inert options never
  * take the release — lifting over a disabled Dictionary simply cancels, the
  * same as lifting outside the menu.
