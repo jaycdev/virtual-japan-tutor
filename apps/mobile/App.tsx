@@ -1,40 +1,152 @@
-import { createApiClient } from "@vjt/api-client";
-import { useAuth, useHealth, type Auth } from "@vjt/core";
+import { createApiClient, type ApiClient } from "@vjt/api-client";
+import { useAuth, type Auth, type TokenStorage } from "@vjt/core";
 import * as SecureStore from "expo-secure-store";
 import { StatusBar } from "expo-status-bar";
-import { useState } from "react";
-import { Button, StyleSheet, Text, TextInput, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { resolveApiBaseUrl } from "./src/config.ts";
+import { normalizeServerUrl, resolveApiBaseUrl } from "./src/config.ts";
+import { Practice } from "./src/Practice.tsx";
+import { secureStoreServerUrl, type ServerUrlStorage } from "./src/serverUrlStorage.ts";
+import { SettingsHome } from "./src/SettingsHome.tsx";
+import { MIN_TOUCH, useColors } from "./src/theme.ts";
 import { secureStoreTokenStorage } from "./src/tokenStorage.ts";
+import { ErrorText, Field, LinkButton, Muted, PrimaryButton, Screen, Scroll, Title } from "./src/ui.tsx";
 
-// Created once at module level: useAuth requires stable client/storage references.
-// Expo only inlines literal `process.env.EXPO_PUBLIC_*` references.
-const client = createApiClient({
-  baseUrl: resolveApiBaseUrl({ EXPO_PUBLIC_API_URL: process.env.EXPO_PUBLIC_API_URL }),
-});
-const storage = secureStoreTokenStorage(SecureStore);
+/**
+ * Virtual Japan Tutor on Android (issue #13): Login → Practice | Settings.
+ *
+ * Navigation is state-driven (bottom tab state plus a Settings section
+ * state), mirroring the web App's conditional rendering — no router
+ * dependency, every screen reachable from tests. The server address loads
+ * from the secure store before anything else; `key={serverUrl}` rebuilds the
+ * API client (openapi-fetch cannot change a client's base URL) and re-runs
+ * session restoration whenever the Learner edits it in Settings → Server.
+ */
+
+// One adapter pair for the whole app: the secure store is a process singleton,
+// so module scope is honest and keeps the Root props referentially stable.
+const tokenStorage = secureStoreTokenStorage(SecureStore);
+const urlStorage = secureStoreServerUrl(SecureStore);
 
 export default function App() {
-  const auth = useAuth(client, storage);
-  const { state } = auth;
+  return <Root tokenStorage={tokenStorage} urlStorage={urlStorage} />;
+}
+
+/**
+ * The whole app under a given storage pair, so tests substitute fakes for the
+ * native secure store (and a stateful fake `fetch` for the API) without any
+ * module mocking. `App` above is only the production wiring.
+ */
+export function Root({
+  tokenStorage,
+  urlStorage,
+  fetchOverride,
+}: {
+  tokenStorage: TokenStorage;
+  urlStorage: ServerUrlStorage;
+  fetchOverride?: typeof globalThis.fetch;
+}) {
+  // Hydrate the server URL first: everything below (client, auth) is built on it.
+  const [serverUrl, setServerUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void urlStorage.get().then((stored) => {
+      if (cancelled) return;
+      setServerUrl(resolveApiBaseUrl({ EXPO_PUBLIC_API_URL: process.env.EXPO_PUBLIC_API_URL }, stored));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [urlStorage]);
+
+  if (!serverUrl) return null;
+
+  const changeServerUrl = async (url: string) => {
+    await urlStorage.set(url);
+    if (url !== serverUrl) {
+      // The session token was minted by the old host: forget it before the
+      // remounted tree starts talking to the new one, so its bearer token is
+      // never sent to a different server. The Learner signs in again there.
+      await tokenStorage.clear();
+    }
+    setServerUrl(url);
+  };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Virtual Japan Tutor</Text>
-      {state.status === "loading" && <Text>Loading…</Text>}
-      {state.status === "error" && (
-        <>
-          <Text>Cannot reach server: {state.message}</Text>
-          <Button title="Retry" onPress={auth.retry} />
-        </>
-      )}
-      {state.status === "signedOut" && <LoginForm auth={auth} error={state.error} />}
-      {state.status === "signedIn" && (
-        <Shell username={state.user.username} onLogout={auth.logout} />
-      )}
+    <SafeAreaProvider>
+      <Workspace
+        key={serverUrl}
+        serverUrl={serverUrl}
+        tokenStorage={tokenStorage}
+        fetchOverride={fetchOverride}
+        onChangeServerUrl={changeServerUrl}
+      />
       <StatusBar style="auto" />
-    </View>
+    </SafeAreaProvider>
+  );
+}
+
+function Workspace({
+  serverUrl,
+  tokenStorage,
+  fetchOverride,
+  onChangeServerUrl,
+}: {
+  serverUrl: string;
+  tokenStorage: TokenStorage;
+  fetchOverride?: typeof globalThis.fetch;
+  onChangeServerUrl: (url: string) => Promise<void>;
+}) {
+  // One client per server address, stable across renders (useAuth requires it).
+  const client = useMemo(
+    () => createApiClient({ baseUrl: serverUrl, ...(fetchOverride ? { fetch: fetchOverride } : {}) }),
+    [serverUrl, fetchOverride],
+  );
+  const auth = useAuth(client, tokenStorage);
+
+  if (auth.state.status === "loading") {
+    return (
+      <Screen>
+        <View style={styles.center}>
+          <Muted text="Loading…" />
+        </View>
+      </Screen>
+    );
+  }
+  if (auth.state.status === "error") {
+    return (
+      <Screen>
+        <Scroll>
+          <Title text="Virtual Japan Tutor" />
+          <ErrorText text={`Cannot reach the server: ${auth.state.message}`} />
+          <Muted text={`Server address: ${serverUrl}`} />
+          <PrimaryButton label="Retry" onPress={auth.retry} />
+          <ChangeServer serverUrl={serverUrl} onSave={onChangeServerUrl} note="Change the server address" />
+        </Scroll>
+      </Screen>
+    );
+  }
+  if (auth.state.status === "signedOut") {
+    return (
+      <Screen>
+        <Scroll>
+          <Title text="Virtual Japan Tutor" />
+          <LoginForm auth={auth} error={auth.state.error} />
+          <ChangeServer serverUrl={serverUrl} onSave={onChangeServerUrl} note="Change server" />
+        </Scroll>
+      </Screen>
+    );
+  }
+  return (
+    <Shell
+      client={client}
+      username={auth.state.user.username}
+      serverUrl={serverUrl}
+      onLogout={() => void auth.logout()}
+      onChangeServerUrl={onChangeServerUrl}
+    />
   );
 }
 
@@ -42,61 +154,181 @@ function LoginForm({ auth, error }: { auth: Auth; error: string | undefined }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
 
+  const submit = () => {
+    if (auth.busy || !username || !password) return;
+    void auth.login(username, password);
+  };
+
   return (
-    <View style={styles.form}>
-      <TextInput
-        style={styles.input}
-        placeholder="Username"
-        accessibilityLabel="Username"
-        autoCapitalize="none"
-        autoCorrect={false}
-        autoComplete="username"
+    <>
+      <Field
+        label="Username"
         value={username}
         onChangeText={setUsername}
+        onSubmit={submit}
+        autoFocus
       />
-      <TextInput
-        style={styles.input}
-        placeholder="Password"
-        accessibilityLabel="Password"
-        secureTextEntry
-        autoCapitalize="none"
-        autoComplete="current-password"
+      <Field
+        label="Password"
         value={password}
         onChangeText={setPassword}
-        onSubmitEditing={() => void auth.login(username, password)}
+        onSubmit={submit}
+        secure
       />
-      {error && <Text style={styles.error}>{error}</Text>}
-      <Button
-        title="Log in"
-        disabled={auth.busy || !username || !password}
-        onPress={() => void auth.login(username, password)}
+      {error ? <ErrorText text={error} /> : null}
+      <PrimaryButton label="Log in" onPress={submit} disabled={auth.busy || !username || !password} />
+    </>
+  );
+}
+
+/** Inline editor for the server address (login screen, unreachable screen). */
+function ChangeServer({
+  serverUrl,
+  onSave,
+  note,
+}: {
+  serverUrl: string;
+  onSave: (url: string) => Promise<void>;
+  note: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [url, setUrl] = useState(serverUrl);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | undefined>();
+
+  const save = async () => {
+    const next = normalizeServerUrl(url);
+    if (!next) {
+      setError("Enter the full address, like http://192.168.1.10:8080");
+      return;
+    }
+    setBusy(true);
+    setError(undefined);
+    try {
+      await onSave(next);
+      setEditing(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save the address");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!editing) {
+    return (
+      <>
+        <Muted text={`Server: ${serverUrl}`} />
+        <LinkButton label={note} onPress={() => { setUrl(serverUrl); setError(undefined); setEditing(true); }} />
+      </>
+    );
+  }
+  return (
+    <>
+      <Field
+        label="Server address"
+        value={url}
+        onChangeText={setUrl}
+        keyboardType="url"
+        disabled={busy}
       />
+      {error ? <ErrorText text={error} /> : null}
+      <PrimaryButton
+        label="Save server"
+        onPress={() => void save()}
+        disabled={busy}
+      />
+      <LinkButton label="Cancel" onPress={() => setEditing(false)} />
+    </>
+  );
+}
+
+type Tab = "practice" | "settings";
+
+function Shell({
+  client,
+  username,
+  serverUrl,
+  onLogout,
+  onChangeServerUrl,
+}: {
+  client: ApiClient;
+  username: string;
+  serverUrl: string;
+  onLogout: () => void;
+  onChangeServerUrl: (url: string) => Promise<void>;
+}) {
+  const [tab, setTab] = useState<Tab>("practice");
+  return (
+    <View style={styles.shell}>
+      <View style={styles.fill}>
+        {tab === "practice" ? (
+          <Screen>
+            <Scroll>
+              <Title text="Practice" />
+              <Practice client={client} />
+            </Scroll>
+          </Screen>
+        ) : (
+          <SettingsHome
+            client={client}
+            username={username}
+            onLogout={onLogout}
+            serverUrl={serverUrl}
+            onSaveServerUrl={onChangeServerUrl}
+          />
+        )}
+      </View>
+      <TabBar tab={tab} onSelect={setTab} />
     </View>
   );
 }
 
-function Shell({ username, onLogout }: { username: string; onLogout: () => Promise<void> }) {
-  const health = useHealth(client);
-
+function TabBar({ tab, onSelect }: { tab: Tab; onSelect: (tab: Tab) => void }) {
+  const colors = useColors();
+  const insets = useSafeAreaInsets();
+  const tabs: { id: Tab; label: string }[] = [
+    { id: "practice", label: "Practice" },
+    { id: "settings", label: "Settings" },
+  ];
   return (
-    <View style={styles.form}>
-      <Text>Signed in as {username}</Text>
-      {health.state === "loading" && <Text>Checking server…</Text>}
-      {(health.state === "ok" || health.state === "degraded") && (
-        <Text>
-          Server: {health.health.status}, database: {health.health.database}
-        </Text>
-      )}
-      {health.state === "error" && <Text>Cannot reach server: {health.message}</Text>}
-      <Button title="Log out" onPress={() => void onLogout()} />
+    <View
+      style={[
+        styles.tabBar,
+        {
+          borderTopColor: colors.separator,
+          backgroundColor: colors.card,
+          paddingBottom: insets.bottom,
+        },
+      ]}
+    >
+      {tabs.map((t) => (
+        <Pressable
+          key={t.id}
+          accessibilityRole="tab"
+          accessibilityLabel={t.label}
+          accessibilityState={{ selected: tab === t.id }}
+          onPress={() => onSelect(t.id)}
+          style={styles.tab}
+        >
+          <Text
+            style={{
+              color: tab === t.id ? colors.accent : colors.subtle,
+              fontSize: 15,
+              fontWeight: tab === t.id ? "600" : "400",
+            }}
+          >
+            {t.label}
+          </Text>
+        </Pressable>
+      ))}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff", alignItems: "center", justifyContent: "center" },
-  title: { fontSize: 20, fontWeight: "600", marginBottom: 12 },
-  form: { width: "80%", gap: 12 },
-  input: { borderWidth: 1, borderColor: "#999", borderRadius: 4, padding: 8 },
-  error: { color: "#b00020" },
+  shell: { flex: 1 },
+  fill: { flex: 1 },
+  center: { flex: 1, alignItems: "center", justifyContent: "center" },
+  tabBar: { flexDirection: "row", borderTopWidth: 1 },
+  tab: { flex: 1, minHeight: MIN_TOUCH, alignItems: "center", justifyContent: "center" },
 });

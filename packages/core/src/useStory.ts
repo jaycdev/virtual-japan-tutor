@@ -85,51 +85,27 @@ function message(error: { message?: string } | undefined, status: number): strin
   return error?.message ?? `${FAILED} (${status})`;
 }
 
-export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
-  const [offset, setOffset] = useState(0);
-  const [attempt, setAttempt] = useState(0);
-  const [library, setLibrary] = useState<StoryLibraryState>({ status: "loading" });
-  const [story, setStory] = useState<Story | null>(null);
-  // Which Story is open right now, readable from async callbacks without
-  // re-creating them: an answer's response is only painted while the Story
-  // it was asked about is still the open one.
-  const openIdRef = useRef<string | null>(null);
-  const [open, setOpen] = useState(false);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [answers, setAnswers] = useState<Map<number, StoryAnswerResult>>(() => new Map());
+export interface StorySettingsView {
+  /** Story settings: furigana threshold, and the genre/theme future stories aim for. */
+  settings: StorySettingsState;
+  /** Save the settings; the server's answer becomes the new state. Empty genre/theme means "surprise me". */
+  saveSettings(next: StorySettings): Promise<ActionResult>;
+  /** Re-fetch the settings after an error. */
+  reloadSettings(): void;
+}
+
+/**
+ * The Learner's Story settings on their own, without the library list: the
+ * mobile Settings screen edits the Furigana Threshold without paying for a
+ * `/stories` fetch. `useStory` composes it in so the web Story screens keep
+ * the settings riding along with the library.
+ */
+export function useStorySettings(client: ApiClient): StorySettingsView {
   const [settings, setSettings] = useState<StorySettingsState>({ status: "loading" });
   const [settingsAttempt, setSettingsAttempt] = useState(0);
 
-  const fetchPage = useCallback(async (): Promise<StoryLibraryState> => {
-    try {
-      const { data, error: err, response } = await client.GET("/stories", {
-        params: { query: { limit, offset } },
-      });
-      if (data) return { status: "ready", page: data };
-      return { status: "error", message: message(err, response.status) };
-    } catch {
-      return { status: "error", message: UNREACHABLE };
-    }
-  }, [client, limit, offset]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void fetchPage().then((next) => {
-      if (!cancelled) setLibrary(next);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [fetchPage, attempt]);
-
-  const loadPage = useCallback(async (next: number) => {
-    setOffset(Math.max(0, next));
-  }, []);
-  const reload = useCallback(() => setAttempt((n) => n + 1), []);
-
-  // Story settings ride along with the library screen: the Furigana
-  // Threshold and the preferred genre/theme (empty = "surprise me").
+  // Story settings: the Furigana Threshold and the preferred genre/theme
+  // (empty = "surprise me").
   const fetchSettings = useCallback(async (): Promise<StorySettingsState> => {
     try {
       const { data, error: err, response } = await client.GET("/story-settings");
@@ -167,6 +143,54 @@ export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
     },
     [client],
   );
+
+  return { settings, saveSettings, reloadSettings };
+}
+
+export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
+  const [offset, setOffset] = useState(0);
+  const [attempt, setAttempt] = useState(0);
+  const [library, setLibrary] = useState<StoryLibraryState>({ status: "loading" });
+  const [story, setStory] = useState<Story | null>(null);
+  // Which Story is open right now, readable from async callbacks without
+  // re-creating them: an answer's response is only painted while the Story
+  // it was asked about is still the open one.
+  const openIdRef = useRef<string | null>(null);
+  const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [answers, setAnswers] = useState<Map<number, StoryAnswerResult>>(() => new Map());
+
+  const fetchPage = useCallback(async (): Promise<StoryLibraryState> => {
+    try {
+      const { data, error: err, response } = await client.GET("/stories", {
+        params: { query: { limit, offset } },
+      });
+      if (data) return { status: "ready", page: data };
+      return { status: "error", message: message(err, response.status) };
+    } catch {
+      return { status: "error", message: UNREACHABLE };
+    }
+  }, [client, limit, offset]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchPage().then((next) => {
+      if (!cancelled) setLibrary(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchPage, attempt]);
+
+  // Registered after the library effect so the settings fetch follows the
+  // library fetch on mount, matching the web screen's request order.
+  const storySettings = useStorySettings(client);
+
+  const loadPage = useCallback(async (next: number) => {
+    setOffset(Math.max(0, next));
+  }, []);
+  const reload = useCallback(() => setAttempt((n) => n + 1), []);
 
   const refreshList = useCallback(async () => {
     const next = await fetchPage();
@@ -302,9 +326,7 @@ export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
     pending,
     error,
     questions,
-    settings,
-    saveSettings,
-    reloadSettings,
+    ...storySettings,
     loadPage,
     reload,
     openReady,

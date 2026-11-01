@@ -10,13 +10,14 @@ export { useMarumori } from "./useMarumori.ts";
 export type { MaruMori, MaruMoriRunsState, MaruMoriState, SyncOutcome } from "./useMarumori.ts";
 export { usePractice } from "./usePractice.ts";
 export type { AnswerFeedback, ExerciseView, PracticeView } from "./usePractice.ts";
-export { NO_READY_STORY, useStory } from "./useStory.ts";
+export { NO_READY_STORY, useStory, useStorySettings } from "./useStory.ts";
 export { useReadingSettings } from "./useReadingSettings.ts";
 export type { ReadingSettingsState, ReadingSettingsView } from "./useReadingSettings.ts";
 export type {
   StoryLibraryState,
   StoryQuestionView,
   StorySettingsState,
+  StorySettingsView,
   StoryView,
 } from "./useStory.ts";
 export { useGrammar } from "./useGrammar.ts";
