@@ -1,0 +1,39 @@
+openapi: 3.0.3
+info:
+  title: Virtual Japan Tutor API
+  version: 0.1.0
+  description: >
+    Source of truth for the HTTP API. Go server stubs and the TypeScript
+    client are both generated from this file (run `pnpm generate`).
+servers:
+  - url: http://localhost:8080
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Liveness and database connectivity check
+      responses:
+        "200":
+          description: Server is up and the database is reachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "503":
+          description: Server is up but the database is unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+components:
+  schemas:
+    Health:
+      type: object
+      required: [status, database]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        database:
+          type: string
+          enum: [connected, unreachable]
