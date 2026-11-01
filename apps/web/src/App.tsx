@@ -1,6 +1,7 @@
 import type { ApiClient } from "@vjt/api-client";
 import { useAuth, useHealth, type Auth, type TokenStorage } from "@vjt/core";
 import { useState, type FormEvent } from "react";
+import { Settings } from "./Settings.tsx";
 
 export function App({ client, storage }: { client: ApiClient; storage: TokenStorage }) {
   const auth = useAuth(client, storage);
@@ -81,17 +82,31 @@ function Shell({
   onLogout: () => Promise<void>;
 }) {
   const health = useHealth(client);
+  const [page, setPage] = useState<"home" | "settings">("home");
 
   return (
     <section>
+      <nav aria-label="Main">
+        <button type="button" aria-current={page === "home" ? "page" : undefined} onClick={() => setPage("home")}>
+          Home
+        </button>{" "}
+        <button type="button" aria-current={page === "settings" ? "page" : undefined} onClick={() => setPage("settings")}>
+          Settings
+        </button>
+      </nav>
       <p>Signed in as {username}</p>
-      {health.state === "loading" && <p>Checking server…</p>}
-      {(health.state === "ok" || health.state === "degraded") && (
-        <p>
-          Server: {health.health.status}, database: {health.health.database}
-        </p>
+      {page === "settings" && <Settings client={client} />}
+      {page === "home" && (
+        <>
+          {health.state === "loading" && <p>Checking server…</p>}
+          {(health.state === "ok" || health.state === "degraded") && (
+            <p>
+              Server: {health.health.status}, database: {health.health.database}
+            </p>
+          )}
+          {health.state === "error" && <p>Cannot reach server: {health.message}</p>}
+        </>
       )}
-      {health.state === "error" && <p>Cannot reach server: {health.message}</p>}
       <button type="button" onClick={() => void onLogout()}>
         Log out
       </button>
