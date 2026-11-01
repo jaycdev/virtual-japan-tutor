@@ -79,8 +79,9 @@ A full import takes about a minute (JMdict is streamed, never held in memory) an
 dataset loads in one transaction, and running it again on the same sources leaves every table with the same
 rows. JMdict entries, kanji and Grammar Points are upserted on their natural keys, so ids that other tables
 will reference never change; dependent rows (forms, senses, readings, links) are replaced. `import_runs`
-records one row per dataset version (source URL, licence, version, sha256, fetched-at, row counts) and is
-updated, not appended to, when the same source is imported again.
+records one row per distinct source checksum of a dataset (source URL, licence, version, sha256, fetched-at,
+row counts): re-importing identical data updates that dataset's existing row, while a changed source (new
+checksum) adds a new row.
 
 ### Run it on the remote Docker host
 
@@ -182,7 +183,8 @@ and sessions last `SESSION_TTL` (default 30 days). Logout deletes the session se
 **Authenticated by default.** `api/openapi.yaml` declares a global `bearerAuth` requirement; an operation
 is public only with `security: []`. The Go middleware (`internal/httpapi`) is deny-by-default (it only lets
 the routes in `publicRoutes` through) and a test walks the spec to fail if the two disagree. Errors are
-always `{"code": "...", "message": "..."}`.
+always `{"code": "...", "message": "..."}`. Every request body, including `/auth/login`, is capped at
+`HTTP_MAX_BODY_BYTES` (default 1 MiB); larger bodies get `413` with code `payload_too_large`.
 
 ### Creating the first account
 
@@ -227,7 +229,9 @@ and model. The Learner manages them in the web app's **Settings** page and picks
   (trailing slash removed, `/v1` added when the path is empty, a pasted `.../chat/completions` is cut back) and
   must be `http` or `https` without embedded credentials. **Private, LAN and localhost addresses are allowed
   on purpose** (this is a single-user, self-hosted tool and local endpoints are a main use case), so anyone who
-  can log in can make the server call any address it can reach.
+  can log in can make the server call any address it can reach. For the same reason the connection-test
+  messages can reveal whether a host and port are reachable, which is acceptable here because the app is
+  single-user and self-hosted.
 - **Keys are write-only.** They are encrypted with `SECRETS_KEY` (`v1:` ciphertext in `ai_providers.api_key_encrypted`,
   `NULL` for keyless endpoints) and never returned: responses carry only `hasApiKey`. On `PATCH`, an omitted
   `apiKey` keeps the stored key; `null` or `""` removes it; any other string replaces it. Keys and `Authorization`
