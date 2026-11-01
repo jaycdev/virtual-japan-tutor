@@ -347,11 +347,15 @@ func TestGrammarListFiltersPagesAndCounts(t *testing.T) {
 }
 
 // TestFirstReadGeneratesSecondIsFree is the issue's core promise: the first
-// detail read asks the provider once; every later read is served from storage.
+// detail read asks the provider for the content it is missing (an explanation
+// and a first batch of examples); every later read is served from storage.
 func TestFirstReadGeneratesSecondIsFree(t *testing.T) {
 	e := newGrammarEnv(t, gDake)
 	tok := e.login(t, "alice")
-	e.fake.replies = []string{explanationJSON("**〜だけ** means “only, just”. It attaches to a noun or a て-form verb.")}
+	e.fake.replies = []string{
+		explanationJSON("**〜だけ** means “only, just”. It attaches to a noun or a て-form verb."),
+		examplesJSON(gValid(0, grammar.MinExamplesPerPoint)...),
+	}
 	e.assignProvider(t, tok)
 
 	var first detailBody
@@ -366,8 +370,8 @@ func TestFirstReadGeneratesSecondIsFree(t *testing.T) {
 	if first.ID != 1 || first.JlptLevel != "N5" || first.Pattern != "〜だけ" || first.CatalogueNumber != 1 {
 		t.Fatalf("catalogue fields wrong: %+v", first)
 	}
-	if e.fake.callCount() != 1 {
-		t.Fatalf("provider calls = %d, want 1", e.fake.callCount())
+	if e.fake.callCount() != 2 {
+		t.Fatalf("provider calls = %d, want 2 (one explanation, one batch of examples)", e.fake.callCount())
 	}
 	if e.fake.lastAuth() != "Bearer fake-key" {
 		t.Fatalf("provider auth header = %q", e.fake.lastAuth())
@@ -379,7 +383,40 @@ func TestFirstReadGeneratesSecondIsFree(t *testing.T) {
 	if second.Explanation != first.Explanation {
 		t.Fatalf("second read = %q, want the stored explanation", second.Explanation)
 	}
-	if e.fake.callCount() != 1 {
+	if e.fake.callCount() != 2 {
+		t.Fatalf("second read spent the provider again (calls %d)", e.fake.callCount())
+	}
+}
+
+// Issue #8's promise is "a stored explanation and at least N checked example
+// sentences, generating them if missing": a detail read tops the point up to
+// grammar.MinExamplesPerPoint, and only the first read spends the provider.
+func TestReadTopsUpExampleSentences(t *testing.T) {
+	e := newGrammarEnv(t, gDake)
+	tok := e.login(t, "alice")
+	e.fake.replies = []string{
+		explanationJSON("**〜だけ** means “only, just”."),
+		examplesJSON(gValid(0, grammar.MinExamplesPerPoint)...),
+	}
+	e.assignProvider(t, tok)
+
+	first := e.grammarDetail(t, tok, 1)
+	if first.Explanation == "" {
+		t.Fatalf("first read = %+v, want a generated explanation", first)
+	}
+	if len(first.Examples) < grammar.MinExamplesPerPoint {
+		t.Fatalf("first read returned %d examples, want at least %d",
+			len(first.Examples), grammar.MinExamplesPerPoint)
+	}
+	if e.fake.callCount() != 2 {
+		t.Fatalf("provider calls = %d, want 2 (one explanation, one batch of examples)", e.fake.callCount())
+	}
+
+	second := e.grammarDetail(t, tok, 1)
+	if len(second.Examples) != len(first.Examples) {
+		t.Fatalf("second read returned %d examples, want the stored %d", len(second.Examples), len(first.Examples))
+	}
+	if e.fake.callCount() != 2 {
 		t.Fatalf("second read spent the provider again (calls %d)", e.fake.callCount())
 	}
 }
@@ -553,6 +590,7 @@ func TestExampleCapAnswersWithNoteInsteadOfProviderSpend(t *testing.T) {
 func TestPatchPersistsAndSurvivesLaterReads(t *testing.T) {
 	e := newGrammarEnv(t, gDake)
 	tok := e.login(t, "alice")
+	e.fake.replies = []string{examplesJSON(gValid(0, grammar.MinExamplesPerPoint)...)}
 	e.assignProvider(t, tok)
 
 	rec := e.do(t, "PATCH", "/grammar/points/1", "Bearer "+tok, map[string]any{"explanation": "My own note about **だけ**."})
@@ -568,13 +606,14 @@ func TestPatchPersistsAndSurvivesLaterReads(t *testing.T) {
 		t.Fatalf("PATCH must not touch the provider (%d calls)", e.fake.callCount())
 	}
 
-	// Later reads serve the stored text and never regenerate it.
+	// Later reads serve the stored text and never regenerate it. The one provider
+	// spend they may make is topping the point up to MinExamplesPerPoint examples.
 	detail := e.grammarDetail(t, tok, 1)
 	if detail.Explanation != "My own note about **だけ**." || !detail.ExplanationEdited {
 		t.Fatalf("after PATCH: %+v", detail)
 	}
-	if e.fake.callCount() != 0 {
-		t.Fatalf("read regenerated content (provider calls %d)", e.fake.callCount())
+	if e.fake.callCount() != 1 {
+		t.Fatalf("provider calls = %d, want 1 (the example top-up, nothing else)", e.fake.callCount())
 	}
 
 	wantError(t, e.do(t, "PATCH", "/grammar/points/1", "Bearer "+tok, map[string]any{"explanation": "   "}), http.StatusBadRequest, "bad_request")
@@ -584,7 +623,12 @@ func TestPatchPersistsAndSurvivesLaterReads(t *testing.T) {
 func TestRegenerateReplacesStoredExplanation(t *testing.T) {
 	e := newGrammarEnv(t, gDake)
 	tok := e.login(t, "alice")
-	e.fake.replies = []string{explanationJSON("the original explanation"), explanationJSON("a brand new explanation")}
+	// In handler order: the first read's explanation, its example top-up, then the regenerate.
+	e.fake.replies = []string{
+		explanationJSON("the original explanation"),
+		examplesJSON(gValid(0, grammar.MinExamplesPerPoint)...),
+		explanationJSON("a brand new explanation"),
+	}
 	e.assignProvider(t, tok)
 
 	if detail := e.grammarDetail(t, tok, 1); detail.Explanation != "the original explanation" {
@@ -599,8 +643,8 @@ func TestRegenerateReplacesStoredExplanation(t *testing.T) {
 	if body.Explanation != "a brand new explanation" || body.ExplanationEdited {
 		t.Fatalf("after regenerate = %+v", body)
 	}
-	if e.fake.callCount() != 2 {
-		t.Fatalf("provider calls = %d, want 2", e.fake.callCount())
+	if e.fake.callCount() != 3 {
+		t.Fatalf("provider calls = %d, want 3 (explanation, example top-up, regenerate)", e.fake.callCount())
 	}
 	if e.store == nil {
 		t.Fatal("store missing")
@@ -610,7 +654,7 @@ func TestRegenerateReplacesStoredExplanation(t *testing.T) {
 	if detail.Explanation != "a brand new explanation" {
 		t.Fatalf("after regenerate read = %+v", detail)
 	}
-	if e.fake.callCount() != 2 {
+	if e.fake.callCount() != 3 {
 		t.Fatalf("read after regenerate spent the provider (calls %d)", e.fake.callCount())
 	}
 }

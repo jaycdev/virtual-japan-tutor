@@ -100,8 +100,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Read a grammar point, generating a missing explanation on first read
-         * @description When the point has no explanation yet, the server asks the AI Provider assigned to the `grammar_content` task and stores the answer. A point without an explanation and without an assigned provider is still answered 200 with an empty `explanation`.
+         * Read a grammar point, generating missing content on first read
+         * @description When the point has no explanation yet, or holds fewer than 5 example sentences, the server asks the AI Provider assigned to the `grammar_content` task and stores what it returns: the explanation first, then validated example sentences up to 5. Existing content is never replaced. A point with no content and no assigned provider is still answered 200 with an empty `explanation` and no `examples`.
          */
         get: operations["getGrammarPoint"];
         put?: never;

@@ -171,15 +171,25 @@ func (s *server) GetGrammarPoint(ctx context.Context, req api.GetGrammarPointReq
 	// First read generates; stored content is served untouched. A missing or
 	// failing provider never turns a readable catalogue point into an error:
 	// the point is answered with whatever content it has.
+	pointNotFound := api.GetGrammarPoint404JSONResponse{NotFoundJSONResponse: notFound("Grammar point not found")}
 	if s.grammarGen != nil {
+		// A missing explanation and a thin set of examples are both topped up,
+		// in that order. ErrNotAssigned is quiet: the point is answered with
+		// whatever content it already has.
 		if _, err := s.grammarGen.EnsureExplanation(ctx, id, userID); err != nil {
-			switch {
-			case errors.Is(err, grammar.ErrPointNotFound):
-				return api.GetGrammarPoint404JSONResponse{NotFoundJSONResponse: notFound("Grammar point not found")}, nil
-			case errors.Is(err, grammar.ErrNotAssigned):
-				// No provider assigned: answer with the (still empty) stored content.
-			default:
+			if errors.Is(err, grammar.ErrPointNotFound) {
+				return pointNotFound, nil
+			}
+			if !errors.Is(err, grammar.ErrNotAssigned) {
 				slog.Warn("grammar: explanation generation failed", "point", id, "err", err)
+			}
+		}
+		if _, err := s.grammarGen.EnsureExamples(ctx, id, userID, grammar.MinExamplesPerPoint); err != nil {
+			if errors.Is(err, grammar.ErrPointNotFound) {
+				return pointNotFound, nil
+			}
+			if !errors.Is(err, grammar.ErrNotAssigned) {
+				slog.Warn("grammar: example generation failed", "point", id, "err", err)
 			}
 		}
 	}

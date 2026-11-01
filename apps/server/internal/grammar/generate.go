@@ -36,6 +36,9 @@ const (
 	MaxExamplesPerRequest = exampleBatch * maxProviderCalls
 	// MaxExamplesPerPoint caps how many example sentences one Grammar Point holds.
 	MaxExamplesPerPoint = 30
+	// MinExamplesPerPoint is how many checked examples a Grammar Point should
+	// hold: a detail read tops the point up to it, generating what is missing.
+	MinExamplesPerPoint = 5
 )
 
 // Generator produces Grammar Point content through the Learner's assigned AI

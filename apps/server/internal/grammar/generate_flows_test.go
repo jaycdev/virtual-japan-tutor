@@ -583,7 +583,7 @@ func TestGenerateExamplesRequestsForDifferentCountsDoNotShareAFlight(t *testing.
 	}
 	run(2)
 	time.Sleep(40 * time.Millisecond) // while that generation is still in flight
-	run(11)                          // needs two provider calls of its own
+	run(11)                           // needs two provider calls of its own
 	wg.Wait()
 
 	if provider.countCallsWith("example sentences") != 3 {
@@ -614,6 +614,57 @@ func TestExamplesPromptAsksForTheRangeTheValidatorAccepts(t *testing.T) {
 	const rule = "Between 5 and 40 characters long."
 	if prompt := provider.lastPrompt(); !strings.Contains(prompt, rule) {
 		t.Fatalf("the prompt must state the Validator's bounds %q:\n%s", rule, prompt)
+	}
+}
+
+// A read tops a thin point up to the minimum, and leaves a point that already
+// has enough completely alone.
+func TestEnsureExamplesTopsUpAPointThatHasTooFew(t *testing.T) {
+	ctx := context.Background()
+	store := grammartest.NewMemStore(dake)
+	teach := func(messages []llm.Message) string {
+		return examplesReply(validExamples(0, askedCount(userPrompt(messages)))...)
+	}
+	provider := newFakeProvider(t, scriptedCall{contentFor: teach})
+	resolve := newFakeResolver(map[aiprovider.Task]*llm.Client{aiprovider.TaskGrammarContent: provider.client(t)})
+	gen := newGenerator(store, dakeDict(), resolve)
+
+	n, err := gen.EnsureExamples(ctx, dake.ID, testUser, grammar.MinExamplesPerPoint)
+	if err != nil {
+		t.Fatalf("EnsureExamples: %v", err)
+	}
+	if n != grammar.MinExamplesPerPoint {
+		t.Fatalf("EnsureExamples returned %d examples, want %d", n, grammar.MinExamplesPerPoint)
+	}
+	if total, _ := store.CountExamples(ctx, dake.ID); total != grammar.MinExamplesPerPoint {
+		t.Fatalf("stored %d examples, want %d", total, grammar.MinExamplesPerPoint)
+	}
+
+	n, err = gen.EnsureExamples(ctx, dake.ID, testUser, grammar.MinExamplesPerPoint)
+	if err != nil || n != grammar.MinExamplesPerPoint {
+		t.Fatalf("second EnsureExamples = %d, %v", n, err)
+	}
+	if provider.callCount() != 1 {
+		t.Fatalf("provider calls = %d, want 1 (a full enough point generates nothing)", provider.callCount())
+	}
+}
+
+func TestEnsureExamplesWithoutAProviderIsErrNotAssigned(t *testing.T) {
+	ctx := context.Background()
+	store := grammartest.NewMemStore(dake)
+	provider := newFakeProvider(t, scriptedCall{content: examplesReply(validExamples(0, 1)...)})
+	resolve := newFakeResolver(nil) // nothing assigned
+	gen := newGenerator(store, dakeDict(), resolve)
+
+	_, err := gen.EnsureExamples(ctx, dake.ID, testUser, grammar.MinExamplesPerPoint)
+	if !errors.Is(err, grammar.ErrNotAssigned) {
+		t.Fatalf("EnsureExamples err = %v, want ErrNotAssigned", err)
+	}
+	if total, _ := store.CountExamples(ctx, dake.ID); total != 0 {
+		t.Fatalf("an unassigned read stored %d examples", total)
+	}
+	if provider.callCount() != 0 {
+		t.Fatalf("an unassigned read spent the provider (%d calls)", provider.callCount())
 	}
 }
 
