@@ -17,6 +17,7 @@ import (
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/auth"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/config"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/db"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/grammar"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/httpapi"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/marumori"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/marumorisync"
@@ -74,6 +75,10 @@ func run(args []string) error {
 		func(baseURL, apiKey string) (marumorisync.Upstream, error) { return marumori.New(baseURL, apiKey) },
 		marumorisync.WithBaseURL(cfg.MaruMoriBaseURL),
 	)
+	// The grammar store doubles as the JMdict-backed dictionary the example
+	// validator checks words against.
+	grammarStore := grammar.NewPostgresStore(pool)
+	grammarGen := grammar.NewGenerator(grammarStore, grammarStore, ai)
 
 	// Migrate (then seed the first account and the default AI Provider) in the background so
 	// the server (and /health) is up even while Postgres is still starting; retry until it
@@ -88,7 +93,7 @@ func run(args []string) error {
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.New(pool, svc, httpapi.WithAIProviders(ai), httpapi.WithMaruMori(maru), httpapi.WithMaxBodyBytes(cfg.MaxBodyBytes)),
+		Handler:           httpapi.New(pool, svc, httpapi.WithAIProviders(ai), httpapi.WithMaruMori(maru), httpapi.WithGrammar(grammarStore, grammarGen), httpapi.WithMaxBodyBytes(cfg.MaxBodyBytes)),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       cfg.ReadTimeout,
 		WriteTimeout:      cfg.WriteTimeout,
