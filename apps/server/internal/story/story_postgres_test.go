@@ -122,6 +122,11 @@ func TestPostgresStoreAgainstPostgres(t *testing.T) {
 	if !sen.Spans[0].IsFocus {
 		t.Errorf("span is_focus did not round-trip: %+v", sen.Spans[0])
 	}
+	// Read-time enrichment (issue #11): the store joins the Grammar Point's
+	// own row in, so the reader's hover needs no extra request.
+	if sen.Spans[0].Pattern != "～ました" || sen.Spans[0].Meaning != "past tense (polite)" || sen.Spans[0].JLPTLevel != "N5" {
+		t.Errorf("span enrichment = %+v, want the grammar_points pattern/meaning/level", sen.Spans[0])
+	}
 	if len(got.Questions) != 3 || got.Questions[2].AnswerIndex != 0 || len(got.Questions[0].OptionsJA) != 2 {
 		t.Errorf("questions: %+v", got.Questions)
 	}
@@ -265,6 +270,21 @@ func TestPostgresStoreAgainstPostgres(t *testing.T) {
 	}
 	if err := st.SetFuriganaThreshold(ctx, uuid.New(), 5); err != ErrNotFound {
 		t.Errorf("threshold for unknown user: %v, want ErrNotFound", err)
+	}
+
+	// Reading settings (issue #11): the users column defaults to blurred,
+	// and writes are scoped to real users.
+	if blur, err := st.BlurTranslation(ctx, user); err != nil || !blur {
+		t.Errorf("default blur_translation: %v err=%v, want true/nil", blur, err)
+	}
+	if err := st.SetBlurTranslation(ctx, user, false); err != nil {
+		t.Fatal(err)
+	}
+	if blur, err := st.BlurTranslation(ctx, user); err != nil || blur {
+		t.Errorf("blur_translation after set: %v err=%v, want false/nil", blur, err)
+	}
+	if err := st.SetBlurTranslation(ctx, uuid.New(), false); err != ErrNotFound {
+		t.Errorf("blur setting for unknown user: %v, want ErrNotFound", err)
 	}
 
 	// Checked while the user has no story_user_state row at all.

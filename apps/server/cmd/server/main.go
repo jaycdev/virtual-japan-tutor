@@ -17,6 +17,7 @@ import (
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/auth"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/config"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/db"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/dictionary"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/grammar"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/httpapi"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/knowngrammar"
@@ -86,6 +87,12 @@ func run(args []string) error {
 	// and the signals; scoring weights and rotation knobs come from config.
 	focus := mastery.NewService(mastery.NewPostgresStore(pool), cfg.Mastery)
 
+	// Dictionary lookups for the story reader (issue #11): one JMdict entry
+	// per token plus Kanjium pitch (ADR-0006) and the Learner's Known Item
+	// state — word and constituent kanji — with Mastery from the same
+	// scoring the Focus Set uses.
+	dictionarySvc := dictionary.NewService(refStore, dictionary.NewPGKnownStore(pool), focus)
+
 	// Practice Sessions (issue #9): exercises drawn from the Focus Set, with
 	// every answer appended to the Practice Record the mastery service reads.
 	practiceSvc := practice.NewService(focus, practice.NewPostgresContent(pool),
@@ -120,7 +127,7 @@ func run(args []string) error {
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.New(pool, svc, httpapi.WithAIProviders(ai), httpapi.WithMaruMori(maru), httpapi.WithGrammar(grammarStore, grammarGen), httpapi.WithKnownGrammar(knownGrammar), httpapi.WithFocusSet(focus), httpapi.WithPractice(practiceSvc), httpapi.WithStory(storySvc), httpapi.WithMaxBodyBytes(cfg.MaxBodyBytes)),
+		Handler:           httpapi.New(pool, svc, httpapi.WithAIProviders(ai), httpapi.WithMaruMori(maru), httpapi.WithGrammar(grammarStore, grammarGen), httpapi.WithKnownGrammar(knownGrammar), httpapi.WithFocusSet(focus), httpapi.WithPractice(practiceSvc), httpapi.WithStory(storySvc), httpapi.WithDictionary(dictionarySvc), httpapi.WithMaxBodyBytes(cfg.MaxBodyBytes)),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       cfg.ReadTimeout,
 		WriteTimeout:      cfg.WriteTimeout,

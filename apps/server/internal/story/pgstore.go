@@ -210,15 +210,19 @@ func (st *PostgresStore) loadChildren(ctx context.Context, s *Story) error {
 	}
 
 	srows, err := st.pool.Query(ctx, `
-		SELECT id, sentence_id, start, "end", grammar_point_id, is_focus
-		FROM story_grammar_spans WHERE story_id = $1 ORDER BY sentence_id, start`, s.ID)
+		SELECT sp.id, sp.sentence_id, sp.start, sp."end", sp.grammar_point_id, sp.is_focus,
+		       gp.pattern, gp.meaning, gp.jlpt_level
+		FROM story_grammar_spans sp
+		JOIN grammar_points gp ON gp.id = sp.grammar_point_id
+		WHERE sp.story_id = $1 ORDER BY sp.sentence_id, sp.start`, s.ID)
 	if err != nil {
 		return fmt.Errorf("story spans: %w", err)
 	}
 	for srows.Next() {
 		var sp Span
 		var senID uuid.UUID
-		if err := srows.Scan(&sp.ID, &senID, &sp.Start, &sp.End, &sp.GrammarPointID, &sp.IsFocus); err != nil {
+		if err := srows.Scan(&sp.ID, &senID, &sp.Start, &sp.End, &sp.GrammarPointID, &sp.IsFocus,
+			&sp.Pattern, &sp.Meaning, &sp.JLPTLevel); err != nil {
 			srows.Close()
 			return fmt.Errorf("story spans: %w", err)
 		}
@@ -453,6 +457,29 @@ func (st *PostgresStore) SetFuriganaThreshold(ctx context.Context, userID uuid.U
 	tag, err := st.pool.Exec(ctx, `UPDATE users SET furigana_threshold_srs_level = $2 WHERE id = $1`, userID, level)
 	if err != nil {
 		return fmt.Errorf("story furigana threshold: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (st *PostgresStore) BlurTranslation(ctx context.Context, userID uuid.UUID) (bool, error) {
+	var blur bool
+	err := st.pool.QueryRow(ctx, `SELECT blur_translation FROM users WHERE id = $1`, userID).Scan(&blur)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, ErrNotFound
+	}
+	if err != nil {
+		return false, fmt.Errorf("story blur translation: %w", err)
+	}
+	return blur, nil
+}
+
+func (st *PostgresStore) SetBlurTranslation(ctx context.Context, userID uuid.UUID, blur bool) error {
+	tag, err := st.pool.Exec(ctx, `UPDATE users SET blur_translation = $2 WHERE id = $1`, userID, blur)
+	if err != nil {
+		return fmt.Errorf("story blur translation: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound

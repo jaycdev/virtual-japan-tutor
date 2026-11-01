@@ -69,6 +69,20 @@ func (s *Store) FindVocabulary(ctx context.Context, written, reading string) ([]
 	return s.loadVocabulary(ctx, ids)
 }
 
+// VocabularyByEntSeq returns the entry with this ent_seq, or nil when JMdict
+// has no row for it. One entry at most — the Dictionary window's lookup key.
+func (s *Store) VocabularyByEntSeq(ctx context.Context, entSeq int64) ([]Vocabulary, error) {
+	var exists bool
+	if err := s.q.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM jmdict_entries WHERE ent_seq = $1)`, entSeq).Scan(&exists); err != nil {
+		return nil, fmt.Errorf("vocabulary by ent_seq: %w", err)
+	}
+	if !exists {
+		return nil, nil
+	}
+	return s.loadVocabulary(ctx, []int64{entSeq})
+}
+
 // VocabularyJLPTLevel returns the JLPT Level of a JMdict entry, or ok=false
 // when the entry is on no list.
 func (s *Store) VocabularyJLPTLevel(ctx context.Context, entSeq int64) (Level, bool, error) {
