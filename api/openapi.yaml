@@ -7,10 +7,15 @@ info:
     client are both generated from this file (run `pnpm generate`).
 servers:
   - url: http://localhost:8080
+# Authenticated by default: every operation requires a bearer session token unless it
+# explicitly opts out with `security: []` (only /health and /auth/login do).
+security:
+  - bearerAuth: []
 paths:
   /health:
     get:
       operationId: getHealth
+      security: []
       summary: Liveness and database connectivity check
       responses:
         "200":
@@ -25,8 +30,122 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Health"
+  /auth/login:
+    post:
+      operationId: login
+      summary: Exchange a username and password for a session token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Logged in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "400":
+          description: Malformed request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Unknown user or wrong password (indistinguishable by design)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Too many failed attempts; retry after the number of seconds in Retry-After
+          headers:
+            Retry-After:
+              required: true
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /auth/logout:
+    post:
+      operationId: logout
+      summary: Invalidate the current session token
+      responses:
+        "204":
+          description: Session deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /me:
+    get:
+      operationId: getMe
+      summary: The authenticated user
+      responses:
+        "200":
+          description: The current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: "Opaque session token from POST /auth/login, sent as `Authorization: Bearer <token>`."
+  responses:
+    Unauthorized:
+      description: Missing, invalid or expired session token
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
   schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: Stable machine-readable error code (e.g. unauthorized, invalid_credentials, too_many_attempts).
+        message:
+          type: string
+    User:
+      type: object
+      required: [id, username]
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+    LoginResponse:
+      type: object
+      required: [token, expires_at, user]
+      properties:
+        token:
+          type: string
+          description: Opaque bearer token. Shown once; the server stores only its hash.
+        expires_at:
+          type: string
+          format: date-time
+        user:
+          $ref: "#/components/schemas/User"
     Health:
       type: object
       required: [status, database]
