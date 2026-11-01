@@ -155,6 +155,53 @@ func (s *PostgresStore) RemoveItem(ctx context.Context, userID, listID uuid.UUID
 	return err
 }
 
+// ListItems reads a list's members with a display label joined from the
+// reference data: first kanji form (or reading) + first gloss for Words,
+// pattern + meaning for Grammar Points, the literal itself for Kanji.
+// Vocabulary refs are ent_seqs when linked and MaruMori ids otherwise, so
+// the label falls back through jmdict to the user's own unlinked row and
+// finally to the raw ref. Rows are few (the endpoint caps at 500), so the
+// refs are cast to text for the join rather than indexed.
+func (s *PostgresStore) ListItems(ctx context.Context, userID, listID uuid.UUID, limit int) ([]Member, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT m.item_kind, m.item_ref,
+		        CASE m.item_kind
+		          WHEN 'grammar' THEN COALESCE(
+		            (SELECT g.pattern FROM grammar_points g WHERE g.id::text = m.item_ref), m.item_ref)
+		          WHEN 'kanji' THEN m.item_ref
+		          ELSE COALESCE(
+		            (SELECT k.text FROM jmdict_kanji_forms k WHERE k.ent_seq::text = m.item_ref ORDER BY k.ord LIMIT 1),
+		            (SELECT r.text FROM jmdict_readings r WHERE r.ent_seq::text = m.item_ref ORDER BY r.ord LIMIT 1),
+		            (SELECT u.text FROM marumori_known_items u
+		              WHERE u.user_id = $1 AND u.kind = 'vocabulary' AND u.marumori_id = m.item_ref),
+		            m.item_ref)
+		        END,
+		        CASE m.item_kind
+		          WHEN 'grammar' THEN COALESCE(
+		            (SELECT g.meaning FROM grammar_points g WHERE g.id::text = m.item_ref), '')
+		          ELSE COALESCE(
+		            (SELECT a.glosses[1] FROM jmdict_senses a WHERE a.ent_seq::text = m.item_ref ORDER BY a.ord LIMIT 1), '')
+		        END
+		 FROM item_list_items m
+		 JOIN item_lists l ON l.id = m.list_id AND l.user_id = $1
+		 WHERE m.list_id = $2
+		 ORDER BY m.item_kind, m.item_ref
+		 LIMIT $3`, userID, listID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Member
+	for rows.Next() {
+		var it Member
+		if err := rows.Scan(&it.Kind, &it.Ref, &it.Surface, &it.Gloss); err != nil {
+			return nil, err
+		}
+		out = append(out, it)
+	}
+	return out, rows.Err()
+}
+
 // IsKnownItem answers the mastery question for one ItemKey. Vocabulary refs
 // are ent_seqs but an unlinked item's ref is its MaruMori id, so both
 // columns are checked — matching how mastery builds refs (link first,

@@ -48,6 +48,15 @@ interface ItemListRow {
   itemCount: number;
 }
 
+// One member row as GET /item-lists/{id}/items returns it: kind/ref plus the
+// display label the server joins from reference data.
+interface MemberRow {
+  itemKind: "vocabulary" | "kanji" | "grammar";
+  itemRef: string;
+  surface: string;
+  gloss: string;
+}
+
 const syncRun = (id: string, status: "ok" | "failed", extra: Record<string, unknown> = {}) => ({
   id,
   status,
@@ -79,12 +88,13 @@ function fakeApi(
     startingLevel?: Record<string, unknown>;
     reviewItems?: Record<string, unknown>[];
     itemLists?: ItemListRow[];
+    listMembers?: Record<string, MemberRow[]>;
     readingSettings?: Record<string, unknown>;
   } = {},
 ) {
   const providers: P[] = [mk(A, "OpenAI", true), mk(B, "Local Ollama", false, "llama3")];
   const tasks: Record<string, string | null> = { story: A, grammar_content: null };
-  const requests: { method: string; path: string; body: unknown }[] = [];
+  const requests: { method: string; path: string; query: string; body: unknown }[] = [];
   let startingLevel: Record<string, unknown> = opts.startingLevel ?? { configured: false, level: null };
   const reviewItems = opts.reviewItems ?? [];
   const taskList = () => Object.entries(tasks).map(([task, providerId]) => ({ task, providerId }));
@@ -94,6 +104,9 @@ function fakeApi(
     { id: "l1", name: "Saved", boosting: true, isDefault: true, itemCount: 0 },
     { id: "l2", name: "Travel", boosting: false, isDefault: false, itemCount: 4 },
   ];
+  // Membership for the expandable list view, kept consistent with itemCount
+  // by the DELETE handler below.
+  const listMembers: Record<string, MemberRow[]> = opts.listMembers ?? {};
   let defaultListId = "l1";
   const markDefault = () => {
     for (const l of itemLists) l.isDefault = l.id === defaultListId;
@@ -120,9 +133,10 @@ function fakeApi(
     baseUrl: "http://api.test",
     fetch: async (req) => {
       const path = new URL(req.url).pathname;
+      const query = new URL(req.url).search;
       const text = await req.text();
       const body = text ? JSON.parse(text) : undefined;
-      requests.push({ method: req.method, path, body });
+      requests.push({ method: req.method, path, query, body });
       const key = `${req.method} ${path}`;
       if (key === "GET /ai-providers") return json(200, providers);
       if (key === "GET /ai-tasks") return json(200, taskList());
@@ -239,6 +253,23 @@ function fakeApi(
           return new Response(null, { status: 204 });
         }
       }
+      const im = /^\/item-lists\/([^/]+)\/items$/.exec(path);
+      if (im?.[1]) {
+        const lid = im[1];
+        const l = itemLists.find((x) => x.id === lid);
+        if (!l) return json(404, { code: "not_found", message: "no such list" });
+        if (req.method === "GET") return json(200, { items: listMembers[lid] ?? [] });
+        if (req.method === "DELETE") {
+          // The server drops the membership addressed by the query pair, and
+          // the count follows — exactly what the expanded view re-reads.
+          const q = new URL(req.url).searchParams;
+          const rows = listMembers[lid] ?? [];
+          const kept = rows.filter((m) => !(m.itemKind === q.get("itemKind") && m.itemRef === q.get("itemRef")));
+          if (kept.length < rows.length) l.itemCount -= 1;
+          listMembers[lid] = kept;
+          return new Response(null, { status: 204 });
+        }
+      }
       if (key === "GET /reading-settings") return json(200, reading);
       if (key === "PUT /reading-settings") {
         Object.assign(reading, body);
@@ -270,6 +301,7 @@ const row = (name: string): HTMLElement => {
 interface Req {
   method: string;
   path: string;
+  query: string;
   body: Record<string, unknown>;
 }
 const last = (api: { requests: unknown[] }, method: string) =>
@@ -486,6 +518,54 @@ describe("Settings — Item Lists section", () => {
     fireEvent.click(within(listRow("Trips")!).getByRole("button", { name: "Confirm delete" }));
     await waitFor(() => expect(listRow("Trips")).toBeFalsy());
     expect(api.requests.some((r) => r.method === "DELETE" && r.path === "/item-lists/l2")).toBe(true);
+  });
+
+  it("expands a list to its members and removes one, addressing it by kind and ref", async () => {
+    const api = await renderSettings({
+      itemLists: [
+        { id: "l1", name: "Saved", boosting: true, isDefault: true, itemCount: 2 },
+        { id: "l2", name: "Travel", boosting: false, isDefault: false, itemCount: 0 },
+      ],
+      listMembers: {
+        l1: [
+          { itemKind: "vocabulary", itemRef: "990101", surface: "学校", gloss: "school" },
+          { itemKind: "grammar", itemRef: "12", surface: "～てしまう", gloss: "completing something" },
+        ],
+      },
+    });
+    const saved = await waitFor(() => listRow("Saved"));
+    expect(within(saved!).queryByText(/学校/)).toBeNull(); // collapsed until asked
+
+    fireEvent.click(within(listRow("Saved")!).getByRole("button", { name: "Show items" }));
+    expect(await within(listRow("Saved")!).findByText(/学校/)).toBeTruthy();
+    expect(within(listRow("Saved")!).getByText(/school/)).toBeTruthy(); // gloss rides along
+    expect(within(listRow("Saved")!).getByText(/completing something/)).toBeTruthy();
+    expect(api.requests.some((r) => r.method === "GET" && r.path === "/item-lists/l1/items")).toBe(true);
+
+    // Remove the Grammar member; vocabulary is untouched.
+    const grammarRow = within(listRow("Saved")!).queryAllByRole("listitem").find((li) => li.textContent?.includes("～てしまう"));
+    if (!grammarRow) throw new Error("no grammar member row");
+    fireEvent.click(within(grammarRow).getByRole("button", { name: "Remove" }));
+
+    await waitFor(() => expect(within(listRow("Saved")!).queryByText(/～てしまう/)).toBeNull());
+    expect(within(listRow("Saved")!).getByText(/学校/)).toBeTruthy();
+    const del = api.requests.filter((r) => r.method === "DELETE").at(-1) as Req | undefined;
+    expect(del?.path).toBe("/item-lists/l1/items");
+    expect(del?.query).toContain("itemKind=grammar");
+    expect(del?.query).toContain("itemRef=12");
+    // The header count follows the membership (the hook re-reads the lists).
+    await waitFor(() => expect(listRow("Saved")?.textContent).toContain("1 item"));
+
+    // Collapse and re-open: the view asks the server again rather than
+    // trusting what it had rendered.
+    fireEvent.click(within(listRow("Saved")!).getByRole("button", { name: "Hide items" }));
+    expect(within(listRow("Saved")!).queryByText(/学校/)).toBeNull();
+    const readsBefore = api.requests.filter((r) => r.method === "GET" && r.path === "/item-lists/l1/items").length;
+    fireEvent.click(within(listRow("Saved")!).getByRole("button", { name: "Show items" }));
+    expect(await within(listRow("Saved")!).findByText(/学校/)).toBeTruthy();
+    expect(api.requests.filter((r) => r.method === "GET" && r.path === "/item-lists/l1/items").length).toBe(
+      readsBefore + 1,
+    );
   });
 });
 

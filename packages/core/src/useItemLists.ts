@@ -3,6 +3,7 @@ import type {
   ItemList,
   ItemListAddRequest,
   ItemListCreateRequest,
+  ItemListMember,
   WeakSignalRequest,
 } from "@vjt/api-client";
 import { useCallback, useEffect, useState } from "react";
@@ -40,6 +41,12 @@ export interface ItemListsView {
   addToList(listId: string, item: ItemListAddRequest): Promise<ActionResult>;
   /** Drop one item from one list; the Practice Record keeps its answers. */
   removeFromList(listId: string, item: ItemListAddRequest): Promise<ActionResult>;
+  /**
+   * Read one list's members with display labels (list management): kind and
+   * ref exactly as writes address them, plus the surface/gloss the server
+   * joined from the reference data. The read is capped server-side.
+   */
+  listItems(listId: string): Promise<ActionResult & { members?: ItemListMember[] }>;
   /**
    * Report reader behaviour (held lookup, opened menu, unblurred sentence) as
    * Weak Signals. The server keeps only signals about the caller's Known
@@ -197,6 +204,21 @@ export function useItemLists(client: ApiClient): ItemListsView {
     [client, refresh],
   );
 
+  const listItems = useCallback(
+    async (listId: string): Promise<ActionResult & { members?: ItemListMember[] }> => {
+      try {
+        const { data, error: err, response } = await client.GET("/item-lists/{listId}/items", {
+          params: { path: { listId } },
+        });
+        if (response.status === 200 && data) return { ok: true, members: data.items ?? [] };
+        return { ok: false, message: message(err, response.status) };
+      } catch {
+        return { ok: false, message: UNREACHABLE };
+      }
+    },
+    [client],
+  );
+
   const reportWeakSignals = useCallback(
     async (signals: WeakSignalRequest[]): Promise<ActionResult> => {
       if (signals.length === 0) return { ok: true };
@@ -226,6 +248,7 @@ export function useItemLists(client: ApiClient): ItemListsView {
     setDefaultList,
     addToList,
     removeFromList,
+    listItems,
     reportWeakSignals,
     reload,
   };

@@ -153,6 +153,21 @@ func (m *memItemListStore) RemoveItem(_ context.Context, userID, listID uuid.UUI
 	return nil
 }
 
+// ListItems mirrors the real store's shape with deterministic labels so the
+// HTTP tests can pin the exact wire values.
+func (m *memItemListStore) ListItems(_ context.Context, userID, listID uuid.UUID, limit int) ([]itemlist.Member, error) {
+	var out []itemlist.Member
+	for _, it := range m.items[listID] {
+		out = append(out, itemlist.Member{
+			Kind: it.Kind, Ref: it.Ref, Surface: "s-" + it.Ref, Gloss: "g-" + it.Ref,
+		})
+	}
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
 func (m *memItemListStore) IsKnownItem(_ context.Context, userID uuid.UUID, item itemlist.ItemKey) (bool, error) {
 	return item.Kind == itemlist.KindVocabulary && item.Ref == "4026", nil
 }
@@ -319,6 +334,65 @@ func TestItemListItemsAndSignals(t *testing.T) {
 	}
 	if got := listsOf(t, e.call(http.MethodGet, "/item-lists", ""))[0]["itemCount"]; got != float64(1) {
 		t.Errorf("itemCount after remove: %v, want 1", got)
+	}
+}
+
+func TestItemListItemsRead(t *testing.T) {
+	e := newListsEnv(t)
+
+	savedID := listsOf(t, e.call(http.MethodGet, "/item-lists", ""))[0]["id"].(string)
+
+	// Empty list reads as an empty array, not null.
+	rec := e.call(http.MethodGet, "/item-lists/"+savedID+"/items", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("get items: %d %s", rec.Code, rec.Body)
+	}
+	if got := listsOf(t, rec); len(got) != 0 {
+		t.Errorf("empty list read: %v, want no members", got)
+	}
+
+	// Members come back kind/ref plus the labels the store joined — the
+	// mem store's s-/g- labels pin the wire shape exactly.
+	if rec = e.call(http.MethodPost, "/item-lists/"+savedID+"/items",
+		`{"itemKind":"vocabulary","itemRef":"4026"}`); rec.Code != http.StatusNoContent {
+		t.Fatalf("add vocabulary: %d %s", rec.Code, rec.Body)
+	}
+	if rec = e.call(http.MethodPost, "/item-lists/"+savedID+"/items",
+		`{"itemKind":"grammar","itemRef":"900001"}`); rec.Code != http.StatusNoContent {
+		t.Fatalf("add grammar: %d %s", rec.Code, rec.Body)
+	}
+	want := []map[string]any{
+		0: {"itemKind": "vocabulary", "itemRef": "4026", "surface": "s-4026", "gloss": "g-4026"},
+		1: {"itemKind": "grammar", "itemRef": "900001", "surface": "s-900001", "gloss": "g-900001"},
+	}
+	got := listsOf(t, e.call(http.MethodGet, "/item-lists/"+savedID+"/items", ""))
+	if len(got) != 2 {
+		t.Fatalf("want 2 members, got %v", got)
+	}
+	for i, w := range want {
+		if got[i]["itemKind"] != w["itemKind"] || got[i]["itemRef"] != w["itemRef"] ||
+			got[i]["surface"] != w["surface"] || got[i]["gloss"] != w["gloss"] {
+			t.Errorf("member %d = %v, want %v", i, got[i], w)
+		}
+	}
+
+	// Membership is per list: the other list reads empty, and a foreign,
+	// unknown or malformed list id is 404.
+	if rec = e.call(http.MethodGet, "/item-lists/"+uuid.NewString()+"/items", ""); rec.Code != http.StatusNotFound {
+		t.Errorf("unknown list read: %d, want 404", rec.Code)
+	}
+	if rec = e.call(http.MethodGet, "/item-lists/not-a-uuid/items", ""); rec.Code != http.StatusNotFound {
+		t.Errorf("malformed list read: %d, want 404", rec.Code)
+	}
+
+	// Removing the vocabulary membership leaves exactly the grammar one.
+	if rec = e.call(http.MethodDelete,
+		"/item-lists/"+savedID+"/items?itemKind=vocabulary&itemRef=4026", ""); rec.Code != http.StatusNoContent {
+		t.Fatalf("remove vocabulary: %d %s", rec.Code, rec.Body)
+	}
+	got = listsOf(t, e.call(http.MethodGet, "/item-lists/"+savedID+"/items", ""))
+	if len(got) != 1 || got[0]["itemRef"] != "900001" {
+		t.Errorf("after remove: %v, want only the grammar member", got)
 	}
 }
 

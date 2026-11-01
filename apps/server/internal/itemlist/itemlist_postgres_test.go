@@ -3,13 +3,25 @@ package itemlist_test
 import (
 	"context"
 	"errors"
+	"strconv"
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/dbtest"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/itemlist"
 )
+
+// seedTestUser creates a user row for one store test.
+func seedTestUser(t *testing.T, pool *pgxpool.Pool, ctx context.Context, name string) uuid.UUID {
+	t.Helper()
+	id := uuid.New()
+	if _, err := pool.Exec(ctx, `INSERT INTO users (id, username, password_hash) VALUES ($1, $2, 'x')`, id, name); err != nil {
+		t.Fatalf("seed user %s: %v", name, err)
+	}
+	return id
+}
 
 // Postgres-backed tests for the Item List store and service: they pin the
 // schema semantics the feature depends on — case-insensitive unique names,
@@ -412,5 +424,103 @@ func TestPostgresServiceSavedListProtected(t *testing.T) {
 	}
 	if count != 0 {
 		t.Errorf("weak signals = %d, want 0 with the list no longer boosting", count)
+	}
+}
+
+func TestPostgresStoreListItems(t *testing.T) {
+	pool := dbtest.New(t)
+	ctx := context.Background()
+	store := itemlist.NewPostgresStore(pool)
+
+	user := seedTestUser(t, pool, ctx, "listitems")
+	savedID, err := store.EnsureSaved(ctx, user)
+	if err != nil {
+		t.Fatalf("EnsureSaved: %v", err)
+	}
+
+	// Reference rows shared across runs: unique keys make the seeds idempotent.
+	seeds := []string{
+		`INSERT INTO jmdict_entries (ent_seq, is_common) VALUES (5560001, true), (5560002, true) ON CONFLICT DO NOTHING`,
+		`INSERT INTO jmdict_kanji_forms (ent_seq, ord, text) VALUES (5560001, 1, '学校') ON CONFLICT DO NOTHING`,
+		`INSERT INTO jmdict_readings (ent_seq, ord, text) VALUES (5560001, 2, 'がっこう'), (5560002, 1, 'ねこ') ON CONFLICT DO NOTHING`,
+		`INSERT INTO jmdict_senses (ent_seq, ord, glosses) VALUES
+		 (5560001, 1, ARRAY['gakko', 'school']), (5560002, 1, ARRAY['cat']) ON CONFLICT DO NOTHING`,
+		`INSERT INTO grammar_points (jlpt_level, catalogue_number, ordinal, pattern, romaji, meaning, variants, normalised_pattern, normalised_variants)
+		 VALUES ('N5', 556001, 1, '～ました', 'mashita', 'past tense (polite)', ARRAY['ました'], 'ました556001', ARRAY['ました556001'])
+		 ON CONFLICT (jlpt_level, normalised_pattern, ordinal) DO NOTHING`,
+	}
+	for _, q := range seeds {
+		if _, err := pool.Exec(ctx, q); err != nil {
+			t.Fatalf("seed reference data: %v", err)
+		}
+	}
+	var pastPoint int64
+	if err := pool.QueryRow(ctx, `SELECT id FROM grammar_points WHERE normalised_pattern = 'ました556001'`).Scan(&pastPoint); err != nil {
+		t.Fatalf("grammar id: %v", err)
+	}
+	// An UNLINKED Vocabulary Item: the label comes from this user's own row.
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO marumori_known_items (user_id, kind, marumori_id, srs_level, text, first_synced_at, last_seen_at)
+		VALUES ($1, 'vocabulary', '5560', 1, 'ほん', '2026-01-01', '2026-02-01') ON CONFLICT DO NOTHING`, user); err != nil {
+		t.Fatalf("seed unlinked vocab: %v", err)
+	}
+
+	members := []itemlist.ItemKey{
+		{Kind: itemlist.KindGrammar, Ref: strconv.FormatInt(pastPoint, 10)},
+		{Kind: itemlist.KindKanji, Ref: "学"},
+		{Kind: itemlist.KindVocabulary, Ref: "5560"},    // unlinked: own row's text
+		{Kind: itemlist.KindVocabulary, Ref: "5560001"}, // kanji form + first gloss
+		{Kind: itemlist.KindVocabulary, Ref: "5560002"}, // kana-only: reading fallback
+		{Kind: itemlist.KindVocabulary, Ref: "5569"},    // no reference row at all
+	}
+	for _, m := range members {
+		if err := store.AddItem(ctx, user, savedID, m); err != nil {
+			t.Fatalf("AddItem %v: %v", m, err)
+		}
+	}
+
+	got, err := store.ListItems(ctx, user, savedID, 500)
+	if err != nil {
+		t.Fatalf("ListItems: %v", err)
+	}
+	// Ordered by kind then ref; labels joined where a row exists.
+	want := []itemlist.Member{
+		{Kind: "grammar", Ref: strconv.FormatInt(pastPoint, 10), Surface: "～ました", Gloss: "past tense (polite)"},
+		{Kind: "kanji", Ref: "学", Surface: "学", Gloss: ""},
+		{Kind: "vocabulary", Ref: "5560", Surface: "ほん", Gloss: ""},
+		{Kind: "vocabulary", Ref: "5560001", Surface: "学校", Gloss: "gakko"},
+		{Kind: "vocabulary", Ref: "5560002", Surface: "ねこ", Gloss: "cat"},
+		{Kind: "vocabulary", Ref: "5569", Surface: "5569", Gloss: ""},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("ListItems = %+v, want %d members", got, len(want))
+	}
+	for i, w := range want {
+		if got[i] != w {
+			t.Errorf("member %d = %+v, want %+v", i, got[i], w)
+		}
+	}
+
+	// The cap is exact and keeps the ordering.
+	capped, err := store.ListItems(ctx, user, savedID, 2)
+	if err != nil {
+		t.Fatalf("ListItems capped: %v", err)
+	}
+	if len(capped) != 2 || capped[0].Kind != "grammar" || capped[1].Ref != want[1].Ref {
+		t.Errorf("capped read = %+v, want the first two in order", capped)
+	}
+
+	// Another user sees nothing in this list (the service 404s first, but the
+	// store's own scoping must not leak labels either).
+	other := uuid.New()
+	if _, err := pool.Exec(ctx, `INSERT INTO users (id, username, password_hash) VALUES ($1, 'listitems-b', 'x')`, other); err != nil {
+		t.Fatalf("seed user b: %v", err)
+	}
+	mine, err := store.ListItems(ctx, other, savedID, 500)
+	if err != nil {
+		t.Fatalf("ListItems foreign: %v", err)
+	}
+	if len(mine) != 0 {
+		t.Errorf("foreign read returned %d members, want 0", len(mine))
 	}
 }

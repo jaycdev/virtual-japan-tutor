@@ -1124,6 +1124,27 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
   /item-lists/{listId}/items:
+    get:
+      operationId: getItemListItems
+      summary: List the members of one Item List
+      description: >
+        The list's members with a display label resolved from the reference data: the first
+        kanji form (or reading) plus the first English gloss for Words, the pattern and meaning
+        for Grammar Points, the literal for Kanji; unlinked items fall back to their raw ref.
+        Ordered by kind then ref, capped at the first 500 members.
+      parameters:
+        - $ref: "#/components/parameters/ListId"
+      responses:
+        "200":
+          description: The members (empty array for an empty list)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemListItemsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
     post:
       operationId: addItemToList
       summary: Save an item into one list
@@ -1945,6 +1966,34 @@ components:
           type: string
           description: >
             The item's stable ref: ent_seq text, kanji literal, MaruMori id or grammar point id.
+    ItemListMember:
+      type: object
+      description: >
+        One member of an Item List, addressed by kind and ref plus a display label joined from
+        the reference data where a row exists (jmdict for Words, grammar_points for Grammar
+        Points). Items with no reference row fall back to the raw ref as surface and an empty
+        gloss, so a Saved-but-unlinked word still shows something.
+      required: [itemKind, itemRef, surface, gloss]
+      properties:
+        itemKind:
+          $ref: "#/components/schemas/ItemKind"
+        itemRef:
+          type: string
+          description: The item's stable ref, exactly as writes address it.
+        surface:
+          type: string
+          description: The display label — kanji form or reading (Words), pattern (Grammar Points), literal (Kanji), raw ref otherwise.
+        gloss:
+          type: string
+          description: First English gloss (Words) or meaning (Grammar Points); empty for Kanji and for items with no reference row.
+    ItemListItemsResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ItemListMember"
     WeakSignalBatchRequest:
       type: object
       required: [signals]

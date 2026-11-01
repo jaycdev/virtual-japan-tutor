@@ -60,6 +60,10 @@ const MaxSignalsPerRequest = 50
 // MaxNameLen bounds list names.
 const MaxNameLen = 60
 
+// MaxListItems caps the member read: list management pages through a few
+// hundred at most, and the join for labels stays cheap.
+const MaxListItems = 500
+
 // Error carries an HTTP status through to the handler; match with errors.As.
 type Error struct {
 	Status  int
@@ -108,6 +112,16 @@ type List struct {
 	ItemCount int
 }
 
+// Member is one list member with a display label: kind and ref exactly as
+// writes address them, plus surface and gloss joined from the reference
+// data (empty gloss when there is no reference row).
+type Member struct {
+	Kind    string
+	Ref     string
+	Surface string
+	Gloss   string
+}
+
 // ReaderSignal is one reader Weak Signal: the item it is about, and why.
 type ReaderSignal struct {
 	Item   ItemKey
@@ -131,6 +145,7 @@ type Store interface {
 
 	AddItem(ctx context.Context, userID, listID uuid.UUID, item ItemKey) error
 	RemoveItem(ctx context.Context, userID, listID uuid.UUID, item ItemKey) error
+	ListItems(ctx context.Context, userID, listID uuid.UUID, limit int) ([]Member, error)
 
 	// IsKnownItem answers the mastery question: is this the Learner's Known
 	// Item (present Synced item or known grammar point)?
@@ -343,6 +358,18 @@ func (s *Service) RemoveItem(ctx context.Context, userID, listID uuid.UUID, item
 		return err
 	}
 	return s.store.RemoveItem(ctx, userID, listID, item)
+}
+
+// Members reads a list's members with display labels (issue #12 list
+// management). The list must belong to the caller; reads are capped at
+// MaxListItems, ordered by kind then ref.
+func (s *Service) Members(ctx context.Context, userID, listID uuid.UUID) ([]Member, error) {
+	if _, found, err := s.store.ByID(ctx, userID, listID); err != nil {
+		return nil, err
+	} else if !found {
+		return nil, ErrListNotFound
+	}
+	return s.store.ListItems(ctx, userID, listID, MaxListItems)
 }
 
 // WriteReaderSignals stores Weak Signals the story reader reported (issue

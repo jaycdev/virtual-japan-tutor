@@ -276,6 +276,40 @@ func (s *server) RemoveItemListItems(ctx context.Context, request api.RemoveItem
 	return api.RemoveItemListItems204Response{}, nil
 }
 
+// GetItemListItems lists one list's members with display labels (issue #12
+// list management): the service checks ownership and caps the read.
+func (s *server) GetItemListItems(ctx context.Context, request api.GetItemListItemsRequestObject) (api.GetItemListItemsResponseObject, error) {
+	svc, err := s.itemListService()
+	if err != nil {
+		return nil, err
+	}
+	id, ok := auth.IdentityFrom(ctx)
+	if !ok {
+		return nil, auth.ErrUnauthenticated
+	}
+	lid, ok := itemListID(request.ListId)
+	if !ok {
+		return api.GetItemListItems404JSONResponse{NotFoundJSONResponse: notFound("no such item list")}, nil
+	}
+	members, err := svc.Members(ctx, id.ID, lid)
+	if err != nil {
+		if iErr, is := asItemListError(err); is && iErr.Status == 404 {
+			return api.GetItemListItems404JSONResponse{NotFoundJSONResponse: notFound("no such item list")}, nil
+		}
+		return nil, err
+	}
+	items := make([]api.ItemListMember, 0, len(members))
+	for _, m := range members {
+		items = append(items, api.ItemListMember{
+			ItemKind: api.ItemKind(m.Kind),
+			ItemRef:  m.Ref,
+			Surface:  m.Surface,
+			Gloss:    m.Gloss,
+		})
+	}
+	return api.GetItemListItems200JSONResponse{Items: items}, nil
+}
+
 // PostWeakSignals stores reader-originated Weak Signals. The service
 // validates every item is the Learner's own Known Item and silently drops
 // the rest; a forged reason is a 400.

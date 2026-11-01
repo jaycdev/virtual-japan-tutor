@@ -5,6 +5,7 @@ import type {
   ApiClient,
   GrammarReviewItem,
   ItemList,
+  ItemListMember,
   MaruMoriSyncRun,
 } from "@vjt/api-client";
 import {
@@ -282,6 +283,8 @@ const isSavedList = (l: ItemList): boolean => l.name.toLowerCase() === "saved";
  * Lists that push their not-yet-Known members into Focus Sets. The Default
  * List is where a one-tap Save goes; the built-in Saved list can be
  * configured (even made a Boosting List) but never renamed or deleted.
+ * Each list expands to its members, labelled from the reference data, so
+ * one item can be removed without deleting the whole list.
  */
 function ItemListsSettings({ client }: { client: ApiClient }) {
   const lists = useItemLists(client);
@@ -292,6 +295,11 @@ function ItemListsSettings({ client }: { client: ApiClient }) {
   const [renaming, setRenaming] = useState<ItemList | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
+  // The one expanded list and its freshly-read members; membership is read
+  // on expand (and after a Remove) so the view never drifts from the server.
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [members, setMembers] = useState<{ listId: string; rows: ItemListMember[] } | null>(null);
+  const [membersError, setMembersError] = useState<string | undefined>();
 
   const run = async (action: () => Promise<ActionResult>): Promise<boolean> => {
     setBusy(true);
@@ -323,6 +331,35 @@ function ItemListsSettings({ client }: { client: ApiClient }) {
   const remove = async (l: ItemList) => {
     setConfirmingDelete(null);
     await run(() => lists.deleteList(l.id));
+  };
+
+  const toggleMembers = async (l: ItemList) => {
+    setMembersError(undefined);
+    if (expanded === l.id) {
+      setExpanded(null);
+      setMembers(null);
+      return;
+    }
+    setExpanded(l.id);
+    const res = await lists.listItems(l.id);
+    if (!res.ok) {
+      setMembers(null);
+      setMembersError(res.message);
+      return;
+    }
+    setMembers({ listId: l.id, rows: res.members ?? [] });
+  };
+
+  const removeMember = async (l: ItemList, m: ItemListMember) => {
+    await run(async () => {
+      const res = await lists.removeFromList(l.id, { itemKind: m.itemKind, itemRef: m.itemRef });
+      // Re-read the open list's membership so the row and the count agree.
+      if (res.ok && expanded === l.id) {
+        const reread = await lists.listItems(l.id);
+        if (reread.ok) setMembers({ listId: l.id, rows: reread.members ?? [] });
+      }
+      return res;
+    });
   };
 
   return (
@@ -370,6 +407,9 @@ function ItemListsSettings({ client }: { client: ApiClient }) {
                     {l.isDefault && " — default"} · {l.itemCount}{" "}
                     {l.itemCount === 1 ? "item" : "items"}
                     <div>
+                      <button type="button" aria-expanded={expanded === l.id} onClick={() => void toggleMembers(l)}>
+                        {expanded === l.id ? "Hide items" : "Show items"}
+                      </button>{" "}
                       <label>
                         <input
                           type="checkbox"
@@ -414,6 +454,28 @@ function ItemListsSettings({ client }: { client: ApiClient }) {
                         </>
                       )}
                     </div>
+                    {expanded === l.id && (
+                      <ul className="list-members">
+                        {membersError && (
+                          <li role="alert" className="error">
+                            {membersError}
+                          </li>
+                        )}
+                        {members?.listId === l.id && members.rows.length === 0 && <li>No items yet.</li>}
+                        {members?.listId === l.id &&
+                          members.rows.map((m) => (
+                            <li key={`${m.itemKind}:${m.itemRef}`}>
+                              <span>
+                                {m.surface}
+                                {m.gloss ? ` — ${m.gloss}` : ""}
+                              </span>{" "}
+                              <button type="button" disabled={busy} onClick={() => void removeMember(l, m)}>
+                                Remove
+                              </button>
+                            </li>
+                          ))}
+                      </ul>
+                    )}
                   </>
                 )}
               </li>

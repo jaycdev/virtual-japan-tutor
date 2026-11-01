@@ -703,7 +703,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * List the members of one Item List
+         * @description The list's members with a display label resolved from the reference data: the first kanji form (or reading) plus the first English gloss for Words, the pattern and meaning for Grammar Points, the literal for Kanji; unlinked items fall back to their raw ref. Ordered by kind then ref, capped at the first 500 members.
+         */
+        get: operations["getItemListItems"];
         put?: never;
         /**
          * Save an item into one list
@@ -1110,6 +1114,19 @@ export interface components {
             itemKind: components["schemas"]["ItemKind"];
             /** @description The item's stable ref: ent_seq text, kanji literal, MaruMori id or grammar point id. */
             itemRef: string;
+        };
+        /** @description One member of an Item List, addressed by kind and ref plus a display label joined from the reference data where a row exists (jmdict for Words, grammar_points for Grammar Points). Items with no reference row fall back to the raw ref as surface and an empty gloss, so a Saved-but-unlinked word still shows something. */
+        ItemListMember: {
+            itemKind: components["schemas"]["ItemKind"];
+            /** @description The item's stable ref, exactly as writes address it. */
+            itemRef: string;
+            /** @description The display label — kanji form or reading (Words), pattern (Grammar Points), literal (Kanji), raw ref otherwise. */
+            surface: string;
+            /** @description First English gloss (Words) or meaning (Grammar Points); empty for Kanji and for items with no reference row. */
+            gloss: string;
+        };
+        ItemListItemsResponse: {
+            items: components["schemas"]["ItemListMember"][];
         };
         WeakSignalBatchRequest: {
             signals: components["schemas"]["WeakSignalRequest"][];
@@ -2776,6 +2793,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getItemListItems: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description An Item List's UUID (issue #12). Plain string for the same reason as ProviderId: path parameters bind before auth, so the handler parses it itself (404 if malformed). */
+                listId: components["parameters"]["ListId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The members (empty array for an empty list) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemListItemsResponse"];
                 };
             };
             401: components["responses"]["Unauthorized"];

@@ -158,6 +158,44 @@ describe("useItemLists", () => {
     expect(delCall.url).toContain("/item-lists/l2/items?itemKind=vocabulary&itemRef=990101");
   });
 
+  it("reads a list's members with their labels, leaving the shared list view alone", async () => {
+    const { client, fetchImpl, json } = fakeClient();
+    const members = {
+      items: [
+        { itemKind: "vocabulary", itemRef: "990101", surface: "学校", gloss: "school" },
+        { itemKind: "grammar", itemRef: "12", surface: "～てしまう", gloss: "completing something" },
+      ],
+    };
+    fetchImpl
+      .mockImplementationOnce(async () => json(200, listsBody))
+      .mockImplementationOnce(async () => json(200, members));
+    const { result } = renderHook(() => useItemLists(client));
+    await waitFor(() => expect(result.current.state.status).toBe("ready"));
+
+    const res = await act(async () => result.current.listItems("l2"));
+    expect(res.ok).toBe(true);
+    expect(res.ok === true && res.members).toEqual(members.items);
+    const getCall = fetchImpl.mock.calls[1]?.[0] as Request;
+    expect(getCall.method).toBe("GET");
+    expect(getCall.url).toContain("/item-lists/l2/items");
+    // A plain read: no re-fetch of the lists, no state churn.
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("turns a failed member read into a failed ActionResult", async () => {
+    const { client, fetchImpl, json } = fakeClient();
+    fetchImpl
+      .mockImplementationOnce(async () => json(200, listsBody))
+      .mockImplementationOnce(async () => json(404, { code: "not_found", message: "no such list" }));
+    const { result } = renderHook(() => useItemLists(client));
+    await waitFor(() => expect(result.current.state.status).toBe("ready"));
+
+    const res = await act(async () => result.current.listItems("gone"));
+    expect(res.ok).toBe(false);
+    // The shared view still holds the last truth.
+    expect(result.current.state.status === "ready" && result.current.state.lists.length).toBe(2);
+  });
+
   it("reports a failed load as an error the screen can retry", async () => {
     const { client, fetchImpl, json } = fakeClient();
     fetchImpl
