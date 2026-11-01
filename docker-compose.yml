@@ -16,7 +16,10 @@ services:
       retries: 20
 
   server:
-    build: ./apps/server
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+      target: server
     depends_on:
       db:
         condition: service_healthy
@@ -31,5 +34,24 @@ services:
       timeout: 3s
       retries: 10
 
+  # One-off reference data import (JMdict, KANJIDIC2, JLPT lists, Kanjium pitch accents, Grammar
+  # Catalogue). Not started by `up`. Run it with:
+  #   docker --context docker-dev compose run --rm import [--only grammar] [--refresh]
+  # Downloads are cached in the refdata-cache volume, so a re-run does not download again.
+  import:
+    profiles: ["import"]
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+      target: import
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-vjt}:${POSTGRES_PASSWORD:-vjt_dev_password}@db:5432/${POSTGRES_DB:-vjt}?sslmode=disable
+    volumes:
+      - refdata-cache:/var/cache/vjt-refdata
+
 volumes:
   pgdata:
+  refdata-cache:

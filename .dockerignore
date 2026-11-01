@@ -1,0 +1,9 @@
+# Build context is the repo root. Send only what the images need.
+*
+!apps/server
+!data/grammar
+apps/server/bin
+apps/server/node_modules
+apps/server/package.json
+apps/server/scripts
+apps/server/Dockerfile

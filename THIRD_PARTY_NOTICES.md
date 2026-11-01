@@ -1,0 +1,65 @@
+# Third-party data notices
+
+The reference data the app loads (`apps/server/cmd/import`) comes from the open datasets below. The
+import records each dataset's source, licence, version, checksum and row counts in the `import_runs`
+table. The data itself is not committed to this repository; it is downloaded at import time.
+
+Anything that distributes or publicly serves this data or the app (a public site, a store listing, a
+downloadable build) has to show these acknowledgements. They are not yet shown in any UI.
+
+## JMdict (vocabulary)
+
+- **What:** `JMdict_e` (Japanese-English), words, readings, parts of speech and glosses.
+- **Source:** <https://www.edrdg.org/pub/Nihongo/JMdict_e.gz>, project page <https://www.edrdg.org/wiki/index.php/JMdict-EDICT_Dictionary_Project>
+- **Licence:** Creative Commons Attribution-ShareAlike 4.0 (CC BY-SA 4.0), see <https://www.edrdg.org/edrdg/licence.html>
+- **Attribution:** This application uses the JMdict dictionary file. This file is the property of the
+  [Electronic Dictionary Research and Development Group](https://www.edrdg.org/), and is used in
+  conformance with the Group's [licence](https://www.edrdg.org/edrdg/licence.html).
+
+## KANJIDIC2 (kanji)
+
+- **What:** `kanjidic2.xml`, kanji meanings, on/kun readings, grade, stroke count and frequency. The
+  file's own `<jlpt>` field uses the pre-2010 four-level scale; it is stored as `kanji.legacy_jlpt`
+  for reference and is not used as a JLPT Level.
+- **Source:** <https://www.edrdg.org/pub/Nihongo/kanjidic2.xml.gz>, project page <https://www.edrdg.org/wiki/index.php/KANJIDIC_Project>
+- **Licence:** CC BY-SA 4.0, see <https://www.edrdg.org/edrdg/licence.html>
+- **Attribution:** This application uses the KANJIDIC2 kanji dictionary file. This file is the property
+  of the Electronic Dictionary Research and Development Group, and is used in conformance with the
+  Group's [licence](https://www.edrdg.org/edrdg/licence.html).
+
+## Jonathan Waller's JLPT lists (JLPT Levels for vocabulary and kanji)
+
+- **What:** the N5 to N1 vocabulary and kanji lists. The JLPT publishes no official lists for the
+  current test, so these are the community standard and approximate.
+- **Original:** <https://www.tanos.co.uk/jlpt/> by Jonathan Waller.
+- **Licence:** Creative Commons Attribution ("CC BY"), as stated by the author. The licence version was
+  not verified (the site did not resolve from the environment this import was written in).
+- **Where the import fetches it:** `tanos.co.uk` was unreachable, so the files come from pinned commits
+  of two public conversions of Waller's lists, checksummed in `internal/refdata/sources.go`:
+  - vocabulary: `data/tanos-jlpt/n1.csv` to `n5.csv` in <https://git.pvv.ntnu.no/mugiten/jadb>
+    at commit `5049157b026f69ded6170f12bcb1620380920d25`
+  - kanji: `data/kanji/parsedData/n1_kanji.csv` to `n5_kanji.csv` in
+    <https://github.com/Bluskyo/JLPT_Vocabulary> (MIT) at commit `4358f932937ad0232194a36e9f4f875094910c6b`
+  
+  The licences of these two conversions were not reviewed beyond the above.
+- **Attribution:** JLPT vocabulary and kanji lists by Jonathan Waller, <https://www.tanos.co.uk/jlpt/>,
+  used under a Creative Commons Attribution licence.
+
+## Kanjium (pitch accent)
+
+- **What:** `accents.txt`, pitch accent patterns for about 124,000 words.
+- **Source:** <https://github.com/mifunetoshiro/kanjium>, file `data/source_files/raw/accents.txt`,
+  pinned at commit `685d4d723d6d20bf9beb169103aeac188eb067ad`.
+- **Licence:** CC BY-SA 4.0, see <https://creativecommons.org/licenses/by-sa/4.0/>. Running the app
+  ourselves is fine; distributing the pitch data itself triggers the share-alike terms (ADR-0006).
+- **Attribution:** The pitch accent notation, verb particle data, phonetics, homonyms and other
+  additions or modifications to EDICT, KANJIDIC or KRADFILE were provided by Uros O. through his free
+  database (Kanjium). Most of that database derives from EDRDG's EDICT, KANJIDIC and KRADFILE, used
+  under the Group's licence.
+
+## Grammar Catalogue
+
+- **What:** `data/grammar/jlpt-grammar.csv`, 831 Grammar Points across N5 to N1 (pattern, romaji, short
+  English meaning). Committed in this repository.
+- **Credit:** the file credits <https://jlptsensei.com>. The project owner has full rights to use the
+  data, including in future multi-user or public releases (ADR-0005).
