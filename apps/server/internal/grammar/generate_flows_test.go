@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/aiprovider"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/grammar"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/grammar/grammartest"
@@ -472,5 +474,166 @@ func TestConcurrentRequestsForOnePointShareOneGeneration(t *testing.T) {
 	}
 	if provider.countCallsWith("example sentences") != 2 {
 		t.Fatalf("examples provider calls = %d, want 2 (new flight after the first completed)", provider.countCallsWith("example sentences"))
+	}
+}
+
+// askedCount reads the number of sentences the prompt asked for, so one fake
+// provider can answer whichever flight reaches it first.
+func askedCount(prompt string) int {
+	i := strings.Index(prompt, "Write ")
+	if i < 0 {
+		return 0
+	}
+	n := 0
+	for _, r := range prompt[i+len("Write "):] {
+		if r < '0' || r > '9' {
+			break
+		}
+		n = n*10 + int(r-'0')
+	}
+	return n
+}
+
+// Content is shared between Learners, but a generation is not: it runs on the
+// Provider of the Learner who asked, and a Learner without a Provider must not
+// decide the outcome of another Learner's request.
+func TestGenerationsForDifferentLearnersDoNotShareAFlight(t *testing.T) {
+	ctx := context.Background()
+	store := grammartest.NewMemStore(dake)
+	teach := func(messages []llm.Message) string {
+		return explanationReply("the assigned Provider's explanation")
+	}
+	withProvider := newFakeProvider(t, scriptedCall{latency: 250 * time.Millisecond, contentFor: teach})
+	resolve := newPerUserResolver(map[uuid.UUID]*llm.Client{
+		testUser: withProvider.client(t),
+		// testUserTwo has no entry: no Provider is assigned to them.
+	})
+	gen := newGenerator(store, dakeDict(), resolve)
+
+	type outcome struct {
+		text string
+		err  error
+	}
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	results := map[uuid.UUID]outcome{}
+	run := func(userID uuid.UUID) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			text, err := gen.EnsureExplanation(ctx, dake.ID, userID)
+			mu.Lock()
+			results[userID] = outcome{text, err}
+			mu.Unlock()
+		}()
+	}
+	run(testUser)
+	time.Sleep(40 * time.Millisecond) // while that generation is still in flight
+	run(testUserTwo)
+	wg.Wait()
+
+	assigned := results[testUser]
+	if assigned.err != nil || assigned.text != "the assigned Provider's explanation" {
+		t.Fatalf("the Learner with a Provider got %q, %v", assigned.text, assigned.err)
+	}
+	unassigned := results[testUserTwo]
+	if !errors.Is(unassigned.err, grammar.ErrNotAssigned) {
+		t.Fatalf("the Learner without a Provider got %q, %v; want ErrNotAssigned", unassigned.text, unassigned.err)
+	}
+	if withProvider.callCount() != 1 {
+		t.Fatalf("provider calls = %d, want 1 (only the Learner who has a Provider generates)", withProvider.callCount())
+	}
+}
+
+// Two requests for different counts must not share one flight, or a request for
+// 30 sentences is answered with another request's 2.
+func TestGenerateExamplesRequestsForDifferentCountsDoNotShareAFlight(t *testing.T) {
+	ctx := context.Background()
+	store := grammartest.NewMemStore(dake)
+	teach := func(messages []llm.Message) string {
+		return examplesReply(validExamples(0, askedCount(userPrompt(messages)))...)
+	}
+	provider := newFakeProvider(t,
+		scriptedCall{latency: 120 * time.Millisecond, contentFor: teach},
+		scriptedCall{latency: 120 * time.Millisecond, contentFor: teach},
+		scriptedCall{latency: 120 * time.Millisecond, contentFor: teach},
+	)
+	resolve := newFakeResolver(map[aiprovider.Task]*llm.Client{aiprovider.TaskGrammarContent: provider.client(t)})
+	gen := newGenerator(store, dakeDict(), resolve)
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	counts := []int{}
+	run := func(want int) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			out, err := gen.GenerateExamples(ctx, dake.ID, testUser, want)
+			if err != nil {
+				t.Errorf("GenerateExamples(%d): %v", want, err)
+				return
+			}
+			if out.Generated != want {
+				t.Errorf("GenerateExamples(%d) generated %d, want %d", want, out.Generated, want)
+			}
+			mu.Lock()
+			counts = append(counts, out.Generated)
+			mu.Unlock()
+		}()
+	}
+	run(2)
+	time.Sleep(40 * time.Millisecond) // while that generation is still in flight
+	run(11)                          // needs two provider calls of its own
+	wg.Wait()
+
+	if provider.countCallsWith("example sentences") != 3 {
+		t.Fatalf("examples provider calls = %d, want 3 (one for the 2-count flight, two for the 11-count flight)",
+			provider.countCallsWith("example sentences"))
+	}
+	if len(counts) != 2 {
+		t.Fatalf("results = %v, want one per request", counts)
+	}
+}
+
+// A generation in flight belongs to the point and the Learner, not to whichever
+// request happened to start it: one request going away must not cancel the
+// generation the others are waiting for.
+func TestACanceledRequestDoesNotCancelAGenerationInProgress(t *testing.T) {
+	ctx := context.Background()
+	store := grammartest.NewMemStore(dake)
+	teach := func(messages []llm.Message) string {
+		return examplesReply(validExamples(0, askedCount(userPrompt(messages)))...)
+	}
+	provider := newFakeProvider(t, scriptedCall{latency: 250 * time.Millisecond, contentFor: teach})
+	resolve := newFakeResolver(map[aiprovider.Task]*llm.Client{aiprovider.TaskGrammarContent: provider.client(t)})
+	gen := newGenerator(store, dakeDict(), resolve)
+
+	callerCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var wg sync.WaitGroup
+	var started, kept grammar.Generation
+	var startedErr error
+	wg.Add(1)
+	go func() { // this request starts the flight, then goes away mid-flight
+		defer wg.Done()
+		go func() { time.Sleep(60 * time.Millisecond); cancel() }()
+		started, startedErr = gen.GenerateExamples(callerCtx, dake.ID, testUser, 3)
+	}()
+	time.Sleep(30 * time.Millisecond) // the flight is running
+	var waitingErr error
+	wg.Add(1)
+	go func() { // this one queues behind it
+		defer wg.Done()
+		kept, waitingErr = gen.GenerateExamples(ctx, dake.ID, testUser, 3)
+	}()
+	wg.Wait()
+	_, _ = started, startedErr // the canceled request's own outcome is not what matters here
+
+	_ = kept // the canceled request may or may not have seen the result
+	if waitingErr != nil {
+		t.Fatalf("the waiting caller got %v; want the shared generation to finish", waitingErr)
+	}
+	if kept.Generated != 3 {
+		t.Fatalf("waiting caller generated %d examples, want 3", kept.Generated)
 	}
 }

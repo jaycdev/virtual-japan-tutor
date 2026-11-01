@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"golang.org/x/sync/singleflight"
@@ -41,8 +42,8 @@ const (
 // Provider and stores it through a Store. No candidate sentence is trusted:
 // every one goes through Validator before it can reach the Store, and rejected
 // ones are reported instead of stored. Generations are deduplicated per
-// Grammar Point and task, so concurrent requests for the same point share one
-// run instead of double-spending the provider.
+// Learner, Grammar Point and task, so concurrent requests for the same thing
+// share one run instead of double-spending the provider.
 type Generator struct {
 	store   Store
 	dict    Dictionary
@@ -82,9 +83,32 @@ type flightResult struct {
 	err        error
 }
 
-// do runs run once per key, sharing one result with concurrent callers.
-func (gen *Generator) do(key string, run func() flightResult) flightResult {
-	res, errAny, _ := gen.group.Do(key, func() (any, error) { return run(), nil })
+// flightTimeout bounds one shared generation flight: a flight may make up to
+// maxProviderCalls provider calls, and every caller waiting behind it waits on it.
+const flightTimeout = 3 * time.Minute
+
+// explanationKey and examplesKey scope a flight to one Learner, and a generation
+// to the count it was asked for. Content is shared between Learners, but the
+// Provider (its key, its cost, and whether there is one at all) is not, and a
+// request for 30 sentences must not be answered with another request's 2.
+func explanationKey(userID uuid.UUID, pointID int64) string {
+	return fmt.Sprintf("explanation:%s:%d", userID, pointID)
+}
+
+func examplesKey(userID uuid.UUID, pointID int64, n int) string {
+	return fmt.Sprintf("examples:%s:%d:%d", userID, pointID, n)
+}
+
+// do runs run once per key, sharing one result with concurrent callers. The
+// flight runs on a context detached from the caller that started it: one request
+// going away (a closed browser tab, a deadline) must not cancel the generation
+// the others are waiting for.
+func (gen *Generator) do(ctx context.Context, key string, run func(context.Context) flightResult) flightResult {
+	res, errAny, _ := gen.group.Do(key, func() (any, error) {
+		flightCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), flightTimeout)
+		defer cancel()
+		return run(flightCtx), nil
+	})
 	if errAny != nil {
 		return flightResult{err: fmt.Errorf("grammar: generation failed: %v", errAny)}
 	}
@@ -106,16 +130,16 @@ func (gen *Generator) EnsureExplanation(ctx context.Context, pointID int64, user
 	if content.Explanation != nil && *content.Explanation != "" {
 		return *content.Explanation, nil
 	}
-	res := gen.do(fmt.Sprintf("explanation:%d", pointID), func() flightResult {
+	res := gen.do(ctx, explanationKey(userID, pointID), func(flightCtx context.Context) flightResult {
 		// Another concurrent request may have stored one while this flight queued.
-		content, err := gen.store.Content(ctx, pointID)
+		content, err := gen.store.Content(flightCtx, pointID)
 		if err != nil {
 			return flightResult{err: err}
 		}
 		if content.Explanation != nil && *content.Explanation != "" {
 			return flightResult{text: *content.Explanation}
 		}
-		text, err := gen.explain(ctx, pointID, userID, false)
+		text, err := gen.explain(flightCtx, pointID, userID, false)
 		return flightResult{text: text, err: err}
 	})
 	return res.text, res.err
@@ -123,8 +147,8 @@ func (gen *Generator) EnsureExplanation(ctx context.Context, pointID int64, user
 
 // RegenerateExplanation generates a new explanation and replaces the stored one.
 func (gen *Generator) RegenerateExplanation(ctx context.Context, pointID int64, userID uuid.UUID) (string, error) {
-	res := gen.do(fmt.Sprintf("explanation:%d", pointID), func() flightResult {
-		text, err := gen.explain(ctx, pointID, userID, true)
+	res := gen.do(ctx, explanationKey(userID, pointID), func(flightCtx context.Context) flightResult {
+		text, err := gen.explain(flightCtx, pointID, userID, true)
 		return flightResult{text: text, err: err}
 	})
 	return res.text, res.err
@@ -190,11 +214,39 @@ func (gen *Generator) GenerateExamples(ctx context.Context, pointID int64, userI
 	if n <= 0 || n > MaxExamplesPerRequest {
 		return Generation{}, fmt.Errorf("grammar: count must be between 1 and %d", MaxExamplesPerRequest)
 	}
-	res := gen.do(fmt.Sprintf("examples:%d", pointID), func() flightResult {
-		g, err := gen.generateExamples(ctx, pointID, userID, n)
+	res := gen.do(ctx, examplesKey(userID, pointID, n), func(flightCtx context.Context) flightResult {
+		g, err := gen.generateExamples(flightCtx, pointID, userID, n)
 		return flightResult{generation: g, err: err}
 	})
 	return res.generation, res.err
+}
+
+// EnsureExamples returns how many examples a point holds, generating new ones
+// only when it holds fewer than atLeast. Generation only ever appends, and the
+// point's cap still applies, so this is the reading-side top-up: it never
+// replaces what is already there.
+func (gen *Generator) EnsureExamples(ctx context.Context, pointID int64, userID uuid.UUID, atLeast int) (int, error) {
+	existing, err := gen.store.CountExamples(ctx, pointID)
+	if err != nil {
+		return 0, err
+	}
+	if existing >= atLeast {
+		return existing, nil
+	}
+	want := atLeast - existing
+	res := gen.do(ctx, examplesKey(userID, pointID, want), func(flightCtx context.Context) flightResult {
+		// Another concurrent request may have filled the point while this flight queued.
+		now, err := gen.store.CountExamples(flightCtx, pointID)
+		if err != nil {
+			return flightResult{err: err}
+		}
+		if now >= atLeast {
+			return flightResult{generation: Generation{Note: "another generation already filled this point"}}
+		}
+		g, err := gen.generateExamples(flightCtx, pointID, userID, atLeast-now)
+		return flightResult{generation: g, err: err}
+	})
+	return existing + res.generation.Stored, res.err
 }
 
 func (gen *Generator) generateExamples(ctx context.Context, pointID int64, userID uuid.UUID, n int) (Generation, error) {

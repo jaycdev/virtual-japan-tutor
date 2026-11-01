@@ -228,6 +228,32 @@ func (r *fakeResolver) ResolveProvider(_ context.Context, userID uuid.UUID, task
 	return aiprovider.Resolved{Client: client}, nil
 }
 
+// testUserTwo is a second Learner, whose Provider assignment may differ from
+// testUser's.
+var testUserTwo = uuid.MustParse("3f1b9a2e-6d07-4b5c-9e88-1a2b3c4d5e6f")
+
+// perUserResolver resolves each Learner to their own client, which is what the
+// real aiprovider.Service does: content is shared, but the Provider (and its
+// key, and its cost) belongs to one Learner.
+type perUserResolver struct {
+	clients map[uuid.UUID]*llm.Client
+}
+
+func newPerUserResolver(clients map[uuid.UUID]*llm.Client) *perUserResolver {
+	return &perUserResolver{clients: clients}
+}
+
+func (r *perUserResolver) ResolveProvider(_ context.Context, userID uuid.UUID, task aiprovider.Task) (aiprovider.Resolved, error) {
+	if task != aiprovider.TaskGrammarContent {
+		return aiprovider.Resolved{}, aiprovider.ErrNotAssigned
+	}
+	client, ok := r.clients[userID]
+	if !ok || client == nil {
+		return aiprovider.Resolved{}, aiprovider.ErrNotAssigned
+	}
+	return aiprovider.Resolved{Client: client}, nil
+}
+
 func (r *fakeResolver) taskCalls(task aiprovider.Task) int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
