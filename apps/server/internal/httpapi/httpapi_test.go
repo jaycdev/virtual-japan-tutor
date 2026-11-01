@@ -13,10 +13,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/aiprovider"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/aiprovider/aiprovidertest"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/api"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/auth"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/auth/authtest"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/httpapi"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/llm"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/secrets"
 )
 
 const password = "correct horse battery"
@@ -29,6 +33,19 @@ type env struct {
 	h     http.Handler
 	svc   *auth.Service
 	clock *authtest.FakeClock
+	ai    *aiprovider.Service
+}
+
+// newAI builds the AI Provider service over an in-memory store and a real secrets box.
+// Retry waits are skipped so failure paths stay fast.
+func newAI(t *testing.T) *aiprovider.Service {
+	t.Helper()
+	box, err := secrets.NewFromKey(make([]byte, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return aiprovider.NewService(aiprovidertest.NewMemStore(), box, aiprovider.WithClientOptions(
+		llm.WithSleep(func(context.Context, time.Duration) error { return nil }), llm.WithRand(func() float64 { return 0 })))
 }
 
 // newEnv serves the real handler over the real auth.Service backed by an in-memory store,
@@ -42,7 +59,8 @@ func newEnv(t *testing.T, db httpapi.Pinger) env {
 			t.Fatal(err)
 		}
 	}
-	return env{h: httpapi.New(db, svc), svc: svc, clock: clock}
+	ai := newAI(t)
+	return env{h: httpapi.New(db, svc, httpapi.WithAIProviders(ai)), svc: svc, clock: clock, ai: ai}
 }
 
 func (e env) do(t *testing.T, method, path, authHeader string, body any) *httptest.ResponseRecorder {

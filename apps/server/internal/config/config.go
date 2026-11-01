@@ -4,8 +4,10 @@ package config
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/llm"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/secrets"
 )
 
@@ -28,6 +30,13 @@ type Config struct {
 	// create the first account on boot, only while there are no users. Both or neither.
 	BootstrapUsername string
 	BootstrapPassword string
+	// AIDefault* (env AI_DEFAULT_BASE_URL / AI_DEFAULT_MODEL / AI_DEFAULT_API_KEY) describe an
+	// optional "Default" AI Provider, created on boot for the only user while they have none.
+	// Base URL and model go together; the key is optional (keyless local endpoints).
+	// AIDefaultBaseURL is already normalised.
+	AIDefaultBaseURL string
+	AIDefaultModel   string
+	AIDefaultAPIKey  string
 }
 
 // Load builds a Config using getenv (typically os.Getenv).
@@ -65,7 +74,29 @@ func Load(getenv func(string) string) (Config, error) {
 	if (cfg.BootstrapUsername == "") != (cfg.BootstrapPassword == "") {
 		return Config{}, errors.New("VJT_BOOTSTRAP_USERNAME and VJT_BOOTSTRAP_PASSWORD must be set together")
 	}
+	if err := loadAIDefault(getenv, &cfg); err != nil {
+		return Config{}, err
+	}
 	return cfg, nil
+}
+
+// loadAIDefault validates the AI_DEFAULT_* trio. Errors never include the key.
+func loadAIDefault(getenv func(string) string, cfg *Config) error {
+	base := strings.TrimSpace(getenv("AI_DEFAULT_BASE_URL"))
+	model := strings.TrimSpace(getenv("AI_DEFAULT_MODEL"))
+	key := strings.TrimSpace(getenv("AI_DEFAULT_API_KEY"))
+	if base == "" && model == "" && key == "" {
+		return nil
+	}
+	if base == "" || model == "" {
+		return errors.New("AI_DEFAULT_BASE_URL and AI_DEFAULT_MODEL must be set together (AI_DEFAULT_API_KEY is optional)")
+	}
+	norm, err := llm.NormalizeBaseURL(base)
+	if err != nil {
+		return fmt.Errorf("AI_DEFAULT_BASE_URL: %w", err)
+	}
+	cfg.AIDefaultBaseURL, cfg.AIDefaultModel, cfg.AIDefaultAPIKey = norm, model, key
+	return nil
 }
 
 // duration parses a positive Go duration (e.g. "15s") from key, or returns def if unset.

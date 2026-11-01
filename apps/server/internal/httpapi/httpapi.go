@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/aiprovider"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/api"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/auth"
 )
@@ -34,11 +35,21 @@ var publicRoutes = map[string]bool{
 type server struct {
 	db   Pinger
 	auth *auth.Service
+	ai   *aiprovider.Service
 }
 
+// Option wires an optional feature service into the handler.
+type Option func(*server)
+
+// WithAIProviders enables the /ai-providers and /ai-tasks routes.
+func WithAIProviders(svc *aiprovider.Service) Option { return func(s *server) { s.ai = svc } }
+
 // New returns the HTTP handler serving the API defined in api/openapi.yaml.
-func New(db Pinger, authn *auth.Service) http.Handler {
+func New(db Pinger, authn *auth.Service, opts ...Option) http.Handler {
 	s := &server{db: db, auth: authn}
+	for _, o := range opts {
+		o(s)
+	}
 	strict := api.NewStrictHandlerWithOptions(s, nil, api.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, _ error) {
 			writeError(w, http.StatusBadRequest, "bad_request", "Malformed request")

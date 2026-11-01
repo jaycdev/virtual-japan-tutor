@@ -18,10 +18,54 @@ import (
 	"strings"
 	"time"
 
+	stdjson "encoding/json"
+
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/oapi-codegen/runtime"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
+
+// Defines values for AiProviderTestResultStructuredOutput.
+const (
+	JsonObject  AiProviderTestResultStructuredOutput = "json_object"
+	JsonSchema  AiProviderTestResultStructuredOutput = "json_schema"
+	PromptOnly  AiProviderTestResultStructuredOutput = "prompt_only"
+	Unavailable AiProviderTestResultStructuredOutput = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the AiProviderTestResultStructuredOutput enum.
+func (e AiProviderTestResultStructuredOutput) Valid() bool {
+	switch e {
+	case JsonObject:
+		return true
+	case JsonSchema:
+		return true
+	case PromptOnly:
+		return true
+	case Unavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AiTask.
+const (
+	GrammarContent AiTask = "grammar_content"
+	Story          AiTask = "story"
+)
+
+// Valid indicates whether the value is a known member of the AiTask enum.
+func (e AiTask) Valid() bool {
+	switch e {
+	case GrammarContent:
+		return true
+	case Story:
+		return true
+	default:
+		return false
+	}
+}
 
 // Defines values for HealthDatabase.
 const (
@@ -57,6 +101,69 @@ func (e HealthStatus) Valid() bool {
 	default:
 		return false
 	}
+}
+
+// AiProvider A saved OpenAI-compatible endpoint. The API key is write-only and never returned.
+type AiProvider struct {
+	// BaseUrl Normalised OpenAI-compatible base URL, e.g. https://api.openai.com/v1
+	BaseUrl   string    `json:"baseUrl"`
+	CreatedAt time.Time `json:"createdAt"`
+
+	// HasApiKey Whether a key is stored. The key itself is never exposed, not even partially.
+	HasApiKey bool               `json:"hasApiKey"`
+	Id        openapi_types.UUID `json:"id"`
+	Model     string             `json:"model"`
+	Name      string             `json:"name"`
+	UpdatedAt time.Time          `json:"updatedAt"`
+}
+
+// AiProviderCreate defines model for AiProviderCreate.
+type AiProviderCreate struct {
+	// ApiKey Omit, null or empty for endpoints that need no key.
+	ApiKey stdjson.RawMessage `json:"apiKey,omitempty"`
+
+	// BaseUrl Any http(s) OpenAI-compatible endpoint, including private/LAN/localhost addresses. A missing /v1 is added.
+	BaseUrl string `json:"baseUrl"`
+	Model   string `json:"model"`
+
+	// Name Unique per Learner (case-insensitive).
+	Name string `json:"name"`
+}
+
+// AiProviderTestResult defines model for AiProviderTestResult.
+type AiProviderTestResult struct {
+	// LatencyMs Round-trip time of the connection check in milliseconds.
+	LatencyMs int64 `json:"latencyMs"`
+
+	// Message Human-readable outcome, e.g. "Connected" or why it failed.
+	Message string `json:"message"`
+	Ok      bool   `json:"ok"`
+
+	// StructuredOutput How the endpoint handles JSON output, when the connection works: json_schema (best), json_object, prompt_only (JSON extracted from plain replies) or unavailable.
+	StructuredOutput *AiProviderTestResultStructuredOutput `json:"structuredOutput,omitempty"`
+}
+
+// AiProviderTestResultStructuredOutput How the endpoint handles JSON output, when the connection works: json_schema (best), json_object, prompt_only (JSON extracted from plain replies) or unavailable.
+type AiProviderTestResultStructuredOutput string
+
+// AiProviderUpdate defines model for AiProviderUpdate.
+type AiProviderUpdate struct {
+	// ApiKey Omitted keeps the stored key; null or empty removes it; any other value replaces it.
+	ApiKey  stdjson.RawMessage `json:"apiKey,omitempty"`
+	BaseUrl *string            `json:"baseUrl,omitempty"`
+	Model   *string            `json:"model,omitempty"`
+	Name    *string            `json:"name,omitempty"`
+}
+
+// AiTask A job the app delegates to an AI Provider. Fixed set.
+type AiTask string
+
+// AiTaskAssignment defines model for AiTaskAssignment.
+type AiTaskAssignment struct {
+	ProviderId *openapi_types.UUID `json:"providerId"`
+
+	// Task A job the app delegates to an AI Provider. Fixed set.
+	Task AiTask `json:"task"`
 }
 
 // Error defines model for Error.
@@ -99,14 +206,61 @@ type User struct {
 	Username string             `json:"username"`
 }
 
+// ProviderId defines model for ProviderId.
+type ProviderId = string
+
+// NotFound defines model for NotFound.
+type NotFound = Error
+
 // Unauthorized defines model for Unauthorized.
 type Unauthorized = Error
+
+// SetAiTaskJSONBody defines parameters for SetAiTask.
+type SetAiTaskJSONBody struct {
+	ProviderId openapi_types.UUID `json:"providerId"`
+}
+
+// CreateAiProviderJSONRequestBody defines body for CreateAiProvider for application/json ContentType.
+type CreateAiProviderJSONRequestBody = AiProviderCreate
+
+// UpdateAiProviderJSONRequestBody defines body for UpdateAiProvider for application/json ContentType.
+type UpdateAiProviderJSONRequestBody = AiProviderUpdate
+
+// SetAiTaskJSONRequestBody defines body for SetAiTask for application/json ContentType.
+type SetAiTaskJSONRequestBody SetAiTaskJSONBody
 
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody = LoginRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// ListAiProviders The Learner's saved AI Providers
+	// (GET /ai-providers)
+	ListAiProviders(w http.ResponseWriter, r *http.Request)
+	// CreateAiProvider Save a new AI Provider
+	// (POST /ai-providers)
+	CreateAiProvider(w http.ResponseWriter, r *http.Request)
+	// DeleteAiProvider Remove an AI Provider
+	// (DELETE /ai-providers/{id})
+	DeleteAiProvider(w http.ResponseWriter, r *http.Request, id ProviderId)
+	// GetAiProvider One AI Provider
+	// (GET /ai-providers/{id})
+	GetAiProvider(w http.ResponseWriter, r *http.Request, id ProviderId)
+	// UpdateAiProvider Change an AI Provider
+	// (PATCH /ai-providers/{id})
+	UpdateAiProvider(w http.ResponseWriter, r *http.Request, id ProviderId)
+	// TestAiProvider Check that the provider answers a tiny chat request
+	// (POST /ai-providers/{id}/test)
+	TestAiProvider(w http.ResponseWriter, r *http.Request, id ProviderId)
+	// ListAiTasks Which AI Provider each task uses
+	// (GET /ai-tasks)
+	ListAiTasks(w http.ResponseWriter, r *http.Request)
+	// ClearAiTask Leave a task without an AI Provider
+	// (DELETE /ai-tasks/{task})
+	ClearAiTask(w http.ResponseWriter, r *http.Request, task AiTask)
+	// SetAiTask Choose the AI Provider for a task
+	// (PUT /ai-tasks/{task})
+	SetAiTask(w http.ResponseWriter, r *http.Request, task AiTask)
 	// Login Exchange a username and password for a session token
 	// (POST /auth/login)
 	Login(w http.ResponseWriter, r *http.Request)
@@ -129,6 +283,204 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// ListAiProviders operation middleware
+func (siw *ServerInterfaceWrapper) ListAiProviders(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAiProviders(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateAiProvider operation middleware
+func (siw *ServerInterfaceWrapper) CreateAiProvider(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateAiProvider(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteAiProvider operation middleware
+func (siw *ServerInterfaceWrapper) DeleteAiProvider(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ProviderId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteAiProvider(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetAiProvider operation middleware
+func (siw *ServerInterfaceWrapper) GetAiProvider(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ProviderId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAiProvider(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateAiProvider operation middleware
+func (siw *ServerInterfaceWrapper) UpdateAiProvider(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ProviderId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateAiProvider(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// TestAiProvider operation middleware
+func (siw *ServerInterfaceWrapper) TestAiProvider(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ProviderId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.TestAiProvider(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListAiTasks operation middleware
+func (siw *ServerInterfaceWrapper) ListAiTasks(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAiTasks(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ClearAiTask operation middleware
+func (siw *ServerInterfaceWrapper) ClearAiTask(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "task" -------------
+	var task AiTask
+
+	err = runtime.BindStyledParameterWithOptions("simple", "task", r.PathValue("task"), &task, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "task", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ClearAiTask(w, r, task)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetAiTask operation middleware
+func (siw *ServerInterfaceWrapper) SetAiTask(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "task" -------------
+	var task AiTask
+
+	err = runtime.BindStyledParameterWithOptions("simple", "task", r.PathValue("task"), &task, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "task", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetAiTask(w, r, task)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // Login operation middleware
 func (siw *ServerInterfaceWrapper) Login(w http.ResponseWriter, r *http.Request) {
@@ -310,11 +662,508 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/auth/login", wrapper.Login)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/auth/logout", wrapper.Logout)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/me", wrapper.GetMe)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/ai-providers", wrapper.ListAiProviders)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/ai-providers", wrapper.CreateAiProvider)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/ai-providers/{id}", wrapper.DeleteAiProvider)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/ai-providers/{id}", wrapper.GetAiProvider)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/ai-providers/{id}", wrapper.UpdateAiProvider)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/ai-providers/{id}/test", wrapper.TestAiProvider)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/ai-tasks", wrapper.ListAiTasks)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/ai-tasks/{task}", wrapper.ClearAiTask)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/ai-tasks/{task}", wrapper.SetAiTask)
 
 	return m
 }
 
+type NotFoundJSONResponse Error
+
 type UnauthorizedJSONResponse Error
+
+type ListAiProvidersRequestObject struct {
+}
+
+type ListAiProvidersResponseObject interface {
+	VisitListAiProvidersResponse(w http.ResponseWriter) error
+}
+
+type ListAiProviders200JSONResponse []AiProvider
+
+func (response ListAiProviders200JSONResponse) VisitListAiProvidersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAiProviders401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListAiProviders401JSONResponse) VisitListAiProvidersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAiProviderRequestObject struct {
+	Body *CreateAiProviderJSONRequestBody
+}
+
+type CreateAiProviderResponseObject interface {
+	VisitCreateAiProviderResponse(w http.ResponseWriter) error
+}
+
+type CreateAiProvider201JSONResponse AiProvider
+
+func (response CreateAiProvider201JSONResponse) VisitCreateAiProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAiProvider400JSONResponse Error
+
+func (response CreateAiProvider400JSONResponse) VisitCreateAiProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAiProvider401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response CreateAiProvider401JSONResponse) VisitCreateAiProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAiProvider409JSONResponse Error
+
+func (response CreateAiProvider409JSONResponse) VisitCreateAiProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteAiProviderRequestObject struct {
+	Id ProviderId `json:"id"`
+}
+
+type DeleteAiProviderResponseObject interface {
+	VisitDeleteAiProviderResponse(w http.ResponseWriter) error
+}
+
+type DeleteAiProvider204Response struct {
+}
+
+func (response DeleteAiProvider204Response) VisitDeleteAiProviderResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteAiProvider401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response DeleteAiProvider401JSONResponse) VisitDeleteAiProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteAiProvider404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DeleteAiProvider404JSONResponse) VisitDeleteAiProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteAiProvider409JSONResponse Error
+
+func (response DeleteAiProvider409JSONResponse) VisitDeleteAiProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAiProviderRequestObject struct {
+	Id ProviderId `json:"id"`
+}
+
+type GetAiProviderResponseObject interface {
+	VisitGetAiProviderResponse(w http.ResponseWriter) error
+}
+
+type GetAiProvider200JSONResponse AiProvider
+
+func (response GetAiProvider200JSONResponse) VisitGetAiProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAiProvider401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetAiProvider401JSONResponse) VisitGetAiProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAiProvider404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetAiProvider404JSONResponse) VisitGetAiProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateAiProviderRequestObject struct {
+	Id   ProviderId `json:"id"`
+	Body *UpdateAiProviderJSONRequestBody
+}
+
+type UpdateAiProviderResponseObject interface {
+	VisitUpdateAiProviderResponse(w http.ResponseWriter) error
+}
+
+type UpdateAiProvider200JSONResponse AiProvider
+
+func (response UpdateAiProvider200JSONResponse) VisitUpdateAiProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateAiProvider400JSONResponse Error
+
+func (response UpdateAiProvider400JSONResponse) VisitUpdateAiProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateAiProvider401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response UpdateAiProvider401JSONResponse) VisitUpdateAiProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateAiProvider404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UpdateAiProvider404JSONResponse) VisitUpdateAiProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateAiProvider409JSONResponse Error
+
+func (response UpdateAiProvider409JSONResponse) VisitUpdateAiProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TestAiProviderRequestObject struct {
+	Id ProviderId `json:"id"`
+}
+
+type TestAiProviderResponseObject interface {
+	VisitTestAiProviderResponse(w http.ResponseWriter) error
+}
+
+type TestAiProvider200JSONResponse AiProviderTestResult
+
+func (response TestAiProvider200JSONResponse) VisitTestAiProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TestAiProvider401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response TestAiProvider401JSONResponse) VisitTestAiProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TestAiProvider404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response TestAiProvider404JSONResponse) VisitTestAiProviderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAiTasksRequestObject struct {
+}
+
+type ListAiTasksResponseObject interface {
+	VisitListAiTasksResponse(w http.ResponseWriter) error
+}
+
+type ListAiTasks200JSONResponse []AiTaskAssignment
+
+func (response ListAiTasks200JSONResponse) VisitListAiTasksResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAiTasks401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListAiTasks401JSONResponse) VisitListAiTasksResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ClearAiTaskRequestObject struct {
+	Task AiTask `json:"task"`
+}
+
+type ClearAiTaskResponseObject interface {
+	VisitClearAiTaskResponse(w http.ResponseWriter) error
+}
+
+type ClearAiTask200JSONResponse AiTaskAssignment
+
+func (response ClearAiTask200JSONResponse) VisitClearAiTaskResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ClearAiTask401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ClearAiTask401JSONResponse) VisitClearAiTaskResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ClearAiTask404JSONResponse Error
+
+func (response ClearAiTask404JSONResponse) VisitClearAiTaskResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetAiTaskRequestObject struct {
+	Task AiTask `json:"task"`
+	Body *SetAiTaskJSONRequestBody
+}
+
+type SetAiTaskResponseObject interface {
+	VisitSetAiTaskResponse(w http.ResponseWriter) error
+}
+
+type SetAiTask200JSONResponse AiTaskAssignment
+
+func (response SetAiTask200JSONResponse) VisitSetAiTaskResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetAiTask400JSONResponse Error
+
+func (response SetAiTask400JSONResponse) VisitSetAiTaskResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetAiTask401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response SetAiTask401JSONResponse) VisitSetAiTaskResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetAiTask404JSONResponse Error
+
+func (response SetAiTask404JSONResponse) VisitSetAiTaskResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
 
 type LoginRequestObject struct {
 	Body *LoginJSONRequestBody
@@ -489,6 +1338,33 @@ func (response GetMe401JSONResponse) VisitGetMeResponse(w http.ResponseWriter) e
 
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+	// ListAiProviders The Learner's saved AI Providers
+	// (GET /ai-providers)
+	ListAiProviders(ctx context.Context, request ListAiProvidersRequestObject) (ListAiProvidersResponseObject, error)
+	// CreateAiProvider Save a new AI Provider
+	// (POST /ai-providers)
+	CreateAiProvider(ctx context.Context, request CreateAiProviderRequestObject) (CreateAiProviderResponseObject, error)
+	// DeleteAiProvider Remove an AI Provider
+	// (DELETE /ai-providers/{id})
+	DeleteAiProvider(ctx context.Context, request DeleteAiProviderRequestObject) (DeleteAiProviderResponseObject, error)
+	// GetAiProvider One AI Provider
+	// (GET /ai-providers/{id})
+	GetAiProvider(ctx context.Context, request GetAiProviderRequestObject) (GetAiProviderResponseObject, error)
+	// UpdateAiProvider Change an AI Provider
+	// (PATCH /ai-providers/{id})
+	UpdateAiProvider(ctx context.Context, request UpdateAiProviderRequestObject) (UpdateAiProviderResponseObject, error)
+	// TestAiProvider Check that the provider answers a tiny chat request
+	// (POST /ai-providers/{id}/test)
+	TestAiProvider(ctx context.Context, request TestAiProviderRequestObject) (TestAiProviderResponseObject, error)
+	// ListAiTasks Which AI Provider each task uses
+	// (GET /ai-tasks)
+	ListAiTasks(ctx context.Context, request ListAiTasksRequestObject) (ListAiTasksResponseObject, error)
+	// ClearAiTask Leave a task without an AI Provider
+	// (DELETE /ai-tasks/{task})
+	ClearAiTask(ctx context.Context, request ClearAiTaskRequestObject) (ClearAiTaskResponseObject, error)
+	// SetAiTask Choose the AI Provider for a task
+	// (PUT /ai-tasks/{task})
+	SetAiTask(ctx context.Context, request SetAiTaskRequestObject) (SetAiTaskResponseObject, error)
 	// Login Exchange a username and password for a session token
 	// (POST /auth/login)
 	Login(ctx context.Context, request LoginRequestObject) (LoginResponseObject, error)
@@ -540,6 +1416,255 @@ type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
 	options     StrictHTTPServerOptions
+}
+
+// ListAiProviders operation middleware
+func (sh *strictHandler) ListAiProviders(w http.ResponseWriter, r *http.Request) {
+	var request ListAiProvidersRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListAiProviders(ctx, request.(ListAiProvidersRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListAiProviders")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListAiProvidersResponseObject); ok {
+		if err := validResponse.VisitListAiProvidersResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateAiProvider operation middleware
+func (sh *strictHandler) CreateAiProvider(w http.ResponseWriter, r *http.Request) {
+	var request CreateAiProviderRequestObject
+
+	var body CreateAiProviderJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateAiProvider(ctx, request.(CreateAiProviderRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateAiProvider")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateAiProviderResponseObject); ok {
+		if err := validResponse.VisitCreateAiProviderResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteAiProvider operation middleware
+func (sh *strictHandler) DeleteAiProvider(w http.ResponseWriter, r *http.Request, id ProviderId) {
+	var request DeleteAiProviderRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteAiProvider(ctx, request.(DeleteAiProviderRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteAiProvider")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteAiProviderResponseObject); ok {
+		if err := validResponse.VisitDeleteAiProviderResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetAiProvider operation middleware
+func (sh *strictHandler) GetAiProvider(w http.ResponseWriter, r *http.Request, id ProviderId) {
+	var request GetAiProviderRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetAiProvider(ctx, request.(GetAiProviderRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetAiProvider")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetAiProviderResponseObject); ok {
+		if err := validResponse.VisitGetAiProviderResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateAiProvider operation middleware
+func (sh *strictHandler) UpdateAiProvider(w http.ResponseWriter, r *http.Request, id ProviderId) {
+	var request UpdateAiProviderRequestObject
+
+	request.Id = id
+
+	var body UpdateAiProviderJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateAiProvider(ctx, request.(UpdateAiProviderRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateAiProvider")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateAiProviderResponseObject); ok {
+		if err := validResponse.VisitUpdateAiProviderResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// TestAiProvider operation middleware
+func (sh *strictHandler) TestAiProvider(w http.ResponseWriter, r *http.Request, id ProviderId) {
+	var request TestAiProviderRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.TestAiProvider(ctx, request.(TestAiProviderRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "TestAiProvider")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(TestAiProviderResponseObject); ok {
+		if err := validResponse.VisitTestAiProviderResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListAiTasks operation middleware
+func (sh *strictHandler) ListAiTasks(w http.ResponseWriter, r *http.Request) {
+	var request ListAiTasksRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListAiTasks(ctx, request.(ListAiTasksRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListAiTasks")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListAiTasksResponseObject); ok {
+		if err := validResponse.VisitListAiTasksResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ClearAiTask operation middleware
+func (sh *strictHandler) ClearAiTask(w http.ResponseWriter, r *http.Request, task AiTask) {
+	var request ClearAiTaskRequestObject
+
+	request.Task = task
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ClearAiTask(ctx, request.(ClearAiTaskRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ClearAiTask")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ClearAiTaskResponseObject); ok {
+		if err := validResponse.VisitClearAiTaskResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SetAiTask operation middleware
+func (sh *strictHandler) SetAiTask(w http.ResponseWriter, r *http.Request, task AiTask) {
+	var request SetAiTaskRequestObject
+
+	request.Task = task
+
+	var body SetAiTaskJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SetAiTask(ctx, request.(SetAiTaskRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetAiTask")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetAiTaskResponseObject); ok {
+		if err := validResponse.VisitSetAiTaskResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // Login operation middleware
@@ -650,25 +1775,55 @@ func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"vFbfb9s2EP5XDtweWkC13aYDOvUpBYq2Q4sGtbOXNEho8SyxkY4KeUzqBfrfB5KKLcdKNmDJnmzxx3ff",
-	"3X13vBtRmKY1hMRO5DfComsNOYwfxyQ9V8bqv1CF78IQI3H4K9u21oVkbWj6wxkKa66osJHh368WVyIX",
-	"v0y34NO066bvrTVWdF2XCYWusLoNICIXX7RzmsoMNF3JWiswFvBnqy0qcOicNgRsLpBEuNvDBWsJMb8R",
-	"rTUtWtaJfWEUht9dK3OWyxqhkUWlCV9YlCouYACBcAee4aScgB84v+F0VlhUSKxl7TJgY84aSeszyYxN",
-	"y+75RGSC1y2KXDi2mkrRZaJB52QZudzZ6zJh8dIHF0V+khhvz59usMzyBxYcsD6irLnad1ZJlkvpohEk",
-	"3yQ4IiwYlciEJ4uyqIKrA9wtR8eSvRveNhciZKi0UqEauXOHew+QbZmM0f9sSk3f8NKj430nWunctbFR",
-	"aytjG8ki3y6OsPYOLcnmX4R2czLbAj5AMBXBPsOkR3cmeYejkowvWEf4PZJJs3tC/NrKS4+wRGnRJmFP",
-	"YF6ZawJDBb4FrhAc2iu04NhYdGCoXoNmB5V01eS+gPxTAR6HM3fjk0hmQwd7tLEoHfdmdoOjdxPnvf6P",
-	"SYv3N8f3iQTdYuGt5vU8OJdopIgeeq7uDfpOO4GVNQ0cfZ0vYBpKfloHDWTgkBikg/PDvg/EbpfDu5Sx",
-	"7342OygiQvyL5yEjMciBY2Kx9b9iblPX07QyI33JeFsgmBWw9VzBytiogI+LxREcHn2awAezlYNfOpCk",
-	"4onFusV5RIKi1pG0RVgarqBEQisZVfKRK+1gpWuEZ9YTnLfUNpsz588n34MCWHMdCP+pLXtZwx+ylQQL",
-	"z8YGHiITV2hdIj2bvJzMQk5NiyRbLXJxMJlNDmKVcRXTMYhp+GxNqvwgnBjQT0rkqexEyj46fmfU+tEe",
-	"nJ2e0+1qjK3HuDB49V7NZo9tO6GPPXqfTVmiAk0hiq8f0fL9z6ysQ4migj7YsAzRjuZfPr35Y7qg0ONC",
-	"WYcX/toaKuG2J8MzTUo71lR67eJzBcs1KHS6pOeR5Kvfn57kwhgIDzuspK5Rwe37/hYssl2DXDGm8iTf",
-	"LIMjK3BYGFIONMG3cOjFYTgkMlGhVGijtIYb+c0dHWYD1n3T0MRYxm7dDZudyE9OM+F800i7Frl4/7Oo",
-	"JJUIEm67ZewOm6iGZiJHhqhNbRrPDxZn2N8rk9cjXaw3obBGRjVQ1VgeNnjTnUmz64bOfUqTl2SMAS+8",
-	"taHHjThTbWajEkfc+IDcT09PWPC9hRFNzVPv1g58u+ndt8NSWN4OaF0mfpsd/N+clp73OA3HxocU+Flf",
-	"IaFLj9IGoB9A9ZXmNRQVFhcpUQ0+lKQv+JQJ6qef/ZIfaCvOPY8g3YAZNpE4kEXVI9+J5O7IcnLahdDG",
-	"zLi4623dDxD5dFqbQtaVcZy/mb2Zie60+3sA",
+	"5Frbcts40n6VLvx/1dhVtKRMvFszypUmc/KsE6d82LlIXBZEtEREJMABQMnalN59qwGSIiVadiaxZmv3",
+	"Ko4IAn34uvF1Nz+xWGe5VqicZcNPLOeGZ+jQ+P+9M3ohBZozQf8TaGMjcye1YkM2UjA6g2rFNxZubs5+",
+	"7MGPGKfcoABugUOecqnAOiPVDLSCvDC5tjgElyDMUKHhDgUYXTg0MJFKWBhPtcm4G0JRSDGGjUQwwak2",
+	"6N/lhUsgk0KkuOQGwRTKRmA1cMh4SjugAClgqYtUwASBK7tEkut0MACngSsoFO2CysnYSxHzNEXTg+sE",
+	"IeFKpGjodIsWpIOj08EpyOlm++PeB8UiJskYOXcJi5jiGbIhk4JFzOAfhTQo2NCZAiNm4wQzTnZ0q5xW",
+	"Bauw9XpNi22ulUVv9bfa/awL5W0ea+VQOfqT53lKkkqt+h8t+eBTY9P/NzhlQ/Z//Y0/++Gp7f9kjDbh",
+	"oLYP32qwRZyAQasLEyNMtanNuzFMYdHAUawFwlhpdzcl6cbHbB2xG29DbeS/8ADyvpHWSjWLQKoFT6UA",
+	"bQDvczIzWLRWagVOz1Exerfcjk4byQqoHUAGyxco4CJHNTo7IXm4k5MUAZXItVQuQGL07gzmuAJpYWmk",
+	"wxOt0hVwJUDhAg0YdIVRKHosYrnRORong0Mn3OKNSXePfktIT6XtPJ3egpvL8wiwN+tB4lxuh/0+z2VP",
+	"56i47MU66y9esGgbURGLDZLnRt4RIZ7YkAnu8MTJDLteSbgd5fIfuNoV8/cEXYIGeKW/ddqgCGbxPzmL",
+	"6ZSeBFPgPUW5iEBpB7hARXHkJE/TVW9z9kTrFLmiw6VoCUqR3yVjpgWmHSFURV7HgyIXn2eJdTN034dY",
+	"9rtHtR8rQZpGa9q8eeptfYCefMTYkUwbNL727/jE20IMf8ATF5l0EagiTT30s9ytfMxWSLXgEu5AIQpQ",
+	"mnxD9q7Vzrm1S228SkWa8kmKVXpqWyFi9yczfVL/KCiAe5d8+Qat5TNsLjiRWa6Nt2+Z/8r1LAp5cchQ",
+	"xVpINQt5YN182c5lfqK9fjw98UqgCUKto4cjZ6RWPiKO7PGewKVEEacFHQ25kQvusH8+ettPdczTRFsH",
+	"XAiD1qLtwQiykF6gv3hBWOZChGj+EzhsS3uj5B8FQo4GzpEb5dMpt3gilUVlpZMLPO49isUHYLgfYtdo",
+	"3SXaInW7MEu5QxWv3thdkS8px584I3OgOAE99RdDrJXCmNZAnGA8B6kgkynlsFgrYVtwk8r9/XSjFbl2",
+	"hsYbsITRzrG/FhlXJwa5IHCCLlysMyxT4Af2OhyP4gOjAFgmlHtgymX6gKf0vOGmRsKxzhSxKwyKi8Ll",
+	"heuQRC+9xhWWSkpg4beri7ckWF64CJYJqm3DLLWZ2yEQ1u/CHQRHE7TuOAq/BS9FkBud5e7OXyNHfle8",
+	"d4aTejA1OivZk8E8lWiPSeFC8QWXPnAD+0BVZASNxmEsYo1jwmVUnUOpabMFu92x2Bbi9JxFDZRsHLcf",
+	"czc+/X1eWiOt54i59eYMNwwlsFdb6c5gpheekr0Crlag/dW04GmB3lQ89g//a/Lel1+C605fXXM77yJD",
+	"H/UkUMA8B4EpzrhDWzLmBuHvwc/y3tMu12vgkPxGKJsZnmXc3FV88LYjNoMMI2vlTGUlaWzjJW/VH9v0",
+	"YL8rSetSxX1cszTENvD9q1FTgC7EB6K6IzYx5V3TXjmf0jIeJ1LhJschbQL0Dhz5NFc0OHVNde9igwIV",
+	"kSgbgdP6LuNqdcedo7Cwx9331CbN7o9zL/H+6P4VeeqSXWUFd5zgSn9XKIirNO3zjUEeJw/km4hZx11h",
+	"m2/7pCNwZrhA8XiOKjeINpJ0iX+uZ1Jd4h8F2i6gVQmiCbNG1tillRbNw+HWFK9eGW023CNgqAN3JQxl",
+	"jr3jn0HpQym0m21zTmxkgtygCfVSD64SvVSgVYyvQgJGQ0ze52EL/o6SzkLCbdJ7yCCPxdoNrdmJNC9k",
+	"1FSw3K3LSjflMW3jPLF8eLrT/Pv18l1BCLcYF0a61RUpV9Z53qKjwiUPGr1VpYZb/t3F1TX0KeT7KWEg",
+	"AovKUf9kPCrzgC+ih/BD8NiHYjB4Gfsd/J84Jo94I3uW41dt9CeaHIppqaa6Iy+F0p8InqGuStUD+PX6",
+	"+h0VvT34RW/gUEysr3lpxfUqxyu/E8Sp9EIbhIl2SaO343V0ibQwlSnCkSkUjHOVZ/WacdlJcdJRMmf/",
+	"lMYVPIXfeM4VXBdOG5KDRWyBxgahB70XvYEneFQK55IN2cveoPeyvHu9O/pcnlQJ3P8wQx88hBxvUbpW",
+	"2Lm0bsNcLNtqxnw7GHxWX0M6zOzjl051HttcztwYvurqeozSFGo9ItCpQOtgKo11vaorYb3pQ/Udah4i",
+	"xOuInQ5ePCRNrWe/1cXx4C7o9l6xIaMSv6xZvrFlp6RBAyydkWvbYdhQ2zZUDSGG1v2gxeqrNYt2iul1",
+	"O5hLRrXl1BfPcH6X74JMInhi8PwdsrOyMUZ5K6pbSMSePW2sungVqahgNfbVxaZzOiEP/Tn00EvfP7+i",
+	"ozokYCldEjIMaQ08JWq1AryX1tlKY3p05/gc1fh4C+JXfIHAQeGyiWy/qJVC+p+kWIf8maLrYHiX+NGz",
+	"niDR6eB7WCaU8yhX1tJSY8FTXhSeVQNRzVdgMPzqF9NPZYCzaCusfvSHb4VVC9unu5KFl8QXuPT08Zfq",
+	"vvWhMHD9qF0r71er7qS6KyzuQODSF5VbJQ7p0Xll/IJun/0HB8otLfWPCHO6cJ6lzXF1fChft+x4oXDb",
+	"gs2J0vvubTdL+o2J0/qWXnZxF5kiOkqBMpWYCgu5QVvRjzjhakbN6XHoNoxB7+0ujKmMHFP646psMZTz",
+	"qk2nAY7muErR2kaj1Q9OuIWLNOUZr1quCksy00ZMaIgc8C4MBz7tLjwkXsvGOOQNhPwPXYz/iVl0pEIL",
+	"rU4l1QWacNu4Vh+/R1/7yNtJop3XaN9VdfgXpYeSeG7z5SVf2XLia+HbwWDTpq2VDOzgFfCye1y1sy2M",
+	"9XwIU55aHIeLnEPdqxmXHZJxGG1xFaok38Lpintqvh/6qmg0/B8IwrKrXvf0SfO/5Lp47W3uR1Yt51Su",
+	"4+CkWlFKd1DmyxpPdL0/VtVd+zWHqei2eplPqOvoskTlzMoPhkgf6vYBBxs6hdoINK825OVMjP2Ildrh",
+	"HtCFqhjP16j0fk9knDRDF6hvF2hUQbZrWb7/if7ZosNbBWCK3ATDsB0e0PHZRNlzffjDiSf1cW+fNci2",
+	"vdwdYMGXSi+/3EV1gD3vJXCj5ooagE3S3PrUowWVcwwlk19dEc9d8lzO1dqouEL312Diz9GtzxlI7O8p",
+	"7p0lHJqnPQ3HVBLzVk47CFd781Xp1uECJyKuqMpvqjaV2WPR9DrR2oYuQTP7Uh82hFiZeesOsUdiZ8/N",
+	"DxGeqbhoTVAODNj2cKTDDed6NkMBUv0FIC2NvQ3Ww+DOf5tHn0IYTR+5lBMmOJJKSOukmhXS+uEbTFYg",
+	"kGI5tAa+PUSDRmugMWXFsatpJbW7iPfwqcMwbFBFNiFFplB+SEJM6JIWnYxoEYtYgrxq5DcfDD89/qll",
+	"/eXJet0c3bDh+9tmIP50H5clDFSzHz/rqK0aQnL3S8M6NnXh9gYnPX9Kv+6qPEJ8Ud+ulWXKApi7kGni",
+	"whhUrkuZpJ70PtT9KmfBzxjw5QkdmLoKkyhpocjrSVQ1+qWfN+PmdcT+Nnh5aJkmhduRqTkE34fAc7lA",
+	"hTaM2OoNqm+LFtKtqmqNHJXhPie9wed0UDnL7aQNFbYKi+ZrQPe684tkth3L7QHs+1uifWFuGehlYdJy",
+	"HDrsbz4BHH43+G7A1rfrfw8A",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

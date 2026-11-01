@@ -38,6 +38,15 @@ function fakeApi() {
         }
         case "POST /auth/logout":
           return authed ? new Response(null, { status: 204 }) : json(401, { code: "unauthorized", message: "no" });
+        case "GET /ai-providers":
+          return authed ? json(200, []) : json(401, { code: "unauthorized", message: "no" });
+        case "GET /ai-tasks":
+          return authed
+            ? json(200, [
+                { task: "story", providerId: null },
+                { task: "grammar_content", providerId: null },
+              ])
+            : json(401, { code: "unauthorized", message: "no" });
         default:
           throw new Error(`unexpected ${req.method} ${path}`);
       }
@@ -111,6 +120,21 @@ describe("App", () => {
     expect(await screen.findByRole("button", { name: "Log in" })).toBeTruthy();
     await waitFor(() => expect(localStorage.getItem("vjt.token")).toBeNull());
     expect(calls).toContain("POST /auth/logout");
+  });
+
+  it("navigates between Home and Settings from the signed-in shell", async () => {
+    localStorage.setItem("vjt.token", "tok-1");
+    renderApp();
+    await screen.findByText("Signed in as alice");
+    expect(screen.queryByRole("heading", { name: "AI providers" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    expect(await screen.findByRole("heading", { name: "AI providers" })).toBeTruthy();
+    expect(screen.getByLabelText("Story generation")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Home" }));
+    expect(await screen.findByText("Signed in as alice")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "AI providers" })).toBeNull();
   });
 
   it("offers a retry instead of logging out when the server is unreachable", async () => {

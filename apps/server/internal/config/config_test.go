@@ -160,3 +160,45 @@ func TestLoadBootstrapCredentialsComeAsAPair(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadAIDefaultIsOptionalAndNormalised(t *testing.T) {
+	cfg, err := config.Load(env(map[string]string{"DATABASE_URL": "postgres://x"}))
+	if err != nil || cfg.AIDefaultBaseURL != "" || cfg.AIDefaultModel != "" || cfg.AIDefaultAPIKey != "" {
+		t.Fatalf("unset: %+v, %v", cfg, err)
+	}
+	cfg, err = config.Load(env(map[string]string{
+		"DATABASE_URL":        "postgres://x",
+		"AI_DEFAULT_BASE_URL": "http://ollama.lan:11434/",
+		"AI_DEFAULT_MODEL":    " llama3 ",
+	}))
+	if err != nil || cfg.AIDefaultBaseURL != "http://ollama.lan:11434/v1" || cfg.AIDefaultModel != "llama3" || cfg.AIDefaultAPIKey != "" {
+		t.Fatalf("keyless: %+v, %v", cfg, err)
+	}
+	cfg, err = config.Load(env(map[string]string{
+		"DATABASE_URL": "postgres://x", "AI_DEFAULT_BASE_URL": "https://api.openai.com/v1", "AI_DEFAULT_MODEL": "m", "AI_DEFAULT_API_KEY": "sk-1",
+	}))
+	if err != nil || cfg.AIDefaultAPIKey != "sk-1" {
+		t.Fatalf("with key: %+v, %v", cfg, err)
+	}
+}
+
+func TestLoadRejectsHalfConfiguredAIDefault(t *testing.T) {
+	cases := map[string]map[string]string{
+		"url without model": {"AI_DEFAULT_BASE_URL": "https://x/v1"},
+		"model without url": {"AI_DEFAULT_MODEL": "m"},
+		"key alone":         {"AI_DEFAULT_API_KEY": "sk-secret-1"},
+		"bad url":           {"AI_DEFAULT_BASE_URL": "ftp://x", "AI_DEFAULT_MODEL": "m"},
+	}
+	for name, extra := range cases {
+		t.Run(name, func(t *testing.T) {
+			extra["DATABASE_URL"] = "postgres://x"
+			_, err := config.Load(env(extra))
+			if err == nil || !strings.Contains(err.Error(), "AI_DEFAULT_") {
+				t.Fatalf("err = %v, want an AI_DEFAULT_* error", err)
+			}
+			if strings.Contains(err.Error(), "sk-secret-1") {
+				t.Fatalf("error leaks the key: %v", err)
+			}
+		})
+	}
+}

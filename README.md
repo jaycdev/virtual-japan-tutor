@@ -213,7 +213,42 @@ openssl rand -base64 32
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ```
 
-Treat it like a password: losing or changing it makes stored secrets unreadable. No feature stores a secret yet.
+Treat it like a password: losing or changing it makes stored secrets unreadable. Today the only stored
+secrets are [AI Provider](#ai-providers) API keys (a connection test then says "re-enter the key").
+
+## AI Providers
+
+An **AI Provider** ([GLOSSARY](GLOSSARY.md)) is a saved OpenAI-compatible endpoint: name, base URL, API key
+and model. The Learner manages them in the web app's **Settings** page and picks which one serves each
+**task** (`story`, `grammar_content`). All routes are authenticated and user-scoped; see `api/openapi.yaml`
+(`/ai-providers`, `/ai-providers/{id}/test`, `/ai-tasks`).
+
+- **Any OpenAI-compatible endpoint**: OpenAI, OpenRouter, LiteLLM, Ollama, vLLM... The base URL is normalised
+  (trailing slash removed, `/v1` added when the path is empty, a pasted `.../chat/completions` is cut back) and
+  must be `http` or `https` without embedded credentials. **Private, LAN and localhost addresses are allowed
+  on purpose** (this is a single-user, self-hosted tool and local endpoints are a main use case), so anyone who
+  can log in can make the server call any address it can reach.
+- **Keys are write-only.** They are encrypted with `SECRETS_KEY` (`v1:` ciphertext in `ai_providers.api_key_encrypted`,
+  `NULL` for keyless endpoints) and never returned: responses carry only `hasApiKey`. On `PATCH`, an omitted
+  `apiKey` keeps the stored key; `null` or `""` removes it; any other string replaces it. Keys and `Authorization`
+  headers are never logged, and provider error text is scrubbed of the key before it is shown.
+- **Tasks.** `GET /ai-tasks` lists every task with its provider (or `null`); `PUT /ai-tasks/{task}` assigns one,
+  `DELETE /ai-tasks/{task}` clears it. **Deleting a provider that is assigned to a task is rejected with `409
+  provider_in_use`** (reassign the task first); it is never silently un-assigned.
+- **Connection test.** `POST /ai-providers/{id}/test` sends a tiny chat request and always answers `200` with
+  `{ok, latencyMs, message, structuredOutput}`; a failure is `ok: false` with a readable reason (bad key, unknown
+  model, wrong base URL, rate limit, timeout, unreachable, not an OpenAI-compatible API). It also probes
+  structured output and reports `json_schema`, `json_object`, `prompt_only` or `unavailable`.
+- **Default from the environment.** Set `AI_DEFAULT_BASE_URL` + `AI_DEFAULT_MODEL` (and optionally
+  `AI_DEFAULT_API_KEY`) and, on boot, if there is exactly one user and they have no providers, a provider named
+  "Default" is created and assigned to every task. It is idempotent and never touches existing providers. If you
+  create the account later (e.g. with `create-user`), restart the server to seed it.
+- **For later features**: `aiprovider.Service.ResolveProvider(ctx, userID, task)` returns the decrypted config and a
+  ready `llm.Client` (or `ErrNotAssigned`). `internal/llm` is a transport-only client: chat completions with
+  a timeout per attempt, retries with exponential backoff and jitter on 429/5xx/network errors (honouring
+  `Retry-After`, no retry on auth/validation errors), typed errors, and `ChatJSON`, which asks for `json_schema`
+  structured output and falls back to `json_object`, then to prompt-only JSON extraction, per call (nothing is
+  remembered per provider). Its tests use `httptest` fakes; it has not been exercised against a real provider.
 
 ## Data conventions
 

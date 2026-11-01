@@ -11,10 +11,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/aiprovider"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/auth"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/config"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/db"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/httpapi"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/secrets"
 )
 
 func main() {
@@ -54,14 +58,20 @@ func run(args []string) error {
 	defer pool.Close()
 
 	svc := auth.NewService(auth.NewPostgresStore(pool), auth.Options{TTL: cfg.SessionTTL})
+	box, err := secrets.NewFromKey(cfg.SecretsKey)
+	if err != nil {
+		return err
+	}
+	ai := aiprovider.NewService(aiprovider.NewPostgresStore(pool), box)
 
-	// Migrate (then seed the first account) in the background so the server (and /health)
-	// is up even while Postgres is still starting; retry until it succeeds or we shut down.
-	go prepareDatabase(ctx, cfg, svc)
+	// Migrate (then seed the first account and the default AI Provider) in the background so
+	// the server (and /health) is up even while Postgres is still starting; retry until it
+	// succeeds or we shut down.
+	go prepareDatabase(ctx, cfg, svc, pool, ai)
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.New(pool, svc),
+		Handler:           httpapi.New(pool, svc, httpapi.WithAIProviders(ai)),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       cfg.ReadTimeout,
 		WriteTimeout:      cfg.WriteTimeout,
@@ -89,26 +99,40 @@ func run(args []string) error {
 	return nil
 }
 
-func prepareDatabase(ctx context.Context, cfg config.Config, svc *auth.Service) {
+func prepareDatabase(ctx context.Context, cfg config.Config, svc *auth.Service, pool *pgxpool.Pool, ai *aiprovider.Service) {
 	if !retry(ctx, "migration", func() error { return db.Migrate(ctx, cfg.DatabaseURL) }) {
 		return
 	}
 	slog.Info("migrations applied")
 
-	if cfg.BootstrapUsername == "" {
-		return
+	if cfg.BootstrapUsername != "" {
+		var created bool
+		if !retry(ctx, "bootstrap user", func() (err error) {
+			created, err = svc.Bootstrap(ctx, cfg.BootstrapUsername, cfg.BootstrapPassword)
+			return err
+		}) {
+			return
+		}
+		if created {
+			slog.Info("created bootstrap user", "username", cfg.BootstrapUsername)
+		} else {
+			slog.Info("bootstrap user skipped: users already exist")
+		}
 	}
-	var created bool
-	if !retry(ctx, "bootstrap user", func() (err error) {
-		created, err = svc.Bootstrap(ctx, cfg.BootstrapUsername, cfg.BootstrapPassword)
-		return err
-	}) {
-		return
-	}
-	if created {
-		slog.Info("created bootstrap user", "username", cfg.BootstrapUsername)
-	} else {
-		slog.Info("bootstrap user skipped: users already exist")
+
+	if cfg.AIDefaultBaseURL != "" {
+		var seeded bool
+		if !retry(ctx, "default AI provider", func() (err error) {
+			seeded, err = seedAIDefault(ctx, pool, ai, cfg)
+			return err
+		}) {
+			return
+		}
+		if seeded {
+			slog.Info("created default AI provider from AI_DEFAULT_* and assigned it to every task", "base_url", cfg.AIDefaultBaseURL, "model", cfg.AIDefaultModel)
+		} else {
+			slog.Info("default AI provider skipped: needs exactly one user who has no providers yet")
+		}
 	}
 }
 
