@@ -121,7 +121,8 @@ a clear error if it is missing or invalid. Generate a dev key with:
 
 ```sh
 openssl rand -base64 32
-# no openssl (PowerShell): [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+# no openssl (Node is already required for this repo):
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ```
 
 Treat it like a password: losing or changing it makes stored secrets unreadable. No feature stores a secret yet.
