@@ -571,3 +571,52 @@ func ids(stories []*Story) []uuid.UUID {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// TestPostgresMasteryFocusIgnoresItemLists is the Postgres lock on the
+// issue #12 invariant: the gate's KnownSource (MasteryFocus) reads the
+// knowledge tables only. An item held ONLY by a Boosting List is not a
+// Known Item — neither for the coverage membership check nor in the
+// prompt's Known Items list — even though its jmdict link means the lookup
+// half succeeds (the issue #10 unlinked case is covered separately).
+func TestPostgresMasteryFocusIgnoresItemLists(t *testing.T) {
+	pool := dbtest.New(t)
+	ctx := context.Background()
+
+	user := uuid.New()
+	if _, err := pool.Exec(ctx, `INSERT INTO users (id, username, password_hash) VALUES ($1, 'focus-lists', 'x')`, user); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO jmdict_entries (ent_seq, is_common) VALUES (5570001, true) ON CONFLICT DO NOTHING`); err != nil {
+		t.Fatalf("seed jmdict: %v", err)
+	}
+	listID := uuid.New()
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO item_lists (id, user_id, name, boosting) VALUES ($1, $2, 'Boosted', true)`,
+		listID, user); err != nil {
+		t.Fatalf("seed boosting list: %v", err)
+	}
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO item_list_items (list_id, item_kind, item_ref) VALUES ($1, 'vocabulary', '5570001')`,
+		listID); err != nil {
+		t.Fatalf("seed membership: %v", err)
+	}
+	// Deliberately NO marumori_known_items row: the boosting list is the
+	// only thing holding this item.
+
+	f := NewMasteryFocus(pool, nil) // ms is only used by FocusFor
+
+	known, err := f.KnownVocab(ctx, user, []int64{5570001})
+	if err != nil {
+		t.Fatalf("KnownVocab: %v", err)
+	}
+	if v, ok := known[5570001]; ok && v.IsKnown {
+		t.Errorf("KnownVocab(5570001) = %+v, want unknown: a Boosting List member is not a Known Item", v)
+	}
+	words, err := f.KnownWords(ctx, user, 20)
+	if err != nil {
+		t.Fatalf("KnownWords: %v", err)
+	}
+	if len(words) != 0 {
+		t.Errorf("KnownWords = %+v, want empty — the prompt's Known Items must not grow from lists", words)
+	}
+}
