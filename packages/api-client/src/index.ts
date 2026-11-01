@@ -37,6 +37,17 @@ export type PracticeAnswerResult = components["schemas"]["PracticeAnswerResult"]
 export type PracticeState = components["schemas"]["PracticeState"];
 export type PracticeResults = components["schemas"]["PracticeResults"];
 export type PracticeResultsItem = components["schemas"]["PracticeResultsItem"];
+export type Story = components["schemas"]["Story"];
+export type StoryPage = components["schemas"]["StoryPage"];
+export type StorySentence = components["schemas"]["StorySentence"];
+export type StoryToken = components["schemas"]["StoryToken"];
+export type StoryQuestion = components["schemas"]["StoryQuestion"];
+export type StoryVocabItem = components["schemas"]["StoryVocabItem"];
+export type StoryGrammarSpan = components["schemas"]["StoryGrammarSpan"];
+export type StoryRating = components["schemas"]["StoryRating"];
+export type StorySettings = components["schemas"]["StorySettings"];
+export type StoryAnswer = components["schemas"]["StoryAnswer"];
+export type StoryAnswerResult = components["schemas"]["StoryAnswerResult"];
 export type ApiMiddleware = Middleware;
 
 export interface ApiClientOptions {

@@ -471,6 +471,139 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/stories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A page of the Learner's Story Library, newest first
+         * @description Stories the Learner has generated (issue #10), validated ones only: a Story that failed the kagome validation gate is kept for analysis, never offered. Each carries its rating when the Learner gave one. Generation is driven by the background scheduler — this list never triggers one.
+         */
+        get: operations["listStories"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stories/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The story waiting to be read, opening it instantly
+         * @description The one Story the background generator has ready for the Learner, served from storage — the request never waits on an AI provider. Opening it clears the ready marker, so the next background pass re-arms generation. `no_ready_story` when none is waiting. All `start`/`end` offsets in sentences and grammar spans are codepoint (rune) indexes into each sentence's `ja` text, counting from 0 — not UTF-16 indexes or byte offsets.
+         */
+        get: operations["getReadyStory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stories/{storyId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A Story's UUID. Declared as a plain string for the same reason as ProviderId: the generated router binds path parameters before auth, so the handler parses it itself (404 if malformed). */
+                storyId: components["parameters"]["StoryId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * One story from the Learner's library
+         * @description Full story view: tokenised sentences (kagome tokens tagged `known`/`unknown` at generation time, each with its reading and a `show_furigana` flag derived from the Learner's Furigana Threshold — Known Items at or above that SRS Level render without furigana), Grammar Spans, comprehension questions without their answers, and the vocabulary the story covers. Unknown or another user's stories are all `not_found`.
+         */
+        get: operations["getStory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stories/{storyId}/rate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A Story's UUID. Declared as a plain string for the same reason as ProviderId: the generated router binds path parameters before auth, so the handler parses it itself (404 if malformed). */
+                storyId: components["parameters"]["StoryId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Thumbs up or down on a story
+         * @description One rating per story, replaceable: up or down. Ratings steer the genre/theme of future generations — genres the Learner rated up are preferred, otherwise recent reading history, otherwise the generator asks the model to surprise them.
+         */
+        post: operations["rateStory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stories/{storyId}/answers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A Story's UUID. Declared as a plain string for the same reason as ProviderId: the generated router binds path parameters before auth, so the handler parses it itself (404 if malformed). */
+                storyId: components["parameters"]["StoryId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Answer one comprehension question of a story
+         * @description Grades the chosen option for the question. The first answer for a story also appends one Practice Record per Focus Set vocabulary item the story covers (correct as this answer's verdict), marking the story practiced — later answers only grade.
+         */
+        post: operations["answerStoryQuestion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/story-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Story settings for the Learner
+         * @description The per-user Story settings: the Furigana Threshold (the SRS Level at or above which Known Items appear without furigana, GLOSSARY.md; default 3 on mastery's 1–9 scale), and the optional preferred genre and theme for future stories (empty means "surprise me" and the server picks, steered by ratings).
+         */
+        get: operations["getStorySettings"];
+        /**
+         * Update the story settings
+         * @description Changes how much furigana future story views show, and which genre/theme future stories aim for. Existing stories keep their stored token SRS Levels; the threshold is applied when a story is read. Empty preferredGenre/preferredTheme mean "surprise me".
+         */
+        put: operations["putStorySettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -861,6 +994,105 @@ export interface components {
             itemRef: string;
             correct: boolean;
         };
+        /**
+         * @description A Learner's verdict on a story; upvoted genres steer future generation.
+         * @enum {string}
+         */
+        StoryRating: "up" | "down";
+        StorySettings: {
+            /** @description The Furigana Threshold (GLOSSARY.md): Known Items with an SRS Level at or above this value are shown without furigana; below it, and for unknown tokens with kanji in their surface, the reading is shown. mastery's 1–9 scale; the default is 3. */
+            furiganaThresholdSrsLevel: number;
+            /** @description The genre the Learner wants for their stories ("travel", "mystery", ...). Empty or absent means "surprise me" — the server then picks, steered by ratings. Prompt-only: it never relaxes the validation gate, so an unfillable preference falls back rather than forcing bad output. */
+            preferredGenre?: string;
+            /** @description A free-text theme for the Learner's stories ("a robot running a ramen shop"). Empty or absent means no theme. Prompt-only, like preferredGenre. */
+            preferredTheme?: string;
+        };
+        StoryAnswer: {
+            questionIndex: number;
+            /** @description The index (from 0) into the question's optionsJa. */
+            answerIndex: number;
+        };
+        StoryAnswerResult: {
+            correct: boolean;
+            /** @description True only for the first answer ever for this story: it appended one Practice Record per Focus Set vocabulary item the story covers. */
+            practiceRecorded?: boolean;
+        };
+        StoryPage: {
+            items: components["schemas"]["Story"][];
+            /** @description How many stories exist in total (validated ones), for paging. */
+            total: number;
+            limit: number;
+            offset: number;
+        };
+        Story: {
+            id: string;
+            genre: string;
+            /** @description The sentences' ja text joined, for plain display. */
+            text: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** @description The Learner's own rating, when they gave one. */
+            rating?: components["schemas"]["StoryRating"];
+            /** @description Generation attempts used (1 = validated on the first try). */
+            attempts?: number;
+            sentences: components["schemas"]["StorySentence"][];
+            questions: components["schemas"]["StoryQuestion"][];
+            vocabItems: components["schemas"]["StoryVocabItem"][];
+        };
+        StorySentence: {
+            ja: string;
+            /** @description English translation for comprehension help. */
+            en: string;
+            tokens: components["schemas"]["StoryToken"][];
+            grammarSpans: components["schemas"]["StoryGrammarSpan"][];
+        };
+        StoryToken: {
+            surface: string;
+            /** @description Codepoint (rune) index into the sentence's ja text, counting from 0. */
+            start: number;
+            /** @description Codepoint index just past the token's last character. */
+            end: number;
+            /** @description The surface's kana reading (furigana material), empty when the tokeniser has none. */
+            reading?: string;
+            /** @description Dictionary (base) form; for linked vocabulary, the entry's headword. */
+            dictionary?: string;
+            /**
+             * Format: int64
+             * @description JMdict ent_seq when the token linked to a dictionary entry. Unlinked items cannot match Known Items and count as unknown.
+             */
+            entSeq?: number;
+            /**
+             * @description Known-Item state at generation time.
+             * @enum {string}
+             */
+            tag: "known" | "unknown";
+            /** @description MaruMori SRS Level for known linked items (drives furigana). */
+            srsLevel?: number;
+            /** @description Whether to render the reading above the surface. True only when the surface actually contains kanji AND the token is unknown, or a Known Item below the Learner's Furigana Threshold; kana-only surfaces never show ruby (their reading is the surface). */
+            showFurigana: boolean;
+        };
+        StoryQuestion: {
+            position: number;
+            promptJa: string;
+            optionsJa: string[];
+        };
+        StoryVocabItem: {
+            /** Format: int64 */
+            entSeq: number;
+            ja: string;
+            en?: string;
+            /** @description Whether it was a Known Item at generation time. */
+            isKnown: boolean;
+            /** @description Whether it belongs to the Focus Set the story was built around; comprehension answers write Practice Records for exactly these. */
+            isFocus: boolean;
+        };
+        /** @description A stretch of a sentence annotated with the grammar point it exercises. Offsets are codepoint (rune) indexes into the sentence's ja text, counting from 0 — the same units the tokeniser reports — so clients can slice and highlight without byte arithmetic. */
+        StoryGrammarSpan: {
+            start: number;
+            end: number;
+            /** @description The grammar_points catalogue id. */
+            grammarPointId: string;
+        };
     };
     responses: {
         /** @description Missing, invalid or expired session token */
@@ -883,6 +1115,8 @@ export interface components {
         };
     };
     parameters: {
+        /** @description A Story's UUID. Declared as a plain string for the same reason as ProviderId: the generated router binds path parameters before auth, so the handler parses it itself (404 if malformed). */
+        StoryId: string;
         /** @description A Practice Session's id, as returned by POST /practice/sessions. Plain string for the same reason as ProviderId: path parameters bind before auth runs. */
         SessionId: string;
         /** @description An AI Provider's UUID. Declared as a plain string on purpose: the generated router binds `format: uuid` parameters before the auth middleware runs, so a malformed id would be answered 400 to an unauthenticated caller. The handler parses it (404 if malformed). */
@@ -1828,6 +2062,214 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+        };
+    };
+    listStories: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of stories with the total count */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoryPage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    getReadyStory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The ready story */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Story"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description No story is ready yet (code `no_ready_story`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getStory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A Story's UUID. Declared as a plain string for the same reason as ProviderId: the generated router binds path parameters before auth, so the handler parses it itself (404 if malformed). */
+                storyId: components["parameters"]["StoryId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The story */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Story"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    rateStory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A Story's UUID. Declared as a plain string for the same reason as ProviderId: the generated router binds path parameters before auth, so the handler parses it itself (404 if malformed). */
+                storyId: components["parameters"]["StoryId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StoryRating"];
+            };
+        };
+        responses: {
+            /** @description Recorded */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Rating is neither up nor down (code `invalid_rating`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    answerStoryQuestion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A Story's UUID. Declared as a plain string for the same reason as ProviderId: the generated router binds path parameters before auth, so the handler parses it itself (404 if malformed). */
+                storyId: components["parameters"]["StoryId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StoryAnswer"];
+            };
+        };
+        responses: {
+            /** @description Whether the answer was right, and whether it wrote Practice Records */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoryAnswerResult"];
+                };
+            };
+            /** @description No such question or option in this story (code `invalid_question` / `invalid_answer`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getStorySettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorySettings"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    putStorySettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StorySettings"];
+            };
+        };
+        responses: {
+            /** @description The stored settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorySettings"];
+                };
+            };
+            /** @description Threshold outside 0–9 (`invalid_threshold`) or genre/theme over the length cap (`invalid_preference`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
         };
     };
 }

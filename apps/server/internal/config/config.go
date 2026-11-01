@@ -13,6 +13,7 @@ import (
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/mastery"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/practice"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/secrets"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/story"
 )
 
 type Config struct {
@@ -62,6 +63,17 @@ type Config struct {
 	// it starts (env PRACTICE_SESSION_TTL); it configures the session store,
 	// not the practice service itself.
 	PracticeSessionTTL time.Duration
+	// Story holds the story generation gate bounds and prompt budget
+	// (env STORY_*, see loadStory; issue #10).
+	Story story.Settings
+	// StoryInterval is how often the background generator sweeps users
+	// (env STORY_SCHEDULER_INTERVAL, default 15m).
+	StoryInterval time.Duration
+	// StoryEnabled gates the background generator (env STORY_ENABLED,
+	// default true). The /stories routes work regardless; with the
+	// scheduler off, stories only appear when something else calls
+	// EnsureReady.
+	StoryEnabled bool
 }
 
 // Load builds a Config using getenv (typically os.Getenv).
@@ -112,6 +124,9 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, err
 	}
 	if err := loadPractice(getenv, &cfg); err != nil {
+		return Config{}, err
+	}
+	if err := loadStory(getenv, &cfg); err != nil {
 		return Config{}, err
 	}
 	return cfg, nil
@@ -232,6 +247,50 @@ func loadPractice(getenv func(string) string, cfg *Config) error {
 	}
 	if cfg.PracticeSessionTTL, err = duration(getenv, "PRACTICE_SESSION_TTL", practice.DefaultSessionTTL); err != nil {
 		return err
+	}
+	return nil
+}
+
+// loadStory validates the STORY_* settings (issue #10). Defaults come from
+// story's own constants, so the gate's defaults live in one place.
+func loadStory(getenv func(string) string, cfg *Config) error {
+	var err error
+	// Known-word coverage and the Focus Set fraction are fractions of the
+	// gate's counts; the issue fixes their defaults (0.95 and ~0.5).
+	if cfg.Story.MinCoverage, err = unitFloat(getenv, "STORY_MIN_COVERAGE", story.DefaultCoverage); err != nil {
+		return err
+	}
+	if cfg.Story.MinFocusFraction, err = unitFloat(getenv, "STORY_MIN_FOCUS_FRACTION", story.DefaultFocusFraction); err != nil {
+		return err
+	}
+	// Attempts include the first: the gate's feedback drives at most two
+	// retries, and the bound keeps a misconfiguration from looping forever.
+	if cfg.Story.MaxAttempts, err = boundedInt(getenv, "STORY_MAX_ATTEMPTS", story.DefaultMaxAttempts, 1, 10); err != nil {
+		return err
+	}
+	if cfg.Story.PromptKnownLimit, err = boundedInt(getenv, "STORY_PROMPT_KNOWN_LIMIT", story.DefaultPromptKnownLimit, 10, 5000); err != nil {
+		return err
+	}
+	// Failure backoff: while a user's newest Story is a gate failure younger
+	// than this, regeneration passes skip them (issue #10 review: a stuck
+	// provider costs one generation per window, not one per interval). "0"
+	// disables the backoff.
+	if getenv("STORY_RETRY_COOLDOWN") == "0" {
+		cfg.Story.RetryCooldown = 0
+	} else if cfg.Story.RetryCooldown, err = duration(getenv, "STORY_RETRY_COOLDOWN", story.DefaultRetryCooldown); err != nil {
+		return err
+	}
+	if cfg.StoryInterval, err = duration(getenv, "STORY_SCHEDULER_INTERVAL", 15*time.Minute); err != nil {
+		return err
+	}
+	enabled := getenv("STORY_ENABLED")
+	if enabled == "" {
+		cfg.StoryEnabled = true
+		return nil
+	}
+	cfg.StoryEnabled, err = strconv.ParseBool(enabled)
+	if err != nil {
+		return fmt.Errorf("STORY_ENABLED: %w", err)
 	}
 	return nil
 }

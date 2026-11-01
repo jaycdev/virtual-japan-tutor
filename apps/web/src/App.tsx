@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { Grammar } from "./Grammar.tsx";
 import { Practice } from "./Practice.tsx";
 import { Settings } from "./Settings.tsx";
+import { Stories } from "./Stories.tsx";
 
 export function App({ client, storage }: { client: ApiClient; storage: TokenStorage }) {
   const auth = useAuth(client, storage);
@@ -85,7 +86,7 @@ function Shell({
 }) {
   const health = useHealth(client);
   const startingLevel = useStartingLevel(client);
-  const [page, setPage] = useState<"home" | "grammar" | "practice" | "settings">("home");
+  const [page, setPage] = useState<"home" | "grammar" | "stories" | "practice" | "settings">("home");
 
   return (
     <section>
@@ -95,6 +96,9 @@ function Shell({
         </button>{" "}
         <button type="button" aria-current={page === "grammar" ? "page" : undefined} onClick={() => setPage("grammar")}>
           Grammar
+        </button>{" "}
+        <button type="button" aria-current={page === "stories" ? "page" : undefined} onClick={() => setPage("stories")}>
+          Stories
         </button>{" "}
         <button type="button" aria-current={page === "practice" ? "page" : undefined} onClick={() => setPage("practice")}>
           Practice
@@ -106,6 +110,7 @@ function Shell({
       <p>Signed in as {username}</p>
       {page === "settings" && <Settings client={client} />}
       {page === "grammar" && <Grammar client={client} />}
+      {page === "stories" && <Stories client={client} />}
       {page === "practice" && <Practice client={client} />}
       {page === "home" && (
         <>
