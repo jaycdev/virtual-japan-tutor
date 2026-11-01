@@ -6,7 +6,7 @@ import type {
   StoryRating,
   StorySettings,
 } from "@vjt/api-client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ActionResult } from "./useAiSettings.ts";
 
 /**
@@ -90,6 +90,10 @@ export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
   const [attempt, setAttempt] = useState(0);
   const [library, setLibrary] = useState<StoryLibraryState>({ status: "loading" });
   const [story, setStory] = useState<Story | null>(null);
+  // Which Story is open right now, readable from async callbacks without
+  // re-creating them: an answer's response is only painted while the Story
+  // it was asked about is still the open one.
+  const openIdRef = useRef<string | null>(null);
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -170,6 +174,7 @@ export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
   }, [fetchPage]);
 
   const showStory = useCallback((s: Story) => {
+    openIdRef.current = s.id;
     setStory(s);
     setOpen(true);
     setAnswers(new Map());
@@ -216,6 +221,7 @@ export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
   );
 
   const close = useCallback(() => {
+    openIdRef.current = null;
     setStory(null);
     setOpen(false);
     setAnswers(new Map());
@@ -259,17 +265,22 @@ export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
   const answer = useCallback(
     async (position: number, optionIndex: number) => {
       if (!story || pending || answers.has(position)) return;
+      const storyId = story.id;
       setPending(true);
       setError(null);
       try {
         const { data, error: err, response } = await client.POST("/stories/{storyId}/answers", {
-          params: { path: { storyId: story.id } },
+          params: { path: { storyId } },
           body: { questionIndex: position, answerIndex: optionIndex },
         });
+        // The Learner may have closed or switched the Story while this was
+        // in flight; its verdict and its error belong to that Story, so a
+        // late reply must not paint the now-open one.
+        if (openIdRef.current !== storyId) return;
         if (!data) setError(message(err, response.status));
         else setAnswers((prev) => new Map(prev).set(position, data));
       } catch {
-        setError(UNREACHABLE);
+        if (openIdRef.current === storyId) setError(UNREACHABLE);
       } finally {
         setPending(false);
       }

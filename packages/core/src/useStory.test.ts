@@ -167,6 +167,48 @@ describe("useStory", () => {
     expect(result.current.questions[1]?.result).toBeNull();
   });
 
+  it("drops an answer verdict that lands after the story was switched", async () => {
+    // The verdict POST is in flight; the Learner closes the story and opens
+    // another one. The late reply belongs to the story it was asked about,
+    // so it must not paint the now-open story's questions or its error.
+    const { client, fetchImpl, json } = fakeClient();
+    let resolveAnswer: (res: Response) => void = () => {};
+    const answerPending = new Promise<Response>((resolve) => {
+      resolveAnswer = resolve;
+    });
+    fetchImpl
+      .mockImplementationOnce(async () => json(200, page([])))
+      .mockImplementationOnce(async () => json(200, settingsBody()))
+      .mockImplementationOnce(async () => json(200, story()))
+      .mockImplementationOnce(async () => json(200, page([])))
+      .mockImplementationOnce(() => answerPending)
+      .mockImplementationOnce(async () => json(200, story({ id: "st-2" })));
+    const { result } = renderHook(() => useStory(client));
+    await waitFor(() => expect(result.current.library.status).toBe("ready"));
+    await act(async () => {
+      await result.current.openReady();
+    });
+
+    let inFlight: Promise<void>;
+    act(() => {
+      inFlight = result.current.answer(0, 0);
+    });
+    result.current.close();
+    await act(async () => {
+      await result.current.openStory("st-2");
+    });
+    expect(result.current.story?.id).toBe("st-2");
+
+    resolveAnswer(json(200, { correct: true, practiceRecorded: true }));
+    await act(async () => {
+      await inFlight;
+    });
+
+    expect(result.current.story?.id).toBe("st-2");
+    expect(result.current.questions[0]?.result).toBeNull();
+    expect(result.current.error).toBeNull();
+  });
+
   it("rates a story and shows the rating on the story and the library", async () => {
     const { client, fetchImpl, json, noContent } = fakeClient();
     fetchImpl
