@@ -925,6 +925,62 @@ describe("Saving and Weak Signals (issue #12)", () => {
     expect(await screen.findByText("Saved to Food.")).toBeTruthy();
   });
 
+  it("a Grammar Span token with no dictionary link saves the Grammar Point", async () => {
+    const { client, requests } = fakeApi();
+    await openStory(client);
+
+    fireEvent.click(tokenButton("しました"));
+    const menu = screen.getByRole("menu");
+    // No dictionary entry, so Dictionary stays disabled — but the covering
+    // Span gives the token a save target: the Grammar Point itself.
+    expect((within(menu).getByRole("menuitem", { name: "Dictionary" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(await enabledItem("Save"));
+
+    await waitFor(() =>
+      expect(requests.some((r) => r.method === "POST" && r.path === "/item-lists/l1/items")).toBe(true),
+    );
+    expect(requests.find((r) => r.path === "/item-lists/l1/items")?.body).toEqual({
+      itemKind: "grammar",
+      itemRef: "12",
+    });
+    expect(await screen.findByText("Saved to Saved.")).toBeTruthy();
+  });
+
+  it("Save to… puts a Grammar Point in the chosen list", async () => {
+    const { client, requests } = fakeApi();
+    await openStory(client);
+
+    fireEvent.click(tokenButton("しました"));
+    fireEvent.click(await enabledItem("Save to…"));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Travel" }));
+
+    await waitFor(() =>
+      expect(requests.some((r) => r.method === "POST" && r.path === "/item-lists/l2/items")).toBe(true),
+    );
+    expect(requests.find((r) => r.path === "/item-lists/l2/items")?.body).toEqual({
+      itemKind: "grammar",
+      itemRef: "12",
+    });
+    expect(await screen.findByText("Saved to Travel.")).toBeTruthy();
+  });
+
+  it("a linked word inside a Grammar Span still saves its own Dictionary Entry", async () => {
+    const { client, requests } = fakeApi({ extraSpan: true });
+    await openStory(client);
+
+    // みせ sits inside the ～に行く span, yet Save means the word — the
+    // span's Grammar Point is reached through the span's own tokens.
+    fireEvent.click(tokenButton("みせ"));
+    fireEvent.click(await enabledItem("Save"));
+    await waitFor(() =>
+      expect(requests.some((r) => r.method === "POST" && r.path === "/item-lists/l1/items")).toBe(true),
+    );
+    expect(requests.find((r) => r.path === "/item-lists/l1/items")?.body).toEqual({
+      itemKind: "vocabulary",
+      itemRef: "990103",
+    });
+  });
+
   it("opening the Lookup Menu signals menu_open once per word, however often it opens", async () => {
     const { client, requests } = fakeApi();
     await openStory(client);

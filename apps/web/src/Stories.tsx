@@ -38,8 +38,9 @@ import "./reader.css";
  * while Grammar Spans show their point's pattern and meaning instead. A
  * tapped word or Grammar Span token opens a menu (Dictionary · Save ·
  * Save to…; a span token's menu adds Grammar, so words inside a span keep
- * their own Dictionary Entry); Save targets the Default List and Save to…
- * picks or creates any Item List (issue #12). Reader behaviour feeds Weak
+ * their own Dictionary Entry); Save targets the Default List — the token's
+ * dictionary entry, or the Grammar Point when a dictionary-less token sits
+ * in a span — and Save to… picks or creates any Item List (issue #12). Reader behaviour feeds Weak
  * Signals: holding a Known word's lookup past the configured threshold,
  * opening its Lookup Menu, opening a Grammar Span window, or unblurring a
  * Sentence Translation (one signal per Focus Set item in the sentence).
@@ -237,16 +238,23 @@ function StoryReader({ view, client }: { view: StoryView; client: ApiClient }) {
     reportSignals(signals);
   };
 
-  // Save / Save to…: one item into one list. A plain Save targets the Default
-  // List; the server records its own Weak Signal when a Known Item lands in a
-  // Boosting List. The menu closes either way and focus returns to the token.
+  // Save / Save to…: one item into one list — a word's dictionary entry, or
+  // the Grammar Point behind a span token with no entry of its own. A plain
+  // Save targets the Default List; the server records its own Weak Signal
+  // when a Known Item lands in a Boosting List. The menu closes either way
+  // and focus returns to the token.
   // `lists` goes through a ref: the click handler's closure may predate the
   // re-render that a create or save triggered, and must not read stale state.
   const listsRef = useRef(lists);
   useEffect(() => {
     listsRef.current = lists;
   }, [lists]);
-  const saveTokenToList = async (at: TokenRef, entSeq: number, listId: string | null, listName?: string) => {
+  const saveItemToList = async (
+    at: TokenRef,
+    item: { kind: "vocabulary" | "grammar"; ref: string },
+    listId: string | null,
+    listName?: string,
+  ) => {
     setMenu(null);
     focusToken(at);
     const view = listsRef.current;
@@ -255,7 +263,7 @@ function StoryReader({ view, client }: { view: StoryView; client: ApiClient }) {
       setSaveNote("Could not save — your Item Lists are not loaded.");
       return;
     }
-    const res = await view.addToList(target, { itemKind: "vocabulary", itemRef: String(entSeq) });
+    const res = await view.addToList(target, { itemKind: item.kind, itemRef: item.ref });
     if (!res.ok) {
       setSaveNote(`Could not save — ${res.message}`);
       return;
@@ -350,8 +358,21 @@ function StoryReader({ view, client }: { view: StoryView; client: ApiClient }) {
                       span={coveringSpan(sen, tok)}
                       lists={lists}
                       onSave={(listId, name) => {
-                        if (tok.entSeq === undefined) return;
-                        void saveTokenToList({ sentence: i, index: j }, tok.entSeq, listId, name);
+                        const sp = coveringSpan(sen, tok);
+                        if (tok.entSeq !== undefined)
+                          void saveItemToList(
+                            { sentence: i, index: j },
+                            { kind: "vocabulary", ref: String(tok.entSeq) },
+                            listId,
+                            name,
+                          );
+                        else if (sp)
+                          void saveItemToList(
+                            { sentence: i, index: j },
+                            { kind: "grammar", ref: sp.grammarPointId },
+                            listId,
+                            name,
+                          );
                       }}
                       onDictionary={() => {
                         if (tok.entSeq === undefined) return;
@@ -618,12 +639,14 @@ function LookupRow({
 /**
  * The menu over a tapped word or Grammar Span token. Dictionary is the
  * word's own entry; a token inside a Grammar Span also gets a Grammar item
- * for the point, keeping words inside spans reachable. Save puts the word in
- * the Default List (Saved unless the Learner chose another); Save to… opens
- * a picker of every Item List with an inline "new list" row, and creating a
- * list saves the word straight into it. Either Save closes the menu and
- * hands focus back to the token. Opening moves focus to the first enabled
- * item.
+ * for the point, keeping words inside spans reachable. Save puts the token's
+ * item in the Default List (Saved unless the Learner chose another): its
+ * dictionary entry when it has one, and the Grammar Point when a
+ * dictionary-less token sits inside a Span — so a Grammar Point is saveable
+ * from the reader too. Save to… opens a picker of every Item List with an
+ * inline "new list" row, and creating a list saves the item straight into
+ * it. Either Save closes the menu and hands focus back to the token. Opening
+ * moves focus to the first enabled item.
  */
 function TokenMenu({
   token,
@@ -656,12 +679,19 @@ function TokenMenu({
     state.status === "ready"
       ? state.lists.find((l) => l.id === state.defaultListId)?.name
       : undefined;
-  const saveTitle =
-    token.entSeq === undefined
-      ? "This word did not match a dictionary entry"
-      : ready
+  // What Save targets: the token's own dictionary entry when it has one,
+  // otherwise the Grammar Point of the Span covering it. Only a token with
+  // neither is unsaveable.
+  const linked = token.entSeq !== undefined;
+  const saveable = linked || span !== null;
+  const unsaveableTitle = "This word did not match a dictionary entry";
+  const saveTitle = saveable
+    ? ready
+      ? linked
         ? `Save to ${defaultName ?? "the default list"}`
-        : "Your Item Lists are still loading";
+        : `Save the grammar point ${span?.pattern ?? ""} to ${defaultName ?? "the default list"}`
+      : "Your Item Lists are still loading"
+    : unsaveableTitle;
 
   const createAndSave = async (e: FormEvent) => {
     e.preventDefault();
@@ -696,7 +726,7 @@ function TokenMenu({
       <button
         type="button"
         role="menuitem"
-        disabled={token.entSeq === undefined || !ready}
+        disabled={!saveable || !ready}
         title={saveTitle}
         onClick={() => onSave(null)}
       >
@@ -705,7 +735,7 @@ function TokenMenu({
       <button
         type="button"
         role="menuitem"
-        disabled={token.entSeq === undefined || !ready}
+        disabled={!saveable || !ready}
         title={ready ? "Save into another Item List" : "Your Item Lists are still loading"}
         onClick={() => setPicking(true)}
       >
