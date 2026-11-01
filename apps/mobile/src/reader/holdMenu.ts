@@ -31,28 +31,27 @@ export interface HoldState {
   phase: "idle" | "press" | "menu";
   /** The token the gesture started on; null while idle. */
   token: TokenRef | null;
-  /** Current finger position in window coordinates (dp). */
-  x: number;
-  y: number;
   /** Finger position when the press began — where the menu is anchored. */
   anchorX: number;
   anchorY: number;
 }
 
-export const IDLE: HoldState = { phase: "idle", token: null, x: 0, y: 0, anchorX: 0, anchorY: 0 };
+export const IDLE: HoldState = { phase: "idle", token: null, anchorX: 0, anchorY: 0 };
 
 export type HoldEvent =
   | { type: "press"; token: TokenRef; x: number; y: number }
-  | { type: "move"; x: number; y: number }
   | { type: "holdElapsed" }
   | { type: "cancel" };
 
 /**
- * One reducer for the whole gesture. `holdElapsed` is emitted by a timer the
- * caller owns; a press released before it stays in `press` and the caller just
- * dispatches `cancel`. `holdElapsed` only fires from `press`, and `cancel`
- * always returns to idle, so a stale timer or a stolen gesture (a scroll that
- * terminates the responder) cannot open a menu behind the Learner's back.
+ * One reducer for the whole gesture, dispatching exactly what the reader
+ * sends it. `holdElapsed` is emitted by a timer the caller owns; a press
+ * released before it stays in `press` and the caller just dispatches `cancel`.
+ * `holdElapsed` only fires from `press`, and `cancel` always returns to idle,
+ * so a stale timer or a stolen gesture (a scroll that terminates the
+ * responder) cannot open a menu behind the Learner's back. Sliding through
+ * the menu moves only the finger: the release point decides, so no move
+ * events are needed and the menu stays anchored at the press.
  */
 export function reduceHold(state: HoldState, event: HoldEvent): HoldState {
   switch (event.type) {
@@ -60,14 +59,9 @@ export function reduceHold(state: HoldState, event: HoldEvent): HoldState {
       return {
         phase: "press",
         token: event.token,
-        x: event.x,
-        y: event.y,
         anchorX: event.x,
         anchorY: event.y,
       };
-    case "move":
-      if (state.phase === "idle") return state;
-      return { ...state, x: event.x, y: event.y };
     case "holdElapsed":
       if (state.phase !== "press") return state;
       return { ...state, phase: "menu" };

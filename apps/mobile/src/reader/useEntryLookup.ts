@@ -11,8 +11,9 @@ import { useRef, useState } from "react";
  * A FAILED lookup is remembered (as a null entry) only for the current press:
  * `failed` lets the Lookup Menu dim its Dictionary row, while `load` retries
  * the request on the next press — a transient failure must not silence the
- * word forever (issue #14 review, major 3). `invalidate` forgets a key, so a
- * closed Dictionary window refetches on the next press too.
+ * word forever. This deliberately differs from the web reader, which caches a
+ * failure for the whole session (issue #14 review, major 3). `invalidate`
+ * forgets a key outright.
  */
 
 export interface EntryLookup {

@@ -45,20 +45,15 @@ const press = { type: "press", token: { sentence: 0, index: 1 }, x: 40, y: 120 }
 describe("reduceHold", () => {
   it("press anchors the menu at the press point", () => {
     const s = reduceHold(IDLE, press);
-    expect(s).toEqual({ phase: "press", token: { sentence: 0, index: 1 }, x: 40, y: 120, anchorX: 40, anchorY: 120 });
+    expect(s).toEqual({ phase: "press", token: { sentence: 0, index: 1 }, anchorX: 40, anchorY: 120 });
   });
 
-  it("holdElapsed opens the menu and keeps the finger position", () => {
-    const s = reduceHold(reduceHold(IDLE, press), { type: "move", x: 55, y: 130 });
+  it("holdElapsed opens the menu at the same anchor", () => {
+    const s = reduceHold(IDLE, press);
     expect(s.phase).toBe("press");
     const menu = reduceHold(s, { type: "holdElapsed" });
     expect(menu.phase).toBe("menu");
-    expect({ x: menu.x, y: menu.y, anchorX: menu.anchorX, anchorY: menu.anchorY }).toEqual({
-      x: 55,
-      y: 130,
-      anchorX: 40,
-      anchorY: 120,
-    });
+    expect({ anchorX: menu.anchorX, anchorY: menu.anchorY }).toEqual({ anchorX: 40, anchorY: 120 });
   });
 
   it("a stale timer cannot open a menu after cancel or a new press", () => {
@@ -72,12 +67,6 @@ describe("reduceHold", () => {
     });
     expect(second.token).toEqual({ sentence: 1, index: 0 });
     expect(second.anchorX).toBe(10);
-  });
-
-  it("moves track the finger while held, and do nothing once idle", () => {
-    const s = reduceHold(reduceHold(IDLE, press), { type: "move", x: 60, y: 200 });
-    expect({ x: s.x, y: s.y }).toEqual({ x: 60, y: 200 });
-    expect(reduceHold(IDLE, { type: "move", x: 1, y: 2 })).toBe(IDLE);
   });
 
   it("cancel always returns to idle", () => {

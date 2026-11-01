@@ -155,15 +155,20 @@ export function StoryReader({
 
   const pressedToken =
     gesture.token !== null ? story.sentences[gesture.token.sentence]?.tokens[gesture.token.index] : undefined;
-  const pressedSentence = gesture.token !== null ? story.sentences[gesture.token.sentence] : undefined;
-  const pressedSpan = pressedSentence && pressedToken ? coveringSpan(pressedSentence, pressedToken) : null;
+
+  // A failed lookup (null cached) dims the Dictionary row until the retry (nit 2/3).
+  const dictionaryFailed =
+    pressedToken?.entSeq !== undefined &&
+    lookup.failed(pressedToken.entSeq, pressedToken.surface, pressedToken.reading);
 
   // The Reading Panel's word-mode follows the machine: the pressed token is
   // "looked at" from press until cancel (release, terminate, or Back).
   const looked: LookedTarget | null = useMemo(() => {
-    if (!gesture.token || !pressedSentence || !pressedToken) return null;
-    return { ...gesture.token, kind: pressedSpan ? "grammar" : "token" };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- pressed* derive from token+story
+    if (!gesture.token) return null;
+    const sen = story.sentences[gesture.token.sentence];
+    const tok = sen?.tokens[gesture.token.index];
+    if (!sen || !tok) return null;
+    return { ...gesture.token, kind: coveringSpan(sen, tok) ? "grammar" : "token" };
   }, [gesture.token, story]);
 
   const menuOpen = gesture.phase === "menu";
@@ -173,20 +178,24 @@ export function StoryReader({
 
   // Menu contents recompute while the menu is open (Item Lists may still be
   // loading, a failed dictionary lookup dims Dictionary until the retry).
-  // Identity is stable across gesture renders, so TokenMenu's measuring
-  // effect does not re-run on every touch-move.
-  const dictionaryFailed =
-    pressedToken?.entSeq !== undefined ? lookup.peek(pressedToken.entSeq, pressedToken.surface, pressedToken.reading) === undefined && lookup.failed(pressedToken.entSeq, pressedToken.surface, pressedToken.reading) : false;
   const openOptions = useMemo(() => {
-    if (!menuOpen || !pressedSentence || !pressedToken) return [];
+    if (gesture.phase !== "menu" || !gesture.token) return [];
+    const sen = story.sentences[gesture.token.sentence];
+    const tok = sen?.tokens[gesture.token.index];
+    if (!sen || !tok) return [];
     const listsState = lists.state;
     const defaultName =
       listsState.status === "ready"
         ? listsState.lists.find((l) => l.id === listsState.defaultListId)?.name
         : undefined;
-    return menuOptions(pressedToken, pressedSpan, listsState.status === "ready", defaultName, dictionaryFailed);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- pressed* derive from token+story
-  }, [menuOpen, gesture.token, story, lists.state, dictionaryFailed]);
+    return menuOptions(
+      tok,
+      coveringSpan(sen, tok),
+      listsState.status === "ready",
+      defaultName,
+      dictionaryFailed,
+    );
+  }, [gesture.phase, gesture.token, story, lists.state, dictionaryFailed]);
 
   // --- gesture handlers ------------------------------------------------------
 
@@ -259,14 +268,11 @@ export function StoryReader({
     const span = coveringSpan(sen, token);
     if (option === "dictionary") {
       // Only push the window when the entry is actually there: a window
-      // pushed over a cold or failed lookup would render nothing and make
-      // the first Back pop an invisible layer (issue #14 review, major 3).
-      // Dropping the failed key lets a later hold retry the fetch.
-      if (token.entSeq === undefined || lookup.peek(token.entSeq, token.surface, token.reading) === undefined) {
-        if (token.entSeq !== undefined && lookup.failed(token.entSeq, token.surface, token.reading))
-          lookup.invalidate(token.entSeq, token.surface, token.reading);
-        return;
-      }
+      // pushed over an empty lookup would render nothing and make the first
+      // Back pop an invisible layer (issue #14 review, major 3). Failure is
+      // not reachable here — a failed lookup dims the row, so optionAt never
+      // picks it — this guard only covers a lookup still in flight.
+      if (token.entSeq === undefined || lookup.peek(token.entSeq, token.surface, token.reading) === undefined) return;
       setWindows((w) => [...w, { ...ref, kind: "token" }]);
       return;
     }
@@ -360,27 +366,6 @@ export function StoryReader({
 
   const selectSentence = useCallback((sentenceIndex: number) => setSelected(sentenceIndex), []);
 
-  // Android Back unwinds one layer at a time, and only one listener is ever
-  // attached (issue #13's pattern), so a press can never pop twice. The sheet
-  // and windows are Modals whose onRequestClose also fires on Back: on Android
-  // the dialog consumes the key press, so that path never reaches this
-  // listener — the pairing is a deliberate double safety, not a double-pop.
-  useHardwareBack(true, () => {
-    if (sheetToken) {
-      setSheetToken(null);
-      return;
-    }
-    if (windows.length > 0) {
-      setWindows((w) => w.slice(0, -1));
-      return;
-    }
-    if (gesture.phase === "menu") {
-      closeMenu();
-      return;
-    }
-    onBack();
-  });
-
   const top = windows.length > 0 ? windows[windows.length - 1] : null;
   const topSentence = top ? story.sentences[top.sentence] : undefined;
   const topToken = topSentence?.tokens[top?.index ?? -1];
@@ -392,13 +377,41 @@ export function StoryReader({
   const topVocabLinked = top?.kind === "token" && topToken?.entSeq !== undefined;
 
   const closeTopWindow = () => {
-    // A closed Dictionary window drops its cached entry, so the next press
-    // fetches it fresh — and a lookup that failed while the window happened
-    // to be up is retried rather than remembered as a failure forever.
-    if (top?.kind === "token" && topToken?.entSeq !== undefined)
+    // Both close paths — the card's × and hardware Back — come through here,
+    // so they behave identically (issue #14 quality nit 1). A window is only
+    // ever pushed over a cached entry (see runMenuOption), so a successful
+    // lookup stays cached across closes — no refetch flicker on the next
+    // press. Only a key that is FAILED at close time is forgotten, so a
+    // later hold retries it.
+    if (
+      top?.kind === "token" &&
+      topToken?.entSeq !== undefined &&
+      lookup.failed(topToken.entSeq, topToken.surface, topToken.reading)
+    )
       lookup.invalidate(topToken.entSeq, topToken.surface, topToken.reading);
     setWindows((w) => w.slice(0, -1));
   };
+
+  // Android Back unwinds one layer at a time, and only one listener is ever
+  // attached (issue #13's pattern), so a press can never pop twice. The sheet
+  // and windows are Modals whose onRequestClose also fires on Back: on Android
+  // the dialog consumes the key press, so that path never reaches this
+  // listener — the pairing is a deliberate double safety, not a double-pop.
+  useHardwareBack(true, () => {
+    if (sheetToken) {
+      setSheetToken(null);
+      return;
+    }
+    if (windows.length > 0) {
+      closeTopWindow(); // the same path as the card's × (nit 1)
+      return;
+    }
+    if (gesture.phase === "menu") {
+      closeMenu();
+      return;
+    }
+    onBack();
+  });
 
   // Real measuring: RN hands refs a measureInWindow. The jsdom test host has
   // neither that method nor a viewport, so tests inject both (see props).
@@ -477,7 +490,7 @@ export function StoryReader({
             key={i}
             sentence={sen}
             sentenceIndex={i}
-            activeToken={looked}
+            activeToken={looked !== null && looked.sentence === i ? looked : null}
             handlers={tokenHandlers}
             onSelect={selectSentence}
           />

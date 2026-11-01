@@ -731,6 +731,35 @@ describe("Reading Panel placement, modes and scroll lock (review fixes)", () => 
     releaseAt(0, 1, 5, 5);
   });
 
+  it("closing a Dictionary window keeps a successful entry cached — × and Back alike", async () => {
+    const { client, requests } = fakeApi();
+    await openStory(client);
+    const fetches = () => requests.filter((r) => r.path === "/dictionary/entries/990101").length;
+
+    // Open the window (slide-release on Dictionary), close it with the ×.
+    await pressAndHold(0, 0);
+    releaseAt(0, 0, 300, 312);
+    await screen.findByTestId("dictionary-window");
+    fireEvent.click(screen.getByLabelText("Close"));
+    await waitFor(() => expect(screen.queryByTestId("dictionary-window")).toBeNull());
+    expect(fetches()).toBe(1); // primed once by the press
+
+    // Open it again and close with hardware Back: the same path, the same
+    // result — a good entry is NOT dropped (no refetch flicker).
+    await pressAndHold(0, 0);
+    releaseAt(0, 0, 300, 312);
+    await screen.findByTestId("dictionary-window");
+    back.press();
+    await waitFor(() => expect(screen.queryByTestId("dictionary-window")).toBeNull());
+
+    // A third hold reopens the window from the cache: still one fetch.
+    await pressAndHold(0, 0);
+    releaseAt(0, 0, 300, 312);
+    expect(await screen.findByTestId("dictionary-window")).toBeTruthy();
+    expect(fetches()).toBe(1);
+    fireEvent.click(screen.getByLabelText("Close"));
+  });
+
   it("the four token classes get underlines that survive Android: colour + weight, no iOS-only props", async () => {
     const { client } = fakeApi();
     await openStory(client);
