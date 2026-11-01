@@ -1,0 +1,14 @@
+{
+  "success": true,
+  "lessons": [
+    {
+      "_id": "Grammar/101",
+      "_key": "101",
+      "grammar": "～つもりだ",
+      "categoryKey": "category-1",
+      "explanation": "expressing an intention to do something",
+      "examples": ["旅行に行くつもりだ。"],
+      "studyListKey": "PL-1"
+    }
+  ]
+}
