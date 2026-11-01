@@ -1,7 +1,7 @@
 ﻿import { readFileSync } from "node:fs";
 import type { ApiClient } from "@vjt/api-client";
 import { createApiClient } from "@vjt/api-client";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Stories } from "./Stories.tsx";
 
@@ -87,7 +87,17 @@ const IKU_POINT = {
  * tests can assert what the screen sent and when — in particular that
  * opening a story is a plain storage read, never a generation.
  */
-function fakeApi(opts: { ready?: boolean; blurTranslation?: boolean; extraSpan?: boolean } = {}) {
+function fakeApi(
+  opts: {
+    ready?: boolean;
+    blurTranslation?: boolean;
+    extraSpan?: boolean;
+    /** Hold every fetch of this entSeq until releaseEntries() is called. */
+    gateEntry?: number;
+    /** Fail PUT /reading-settings, as a server error would. */
+    failReadingPut?: boolean;
+  } = {},
+) {
   const hasReady = opts.ready ?? true;
   const storyView = {
     id: "st-1",
@@ -135,11 +145,13 @@ function fakeApi(opts: { ready?: boolean; blurTranslation?: boolean; extraSpan?:
           { surface: "に", start: 2, end: 3, reading: "に", tag: "unknown", showFurigana: false },
           { surface: "いきました", start: 3, end: 7, reading: "いきました", tag: "unknown", showFurigana: true },
         ],
+        // Widened to cover みせ + に + いきました, so span-hover tests can
+        // check that every token of the span lights up, not just one.
         grammarSpans: opts.extraSpan
           ? [
               {
                 start: 0,
-                end: 2,
+                end: 7,
                 grammarPointId: "13",
                 isFocus: false,
                 pattern: "～に行く",
@@ -161,6 +173,7 @@ function fakeApi(opts: { ready?: boolean; blurTranslation?: boolean; extraSpan?:
   const page = { items: [storyView], total: 1, limit: 10, offset: 0 };
 
   const requests: { method: string; path: string; body: unknown }[] = [];
+  const gated: (() => void)[] = [];
   const settings = { furiganaThresholdSrsLevel: 3, preferredGenre: "", preferredTheme: "" };
   const readingSettings = { blurTranslation: opts.blurTranslation ?? true };
   const fetchImpl = vi.fn(async (request: Request) => {
@@ -182,10 +195,16 @@ function fakeApi(opts: { ready?: boolean; blurTranslation?: boolean; extraSpan?:
     }
     if (pathname === "/reading-settings" && request.method === "GET") return json(200, readingSettings);
     if (pathname === "/reading-settings" && request.method === "PUT") {
+      if (opts.failReadingPut) return json(500, { code: "internal", message: "server exploded" });
       Object.assign(readingSettings, body as Partial<typeof readingSettings>);
       return json(200, readingSettings);
     }
     const entry = pathname.match(/^\/dictionary\/entries\/(\d+)$/)?.[1];
+    if (entry && opts.gateEntry && entry === String(opts.gateEntry)) {
+      return new Promise<Response>((resolve) => {
+        gated.push(() => resolve(json(200, entry === "990101" ? SCHOOL_ENTRY : MISE_ENTRY)));
+      });
+    }
     if (entry === "990101") return json(200, SCHOOL_ENTRY);
     if (entry === "990103") return json(200, MISE_ENTRY);
     if (pathname === "/grammar/points/12" && request.method === "GET") return json(200, TE_SHIMAU_POINT);
@@ -193,7 +212,13 @@ function fakeApi(opts: { ready?: boolean; blurTranslation?: boolean; extraSpan?:
     return json(404, { code: "not_found", message: "not found" });
   });
   const client = createApiClient({ baseUrl: "http://127.0.0.1:8787", fetch: fetchImpl });
-  return { client, requests };
+  return {
+    client,
+    requests,
+    /** Answer the oldest held dictionary fetch; later ones can arrive after
+     *  the UI has already moved on — which is exactly the race. */
+    releaseEntry: () => gated.shift()?.(),
+  };
 }
 
 /** Open the ready story (the fastest path into the reader). */
@@ -354,6 +379,21 @@ describe("Reading Panel", () => {
     expect(put?.body).toEqual({ blurTranslation: false });
   });
 
+  it("says so when saving the blur preference fails, and keeps the old state", async () => {
+    const { client } = fakeApi({ failReadingPut: true });
+    await openStory(client);
+
+    fireEvent.click(tokenButton("がっこう"));
+    const panel = screen.getByLabelText("Reading Panel");
+    fireEvent.click(panel.querySelector(".translation") as HTMLElement);
+
+    // The failure is shown, not swallowed — and nothing half-applied: the
+    // stored preference still stands, so the translation stays blurred.
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("server exploded");
+    expect(panel.querySelector(".translation.blurred")).toBeTruthy();
+  });
+
   it("starts revealed when the stored preference says so", async () => {
     const { client } = fakeApi({ blurTranslation: false });
     await openStory(client);
@@ -374,34 +414,59 @@ describe("Reading Panel", () => {
     expect(panel.querySelector(".translation")?.textContent).toBe("I went to the shop.");
   });
 
-  it("shrinks a sentence that overflows the fixed box by exactly one step", async () => {
-    // jsdom has no layout engine: fake content taller than the (0-height)
-    // box so the measure-and-shrink step engages.
-    const desc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight");
-    Object.defineProperty(HTMLElement.prototype, "scrollHeight", { configurable: true, get: () => 400 });
+  it("shrinks an overflowing sentence once, and never un-shrinks on a later re-render", async () => {
+    // jsdom has no layout engine, so fake one that fits after the shrink:
+    // 400px of content unshrunk, 40px shrunk, box 60px. A component that
+    // re-measures on every render (the old bug) would add `.shrunk`, see it
+    // fit, strip it on the next render, and flap the text size on every hover.
+    const sh = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight");
+    const ch = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.classList.contains("shrunk") ? 40 : 400;
+      },
+    });
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", { configurable: true, get: () => 60 });
     try {
       const { client } = fakeApi();
       await openStory(client);
       fireEvent.click(tokenButton("がっこう"));
       const area = document.querySelector(".sentence-area") as HTMLElement;
       await waitFor(() => expect(area.classList.contains("shrunk")).toBe(true));
-      // One step only — the box itself never grows.
-      expect(area.classList.contains("sentence-area")).toBe(true);
+
+      // Hovers re-render the panel with `.shrunk` still on the box — the
+      // measuring ref must not take the shrink back off.
+      fireEvent.mouseEnter(tokenButton("べんきょう"));
+      fireEvent.mouseLeave(tokenButton("べんきょう"));
+      expect(area.classList.contains("shrunk")).toBe(true);
+
+      // The shrink styles an inner wrapper, so the box's own em height is
+      // untouched and the panel stays exactly as big.
+      expect(area.querySelector(".sentence-content")).toBeTruthy();
     } finally {
-      if (desc) Object.defineProperty(HTMLElement.prototype, "scrollHeight", desc);
+      if (sh) Object.defineProperty(HTMLElement.prototype, "scrollHeight", sh);
       else Reflect.deleteProperty(HTMLElement.prototype, "scrollHeight");
+      if (ch) Object.defineProperty(HTMLElement.prototype, "clientHeight", ch);
+      else Reflect.deleteProperty(HTMLElement.prototype, "clientHeight");
     }
   });
 
   it("the panel's box is fixed in CSS: two-line height, then scroll — never resize", () => {
-    const css = readFileSync("src/reader.css", "utf8"); // vitest cwd = apps/web
+    // vitest cwd = apps/web; comments stripped so "font-size" inside prose
+    // cannot skew the structural assertions below.
+    const css = readFileSync("src/reader.css", "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
     const panel = css.match(/\.reading-panel \{[^}]*\}/)?.[0] ?? "";
     expect(panel).toMatch(/height: 7\.5em/);
     const area = css.match(/\.reading-panel \.sentence-area \{[^}]*\}/)?.[0] ?? "";
     expect(area).toMatch(/height: 4\.4em/); // fixed two-line height, ruby included
     expect(area).not.toMatch(/max-height/);
+    expect(area).not.toMatch(/font-size/); // the box's em base never moves
     expect(area).toMatch(/overflow-y: auto/);
-    expect(css).toMatch(/\.sentence-area\.shrunk \{[^}]*font-size: 0\.8em/);
+    // The shrink sits on an inner wrapper: a font-size on the box itself would
+    // shrink its own 4.4em height and resize the panel.
+    expect(css).toMatch(/\.sentence-area\.shrunk \.sentence-content \{[^}]*font-size: 0\.8em/);
+    expect(css).not.toMatch(/\.sentence-area\.shrunk \{[^}]*font-size/);
     expect(css).toMatch(/\.lookup-label \{[^}]*flex: 0 0 6\.4em/);
     // Grammar Spans read differently from the known/unknown underlines.
     expect(css).toMatch(/\.tok-grammar \{[^}]*underline wavy #7c3aed/);
@@ -478,6 +543,40 @@ describe("Lookup row", () => {
     expect(requests.some((r) => r.path.startsWith("/dictionary/entries/"))).toBe(false);
     expect(requests.some((r) => r.path.startsWith("/grammar/points/"))).toBe(false);
   });
+
+  it("hovering a Grammar Span token lights up every token the span covers", async () => {
+    const { client } = fakeApi({ extraSpan: true }); // ～に行く covers みせ・に・いきました
+    await openStory(client);
+
+    fireEvent.mouseEnter(tokenButton("に"));
+    const lit = Array.from(document.querySelectorAll(".story-sentence button.token.is-hovered")).map(
+      (b) => b.textContent ?? "",
+    );
+    // Hovering one token of the span highlights the whole span, not just it.
+    expect(lit.some((t) => t.startsWith("みせ"))).toBe(true);
+    expect(lit.some((t) => t.startsWith("に"))).toBe(true);
+    expect(lit.some((t) => t.startsWith("いきました"))).toBe(true);
+    // Tokens outside the second sentence's span stay dark.
+    expect(lit.some((t) => t.startsWith("がっこう"))).toBe(false);
+  });
+
+  it("does not re-ask the dictionary for a lookup that already failed", async () => {
+    const { client, requests } = fakeApi();
+    await openStory(client);
+
+    const de = tokenButton("で"); // entSeq 990102: the fake has no entry for it
+    fireEvent.mouseEnter(de);
+    const looked = () => requests.filter((r) => r.path === "/dictionary/entries/990102").length;
+    await waitFor(() => expect(looked()).toBe(1));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0)); // let the failure settle and cache
+    });
+
+    fireEvent.mouseLeave(de);
+    fireEvent.mouseEnter(de);
+    // The failure is remembered: a second hover costs no second request.
+    expect(looked()).toBe(1);
+  });
 });
 
 describe("Pitch graph", () => {
@@ -553,6 +652,49 @@ describe("Word menu and windows", () => {
     // Escape closes the open window (one press peels one layer).
     fireEvent.keyDown(tokenButton("がっこう"), { key: "Escape" });
     await waitFor(() => expect(screen.queryByLabelText("Dictionary entry: がっこう")).toBeNull());
+  });
+
+  it("the window shows the entry when the hover's fetch lands after the window opened", async () => {
+    const { client, releaseEntry } = fakeApi({ gateEntry: 990101 });
+    await openStory(client);
+
+    // Hover starts the lookup request; it is held open.
+    fireEvent.mouseEnter(tokenButton("がっこう"));
+    // Click opens the menu and Dictionary opens the window — nothing has
+    // arrived, so the window starts its own request too (also held).
+    fireEvent.click(tokenButton("がっこう"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Dictionary" }));
+    const win = await screen.findByLabelText("Dictionary entry: がっこう");
+    expect(within(win).getByText("Loading entry…")).toBeTruthy();
+
+    // The hover's response lands first: the cache fills, the window sees the
+    // cached entry, and its own request becomes the stale duplicate.
+    releaseEntry();
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    // The window's own (now-duplicate) response lands — it must not put the
+    // window back on "Loading…" or leave it there.
+    releaseEntry();
+    await waitFor(() => expect(within(win).queryByText("Loading entry…")).toBeNull());
+    expect(within(win).getByText(/Known item — SRS Level 4, Mastery 44%/)).toBeTruthy();
+  });
+
+  it("a window opening from the menu keeps focus on the token, and closing returns it", async () => {
+    const { client } = fakeApi();
+    await openStory(client);
+
+    const word = tokenButton("みせ");
+    fireEvent.click(word); // menu opens (focus moves into it)
+    fireEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Dictionary" }));
+    const win = await screen.findByLabelText("Dictionary entry: みせ");
+    // The menu closed to open the window: focus went back to the token, not body.
+    expect(document.activeElement).toBe(word);
+
+    fireEvent.click(within(win).getByRole("button", { name: "Close entry window" }));
+    await waitFor(() => expect(screen.queryByLabelText("Dictionary entry: みせ")).toBeNull());
+    // And closing the window hands focus back to the same token.
+    expect(document.activeElement).toBe(word);
   });
 
   it("clicking a Grammar Span token opens the menu; Grammar opens the point window", async () => {

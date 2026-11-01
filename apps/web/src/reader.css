@@ -18,13 +18,17 @@
 
 .reading-panel .sentence-area {
   /* Two lines of sentence in a fixed box — the panel keeps its size. Long
-     text first shrinks one step (.shrunk); what still overflows scrolls.
-     The height carries the furigana ruby: each ruby line box is ~2.2em. */
+     text first shrinks one step; what still overflows scrolls. The height
+     carries the furigana ruby: each ruby line box is ~2.2em. The box's own
+     font-size never changes, so its em height never changes with it. */
   height: 4.4em;
   overflow-y: auto;
 }
 
-.reading-panel .sentence-area.shrunk {
+/* The one shrink step lands on the inner wrapper only: taking the box's own
+   font-size down would shrink its 4.4em height too, and the fixed panel
+   would change size. */
+.reading-panel .sentence-area.shrunk .sentence-content {
   font-size: 0.8em;
 }
 
