@@ -41,16 +41,15 @@ func escapeLike(s string) string {
 }
 
 func (s *PostgresStore) Points(ctx context.Context, f Filter) ([]PointSummary, int, error) {
-	where := `WHERE ($1 = '' OR jlpt_level = $1)`
-	args := []any{f.Level}
+	// Placeholders stay $1..$4 whether or not a search is set: pgx binds
+	// positionally, so numbering must match the argument list exactly.
+	where := `WHERE ($1 = '' OR jlpt_level = $1)
+		AND ($2 = '' OR pattern ILIKE $2 OR romaji ILIKE $2 OR meaning ILIKE $2)`
+	like := ""
 	if f.Query != "" {
-		where += ` AND (pattern ILIKE $2 OR romaji ILIKE $2 OR meaning ILIKE $2)`
-		args = append(args, escapeLike(f.Query))
+		like = escapeLike(f.Query)
 	}
-	limitParam, offsetParam := "$3", "$4"
-	if f.Query != "" {
-		limitParam, offsetParam = "$4", "$5"
-	}
+	args := []any{f.Level, like}
 
 	var total int
 	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM grammar_points `+where, args...).Scan(&total); err != nil {
@@ -63,7 +62,7 @@ func (s *PostgresStore) Points(ctx context.Context, f Filter) ([]PointSummary, i
 		       (SELECT count(*) FROM grammar_examples e WHERE e.grammar_point_id = g.id)
 		FROM grammar_points g `+where+`
 		ORDER BY `+jlptOrder+`, g.catalogue_number, g.ordinal
-		LIMIT `+limitParam+` OFFSET `+offsetParam,
+		LIMIT $3 OFFSET $4`,
 		append(append([]any(nil), args...), ClampLimit(f.Limit), max(0, f.Offset))...)
 	if err != nil {
 		return nil, 0, err
