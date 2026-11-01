@@ -137,10 +137,13 @@ type Content interface {
 
 	// StretchItems lists the Stretch Items for a session (issue #12):
 	// items held by the Learner's Boosting Lists that are NOT yet Known
-	// Items, oldest membership first, at most limit. They are exercised
-	// for recognition but never enter the Known Item universe, so they
-	// cannot distort Story coverage.
-	StretchItems(ctx context.Context, userID uuid.UUID, limit int) ([]mastery.ItemKey, error)
+	// Items, at most limit, in an order rotated deterministically by salt
+	// (the session's seed) so no member can be starved by a fixed pool
+	// order forever. Callers draw wider than the slots they need, so
+	// members with no buildable content cannot crowd the slots out. They
+	// are exercised for recognition but never enter the Known Item
+	// universe, so they cannot distort Story coverage.
+	StretchItems(ctx context.Context, userID uuid.UUID, salt int64, limit int) ([]mastery.ItemKey, error)
 }
 
 // ResultWriter appends one Exercise result to the Practice Record. The
@@ -293,12 +296,18 @@ func (s *Service) StartSession(ctx context.Context, userID uuid.UUID, seed int64
 	// a full set never crowds them out and a short set still reserves the
 	// session's target. They answer into the Practice Record like every
 	// other exercise, but never join the Known Item universe.
+	// The draw reaches past the slots (three times over): a Boosting List
+	// can hold refs whose reference rows are gone, and g.add skips those —
+	// a strict limit would let junk permanently starve the slots. The pool
+	// is also rotated by the session seed, so which members the over-draw
+	// surfaces changes from session to session rather than always the same
+	// head of a fixed order.
 	if s.opts.StretchSlots > 0 && len(g.exercises) < s.opts.SessionSize {
 		limit := s.opts.StretchSlots
 		if room := s.opts.SessionSize - len(g.exercises); room < limit {
 			limit = room
 		}
-		stretch, err := s.content.StretchItems(ctx, userID, limit)
+		stretch, err := s.content.StretchItems(ctx, userID, seed, limit*3)
 		if err != nil {
 			return "", err
 		}

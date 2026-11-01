@@ -649,6 +649,37 @@ func TestStretchSlotsCapAndNoDuplicates(t *testing.T) {
 	}
 }
 
+// A Stretch Item whose content is gone (a ref the Generator cannot build an
+// Exercise for — the case AddItem accepted before reference rows were
+// checked) must not hold a slot: the draw reaches past it and fills the
+// reservation with the next pool member.
+func TestStretchDrawSkipsJunkIntoTheSlots(t *testing.T) {
+	e := newEnv(t)
+	e.withStretch(t, 1)
+	e.content.AddKanji("火", practice.Word{Display: "火", Meanings: []string{"fire"}, Level: "N5"})
+	// Junk first: vocab 9999 has no fixture content, so g.add skips it. If
+	// the draw only fetched one candidate, the slot would go empty.
+	e.content.AddStretch(alice,
+		mastery.ItemKey{Kind: mastery.KindVocabulary, Ref: "9999"},
+		mastery.ItemKey{Kind: mastery.KindKanji, Ref: "火"},
+	)
+
+	sess := mustStart(t, e, alice, 6)
+
+	var asked bool
+	for _, ex := range sess.Exercises {
+		if ex.Item == (mastery.ItemKey{Kind: mastery.KindKanji, Ref: "火"}) {
+			asked = true
+		}
+	}
+	if !asked {
+		t.Errorf("stretch kanji 火 never asked: the leading junk item starved the slot (%+v)", sess.Exercises)
+	}
+	if sess.Skipped < 1 {
+		t.Errorf("skipped = %d, want the junk stretch item counted as skipped", sess.Skipped)
+	}
+}
+
 // The default configuration (StretchSlots zero) never asks Stretch Items:
 // the feature is opt-in through server config.
 func TestStretchItemsDisabledWithoutSlots(t *testing.T) {

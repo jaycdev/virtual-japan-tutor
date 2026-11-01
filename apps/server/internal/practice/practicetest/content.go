@@ -111,7 +111,9 @@ func (c *Content) AddStretch(userID uuid.UUID, keys ...mastery.ItemKey) {
 	c.Stretch[userID] = append(c.Stretch[userID], keys...)
 }
 
-func (c *Content) StretchItems(ctx context.Context, userID uuid.UUID, limit int) ([]mastery.ItemKey, error) {
+// StretchItems draws queue order in the fixture; the real store rotates the
+// pool by salt, which the unit tests do not model.
+func (c *Content) StretchItems(ctx context.Context, userID uuid.UUID, salt int64, limit int) ([]mastery.ItemKey, error) {
 	c.note("stretch")
 	c.mu.Lock()
 	defer c.mu.Unlock()

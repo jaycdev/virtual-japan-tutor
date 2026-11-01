@@ -148,12 +148,15 @@ func (c *PostgresContent) ClozeDistractors(ctx context.Context, level string, ex
 // id), so "not known" here and "known" there are the same predicate seen
 // from both sides — an item can never be a Stretch Item and a Focus Set
 // member at once. One membership per list means an item in two Boosting
-// Lists appears twice: DISTINCT ON collapses it to its oldest membership,
-// and the outer sort keeps draws stable across sessions (added_at + key
-// tie-break is total).
+// Lists appears twice: DISTINCT ON collapses it to its oldest membership.
+// The outer sort is the same md5-salt shuffle the distractor pools use:
+// salt is the session seed, so one session always draws the same slice of
+// the pool, and the next session's seed gives the pool a fresh order — a
+// member (or a batch of refs with no buildable content) can never hold the
+// slots at the head of a fixed order forever.
 const stretchItemsSQL = `
 	SELECT item_kind, item_ref FROM (
-		SELECT DISTINCT ON (m.item_kind, m.item_ref) m.item_kind, m.item_ref, m.added_at
+		SELECT DISTINCT ON (m.item_kind, m.item_ref) m.item_kind, m.item_ref
 		FROM item_list_items m
 		JOIN item_lists l ON l.id = m.list_id
 		WHERE l.user_id = $1 AND l.boosting
@@ -168,11 +171,11 @@ const stretchItemsSQL = `
 		  )
 		ORDER BY m.item_kind, m.item_ref, m.added_at, m.list_id
 	) t
-	ORDER BY added_at, item_kind, item_ref
-	LIMIT $2`
+	ORDER BY md5(t.item_kind || ':' || t.item_ref || $2::text), t.item_kind, t.item_ref
+	LIMIT $3`
 
-func (c *PostgresContent) StretchItems(ctx context.Context, userID uuid.UUID, limit int) ([]mastery.ItemKey, error) {
-	rows, err := c.pool.Query(ctx, stretchItemsSQL, userID, limit)
+func (c *PostgresContent) StretchItems(ctx context.Context, userID uuid.UUID, salt int64, limit int) ([]mastery.ItemKey, error) {
+	rows, err := c.pool.Query(ctx, stretchItemsSQL, userID, strconv.FormatInt(salt, 10), limit)
 	if err != nil {
 		return nil, err
 	}

@@ -2,6 +2,8 @@ package practice_test
 
 import (
 	"context"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -12,8 +14,8 @@ import (
 )
 
 // Postgres-side proof of the Stretch Item read (issue #12): Boosting List
-// members that are not yet Known Items, oldest membership first, capped —
-// with "known" meaning exactly what mastery's read model means.
+// members that are not yet Known Items, salt-rotated and capped — with
+// "known" meaning exactly what mastery's read model means.
 
 func TestPostgresContentStretchItems(t *testing.T) {
 	pool := dbtest.New(t)
@@ -62,32 +64,57 @@ func TestPostgresContentStretchItems(t *testing.T) {
 
 	content := practice.NewPostgresContent(pool)
 
-	got, err := content.StretchItems(ctx, user, 10)
+	// The same seed draws the same slice every time; the pool is set-based
+	// (deduped across lists, unknown only), and the order rotates with the
+	// salt rather than being fixed by added_at.
+	got, err := content.StretchItems(ctx, user, 11, 10)
 	if err != nil {
 		t.Fatalf("StretchItems: %v", err)
 	}
-	// Deduped across lists, oldest membership first, unknown only.
+	// Deduped across lists, unknown only.
 	want := []mastery.ItemKey{
 		{Kind: mastery.KindVocabulary, Ref: "2000"},
 		{Kind: mastery.KindKanji, Ref: "食"},
 		{Kind: mastery.KindVocabulary, Ref: "3000"},
 	}
-	if len(got) != len(want) {
-		t.Fatalf("StretchItems = %+v, want %+v", got, want)
+	if !sameKeys(got, want) {
+		t.Fatalf("StretchItems = %+v, want the set %+v", got, want)
 	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("stretch[%d] = %+v, want %+v (deduped, added_at order)", i, got[i], want[i])
-		}
+	again, err := content.StretchItems(ctx, user, 11, 10)
+	if err != nil {
+		t.Fatalf("StretchItems (again): %v", err)
+	}
+	if !reflect.DeepEqual(got, again) {
+		t.Errorf("same salt drew %+v then %+v, want a stable order within a session", again, got)
 	}
 
-	// The limit is honoured: the oldest memberships only.
-	limited, err := content.StretchItems(ctx, user, 2)
+	// Rotation: across a handful of salts the drawn order must actually
+	// move — a fixed order (the old added_at sort) would repeat forever and
+	// let head-of-pool junk starve the rest of the pool.
+	orders := map[string]bool{}
+	for _, salt := range []int64{11, 12, 13, 14, 15, 16, 17} {
+		seq, err := content.StretchItems(ctx, user, salt, 10)
+		if err != nil {
+			t.Fatalf("StretchItems(salt %d): %v", salt, err)
+		}
+		var sb strings.Builder
+		for _, k := range seq {
+			sb.WriteString(string(k.Kind) + ":" + k.Ref + ",")
+		}
+		orders[sb.String()] = true
+	}
+	if len(orders) < 2 {
+		t.Errorf("7 salts all drew the identical order %v, want the draw to rotate", orders)
+	}
+
+	// The limit is honoured: the limit-window is exactly the head of the
+	// same salt's full draw.
+	limited, err := content.StretchItems(ctx, user, 11, 2)
 	if err != nil {
 		t.Fatalf("StretchItems limit: %v", err)
 	}
-	if len(limited) != 2 || limited[0] != want[0] || limited[1] != want[1] {
-		t.Errorf("limited = %+v, want the first two of %+v", limited, want)
+	if len(limited) != 2 || limited[0] != got[0] || limited[1] != got[1] {
+		t.Errorf("limited = %+v, want the first two of %+v", limited, got)
 	}
 
 	// Another user's lists do not leak.
@@ -95,13 +122,32 @@ func TestPostgresContentStretchItems(t *testing.T) {
 	if _, err := pool.Exec(ctx, `INSERT INTO users (id, username, password_hash) VALUES ($1, 'other', 'x')`, other); err != nil {
 		t.Fatalf("seed other user: %v", err)
 	}
-	mine, err := content.StretchItems(ctx, other, 10)
+	mine, err := content.StretchItems(ctx, other, 11, 10)
 	if err != nil {
 		t.Fatalf("StretchItems(other): %v", err)
 	}
 	if len(mine) != 0 {
 		t.Errorf("other user stretch = %+v, want none", mine)
 	}
+}
+
+// sameKeys compares two stretches as sets: the salt decides the order, not
+// the test.
+func sameKeys(got, want []mastery.ItemKey) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	seen := map[mastery.ItemKey]int{}
+	for _, k := range got {
+		seen[k]++
+	}
+	for _, k := range want {
+		seen[k]--
+		if seen[k] < 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // Known grammar members of Boosting Lists are excluded through the same
@@ -141,7 +187,7 @@ func TestPostgresStretchItemsExcludesKnownAndCaps(t *testing.T) {
 	}
 
 	content := practice.NewPostgresContent(pool)
-	got, err := content.StretchItems(ctx, user, 10)
+	got, err := content.StretchItems(ctx, user, 5, 10)
 	if err != nil {
 		t.Fatalf("StretchItems: %v", err)
 	}
