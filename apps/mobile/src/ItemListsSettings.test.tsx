@@ -235,6 +235,30 @@ describe('mobile ItemListsSettings', () => {
     });
   });
 
+  it('lets a Kanji reference be typed as the character itself', async () => {
+    renderApp();
+    await openList('Textbook ch. 1');
+
+    const field = screen.getByLabelText(
+      'Reference (dictionary entry sequence or grammar point id)',
+    ) as HTMLInputElement;
+    // Word refs are ids: a numeric keyboard. Kanji refs are characters: not.
+    expect(field.getAttribute('inputmode')).toBe('numeric');
+    fireEvent.click(screen.getByRole('button', { name: 'Kanji' }));
+    expect(field.getAttribute('inputmode')).not.toBe('numeric');
+
+    fireEvent.change(field, { target: { value: '水' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add to list' }));
+
+    await waitFor(() => {
+      const post = calls.find((c) => c.method === 'POST' && c.url.includes('/items'));
+      expect(post?.body).toEqual({ itemKind: 'kanji', itemRef: '水' });
+    });
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Remove added-水' })).toBeTruthy();
+    });
+  });
+
   it('renames through an inline edit', async () => {
     renderApp();
     await openList('Textbook ch. 1');

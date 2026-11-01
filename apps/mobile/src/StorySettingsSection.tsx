@@ -4,12 +4,12 @@ import { useState } from "react";
 
 import { Body, Card, Chip, ChipRow, ErrorText, Field, LinkButton, Muted, PrimaryButton, Screen, Scroll, SectionTitle, StatusText, Title } from "./ui.tsx";
 
-const LEVELS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+const LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 
 /**
  * Story preferences (Furigana Threshold, issue #10) on mobile (issue #13):
  * uses `useStorySettings` so the screen never fetches the Story library.
- * Same rule as web: chips 0–9 set the SRS level under which tokens show
+ * Same rule as web: chips 1–9 set the SRS level under which tokens show
  * furigana; genre/theme steer future stories and empty means "surprise me".
  */
 export function StorySettingsSection({ client, onBack }: { client: ApiClient; onBack: () => void }) {

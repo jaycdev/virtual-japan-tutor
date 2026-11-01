@@ -63,6 +63,8 @@ describe('mobile StorySettingsSection', () => {
     });
     expect((screen.getByLabelText('Preferred genre') as HTMLInputElement).value).toBe('travel');
     expect((screen.getByLabelText('Preferred theme') as HTMLInputElement).value).toBe('');
+    // 1-9 like web: no 0 chip.
+    expect(screen.queryByRole('button', { name: '0' })).toBeNull();
   });
 
   it('saves a new Furigana Threshold and genre together', async () => {

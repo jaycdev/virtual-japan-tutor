@@ -341,7 +341,8 @@ function ItemListDetail({
           value={itemRef}
           onChangeText={setItemRef}
           onSubmit={() => void addMember()}
-          keyboardType="number-pad"
+          // A Kanji reference is the character itself; word/grammar refs are ids.
+          keyboardType={kind === "kanji" ? "default" : "number-pad"}
           disabled={busy}
         />
         <PrimaryButton
