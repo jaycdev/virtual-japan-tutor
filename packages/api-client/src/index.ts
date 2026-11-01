@@ -10,6 +10,11 @@ export type AiProviderUpdate = components["schemas"]["AiProviderUpdate"];
 export type AiProviderTestResult = components["schemas"]["AiProviderTestResult"];
 export type AiTask = components["schemas"]["AiTask"];
 export type AiTaskAssignment = components["schemas"]["AiTaskAssignment"];
+export type MaruMoriStatus = components["schemas"]["MaruMoriStatus"];
+export type MaruMoriStatusCounts = components["schemas"]["MaruMoriStatusCounts"];
+export type MaruMoriCounts = components["schemas"]["MaruMoriCounts"];
+export type MaruMoriKeyRequest = components["schemas"]["MaruMoriKeyRequest"];
+export type MaruMoriSyncRun = components["schemas"]["MaruMoriSyncRun"];
 export type ApiMiddleware = Middleware;
 
 export interface ApiClientOptions {

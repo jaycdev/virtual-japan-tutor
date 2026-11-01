@@ -87,16 +87,37 @@ func (e HealthDatabase) Valid() bool {
 
 // Defines values for HealthStatus.
 const (
-	Degraded HealthStatus = "degraded"
-	Ok       HealthStatus = "ok"
+	HealthStatusDegraded HealthStatus = "degraded"
+	HealthStatusOk       HealthStatus = "ok"
 )
 
 // Valid indicates whether the value is a known member of the HealthStatus enum.
 func (e HealthStatus) Valid() bool {
 	switch e {
-	case Degraded:
+	case HealthStatusDegraded:
 		return true
-	case Ok:
+	case HealthStatusOk:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MaruMoriSyncRunStatus.
+const (
+	MaruMoriSyncRunStatusFailed  MaruMoriSyncRunStatus = "failed"
+	MaruMoriSyncRunStatusOk      MaruMoriSyncRunStatus = "ok"
+	MaruMoriSyncRunStatusRunning MaruMoriSyncRunStatus = "running"
+)
+
+// Valid indicates whether the value is a known member of the MaruMoriSyncRunStatus enum.
+func (e MaruMoriSyncRunStatus) Valid() bool {
+	switch e {
+	case MaruMoriSyncRunStatusFailed:
+		return true
+	case MaruMoriSyncRunStatusOk:
+		return true
+	case MaruMoriSyncRunStatusRunning:
 		return true
 	default:
 		return false
@@ -200,6 +221,87 @@ type LoginResponse struct {
 	User  User   `json:"user"`
 }
 
+// MaruMoriCounts What one completed Sync found and stored.
+type MaruMoriCounts struct {
+	// Ambiguous Known Items with more than one possible reference-data match; the closest by JLPT Level was chosen.
+	Ambiguous int `json:"ambiguous"`
+
+	// Disappeared Known Items no longer known in MaruMori; marked, never deleted.
+	Disappeared int `json:"disappeared"`
+
+	// GrammarLessons Grammar lesson SRS levels recorded.
+	GrammarLessons int `json:"grammarLessons"`
+
+	// GrammarReviews Grammar review SRS levels recorded.
+	GrammarReviews int `json:"grammarReviews"`
+
+	// Kanji Known kanji (SRS level 1+) read from MaruMori.
+	Kanji int `json:"kanji"`
+
+	// LevelChanges Known Items whose SRS Level changed since the previous Sync.
+	LevelChanges int `json:"levelChanges"`
+
+	// Linked Known Items linked to a KANJIDIC or JMdict entry.
+	Linked int `json:"linked"`
+
+	// New Known Items that appeared since the previous Sync.
+	New int `json:"new"`
+
+	// SkippedLevelZero Items reported at SRS level 0 (learning, not Known) and therefore not stored.
+	SkippedLevelZero int `json:"skippedLevelZero"`
+
+	// Unlinked Known Items kept by their MaruMori text only (no reference-data match).
+	Unlinked int `json:"unlinked"`
+
+	// Vocabulary Known vocabulary (SRS level 1+) read from MaruMori.
+	Vocabulary int `json:"vocabulary"`
+}
+
+// MaruMoriKeyRequest defines model for MaruMoriKeyRequest.
+type MaruMoriKeyRequest struct {
+	// ApiKey The Learner's MaruMori API key. Write-only: encrypted at rest, never returned, never logged. Replaces any previously stored key.
+	ApiKey stdjson.RawMessage `json:"apiKey"`
+}
+
+// MaruMoriStatus Whether the Learner has a MaruMori API key stored, and what the most recent Sync found. `lastSync` and `counts` are null before the first successful Sync.
+type MaruMoriStatus struct {
+	// Connected Whether a MaruMori API key is stored. The key itself is never exposed.
+	Connected   bool                  `json:"connected"`
+	ConnectedAt *time.Time            `json:"connectedAt,omitempty"`
+	Counts      *MaruMoriStatusCounts `json:"counts,omitempty"`
+	LastSync    *MaruMoriSyncRun      `json:"lastSync,omitempty"`
+}
+
+// MaruMoriStatusCounts Totals over the Learner's stored knowledge state, from the last successful Sync.
+type MaruMoriStatusCounts struct {
+	// Kanji Known kanji at SRS level 1 or above.
+	Kanji int `json:"kanji"`
+
+	// LastSyncAt When the data was last synced.
+	LastSyncAt *time.Time `json:"lastSyncAt,omitempty"`
+
+	// Vocabulary Known vocabulary at SRS level 1 or above.
+	Vocabulary int `json:"vocabulary"`
+
+	// VocabularyLinkRate Share of Known vocabulary linked to a JMdict entry (0..1).
+	VocabularyLinkRate float32 `json:"vocabularyLinkRate"`
+}
+
+// MaruMoriSyncRun One Sync run. A run that started but could not finish is `failed` with an `error`; it is returned as a 200 body, not an HTTP error.
+type MaruMoriSyncRun struct {
+	Counts *MaruMoriCounts `json:"counts,omitempty"`
+
+	// Error Why the Sync failed, in Learner-facing words. Never contains the API key.
+	Error      *string               `json:"error,omitempty"`
+	FinishedAt *time.Time            `json:"finishedAt,omitempty"`
+	Id         openapi_types.UUID    `json:"id"`
+	StartedAt  time.Time             `json:"startedAt"`
+	Status     MaruMoriSyncRunStatus `json:"status"`
+}
+
+// MaruMoriSyncRunStatus defines model for MaruMoriSyncRun.Status.
+type MaruMoriSyncRunStatus string
+
 // User defines model for User.
 type User struct {
 	Id       openapi_types.UUID `json:"id"`
@@ -231,6 +333,9 @@ type SetAiTaskJSONRequestBody SetAiTaskJSONBody
 
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody = LoginRequest
+
+// SetMaruMoriKeyJSONRequestBody defines body for SetMaruMoriKey for application/json ContentType.
+type SetMaruMoriKeyJSONRequestBody = MaruMoriKeyRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -270,6 +375,21 @@ type ServerInterface interface {
 	// GetHealth Liveness and database connectivity check
 	// (GET /health)
 	GetHealth(w http.ResponseWriter, r *http.Request)
+	// GetMaruMoriStatus Whether MaruMori is connected, and what the last Sync found
+	// (GET /marumori)
+	GetMaruMoriStatus(w http.ResponseWriter, r *http.Request)
+	// DeleteMaruMoriKey Stop the MaruMori connection and forget the key
+	// (DELETE /marumori/key)
+	DeleteMaruMoriKey(w http.ResponseWriter, r *http.Request)
+	// SetMaruMoriKey Store the Learner's MaruMori API key
+	// (PUT /marumori/key)
+	SetMaruMoriKey(w http.ResponseWriter, r *http.Request)
+	// SyncMaruMori Sync the Learner's knowledge state from MaruMori now
+	// (POST /marumori/sync)
+	SyncMaruMori(w http.ResponseWriter, r *http.Request)
+	// ListMaruMoriSyncs The Learner's recent Sync runs, newest first
+	// (GET /marumori/syncs)
+	ListMaruMoriSyncs(w http.ResponseWriter, r *http.Request)
 	// GetMe The authenticated user
 	// (GET /me)
 	GetMe(w http.ResponseWriter, r *http.Request)
@@ -524,6 +644,76 @@ func (siw *ServerInterfaceWrapper) GetHealth(w http.ResponseWriter, r *http.Requ
 	handler.ServeHTTP(w, r)
 }
 
+// GetMaruMoriStatus operation middleware
+func (siw *ServerInterfaceWrapper) GetMaruMoriStatus(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetMaruMoriStatus(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteMaruMoriKey operation middleware
+func (siw *ServerInterfaceWrapper) DeleteMaruMoriKey(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteMaruMoriKey(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetMaruMoriKey operation middleware
+func (siw *ServerInterfaceWrapper) SetMaruMoriKey(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetMaruMoriKey(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SyncMaruMori operation middleware
+func (siw *ServerInterfaceWrapper) SyncMaruMori(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SyncMaruMori(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListMaruMoriSyncs operation middleware
+func (siw *ServerInterfaceWrapper) ListMaruMoriSyncs(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListMaruMoriSyncs(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetMe operation middleware
 func (siw *ServerInterfaceWrapper) GetMe(w http.ResponseWriter, r *http.Request) {
 
@@ -671,6 +861,11 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/ai-tasks", wrapper.ListAiTasks)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/ai-tasks/{task}", wrapper.ClearAiTask)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/ai-tasks/{task}", wrapper.SetAiTask)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/marumori", wrapper.GetMaruMoriStatus)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/marumori/key", wrapper.DeleteMaruMoriKey)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/marumori/key", wrapper.SetMaruMoriKey)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/marumori/sync", wrapper.SyncMaruMori)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/marumori/syncs", wrapper.ListMaruMoriSyncs)
 
 	return m
 }
@@ -1301,6 +1496,218 @@ func (response GetHealth503JSONResponse) VisitGetHealthResponse(w http.ResponseW
 	return err
 }
 
+type GetMaruMoriStatusRequestObject struct {
+}
+
+type GetMaruMoriStatusResponseObject interface {
+	VisitGetMaruMoriStatusResponse(w http.ResponseWriter) error
+}
+
+type GetMaruMoriStatus200JSONResponse MaruMoriStatus
+
+func (response GetMaruMoriStatus200JSONResponse) VisitGetMaruMoriStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMaruMoriStatus401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetMaruMoriStatus401JSONResponse) VisitGetMaruMoriStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteMaruMoriKeyRequestObject struct {
+}
+
+type DeleteMaruMoriKeyResponseObject interface {
+	VisitDeleteMaruMoriKeyResponse(w http.ResponseWriter) error
+}
+
+type DeleteMaruMoriKey204Response struct {
+}
+
+func (response DeleteMaruMoriKey204Response) VisitDeleteMaruMoriKeyResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteMaruMoriKey401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response DeleteMaruMoriKey401JSONResponse) VisitDeleteMaruMoriKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetMaruMoriKeyRequestObject struct {
+	Body *SetMaruMoriKeyJSONRequestBody
+}
+
+type SetMaruMoriKeyResponseObject interface {
+	VisitSetMaruMoriKeyResponse(w http.ResponseWriter) error
+}
+
+type SetMaruMoriKey200JSONResponse MaruMoriStatus
+
+func (response SetMaruMoriKey200JSONResponse) VisitSetMaruMoriKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetMaruMoriKey400JSONResponse Error
+
+func (response SetMaruMoriKey400JSONResponse) VisitSetMaruMoriKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetMaruMoriKey401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response SetMaruMoriKey401JSONResponse) VisitSetMaruMoriKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SyncMaruMoriRequestObject struct {
+}
+
+type SyncMaruMoriResponseObject interface {
+	VisitSyncMaruMoriResponse(w http.ResponseWriter) error
+}
+
+type SyncMaruMori200JSONResponse MaruMoriSyncRun
+
+func (response SyncMaruMori200JSONResponse) VisitSyncMaruMoriResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SyncMaruMori400JSONResponse Error
+
+func (response SyncMaruMori400JSONResponse) VisitSyncMaruMoriResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SyncMaruMori401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response SyncMaruMori401JSONResponse) VisitSyncMaruMoriResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SyncMaruMori409JSONResponse Error
+
+func (response SyncMaruMori409JSONResponse) VisitSyncMaruMoriResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListMaruMoriSyncsRequestObject struct {
+}
+
+type ListMaruMoriSyncsResponseObject interface {
+	VisitListMaruMoriSyncsResponse(w http.ResponseWriter) error
+}
+
+type ListMaruMoriSyncs200JSONResponse []MaruMoriSyncRun
+
+func (response ListMaruMoriSyncs200JSONResponse) VisitListMaruMoriSyncsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListMaruMoriSyncs401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListMaruMoriSyncs401JSONResponse) VisitListMaruMoriSyncsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetMeRequestObject struct {
 }
 
@@ -1374,6 +1781,21 @@ type StrictServerInterface interface {
 	// GetHealth Liveness and database connectivity check
 	// (GET /health)
 	GetHealth(ctx context.Context, request GetHealthRequestObject) (GetHealthResponseObject, error)
+	// GetMaruMoriStatus Whether MaruMori is connected, and what the last Sync found
+	// (GET /marumori)
+	GetMaruMoriStatus(ctx context.Context, request GetMaruMoriStatusRequestObject) (GetMaruMoriStatusResponseObject, error)
+	// DeleteMaruMoriKey Stop the MaruMori connection and forget the key
+	// (DELETE /marumori/key)
+	DeleteMaruMoriKey(ctx context.Context, request DeleteMaruMoriKeyRequestObject) (DeleteMaruMoriKeyResponseObject, error)
+	// SetMaruMoriKey Store the Learner's MaruMori API key
+	// (PUT /marumori/key)
+	SetMaruMoriKey(ctx context.Context, request SetMaruMoriKeyRequestObject) (SetMaruMoriKeyResponseObject, error)
+	// SyncMaruMori Sync the Learner's knowledge state from MaruMori now
+	// (POST /marumori/sync)
+	SyncMaruMori(ctx context.Context, request SyncMaruMoriRequestObject) (SyncMaruMoriResponseObject, error)
+	// ListMaruMoriSyncs The Learner's recent Sync runs, newest first
+	// (GET /marumori/syncs)
+	ListMaruMoriSyncs(ctx context.Context, request ListMaruMoriSyncsRequestObject) (ListMaruMoriSyncsResponseObject, error)
 	// GetMe The authenticated user
 	// (GET /me)
 	GetMe(ctx context.Context, request GetMeRequestObject) (GetMeResponseObject, error)
@@ -1746,6 +2168,133 @@ func (sh *strictHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// GetMaruMoriStatus operation middleware
+func (sh *strictHandler) GetMaruMoriStatus(w http.ResponseWriter, r *http.Request) {
+	var request GetMaruMoriStatusRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetMaruMoriStatus(ctx, request.(GetMaruMoriStatusRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetMaruMoriStatus")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetMaruMoriStatusResponseObject); ok {
+		if err := validResponse.VisitGetMaruMoriStatusResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteMaruMoriKey operation middleware
+func (sh *strictHandler) DeleteMaruMoriKey(w http.ResponseWriter, r *http.Request) {
+	var request DeleteMaruMoriKeyRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteMaruMoriKey(ctx, request.(DeleteMaruMoriKeyRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteMaruMoriKey")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteMaruMoriKeyResponseObject); ok {
+		if err := validResponse.VisitDeleteMaruMoriKeyResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SetMaruMoriKey operation middleware
+func (sh *strictHandler) SetMaruMoriKey(w http.ResponseWriter, r *http.Request) {
+	var request SetMaruMoriKeyRequestObject
+
+	var body SetMaruMoriKeyJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SetMaruMoriKey(ctx, request.(SetMaruMoriKeyRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetMaruMoriKey")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetMaruMoriKeyResponseObject); ok {
+		if err := validResponse.VisitSetMaruMoriKeyResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SyncMaruMori operation middleware
+func (sh *strictHandler) SyncMaruMori(w http.ResponseWriter, r *http.Request) {
+	var request SyncMaruMoriRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SyncMaruMori(ctx, request.(SyncMaruMoriRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SyncMaruMori")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SyncMaruMoriResponseObject); ok {
+		if err := validResponse.VisitSyncMaruMoriResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListMaruMoriSyncs operation middleware
+func (sh *strictHandler) ListMaruMoriSyncs(w http.ResponseWriter, r *http.Request) {
+	var request ListMaruMoriSyncsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListMaruMoriSyncs(ctx, request.(ListMaruMoriSyncsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListMaruMoriSyncs")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListMaruMoriSyncsResponseObject); ok {
+		if err := validResponse.VisitListMaruMoriSyncsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetMe operation middleware
 func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 	var request GetMeRequestObject
@@ -1775,55 +2324,78 @@ func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"HDrsbz4BHH43+G7A1rfrfw8A",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

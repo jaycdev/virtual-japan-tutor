@@ -176,6 +176,84 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/marumori": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether MaruMori is connected, and what the last Sync found */
+        get: operations["getMaruMoriStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/marumori/key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Store the Learner's MaruMori API key
+         * @description The key is encrypted at rest and never returned. It is not verified here: a rejected key surfaces as a failed Sync with a clear error. Replacing the key keeps already-synced data.
+         */
+        put: operations["setMaruMoriKey"];
+        post?: never;
+        /**
+         * Stop the MaruMori connection and forget the key
+         * @description Already-synced knowledge state and Sync history are kept.
+         */
+        delete: operations["deleteMaruMoriKey"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/marumori/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sync the Learner's knowledge state from MaruMori now
+         * @description Re-reads the Learner's Known Items and SRS levels from MaruMori and records what appeared, changed level or disappeared. Item content is never fetched or stored (see ADR-0002). A Sync that starts but fails still answers 200 with `status: "failed"` and an `error`.
+         */
+        post: operations["syncMaruMori"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/marumori/syncs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The Learner's recent Sync runs, newest first */
+        get: operations["listMaruMoriSyncs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -269,6 +347,75 @@ export interface components {
             status: "ok" | "degraded";
             /** @enum {string} */
             database: "connected" | "unreachable";
+        };
+        MaruMoriKeyRequest: {
+            /**
+             * Format: password
+             * @description The Learner's MaruMori API key. Write-only: encrypted at rest, never returned, never logged. Replaces any previously stored key.
+             */
+            apiKey: string;
+        };
+        /** @description Whether the Learner has a MaruMori API key stored, and what the most recent Sync found. `lastSync` and `counts` are null before the first successful Sync. */
+        MaruMoriStatus: {
+            /** @description Whether a MaruMori API key is stored. The key itself is never exposed. */
+            connected: boolean;
+            /** Format: date-time */
+            connectedAt?: string | null;
+            lastSync?: components["schemas"]["MaruMoriSyncRun"] | null;
+            counts?: components["schemas"]["MaruMoriStatusCounts"] | null;
+        };
+        /** @description Totals over the Learner's stored knowledge state, from the last successful Sync. */
+        MaruMoriStatusCounts: {
+            /** @description Known kanji at SRS level 1 or above. */
+            kanji: number;
+            /** @description Known vocabulary at SRS level 1 or above. */
+            vocabulary: number;
+            /** @description Share of Known vocabulary linked to a JMdict entry (0..1). */
+            vocabularyLinkRate: number;
+            /**
+             * Format: date-time
+             * @description When the data was last synced.
+             */
+            lastSyncAt?: string | null;
+        };
+        /** @description One Sync run. A run that started but could not finish is `failed` with an `error`; it is returned as a 200 body, not an HTTP error. */
+        MaruMoriSyncRun: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            status: "running" | "ok" | "failed";
+            /** Format: date-time */
+            startedAt: string;
+            /** Format: date-time */
+            finishedAt?: string | null;
+            /** @description Why the Sync failed, in Learner-facing words. Never contains the API key. */
+            error?: string | null;
+            counts?: components["schemas"]["MaruMoriCounts"] | null;
+        };
+        /** @description What one completed Sync found and stored. */
+        MaruMoriCounts: {
+            /** @description Known kanji (SRS level 1+) read from MaruMori. */
+            kanji: number;
+            /** @description Known vocabulary (SRS level 1+) read from MaruMori. */
+            vocabulary: number;
+            /** @description Grammar review SRS levels recorded. */
+            grammarReviews: number;
+            /** @description Grammar lesson SRS levels recorded. */
+            grammarLessons: number;
+            /** @description Known Items linked to a KANJIDIC or JMdict entry. */
+            linked: number;
+            /** @description Known Items kept by their MaruMori text only (no reference-data match). */
+            unlinked: number;
+            /** @description Known Items with more than one possible reference-data match; the closest by JLPT Level was chosen. */
+            ambiguous: number;
+            /** @description Known Items that appeared since the previous Sync. */
+            new: number;
+            /** @description Known Items whose SRS Level changed since the previous Sync. */
+            levelChanges: number;
+            /** @description Known Items no longer known in MaruMori; marked, never deleted. */
+            disappeared: number;
+            /** @description Items reported at SRS level 0 (learning, not Known) and therefore not stored. */
+            skippedLevelZero: number;
         };
     };
     responses: {
@@ -714,6 +861,140 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+        };
+    };
+    getMaruMoriStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current MaruMori status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaruMoriStatus"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    setMaruMoriKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MaruMoriKeyRequest"];
+            };
+        };
+        responses: {
+            /** @description Key stored; the new status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaruMoriStatus"];
+                };
+            };
+            /** @description Missing or empty API key (code `invalid_key`) or malformed body */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    deleteMaruMoriKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Key removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    syncMaruMori: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The Sync run that just finished */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaruMoriSyncRun"];
+                };
+            };
+            /** @description No MaruMori API key stored yet (code `no_key`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description A Sync is already running for this Learner (code `sync_running`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listMaruMoriSyncs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Recent Sync runs (a bounded window, e.g. the last 20) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaruMoriSyncRun"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
         };
     };
 }

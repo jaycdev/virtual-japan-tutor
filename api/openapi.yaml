@@ -308,6 +308,100 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /marumori:
+    get:
+      operationId: getMaruMoriStatus
+      summary: Whether MaruMori is connected, and what the last Sync found
+      responses:
+        "200":
+          description: Current MaruMori status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaruMoriStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /marumori/key:
+    put:
+      operationId: setMaruMoriKey
+      summary: Store the Learner's MaruMori API key
+      description: >
+        The key is encrypted at rest and never returned. It is not verified here: a rejected key
+        surfaces as a failed Sync with a clear error. Replacing the key keeps already-synced data.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MaruMoriKeyRequest"
+      responses:
+        "200":
+          description: Key stored; the new status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaruMoriStatus"
+        "400":
+          description: Missing or empty API key (code `invalid_key`) or malformed body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      operationId: deleteMaruMoriKey
+      summary: Stop the MaruMori connection and forget the key
+      description: Already-synced knowledge state and Sync history are kept.
+      responses:
+        "204":
+          description: Key removed
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /marumori/sync:
+    post:
+      operationId: syncMaruMori
+      summary: Sync the Learner's knowledge state from MaruMori now
+      description: >
+        Re-reads the Learner's Known Items and SRS levels from MaruMori and records what appeared,
+        changed level or disappeared. Item content is never fetched or stored (see ADR-0002). A
+        Sync that starts but fails still answers 200 with `status: "failed"` and an `error`.
+      responses:
+        "200":
+          description: The Sync run that just finished
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaruMoriSyncRun"
+        "400":
+          description: No MaruMori API key stored yet (code `no_key`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: A Sync is already running for this Learner (code `sync_running`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /marumori/syncs:
+    get:
+      operationId: listMaruMoriSyncs
+      summary: The Learner's recent Sync runs, newest first
+      responses:
+        "200":
+          description: Recent Sync runs (a bounded window, e.g. the last 20)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MaruMoriSyncRun"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 components:
   parameters:
     ProviderId:
@@ -486,3 +580,128 @@ components:
         database:
           type: string
           enum: [connected, unreachable]
+    MaruMoriKeyRequest:
+      type: object
+      required: [apiKey]
+      properties:
+        apiKey:
+          type: string
+          format: password
+          description: >
+            The Learner's MaruMori API key. Write-only: encrypted at rest, never returned, never
+            logged. Replaces any previously stored key.
+          x-go-type: stdjson.RawMessage
+          x-go-type-import:
+            path: encoding/json
+            name: stdjson
+          x-go-type-skip-optional-pointer: true
+    MaruMoriStatus:
+      type: object
+      description: >
+        Whether the Learner has a MaruMori API key stored, and what the most recent Sync found.
+        `lastSync` and `counts` are null before the first successful Sync.
+      required: [connected]
+      properties:
+        connected:
+          type: boolean
+          description: Whether a MaruMori API key is stored. The key itself is never exposed.
+        connectedAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastSync:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/MaruMoriSyncRun"
+        counts:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/MaruMoriStatusCounts"
+    MaruMoriStatusCounts:
+      type: object
+      description: Totals over the Learner's stored knowledge state, from the last successful Sync.
+      required: [kanji, vocabulary, vocabularyLinkRate]
+      properties:
+        kanji:
+          type: integer
+          description: Known kanji at SRS level 1 or above.
+        vocabulary:
+          type: integer
+          description: Known vocabulary at SRS level 1 or above.
+        vocabularyLinkRate:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Share of Known vocabulary linked to a JMdict entry (0..1).
+        lastSyncAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the data was last synced.
+    MaruMoriSyncRun:
+      type: object
+      description: >
+        One Sync run. A run that started but could not finish is `failed` with an `error`; it is
+        returned as a 200 body, not an HTTP error.
+      required: [id, status, startedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [running, ok, failed]
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+          nullable: true
+        error:
+          type: string
+          nullable: true
+          description: Why the Sync failed, in Learner-facing words. Never contains the API key.
+        counts:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/MaruMoriCounts"
+    MaruMoriCounts:
+      type: object
+      description: What one completed Sync found and stored.
+      required:
+        [kanji, vocabulary, grammarReviews, grammarLessons, linked, unlinked, ambiguous, new, levelChanges, disappeared, skippedLevelZero]
+      properties:
+        kanji:
+          type: integer
+          description: Known kanji (SRS level 1+) read from MaruMori.
+        vocabulary:
+          type: integer
+          description: Known vocabulary (SRS level 1+) read from MaruMori.
+        grammarReviews:
+          type: integer
+          description: Grammar review SRS levels recorded.
+        grammarLessons:
+          type: integer
+          description: Grammar lesson SRS levels recorded.
+        linked:
+          type: integer
+          description: Known Items linked to a KANJIDIC or JMdict entry.
+        unlinked:
+          type: integer
+          description: Known Items kept by their MaruMori text only (no reference-data match).
+        ambiguous:
+          type: integer
+          description: Known Items with more than one possible reference-data match; the closest by JLPT Level was chosen.
+        new:
+          type: integer
+          description: Known Items that appeared since the previous Sync.
+        levelChanges:
+          type: integer
+          description: Known Items whose SRS Level changed since the previous Sync.
+        disappeared:
+          type: integer
+          description: Known Items no longer known in MaruMori; marked, never deleted.
+        skippedLevelZero:
+          type: integer
+          description: Items reported at SRS level 0 (learning, not Known) and therefore not stored.
