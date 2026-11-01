@@ -46,7 +46,7 @@ const reading: ReadingSettingsView = {
   reload: () => {},
 };
 
-const lookup: EntryLookup = { load: () => {}, peek: () => undefined };
+const lookup: EntryLookup = { load: () => {}, peek: () => undefined, failed: () => false, invalidate: () => {} };
 
 /**
  * Reads a CSS value off what react-native-web actually rendered: r-* classes

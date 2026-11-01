@@ -135,18 +135,21 @@ export function menuOptions(
   span: StoryGrammarSpan | null,
   listsReady: boolean,
   defaultListName?: string,
+  /** The last lookup for this word failed (issue #14 review): Dictionary dims. */
+  dictionaryFailed = false,
 ): MenuOption[] {
   const linked = token.entSeq !== undefined;
   const saveable = linked || span !== null;
   const unlinked = "This word did not match a dictionary entry";
+  const failed = "The dictionary did not answer — hold again to try once more";
   const loading = "Your Item Lists are still loading";
   const target = defaultListName ? `Save to ${defaultListName}` : "Save to the default list";
   const options: MenuOption[] = [
     {
       id: "dictionary",
       label: "Dictionary",
-      enabled: linked,
-      hint: linked ? undefined : unlinked,
+      enabled: linked && !dictionaryFailed,
+      hint: !linked ? unlinked : dictionaryFailed ? failed : undefined,
     },
   ];
   if (span) options.push({ id: "grammar", label: "Grammar", enabled: true, hint: `${span.pattern}: ${span.meaning}` });

@@ -1,4 +1,4 @@
-import type { DictionaryEntry, Story, StoryGrammarSpan, StoryToken } from "@vjt/api-client";
+import type { Story, StoryGrammarSpan } from "@vjt/api-client";
 import type { ReadingSettingsView } from "@vjt/core";
 import { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -229,13 +229,6 @@ function GrammarGloss({ span }: { span: StoryGrammarSpan }) {
       <View style={styles.lookupRight}>{span.jlptLevel ? <JlptBadge level={span.jlptLevel} /> : null}</View>
     </View>
   );
-}
-
-export function tokenEntry(
-  lookup: EntryLookup,
-  token: StoryToken,
-): DictionaryEntry | undefined {
-  return token.entSeq !== undefined ? lookup.peek(token.entSeq, token.surface, token.reading) : undefined;
 }
 
 const styles = StyleSheet.create({

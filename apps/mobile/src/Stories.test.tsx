@@ -6,8 +6,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fakeBackHandler, type FakeBackHandler } from "../test/back-handler-fake.ts";
 import { setBackHandlerForTests } from "./hardwareBack.ts";
-import type { Rect } from "./reader/holdMenu.ts";
+import { reduceHold, type Rect } from "./reader/holdMenu.ts";
 import { Stories } from "./Stories.tsx";
+
+// Pass the module through untouched except for wrapping reduceHold in a spy:
+// one test then proves the SHIPPED reader runs the pure machine (issue #14
+// review, major 2), while every other test behaves exactly as before.
+vi.mock("./reader/holdMenu.ts", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("./reader/holdMenu.ts")>();
+  return { ...mod, reduceHold: vi.fn(mod.reduceHold) };
+});
 
 afterEach(cleanup);
 
@@ -601,7 +609,7 @@ describe("Reading Panel placement, modes and scroll lock (review fixes)", () => 
     fireEvent.mouseUp(token(0, 0), { clientX: 300, clientY: 300 });
   });
 
-  it("scrolling is locked while a token press primes a hold, and restored on release", async () => {
+  it("the story stays scrollable through a press-and-swipe, and freezes only once the menu is up", async () => {
     const { client } = fakeApi();
     await openStory(client);
 
@@ -623,11 +631,18 @@ describe("Reading Panel placement, modes and scroll lock (review fixes)", () => 
     };
     expect(scrollable()).toBe(true);
 
-    // Press: the hold is primed, so the ScrollView stops stealing the gesture
-    // — this is what makes slide-and-release work on a real Android.
+    // Pressing a token primes the hold but must NOT freeze the story
+    // (issue #14 review, major 1): a swipe that starts on text belongs to
+    // the ScrollView, not to the word under the finger.
     fireEvent.mouseDown(token(0, 0), { clientX: 300, clientY: 300 });
-    expect(scrollable()).toBe(false);
+    expect(scrollable()).toBe(true);
 
+    // A pre-threshold drag — the beginning of a scroll — changes nothing.
+    fireEvent.mouseMove(token(0, 0), { clientX: 300, clientY: 240 });
+    expect(scrollable()).toBe(true);
+
+    // Only once the hold elapses and the Lookup Menu opens does the scroll
+    // freeze — that is what protects slide-and-release.
     await act(async () => {
       await new Promise((r) => setTimeout(r, HOLD_MS + 30));
     });
@@ -636,6 +651,84 @@ describe("Reading Panel placement, modes and scroll lock (review fixes)", () => 
 
     fireEvent.mouseUp(token(0, 0), { clientX: 5, clientY: 5 }); // released outside: cancel
     expect(scrollable()).toBe(true);
+  });
+
+  it("a token hands the touch to a scrolling parent until its menu opens", async () => {
+    const { client } = fakeApi();
+    await openStory(client);
+
+    // The token's responder wiring is what a real host consults when the
+    // ScrollView wants to pan a swipe: true = "yes, steal it" (scrolling
+    // starting on text works), false = the menu gesture survives to the
+    // release. Walk the fiber from the rendered token to the handler the
+    // shipped reader passed down.
+    const terminationRequest = () => {
+      let f = fiberFrom(token(0, 1));
+      while (f) {
+        const h = f.memoizedProps?.onResponderTerminationRequest;
+        if (typeof h === "function") return (h as () => boolean)();
+        f = f.return;
+      }
+      throw new Error("token has no onResponderTerminationRequest wiring");
+    };
+
+    fireEvent.mouseDown(token(0, 1), { clientX: 300, clientY: 300 });
+    expect(terminationRequest()).toBe(true); // before the hold: a swipe may take over
+    fireEvent.mouseUp(token(0, 1), { clientX: 300, clientY: 300 });
+
+    await pressAndHold(0, 1);
+    expect(terminationRequest()).toBe(false); // menu up: nothing steals the gesture
+    releaseAt(0, 1, 5, 5);
+  });
+
+  it("the shipped reader runs the gesture through the pure reduceHold machine", async () => {
+    const { client } = fakeApi();
+    const machine = vi.mocked(reduceHold);
+    machine.mockClear();
+    await openStory(client);
+
+    // Press, hold and cancel all go through holdMenu.reduceHold — the
+    // machine's own unit tests therefore guard the shipped gesture, not a
+    // parallel copy of it (issue #14 review, major 2).
+    fireEvent.mouseDown(token(0, 0), { clientX: 300, clientY: 300 });
+    const press = machine.mock.calls.find(([, event]) => event.type === "press");
+    expect(press?.[1]).toMatchObject({ token: { sentence: 0, index: 0 }, x: 300, y: 300 });
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, HOLD_MS + 30));
+    });
+    const opened = machine.mock.calls.findIndex(([, event]) => event.type === "holdElapsed");
+    expect(opened).toBeGreaterThanOrEqual(0);
+    expect(machine.mock.results[opened].value.phase).toBe("menu");
+
+    releaseAt(0, 0, 5, 5); // released outside every option
+    expect(machine.mock.calls.some(([, event]) => event.type === "cancel")).toBe(true);
+  });
+
+  it("a failed dictionary lookup dims Dictionary, opens no window, and the next hold retries", async () => {
+    const { client, requests } = fakeApi();
+    await openStory(client);
+
+    // で has an entSeq, but the fake API 404s it — the lookup comes back cold.
+    await pressAndHold(0, 1);
+    const menu = screen.getByLabelText("Lookup menu");
+    expect(within(menu).getByTestId("menu-option-dictionary").getAttribute("aria-disabled")).toBe("true");
+    const fetches = () => requests.filter((r) => r.path === "/dictionary/entries/990102").length;
+    expect(fetches()).toBe(1);
+
+    // Hardware Back with the dimmed row: the menu is the ONLY layer to close.
+    // No phantom Dictionary window was pushed over a cold entry (issue #14
+    // review, major 3) — the reader is still the story, not an invisible card.
+    back.press();
+    await waitFor(() => expect(screen.queryByLabelText("Lookup menu")).toBeNull());
+    expect(screen.queryByTestId("dictionary-window")).toBeNull();
+    expect(screen.getByTestId("back-to-library")).toBeTruthy();
+    fireEvent.mouseUp(token(0, 1), { clientX: 300, clientY: 300 }); // finger lifts after Back
+
+    // The failure is not remembered forever: the next press retries the fetch.
+    await pressAndHold(0, 1);
+    await waitFor(() => expect(fetches()).toBe(2));
+    releaseAt(0, 1, 5, 5);
   });
 
   it("the four token classes get underlines that survive Android: colour + weight, no iOS-only props", async () => {

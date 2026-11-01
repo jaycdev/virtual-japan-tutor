@@ -1,5 +1,5 @@
 import type { StoryGrammarSpan, StorySentence, StoryToken } from "@vjt/api-client";
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import { StyleSheet, Text, View, type NativeSyntheticEvent, type NativeTouchEvent } from "react-native";
 
 import { type ThemeColors, useColors } from "../theme.ts";
@@ -70,8 +70,13 @@ export function TokenWords({ token, style }: { token: StoryToken; style?: object
  * One paragraph of the story. `activeToken` lights up the pressed token, and
  * while a Grammar Span token is pressed every token the Span covers lights up
  * too — the whole Span reads as one unit, like the web hover.
+ *
+ * Memoised (issue #14 review, minor 6): `handlers` and `onSelect` are stable
+ * across gesture renders (the reader caches them), so header notes, panel
+ * updates and answer feedback re-render only the paragraphs whose active
+ * token actually changed — the token props keep identical identity.
  */
-export function StoryParagraph({
+export const StoryParagraph = memo(function StoryParagraph({
   sentence,
   sentenceIndex,
   activeToken,
@@ -81,9 +86,10 @@ export function StoryParagraph({
   sentence: StorySentence;
   sentenceIndex: number;
   activeToken: TokenRef | null;
-  /** Gesture handlers per token index (stable identity is not required). */
-  handlers: (index: number) => TokenHandlers;
-  onSelect: () => void;
+  /** Gesture handlers per token (one stable function; the per-token objects are cached by the reader). */
+  handlers: (sentenceIndex: number, index: number) => TokenHandlers;
+  /** Stable selector: which sentence was pressed anywhere in this paragraph. */
+  onSelect: (sentenceIndex: number) => void;
 }) {
   const colors = useColors();
   const activeTok = activeToken?.sentence === sentenceIndex ? sentence.tokens[activeToken.index] : undefined;
@@ -91,7 +97,7 @@ export function StoryParagraph({
   return (
     <View
       onStartShouldSetResponder={() => true}
-      onResponderGrant={onSelect}
+      onResponderGrant={() => onSelect(sentenceIndex)}
       accessibilityLabel={`Sentence ${sentenceIndex + 1}`}
       style={styles.paragraph}
     >
@@ -107,13 +113,13 @@ export function StoryParagraph({
               (activeToken?.sentence === sentenceIndex && activeToken.index === j) ||
               (activeSpan !== null && coveringSpan(sentence, tok) === activeSpan)
             }
-            handlers={handlers(j)}
+            handlers={handlers(sentenceIndex, j)}
           />
         ))}
       </Text>
     </View>
   );
-}
+});
 
 /**
  * The underline mapping (issue #14 review, fix 5). Web draws: solid Known

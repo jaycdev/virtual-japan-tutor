@@ -1,7 +1,15 @@
 import type { ApiClient, Story, WeakSignalRequest } from "@vjt/api-client";
 import { type StoryView, useItemLists, useReadingSettings } from "@vjt/core";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View, type NativeSyntheticEvent, type NativeTouchEvent } from "react-native";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  type NativeSyntheticEvent,
+  type NativeTouchEvent,
+} from "react-native";
 
 import { useHardwareBack } from "../hardwareBack.ts";
 import { MIN_TOUCH, useColors } from "../theme.ts";
@@ -15,11 +23,12 @@ import { useEntryLookup } from "./useEntryLookup.ts";
 import {
   coveringSpan,
   holdSignal,
+  IDLE,
   menuOptions,
   optionAt,
+  reduceHold,
   saveableItem,
   type MeasurableNode,
-  type MenuOption,
   type MenuOptionId,
   type Rect,
   type TokenRef,
@@ -28,23 +37,27 @@ import {
 /**
  * The mobile Story reader (issue #14): a fixed Reading Panel sits above the
  * story, which scrolls under it. Pressing a token selects its sentence,
- * switches the panel to word-mode for that word (sentence-mode returns on
- * release / cancel), and starts the hold timer; scrolling is locked for the
- * duration so Android cannot steal the slide gesture. Holding past
+ * switches the panel to word-mode for that word, and starts the hold timer.
+ * The gesture itself runs on the pure holdMenu machine (reduceHold through
+ * useReducer), so the machine's unit tests guard shipped code: a hold past
  * lookupHoldMs opens the Lookup Menu at the finger — that hold is the Weak
- * Signal — and lifting the finger over a menu option runs it (Dictionary /
- * Grammar open centred windows, Save writes to the Default List, Save to…
- * opens the bottom sheet); anywhere else the release cancels. Android Back
- * unwinds one layer at a time: sheet, then window, then menu, then back to
- * the library.
+ * Signal — and lifting over a menu option runs it (Dictionary / Grammar open
+ * centred windows, Save writes to the Default List, Save to… opens the bottom
+ * sheet); anywhere else the release cancels.
+ *
+ * Scrolling vs. the gesture (issue #14 review): the story ScrollView is only
+ * frozen while the Lookup Menu is up. A swipe that merely starts on text,
+ * before any hold elapses, stays scrollable — the ScrollView takes the touch,
+ * the token's responder is terminated, and the reducer's cancel guard means
+ * the stale timer cannot open a menu afterwards. Tokens therefore accept
+ * termination requests except while their menu is open; once the menu is up
+ * the scroll freeze plus the refusal protect slide-and-release. (Manual
+ * checklist: verify swipe-to-scroll starting on text, and slide-and-release,
+ * on a real Android device.)
+ *
+ * Android Back unwinds one layer at a time: sheet, then window, then menu,
+ * then back to the library.
  */
-
-interface OpenMenu {
-  ref: TokenRef;
-  x: number;
-  y: number;
-  options: MenuOption[];
-}
 
 const sameRef = (a: TokenRef, b: TokenRef) => a.sentence === b.sentence && a.index === b.index;
 
@@ -71,19 +84,25 @@ export function StoryReader({
   const lookup = useEntryLookup(client);
 
   const [selected, setSelected] = useState<number | null>(null);
-  const [looked, setLooked] = useState<LookedTarget | null>(null);
-  const [menu, setMenu] = useState<OpenMenu | null>(null);
+  // The whole press → hold → menu gesture is one reducer (holdMenu.reduceHold):
+  // phase, token, finger point and press anchor. menu / looked (panel
+  // word-mode) / the scroll freeze all DERIVE from it, and the timer's
+  // holdElapsed is ignored unless the state is still `press` — so a scroll
+  // that terminated the responder can never be followed by a menu opening
+  // behind the Learner's finger.
+  const [gesture, dispatch] = useReducer(reduceHold, IDLE);
   const [menuRects, setMenuRects] = useState<Map<string, Rect> | null>(null);
   const [windows, setWindows] = useState<LookedTarget[]>([]);
   const [sheetToken, setSheetToken] = useState<TokenRef | null>(null);
-  const [sheetBusy, setSheetBusy] = useState(false);
+  const [saveBusy, setSaveBusy] = useState(false);
+  const saveBusyRef = useRef(false);
   const [sheetError, setSheetError] = useState<string | null>(null);
   const [saveNote, setSaveNote] = useState<string | null>(null);
   const [screen, setScreen] = useState({ width: 0, height: 0 });
-  // True from the token press that primes a hold until its release/terminate:
-  // the story ScrollView is disabled while set so it cannot steal the slide
-  // gesture on Android (see onTokenGrant).
-  const [gestureLock, setGestureLock] = useState(false);
+  // The reader view's window origin (see the menu-position effect): pageX/
+  // pageY arrive in window coordinates, but TokenMenu positions itself
+  // absolutely inside this view, which sits below the safe-area padding.
+  const [viewOrigin, setViewOrigin] = useState<{ x: number; y: number } | null>(null);
 
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelHold = () => {
@@ -91,6 +110,14 @@ export function StoryReader({
     holdTimer.current = null;
   };
   useEffect(() => cancelHold, []);
+
+  // The save note fades on its own; clearing the timer on change/unmount
+  // keeps a stale note from wiping a fresh one (issue #14 review, minor 9).
+  useEffect(() => {
+    if (!saveNote) return;
+    const fade = setTimeout(() => setSaveNote(null), 5000);
+    return () => clearTimeout(fade);
+  }, [saveNote]);
 
   // Weak Signals: each (item, reason) once per open story; the server keeps
   // only the Learner's Known Items and drops the rest, so this is
@@ -124,13 +151,52 @@ export function StoryReader({
     reportSignals(signals);
   };
 
+  // --- state derived from the gesture reducer ------------------------------
+
+  const pressedToken =
+    gesture.token !== null ? story.sentences[gesture.token.sentence]?.tokens[gesture.token.index] : undefined;
+  const pressedSentence = gesture.token !== null ? story.sentences[gesture.token.sentence] : undefined;
+  const pressedSpan = pressedSentence && pressedToken ? coveringSpan(pressedSentence, pressedToken) : null;
+
+  // The Reading Panel's word-mode follows the machine: the pressed token is
+  // "looked at" from press until cancel (release, terminate, or Back).
+  const looked: LookedTarget | null = useMemo(() => {
+    if (!gesture.token || !pressedSentence || !pressedToken) return null;
+    return { ...gesture.token, kind: pressedSpan ? "grammar" : "token" };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- pressed* derive from token+story
+  }, [gesture.token, story]);
+
+  const menuOpen = gesture.phase === "menu";
+  // The scroll freeze belongs to the menu alone: before it, the story stays
+  // scrollable so a swipe on text pans instead of hijacking the word.
+  const scrollEnabled = !menuOpen;
+
+  // Menu contents recompute while the menu is open (Item Lists may still be
+  // loading, a failed dictionary lookup dims Dictionary until the retry).
+  // Identity is stable across gesture renders, so TokenMenu's measuring
+  // effect does not re-run on every touch-move.
+  const dictionaryFailed =
+    pressedToken?.entSeq !== undefined ? lookup.peek(pressedToken.entSeq, pressedToken.surface, pressedToken.reading) === undefined && lookup.failed(pressedToken.entSeq, pressedToken.surface, pressedToken.reading) : false;
+  const openOptions = useMemo(() => {
+    if (!menuOpen || !pressedSentence || !pressedToken) return [];
+    const listsState = lists.state;
+    const defaultName =
+      listsState.status === "ready"
+        ? listsState.lists.find((l) => l.id === listsState.defaultListId)?.name
+        : undefined;
+    return menuOptions(pressedToken, pressedSpan, listsState.status === "ready", defaultName, dictionaryFailed);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- pressed* derive from token+story
+  }, [menuOpen, gesture.token, story, lists.state, dictionaryFailed]);
+
+  // --- gesture handlers ------------------------------------------------------
+
   const closeMenu = () => {
-    setMenu(null);
+    cancelHold();
+    dispatch({ type: "cancel" });
     setMenuRects(null);
-    setLooked(null); // the panel switches back to sentence-mode
   };
 
-  /** Finger down on a token: select, switch the panel to word-mode, start the hold. */
+  /** Finger down on a token: select, prime the Lookup row, start the hold. */
   const onTokenGrant = (ref: TokenRef, e: NativeSyntheticEvent<NativeTouchEvent>) => {
     cancelHold();
     closeMenu();
@@ -138,31 +204,23 @@ export function StoryReader({
     const token = sen?.tokens[ref.index];
     if (!sen || !token) return;
     setSelected(ref.sentence);
-    setLooked({ ...ref, kind: coveringSpan(sen, token) ? "grammar" : "token" });
+    dispatch({ type: "press", token: ref, x: e.nativeEvent.pageX, y: e.nativeEvent.pageY });
     if (token.entSeq !== undefined) lookup.load(token.entSeq, token.surface, token.reading);
-    // Lock the story's scrolling the moment the press primes a hold — not
-    // just while the menu is open: on Android the ScrollView steals the
-    // gesture as soon as the finger passes the touch slop, which would
-    // terminate the responder and kill slide-and-release before the menu is
-    // even up. It unlocks on release/terminate. (Manual checklist: verify
-    // the slide gesture on a device.)
-    setGestureLock(true);
 
+    // The timer only reads the reducer (through gestureRef) and the immutable
+    // press data (the Story never changes while it is open) — never captured
+    // Item Lists or Reading Settings, which arrive after the press. The menu
+    // options those need are derived at render instead (see openOptions),
+    // so nothing here can go stale (issue #14 review, minor 7).
     const holdMs = reading.state.status === "ready" ? reading.state.settings.lookupHoldMs : 800;
-    const { pageX, pageY } = e.nativeEvent;
     holdTimer.current = setTimeout(() => {
       holdTimer.current = null;
-      const span = coveringSpan(sen, token);
-      const listsReady = lists.state.status === "ready";
-      const listsState = lists.state;
-      const defaultName =
-        listsState.status === "ready"
-          ? listsState.lists.find((l) => l.id === listsState.defaultListId)?.name
-          : undefined;
-      setMenu({ ref, x: pageX, y: pageY, options: menuOptions(token, span, listsReady, defaultName) });
+      const g = gestureRef.current;
+      if (g.phase !== "press" || !g.token || !sameRef(g.token, ref)) return; // released or stolen
+      dispatch({ type: "holdElapsed" });
       // The hold *is* the menu opening on mobile: one signal covers both,
       // and unlinked words simply signal nothing.
-      const signal = holdSignal(token, span);
+      const signal = holdSignal(token, coveringSpan(sen, token));
       if (signal) reportSignals([signal]);
     }, holdMs);
   };
@@ -170,25 +228,28 @@ export function StoryReader({
   /** Finger up: before the threshold this is a tap; after it, the option under the release runs. */
   const onTokenRelease = (ref: TokenRef, e: NativeSyntheticEvent<NativeTouchEvent>) => {
     cancelHold();
-    setGestureLock(false);
-    setLooked(null); // every token release hands the panel back to sentence-mode
-    if (!menu || !sameRef(menu.ref, ref)) return;
+    const g = gestureRef.current;
+    if (g.phase !== "menu" || !g.token || !sameRef(g.token, ref)) {
+      dispatch({ type: "cancel" }); // a tap: the panel returns to sentence-mode
+      return;
+    }
     const rects: Partial<Record<MenuOptionId, Rect>> = {};
-    for (const option of menu.options) {
+    for (const option of openOptionsRef.current) {
       const rect = menuRects?.get(`menu-option-${option.id}`);
       if (rect) rects[option.id] = rect;
     }
-    const picked = optionAt(rects, menu.options, e.nativeEvent.pageX, e.nativeEvent.pageY);
+    const picked = optionAt(rects, openOptionsRef.current, e.nativeEvent.pageX, e.nativeEvent.pageY);
     closeMenu();
     if (!picked) return; // released outside every live option: the menu just closes
     runMenuOption(picked, ref);
   };
 
+  /** The responder was taken (a scroll swipe panned the story): abandon the gesture. */
   const onTokenTerminate = (ref: TokenRef) => {
     cancelHold();
-    setGestureLock(false);
-    if (menu && sameRef(menu.ref, ref)) closeMenu();
-    setLooked(null);
+    const g = gestureRef.current;
+    if (g.phase === "menu" && g.token && sameRef(g.token, ref)) closeMenu();
+    else dispatch({ type: "cancel" });
   };
 
   const runMenuOption = (option: MenuOptionId, ref: TokenRef) => {
@@ -197,6 +258,15 @@ export function StoryReader({
     if (!sen || !token) return;
     const span = coveringSpan(sen, token);
     if (option === "dictionary") {
+      // Only push the window when the entry is actually there: a window
+      // pushed over a cold or failed lookup would render nothing and make
+      // the first Back pop an invisible layer (issue #14 review, major 3).
+      // Dropping the failed key lets a later hold retry the fetch.
+      if (token.entSeq === undefined || lookup.peek(token.entSeq, token.surface, token.reading) === undefined) {
+        if (token.entSeq !== undefined && lookup.failed(token.entSeq, token.surface, token.reading))
+          lookup.invalidate(token.entSeq, token.surface, token.reading);
+        return;
+      }
       setWindows((w) => [...w, { ...ref, kind: "token" }]);
       return;
     }
@@ -222,39 +292,79 @@ export function StoryReader({
       setSaveNote("Could not save — Your Item Lists are still loading");
       return;
     }
+    if (saveBusyRef.current) return; // one save at a time, menu path and sheet path alike
+    saveBusyRef.current = true;
+    setSaveBusy(true);
     setSaveNote(null);
-    const res = await lists.addToList(listId, { itemKind: item.kind, itemRef: item.ref });
-    if (res.ok) {
-      // A just-created list may not be in this callback's captured state yet —
-      // the create hands back its name, so the note is honest either way.
-      const found = lists.state.status === "ready" ? lists.state.lists.find((l) => l.id === listId)?.name : undefined;
-      setSaveNote(`Saved to ${found ?? nameHint ?? "your list"}.`);
-      setSheetToken(null);
-      setSheetError(null);
-    } else {
-      setSaveNote(`Could not save — ${res.message}`);
+    try {
+      const res = await lists.addToList(listId, { itemKind: item.kind, itemRef: item.ref });
+      if (res.ok) {
+        // A just-created list may not be in this callback's captured state yet —
+        // the create hands back its name, so the note is honest either way.
+        const found = lists.state.status === "ready" ? lists.state.lists.find((l) => l.id === listId)?.name : undefined;
+        setSaveNote(`Saved to ${found ?? nameHint ?? "your list"}.`);
+        setSheetToken(null);
+        setSheetError(null);
+      } else {
+        setSaveNote(`Could not save — ${res.message}`);
+      }
+    } finally {
+      saveBusyRef.current = false;
+      setSaveBusy(false);
     }
   };
 
-  const tokenHandlers = (sentenceIndex: number, index: number): TokenHandlers => {
-    const ref: TokenRef = { sentence: sentenceIndex, index };
-    return {
-      onStartShouldSetResponder: () => true,
-      onResponderGrant: (e) => onTokenGrant(ref, e),
-      // Sliding only moves the finger: the release point decides, so the
-      // menu itself stays anchored at the press.
-      onResponderMove: () => {},
-      onResponderRelease: (e) => onTokenRelease(ref, e),
-      onResponderTerminate: () => onTokenTerminate(ref),
-      // Refuse any steal attempt (ScrollView, parent): the scrollEnabled lock
-      // is the main defence, this is the guarantee that no in-flight gesture
-      // can take the responder between grant and release.
-      onResponderTerminationRequest: () => false,
+  // --- stable per-token handlers --------------------------------------------
+  // Token props (and StoryParagraph props) keep identical identity across
+  // gesture renders: handler objects are built once per token and read the
+  // current closures through refs, so React.memo(StoryParagraph) actually
+  // skips paragraphs that a header note or panel update cannot change.
+
+  const gestureRef = useRef(gesture);
+  const openOptionsRef = useRef(openOptions);
+  const actionsRef = useRef({ grant: onTokenGrant, release: onTokenRelease, terminate: onTokenTerminate });
+  // The refs refresh after each commit (react-hooks forbids writing refs in
+  // the render body). Every reader of them — the hold timer and the token
+  // handlers — runs from a timer or a touch event, which always lands after
+  // the effects have flushed, so they never see a stale closure.
+  useEffect(() => {
+    gestureRef.current = gesture;
+    openOptionsRef.current = openOptions;
+    actionsRef.current = { grant: onTokenGrant, release: onTokenRelease, terminate: onTokenTerminate };
+  });
+
+  // Handler objects are built ONCE per token (story is immutable while the
+  // reader is open): the same identity every render, so React.memo on
+  // StoryParagraph genuinely skips untouched paragraphs. The objects only
+  // touch refs when an event fires, never during render (react-hooks/refs).
+  const tokenHandlers = useMemo(() => {
+    const make = (sentenceIndex: number, index: number): TokenHandlers => {
+      const ref: TokenRef = { sentence: sentenceIndex, index };
+      return {
+        onStartShouldSetResponder: () => true,
+        onResponderGrant: (e) => actionsRef.current.grant(ref, e),
+        // Sliding only moves the finger: the release point decides, so the
+        // menu itself stays anchored at the press.
+        onResponderMove: () => {},
+        onResponderRelease: (e) => actionsRef.current.release(ref, e),
+        onResponderTerminate: () => actionsRef.current.terminate(ref),
+        // Let a would-be stealer (the ScrollView panning a swipe) take the
+        // responder, EXCEPT while this token's menu is open — then the scroll
+        // is frozen anyway and the gesture must survive to the release.
+        onResponderTerminationRequest: () => gestureRef.current.phase !== "menu",
+      };
     };
-  };
+    const bySentence = story.sentences.map((sen, i) => sen.tokens.map((_token, j) => make(i, j)));
+    return (sentenceIndex: number, index: number) => bySentence[sentenceIndex][index];
+  }, [story]);
+
+  const selectSentence = useCallback((sentenceIndex: number) => setSelected(sentenceIndex), []);
 
   // Android Back unwinds one layer at a time, and only one listener is ever
-  // attached (issue #13's pattern), so a press can never pop twice.
+  // attached (issue #13's pattern), so a press can never pop twice. The sheet
+  // and windows are Modals whose onRequestClose also fires on Back: on Android
+  // the dialog consumes the key press, so that path never reaches this
+  // listener — the pairing is a deliberate double safety, not a double-pop.
   useHardwareBack(true, () => {
     if (sheetToken) {
       setSheetToken(null);
@@ -264,7 +374,7 @@ export function StoryReader({
       setWindows((w) => w.slice(0, -1));
       return;
     }
-    if (menu) {
+    if (gesture.phase === "menu") {
       closeMenu();
       return;
     }
@@ -281,8 +391,20 @@ export function StoryReader({
       : undefined;
   const topVocabLinked = top?.kind === "token" && topToken?.entSeq !== undefined;
 
+  const closeTopWindow = () => {
+    // A closed Dictionary window drops its cached entry, so the next press
+    // fetches it fresh — and a lookup that failed while the window happened
+    // to be up is retried rather than remembered as a failure forever.
+    if (top?.kind === "token" && topToken?.entSeq !== undefined)
+      lookup.invalidate(topToken.entSeq, topToken.surface, topToken.reading);
+    setWindows((w) => w.slice(0, -1));
+  };
+
   // Real measuring: RN hands refs a measureInWindow. The jsdom test host has
   // neither that method nor a viewport, so tests inject both (see props).
+  // measureInWindow invokes its callback SYNCHRONOUSLY on Fabric — the only
+  // architecture in RN 0.88 (the legacy arch was removed) — which is why
+  // reading `rect` right after the call below is correct.
   const defaultMeasure = useCallback((testID: string, node: MeasurableNode | null): Rect | null => {
     if (!node || typeof node.measureInWindow !== "function") return null;
     let rect: Rect | null = null;
@@ -293,10 +415,22 @@ export function StoryReader({
   }, []);
   const measure = measureProp ?? defaultMeasure;
 
+  const rootViewRef = useRef<MeasurableNode | null>(null);
+
   return (
     <View
+      ref={(node) => {
+        rootViewRef.current = node;
+      }}
       style={styles.fill}
-      onLayout={(e) => setScreen({ width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height })}
+      onLayout={(e) => {
+        setScreen({ width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height });
+        // The menu anchors on pageX/pageY (window coordinates) but positions
+        // itself inside this view — under the safe-area paddingTop. Anchor on
+        // view-local coordinates instead (issue #14 review, minor 4).
+        const r = measure("reader-view", rootViewRef.current);
+        setViewOrigin(r ? { x: r.x, y: r.y } : null);
+      }}
       accessibilityLabel="Story reader"
     >
       <View style={[styles.header, { borderBottomColor: colors.separator }]}>
@@ -335,7 +469,7 @@ export function StoryReader({
       <ScrollView
         testID="story-scroll"
         style={styles.fill}
-        scrollEnabled={!gestureLock}
+        scrollEnabled={scrollEnabled}
         accessibilityLabel="Story text"
       >
         {story.sentences.map((sen, i) => (
@@ -344,8 +478,8 @@ export function StoryReader({
             sentence={sen}
             sentenceIndex={i}
             activeToken={looked}
-            handlers={(index) => tokenHandlers(i, index)}
-            onSelect={() => setSelected(i)}
+            handlers={tokenHandlers}
+            onSelect={selectSentence}
           />
         ))}
         {view.questions.length > 0 ? (
@@ -382,11 +516,11 @@ export function StoryReader({
         ) : null}
       </ScrollView>
 
-      {menu && (screenSize ?? screen).width > 0 ? (
+      {menuOpen && gesture.token && (screenSize ?? screen).width > 0 ? (
         <TokenMenu
-          options={menu.options}
-          x={menu.x}
-          y={menu.y}
+          options={openOptions}
+          x={gesture.anchorX - (viewOrigin?.x ?? 0)}
+          y={gesture.anchorY - (viewOrigin?.y ?? 0)}
           screenWidth={(screenSize ?? screen).width}
           screenHeight={(screenSize ?? screen).height}
           measure={measure}
@@ -396,11 +530,11 @@ export function StoryReader({
 
       {top ? (
         top.kind === "grammar" && topSpan ? (
-          <GrammarWindow span={topSpan} onClose={() => setWindows((w) => w.slice(0, -1))} />
+          <GrammarWindow span={topSpan} onClose={closeTopWindow} />
         ) : topVocabLinked && topEntry ? (
-          // The entry was primed the moment the token was pressed; while a
-          // cold entry is still in flight the window simply is not up yet.
-          <DictionaryWindow entry={topEntry} onClose={() => setWindows((w) => w.slice(0, -1))} />
+          // The window is only pushed when the entry is already cached (see
+          // runMenuOption), so this renders with real content, never a stub.
+          <DictionaryWindow entry={topEntry} onClose={closeTopWindow} />
         ) : null
       ) : null}
 
@@ -408,7 +542,7 @@ export function StoryReader({
         <SaveToSheet
           lists={lists.state.lists}
           defaultListId={lists.state.defaultListId}
-          busy={sheetBusy}
+          busy={saveBusy}
           error={sheetError}
           onClose={() => {
             setSheetToken(null);
@@ -419,24 +553,31 @@ export function StoryReader({
             const token = sen?.tokens[sheetToken.index];
             const item = token ? saveableItem(token, sen ? coveringSpan(sen, token) : null) : null;
             if (!item) return;
-            setSheetBusy(true);
-            void saveInto(listId, item).finally(() => setSheetBusy(false));
+            void saveInto(listId, item);
           }}
           onCreateAndSave={(name) => {
             const sen = story.sentences[sheetToken.sentence];
             const token = sen?.tokens[sheetToken.index];
             const item = token ? saveableItem(token, sen ? coveringSpan(sen, token) : null) : null;
             if (!item) return;
-            setSheetBusy(true);
+            if (saveBusyRef.current) return;
+            saveBusyRef.current = true;
+            setSaveBusy(true);
             void lists
               .createList({ name, boosting: false })
               .then((created) => {
                 // Create-then-save only after a successful create, as on the web.
-                if (created.ok && created.list) return saveInto(created.list.id, item, created.list.name);
+                if (created.ok && created.list) {
+                  saveBusyRef.current = false;
+                  return saveInto(created.list.id, item, created.list.name);
+                }
                 setSheetError(created.ok ? "the new list vanished" : created.message);
                 return undefined;
               })
-              .finally(() => setSheetBusy(false));
+              .finally(() => {
+                saveBusyRef.current = false;
+                setSaveBusy(false);
+              });
           }}
         />
       ) : null}
@@ -446,7 +587,14 @@ export function StoryReader({
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
-  header: { flexDirection: "row", alignItems: "center", gap: 12, borderBottomWidth: 1, paddingHorizontal: 12, minHeight: MIN_TOUCH },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderBottomWidth: 1,
+    paddingHorizontal: 12,
+    minHeight: MIN_TOUCH,
+  },
   backButton: { paddingVertical: 10, paddingRight: 8 },
   headerTitle: { flex: 1, fontSize: 16, fontWeight: "600" },
   questions: { marginTop: 20, paddingTop: 12, borderTopWidth: 1, borderTopColor: "transparent" },

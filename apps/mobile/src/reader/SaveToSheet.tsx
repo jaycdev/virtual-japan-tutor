@@ -1,6 +1,15 @@
 import type { ItemList } from "@vjt/api-client";
 import { useState } from "react";
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import {
+  KeyboardAvoidingView,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 
 import { MIN_TOUCH, useColors } from "../theme.ts";
 
@@ -38,8 +47,16 @@ export function SaveToSheet({
   };
 
   return (
+    // onRequestClose covers Back inside the Android dialog (the Modal consumes
+    // the key press, so the reader's own Back listener never also pops the
+    // sheet); the reader keeps its sheetToken branch as a deliberate safety
+    // net for when the Modal path is unavailable — see StoryReader.useHardwareBack.
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.backdrop}>
+      {/* KeyboardAvoidingView lifts the sheet — and the inline "New list
+          name" TextInput — above the on-screen keyboard (Android padding
+          behaviour). Manual checklist: open Save to… with the keyboard up
+          on a device and confirm the input and Create button stay visible. */}
+      <KeyboardAvoidingView style={styles.backdrop} behavior="padding">
         <View style={[styles.sheet, { backgroundColor: colors.card, borderTopColor: colors.separator }]}>
           <View style={styles.head}>
             <Text style={{ color: colors.label, fontSize: 17, fontWeight: "600" }}>Save to…</Text>
@@ -97,7 +114,7 @@ export function SaveToSheet({
             </Pressable>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
