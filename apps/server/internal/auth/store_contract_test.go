@@ -9,12 +9,13 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/auth"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/auth/authtest"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/dbtest"
 )
 
 // The same behavioural contract runs against the in-memory fake and the Postgres store.
 func TestMemStoreContract(t *testing.T) {
-	storeContract(t, func(*testing.T) auth.Store { return newMemStore() })
+	storeContract(t, func(*testing.T) auth.Store { return authtest.NewMemStore() })
 }
 
 func TestPostgresStoreContract(t *testing.T) {

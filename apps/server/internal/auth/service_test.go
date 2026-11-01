@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/auth"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/auth/authtest"
 )
 
 const (
@@ -20,13 +21,13 @@ const (
 
 type fixture struct {
 	svc   *auth.Service
-	store *memStore
-	clock *fakeClock
+	store *authtest.MemStore
+	clock *authtest.FakeClock
 }
 
 func newFixture(t *testing.T) fixture {
 	t.Helper()
-	store, clock := newMemStore(), newFakeClock()
+	store, clock := authtest.NewMemStore(), authtest.NewFakeClock()
 	svc := auth.NewService(store, auth.Options{TTL: sessionTTL, Now: clock.Now})
 	if _, err := svc.CreateUser(context.Background(), "Alice", goodPassword); err != nil {
 		t.Fatalf("CreateUser: %v", err)
@@ -78,7 +79,7 @@ func TestOnlyAHashOfTheTokenIsStored(t *testing.T) {
 	f := newFixture(t)
 	sess, _ := f.svc.Login(context.Background(), "alice", goodPassword)
 
-	keys := f.store.sessionKeys()
+	keys := f.store.SessionKeys()
 	if len(keys) != 1 {
 		t.Fatalf("store holds %d sessions, want 1", len(keys))
 	}
@@ -269,7 +270,7 @@ func TestCreateUserValidatesAndRejectsDuplicates(t *testing.T) {
 }
 
 func TestBootstrapCreatesTheFirstUserOnlyWhenThereAreNone(t *testing.T) {
-	store, clock := newMemStore(), newFakeClock()
+	store, clock := authtest.NewMemStore(), authtest.NewFakeClock()
 	svc := auth.NewService(store, auth.Options{TTL: sessionTTL, Now: clock.Now})
 	ctx := context.Background()
 

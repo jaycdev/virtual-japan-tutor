@@ -1,4 +1,5 @@
-package auth_test
+// Package authtest provides in-memory test doubles for the auth package.
+package authtest
 
 import (
 	"context"
@@ -11,9 +12,9 @@ import (
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/auth"
 )
 
-// memStore is a test-only in-memory auth.Store. storeContract (store_contract_test.go)
-// runs against it and against the Postgres store, which keeps the fake honest.
-type memStore struct {
+// MemStore is an in-memory auth.Store for tests. auth's storeContract test runs against it
+// and against the Postgres store, which keeps the fake honest.
+type MemStore struct {
 	mu       sync.Mutex
 	users    map[uuid.UUID]memUser
 	sessions map[string]memSession // keyed by string(tokenHash)
@@ -29,11 +30,11 @@ type memSession struct {
 	expiresAt time.Time
 }
 
-func newMemStore() *memStore {
-	return &memStore{users: map[uuid.UUID]memUser{}, sessions: map[string]memSession{}}
+func NewMemStore() *MemStore {
+	return &MemStore{users: map[uuid.UUID]memUser{}, sessions: map[string]memSession{}}
 }
 
-func (m *memStore) usernameTaken(name string) bool {
+func (m *MemStore) usernameTaken(name string) bool {
 	for _, u := range m.users {
 		if strings.EqualFold(u.Username, name) {
 			return true
@@ -42,7 +43,7 @@ func (m *memStore) usernameTaken(name string) bool {
 	return false
 }
 
-func (m *memStore) CreateUser(_ context.Context, username, hash string) (auth.User, error) {
+func (m *MemStore) CreateUser(_ context.Context, username, hash string) (auth.User, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.usernameTaken(username) {
@@ -53,7 +54,7 @@ func (m *memStore) CreateUser(_ context.Context, username, hash string) (auth.Us
 	return u, nil
 }
 
-func (m *memStore) CreateFirstUser(_ context.Context, username, hash string) (auth.User, bool, error) {
+func (m *MemStore) CreateFirstUser(_ context.Context, username, hash string) (auth.User, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if len(m.users) > 0 {
@@ -64,7 +65,7 @@ func (m *memStore) CreateFirstUser(_ context.Context, username, hash string) (au
 	return u, true, nil
 }
 
-func (m *memStore) UserByUsername(_ context.Context, username string) (auth.User, string, error) {
+func (m *MemStore) UserByUsername(_ context.Context, username string) (auth.User, string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, u := range m.users {
@@ -75,14 +76,14 @@ func (m *memStore) UserByUsername(_ context.Context, username string) (auth.User
 	return auth.User{}, "", auth.ErrNotFound
 }
 
-func (m *memStore) CreateSession(_ context.Context, tokenHash []byte, userID uuid.UUID, _ time.Time, expiresAt time.Time) error {
+func (m *MemStore) CreateSession(_ context.Context, tokenHash []byte, userID uuid.UUID, _ time.Time, expiresAt time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.sessions[string(tokenHash)] = memSession{userID: userID, expiresAt: expiresAt}
 	return nil
 }
 
-func (m *memStore) SessionUser(_ context.Context, tokenHash []byte, now time.Time) (auth.User, error) {
+func (m *MemStore) SessionUser(_ context.Context, tokenHash []byte, now time.Time) (auth.User, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	s, ok := m.sessions[string(tokenHash)]
@@ -92,15 +93,15 @@ func (m *memStore) SessionUser(_ context.Context, tokenHash []byte, now time.Tim
 	return m.users[s.userID].User, nil
 }
 
-func (m *memStore) DeleteSession(_ context.Context, tokenHash []byte) error {
+func (m *MemStore) DeleteSession(_ context.Context, tokenHash []byte) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.sessions, string(tokenHash))
 	return nil
 }
 
-// sessionKeys exposes what the store holds, so tests can assert raw tokens are never stored.
-func (m *memStore) sessionKeys() [][]byte {
+// SessionKeys exposes what the store holds, so tests can assert raw tokens are never stored.
+func (m *MemStore) SessionKeys() [][]byte {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var keys [][]byte
@@ -110,23 +111,23 @@ func (m *memStore) sessionKeys() [][]byte {
 	return keys
 }
 
-// fakeClock is a controllable time source for expiry and lockout tests.
-type fakeClock struct {
+// FakeClock is a controllable time source for expiry and lockout tests.
+type FakeClock struct {
 	mu sync.Mutex
 	t  time.Time
 }
 
-func newFakeClock() *fakeClock {
-	return &fakeClock{t: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
+func NewFakeClock() *FakeClock {
+	return &FakeClock{t: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
 }
 
-func (c *fakeClock) Now() time.Time {
+func (c *FakeClock) Now() time.Time {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.t
 }
 
-func (c *fakeClock) Advance(d time.Duration) {
+func (c *FakeClock) Advance(d time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.t = c.t.Add(d)

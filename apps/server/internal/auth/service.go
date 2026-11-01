@@ -220,7 +220,9 @@ func (s *Service) Bootstrap(ctx context.Context, username, password string) (boo
 
 // ValidateCredentials checks the same username/password rules CreateUser enforces,
 // without touching the store (used to fail fast on bad bootstrap config).
-func ValidateCredentials(username, password string) error { return validateCredentials(username, password) }
+func ValidateCredentials(username, password string) error {
+	return validateCredentials(username, password)
+}
 
 func validateCredentials(username, password string) error {
 	if n := utf8.RuneCountInString(username); n == 0 || n > maxUsernameRunes {
