@@ -26,6 +26,7 @@ import (
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/practice"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/refdata"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/secrets"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/story"
 )
 
 func main() {
@@ -90,6 +91,11 @@ func run(args []string) error {
 	practiceSvc := practice.NewService(focus, practice.NewPostgresContent(pool),
 		practice.NewMemStore(cfg.PracticeSessionTTL), practice.NewPostgresResults(pool), cfg.Practice)
 
+	// Stories (issue #10): the background generator builds passages from the
+	// Focus Set behind the kagome validation gate; the request path only
+	// ever reads stored stories. Gate bounds come from STORY_* env vars.
+	storySvc := story.NewPostgresService(pool, ai, focus, cfg.Story, nil)
+
 	// The grammar store doubles as the JMdict-backed dictionary the example
 	// validator checks words against.
 	grammarStore := grammar.NewPostgresStore(pool)
@@ -106,9 +112,15 @@ func run(args []string) error {
 		slog.Info("marumori scheduled syncs enabled", "interval", cfg.MaruMoriSyncInterval)
 	}
 
+	if cfg.StoryEnabled {
+		storySched := story.NewScheduler(storySvc, cfg.StoryInterval, nil)
+		go storySched.Run(ctx)
+		slog.Info("story background generation enabled", "interval", cfg.StoryInterval)
+	}
+
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.New(pool, svc, httpapi.WithAIProviders(ai), httpapi.WithMaruMori(maru), httpapi.WithGrammar(grammarStore, grammarGen), httpapi.WithKnownGrammar(knownGrammar), httpapi.WithFocusSet(focus), httpapi.WithPractice(practiceSvc), httpapi.WithMaxBodyBytes(cfg.MaxBodyBytes)),
+		Handler:           httpapi.New(pool, svc, httpapi.WithAIProviders(ai), httpapi.WithMaruMori(maru), httpapi.WithGrammar(grammarStore, grammarGen), httpapi.WithKnownGrammar(knownGrammar), httpapi.WithFocusSet(focus), httpapi.WithPractice(practiceSvc), httpapi.WithStory(storySvc), httpapi.WithMaxBodyBytes(cfg.MaxBodyBytes)),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       cfg.ReadTimeout,
 		WriteTimeout:      cfg.WriteTimeout,

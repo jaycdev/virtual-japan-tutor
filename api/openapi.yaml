@@ -753,8 +753,203 @@ paths:
                 $ref: "#/components/schemas/Error"
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /stories:
+    get:
+      operationId: listStories
+      summary: A page of the Learner's Story Library, newest first
+      description: >
+        Stories the Learner has generated (issue #10), validated ones only: a Story that failed
+        the kagome validation gate is kept for analysis, never offered. Each carries its rating
+        when the Learner gave one. Generation is driven by the background scheduler — this list
+        never triggers one.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        "200":
+          description: A page of stories with the total count
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoryPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /stories/ready:
+    get:
+      operationId: getReadyStory
+      summary: The story waiting to be read, opening it instantly
+      description: >
+        The one Story the background generator has ready for the Learner, served from storage —
+        the request never waits on an AI provider. Opening it clears the ready marker, so the
+        next background pass re-arms generation. `no_ready_story` when none is waiting. All
+        `start`/`end` offsets in sentences and grammar spans are codepoint (rune) indexes into
+        each sentence's `ja` text, counting from 0 — not UTF-16 indexes or byte offsets.
+      responses:
+        "200":
+          description: The ready story
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Story"
+        "404":
+          description: No story is ready yet (code `no_ready_story`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /stories/{storyId}:
+    parameters:
+      - $ref: "#/components/parameters/StoryId"
+    get:
+      operationId: getStory
+      summary: One story from the Learner's library
+      description: >
+        Full story view: tokenised sentences (kagome tokens tagged `known`/`unknown` at
+        generation time, each with its reading and a `show_furigana` flag derived from the
+        Learner's Furigana Threshold — Known Items at or above that SRS Level render without
+        furigana), Grammar Spans, comprehension questions without their answers, and the
+        vocabulary the story covers. Unknown or another user's stories are all `not_found`.
+      responses:
+        "200":
+          description: The story
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Story"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /stories/{storyId}/rate:
+    parameters:
+      - $ref: "#/components/parameters/StoryId"
+    post:
+      operationId: rateStory
+      summary: Thumbs up or down on a story
+      description: >
+        One rating per story, replaceable: up or down. Ratings steer the genre/theme of future
+        generations — genres the Learner rated up are preferred, otherwise recent reading
+        history, otherwise the generator asks the model to surprise them.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StoryRating"
+      responses:
+        "204":
+          description: Recorded
+        "400":
+          description: Rating is neither up nor down (code `invalid_rating`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /stories/{storyId}/answers:
+    parameters:
+      - $ref: "#/components/parameters/StoryId"
+    post:
+      operationId: answerStoryQuestion
+      summary: Answer one comprehension question of a story
+      description: >
+        Grades the chosen option for the question. The first answer for a story also appends
+        one Practice Record per Focus Set vocabulary item the story covers (correct as this
+        answer's verdict), marking the story practiced — later answers only grade.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StoryAnswer"
+      responses:
+        "200":
+          description: Whether the answer was right, and whether it wrote Practice Records
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoryAnswerResult"
+        "400":
+          description: No such question or option in this story (code `invalid_question` / `invalid_answer`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /story-settings:
+    get:
+      operationId: getStorySettings
+      summary: Story settings for the Learner
+      description: >
+        The per-user Story settings: the Furigana Threshold, the SRS Level at or above which
+        Known Items appear without furigana (GLOSSARY.md). Default 3, on mastery's 1–9 scale.
+      responses:
+        "200":
+          description: Current settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorySettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      operationId: putStorySettings
+      summary: Update the Furigana Threshold
+      description: >
+        Changes how much furigana future story views show. Existing stories keep their stored
+        token SRS Levels; the threshold is applied when a story is read.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StorySettings"
+      responses:
+        "200":
+          description: The stored settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorySettings"
+        "400":
+          description: Threshold outside 0–9 (code `invalid_threshold`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 components:
   parameters:
+    StoryId:
+      name: storyId
+      in: path
+      required: true
+      description: >
+        A Story's UUID. Declared as a plain string for the same reason as ProviderId: the
+        generated router binds path parameters before auth, so the handler parses it itself
+        (404 if malformed).
+      schema:
+        type: string
     SessionId:
       name: sessionId
       in: path
@@ -1483,3 +1678,185 @@ components:
           type: string
         correct:
           type: boolean
+    StoryRating:
+      type: string
+      enum: [up, down]
+      description: A Learner's verdict on a story; upvoted genres steer future generation.
+    StorySettings:
+      type: object
+      required: [furiganaThresholdSrsLevel]
+      properties:
+        furiganaThresholdSrsLevel:
+          type: integer
+          minimum: 0
+          maximum: 9
+          description: >
+            The Furigana Threshold (GLOSSARY.md): Known Items with an SRS Level at or above this
+            value are shown without furigana; below it, and for unknown tokens, the reading is
+            shown. mastery's 1–9 scale; the default is 3.
+    StoryAnswer:
+      type: object
+      required: [questionIndex, answerIndex]
+      properties:
+        questionIndex:
+          type: integer
+          minimum: 0
+        answerIndex:
+          type: integer
+          minimum: 0
+          description: The index (from 0) into the question's optionsJa.
+    StoryAnswerResult:
+      type: object
+      required: [correct]
+      properties:
+        correct:
+          type: boolean
+        practiceRecorded:
+          type: boolean
+          description: >
+            True only for the first answer ever for this story: it appended one Practice Record
+            per Focus Set vocabulary item the story covers.
+    StoryPage:
+      type: object
+      required: [items, total, limit, offset]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Story"
+        total:
+          type: integer
+          description: How many stories exist in total (validated ones), for paging.
+        limit:
+          type: integer
+        offset:
+          type: integer
+    Story:
+      type: object
+      required: [id, genre, text, sentences, questions, vocabItems, createdAt]
+      properties:
+        id:
+          type: string
+        genre:
+          type: string
+        text:
+          type: string
+          description: The sentences' ja text joined, for plain display.
+        createdAt:
+          type: string
+          format: date-time
+        rating:
+          $ref: "#/components/schemas/StoryRating"
+          description: The Learner's own rating, when they gave one.
+        attempts:
+          type: integer
+          description: Generation attempts used (1 = validated on the first try).
+        sentences:
+          type: array
+          items:
+            $ref: "#/components/schemas/StorySentence"
+        questions:
+          type: array
+          items:
+            $ref: "#/components/schemas/StoryQuestion"
+        vocabItems:
+          type: array
+          items:
+            $ref: "#/components/schemas/StoryVocabItem"
+    StorySentence:
+      type: object
+      required: [ja, en, tokens, grammarSpans]
+      properties:
+        ja:
+          type: string
+        en:
+          type: string
+          description: English translation for comprehension help.
+        tokens:
+          type: array
+          items:
+            $ref: "#/components/schemas/StoryToken"
+        grammarSpans:
+          type: array
+          items:
+            $ref: "#/components/schemas/StoryGrammarSpan"
+    StoryToken:
+      type: object
+      required: [surface, start, end, tag, showFurigana]
+      properties:
+        surface:
+          type: string
+        start:
+          type: integer
+          description: Codepoint (rune) index into the sentence's ja text, counting from 0.
+        end:
+          type: integer
+          description: Codepoint index just past the token's last character.
+        reading:
+          type: string
+          description: The surface's kana reading (furigana material), empty when the tokeniser has none.
+        dictionary:
+          type: string
+          description: Dictionary (base) form; for linked vocabulary, the entry's headword.
+        entSeq:
+          type: integer
+          format: int64
+          description: JMdict ent_seq when the token linked to a dictionary entry. Unlinked items cannot match Known Items and count as unknown.
+        tag:
+          type: string
+          enum: [known, unknown]
+          description: Known-Item state at generation time.
+        srsLevel:
+          type: integer
+          description: MaruMori SRS Level for known linked items (drives furigana).
+        showFurigana:
+          type: boolean
+          description: >
+            Whether to render the reading: true for unknown tokens (always) and for Known Items
+            below the Learner's Furigana Threshold; false at or above it.
+    StoryQuestion:
+      type: object
+      required: [position, promptJa, optionsJa]
+      properties:
+        position:
+          type: integer
+        promptJa:
+          type: string
+        optionsJa:
+          type: array
+          items:
+            type: string
+    StoryVocabItem:
+      type: object
+      required: [entSeq, ja, isKnown, isFocus]
+      properties:
+        entSeq:
+          type: integer
+          format: int64
+        ja:
+          type: string
+        en:
+          type: string
+        isKnown:
+          type: boolean
+          description: Whether it was a Known Item at generation time.
+        isFocus:
+          type: boolean
+          description: >
+            Whether it belongs to the Focus Set the story was built around; comprehension
+            answers write Practice Records for exactly these.
+    StoryGrammarSpan:
+      type: object
+      description: >
+        A stretch of a sentence annotated with the grammar point it exercises. Offsets are
+        codepoint (rune) indexes into the sentence's ja text, counting from 0 — the same units
+        the tokeniser reports — so clients can slice and highlight without byte arithmetic.
+      required: [start, end, grammarPointId]
+      properties:
+        start:
+          type: integer
+        end:
+          type: integer
+        grammarPointId:
+          type: string
+          description: The grammar_points catalogue id.

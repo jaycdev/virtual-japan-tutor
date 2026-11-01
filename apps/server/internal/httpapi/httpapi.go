@@ -19,6 +19,7 @@ import (
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/marumorisync"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/mastery"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/practice"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/story"
 )
 
 // Pinger reports whether the database is reachable.
@@ -50,6 +51,7 @@ type server struct {
 	knownGrammar *knowngrammar.Service
 	mastery      *mastery.Service
 	practice     *practice.Service
+	story        *story.Service
 	maxBody      int64
 }
 
