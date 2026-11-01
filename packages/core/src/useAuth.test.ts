@@ -143,6 +143,25 @@ describe("useAuth: login", () => {
     expect((result.current.state as { error: string }).error).toContain("30");
   });
 
+  it("says so, and stays signed out, when the session cannot be saved on the device", async () => {
+    const storage = {
+      ...memoryTokenStorage(),
+      set: async () => {
+        throw new Error("keystore locked");
+      },
+    };
+    const { client } = fakeServer({ "POST /auth/login": loginRoute });
+    const { result } = renderHook(() => useAuth(client, storage));
+    await waitFor(() => expect(result.current.state.status).toBe("signedOut"));
+
+    await act(() => result.current.login("alice", "right-password"));
+
+    expect(result.current.state).toMatchObject({ status: "signedOut" });
+    const message = (result.current.state as { error: string }).error;
+    expect(message).toMatch(/save/i);
+    expect(message).not.toMatch(/reach/i);
+  });
+
   it("reports an unreachable server as a login error", async () => {
     const { client } = fakeServer({
       "POST /auth/login": () => {

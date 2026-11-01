@@ -88,7 +88,13 @@ export function useAuth(client: ApiClient, storage: TokenStorage): Auth {
           body: { username, password },
         });
         if (data) {
-          await storage.set(data.token);
+          try {
+            await storage.set(data.token);
+          } catch {
+            // Signing in without being able to remember it would break on the next launch.
+            setState({ status: "signedOut", error: "Could not save the session on this device" });
+            return;
+          }
           setState({ status: "signedIn", user: data.user });
         } else if (response.status === 429) {
           const secs = response.headers.get("Retry-After");
