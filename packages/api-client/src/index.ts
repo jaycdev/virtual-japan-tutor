@@ -10,6 +10,18 @@ export type AiProviderUpdate = components["schemas"]["AiProviderUpdate"];
 export type AiProviderTestResult = components["schemas"]["AiProviderTestResult"];
 export type AiTask = components["schemas"]["AiTask"];
 export type AiTaskAssignment = components["schemas"]["AiTaskAssignment"];
+export type MaruMoriStatus = components["schemas"]["MaruMoriStatus"];
+export type MaruMoriStatusCounts = components["schemas"]["MaruMoriStatusCounts"];
+export type MaruMoriCounts = components["schemas"]["MaruMoriCounts"];
+export type MaruMoriKeyRequest = components["schemas"]["MaruMoriKeyRequest"];
+export type MaruMoriSyncRun = components["schemas"]["MaruMoriSyncRun"];
+export type GrammarJLPTLevel = components["schemas"]["GrammarJLPTLevel"];
+export type GrammarPointSummary = components["schemas"]["GrammarPointSummary"];
+export type GrammarPointPage = components["schemas"]["GrammarPointPage"];
+export type GrammarExample = components["schemas"]["GrammarExample"];
+export type GrammarPointDetail = components["schemas"]["GrammarPointDetail"];
+export type CandidateRejection = components["schemas"]["CandidateRejection"];
+export type GenerationResult = components["schemas"]["GenerationResult"];
 export type ApiMiddleware = Middleware;
 
 export interface ApiClientOptions {

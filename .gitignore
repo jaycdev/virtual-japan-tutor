@@ -7,6 +7,8 @@ bin/
 .env
 .env.*
 !.env.example
+# Local mise overrides; may contain personal secrets such as live-test keys.
+.mise.local.toml
 # Downloaded reference data if you point REFDATA_CACHE_DIR / REFDATA_SOURCE_DIR inside the repo.
 .refdata-cache/
 refdata-cache/

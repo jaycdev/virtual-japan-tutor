@@ -72,6 +72,93 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/grammar/points": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Grammar points in catalogue order (level N5→N1, then catalogue number) */
+        get: operations["listGrammarPoints"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/grammar/points/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A grammar point's catalogue id. Declared as a plain string for the same reason as ProviderId: the generated router binds path parameters before auth, so the handler parses it itself (404 if malformed). */
+                id: components["parameters"]["GrammarPointId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Read a grammar point, generating missing content on first read
+         * @description When the point has no explanation yet, or holds fewer than 5 example sentences, the server asks the AI Provider assigned to the `grammar_content` task and stores what it returns: the explanation first, then validated example sentences up to 5. Existing content is never replaced. A point with no content and no assigned provider is still answered 200 with an empty `explanation` and no `examples`.
+         */
+        get: operations["getGrammarPoint"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Edit the explanation of a grammar point
+         * @description Manual edits are kept: regeneration and auto-generation never overwrite an explanation that was edited here.
+         */
+        patch: operations["updateGrammarPoint"];
+        trace?: never;
+    };
+    "/grammar/points/{id}/examples": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A grammar point's catalogue id. Declared as a plain string for the same reason as ProviderId: the generated router binds path parameters before auth, so the handler parses it itself (404 if malformed). */
+                id: components["parameters"]["GrammarPointId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate example sentences, validating each against JMdict before storing it
+         * @description Candidates are generated through the assigned AI Provider and discarded when they fail validation (the sentence or its grammar span must tokenise into known JMdict words, the span must cover part of the pattern, and its length must be 5–40 characters). Rejected candidates are reported here, never stored.
+         */
+        post: operations["generateGrammarExamples"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/grammar/points/{id}/explanation/regenerate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A grammar point's catalogue id. Declared as a plain string for the same reason as ProviderId: the generated router binds path parameters before auth, so the handler parses it itself (404 if malformed). */
+                id: components["parameters"]["GrammarPointId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Regenerate the explanation, replacing any existing one */
+        post: operations["regenerateGrammarExplanation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ai-providers": {
         parameters: {
             query?: never;
@@ -176,6 +263,84 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/marumori": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether MaruMori is connected, and what the last Sync found */
+        get: operations["getMaruMoriStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/marumori/key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Store the Learner's MaruMori API key
+         * @description The key is encrypted at rest and never returned. It is not verified here: a rejected key surfaces as a failed Sync with a clear error. Replacing the key keeps already-synced data.
+         */
+        put: operations["setMaruMoriKey"];
+        post?: never;
+        /**
+         * Stop the MaruMori connection and forget the key
+         * @description Already-synced knowledge state and Sync history are kept.
+         */
+        delete: operations["deleteMaruMoriKey"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/marumori/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sync the Learner's knowledge state from MaruMori now
+         * @description Re-reads the Learner's Known Items and SRS levels from MaruMori and records what appeared, changed level or disappeared. Item content is never fetched or stored (see ADR-0002). A Sync that starts but fails still answers 200 with `status: "failed"` and an `error`.
+         */
+        post: operations["syncMaruMori"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/marumori/syncs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The Learner's recent Sync runs, newest first */
+        get: operations["listMaruMoriSyncs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -270,6 +435,159 @@ export interface components {
             /** @enum {string} */
             database: "connected" | "unreachable";
         };
+        MaruMoriKeyRequest: {
+            /**
+             * Format: password
+             * @description The Learner's MaruMori API key. Write-only: encrypted at rest, never returned, never logged. Replaces any previously stored key.
+             */
+            apiKey: string;
+        };
+        /** @description Whether the Learner has a MaruMori API key stored, and what the most recent Sync found. `lastSync` and `counts` are null before the first successful Sync. `lastFailure` reports the most recent failed Sync only while it is newer than `lastSync`. */
+        MaruMoriStatus: {
+            /** @description Whether a MaruMori API key is stored. The key itself is never exposed. */
+            connected: boolean;
+            /** Format: date-time */
+            connectedAt?: string | null;
+            lastSync?: components["schemas"]["MaruMoriSyncRun"] | null;
+            /** @description The most recent failed Sync, shown only while it is the newest news: null when a later Sync succeeded, and null when there is no failure. Its `error` never contains the API key. */
+            lastFailure?: components["schemas"]["MaruMoriSyncRun"] | null;
+            counts?: components["schemas"]["MaruMoriStatusCounts"] | null;
+        };
+        /** @description Totals over the Learner's stored knowledge state, from the last successful Sync. */
+        MaruMoriStatusCounts: {
+            /** @description Known kanji at SRS level 1 or above. */
+            kanji: number;
+            /** @description Known vocabulary at SRS level 1 or above. */
+            vocabulary: number;
+            /** @description Share of Known vocabulary linked to a JMdict entry (0..1). */
+            vocabularyLinkRate: number;
+            /**
+             * Format: date-time
+             * @description When the data was last synced.
+             */
+            lastSyncAt?: string | null;
+        };
+        /** @description One Sync run. A run that started but could not finish is `failed` with an `error`; it is returned as a 200 body, not an HTTP error. */
+        MaruMoriSyncRun: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            status: "running" | "ok" | "failed";
+            /** Format: date-time */
+            startedAt: string;
+            /** Format: date-time */
+            finishedAt?: string | null;
+            /** @description Why the Sync failed, in Learner-facing words. Never contains the API key. */
+            error?: string | null;
+            counts?: components["schemas"]["MaruMoriCounts"] | null;
+        };
+        /** @description What one completed Sync found and stored. */
+        MaruMoriCounts: {
+            /** @description Known kanji (SRS level 1+) read from MaruMori. */
+            kanji: number;
+            /** @description Known vocabulary (SRS level 1+) read from MaruMori. */
+            vocabulary: number;
+            /** @description Grammar review SRS levels recorded. */
+            grammarReviews: number;
+            /** @description Grammar lesson SRS levels recorded. */
+            grammarLessons: number;
+            /** @description Known Items linked to a KANJIDIC or JMdict entry. */
+            linked: number;
+            /** @description Known Items kept by their MaruMori text only (no reference-data match). */
+            unlinked: number;
+            /** @description Known Items with more than one possible reference-data match; the closest by JLPT Level was chosen. */
+            ambiguous: number;
+            /** @description Known Items that appeared since the previous Sync. */
+            new: number;
+            /** @description Known Items whose SRS Level changed since the previous Sync. */
+            levelChanges: number;
+            /** @description Known Items no longer known in MaruMori; marked, never deleted. */
+            disappeared: number;
+            /** @description Items reported at SRS level 0 (learning, not Known) and therefore not stored. */
+            skippedLevelZero: number;
+        };
+        /**
+         * @description JLPT difficulty band the grammar point is catalogued under.
+         * @enum {string}
+         */
+        GrammarJLPTLevel: "N5" | "N4" | "N3" | "N2" | "N1";
+        GrammarPointSummary: {
+            /**
+             * Format: int64
+             * @description Stable catalogue id (the grammar point's number in its level).
+             */
+            id: number;
+            jlptLevel: components["schemas"]["GrammarJLPTLevel"];
+            catalogueNumber: number;
+            /** @description The teaching pattern, e.g. 〜てしまう. */
+            pattern: string;
+            meaning: string;
+            hasExplanation: boolean;
+            /** @description Number of stored, JMdict-validated example sentences. */
+            exampleCount: number;
+        };
+        GrammarPointPage: {
+            items: components["schemas"]["GrammarPointSummary"][];
+            /** @description Total grammar points matching the filter, before pagination. */
+            total: number;
+            limit: number;
+            offset: number;
+        };
+        GrammarExample: {
+            /** Format: uuid */
+            id: string;
+            sentenceJa: string;
+            translationEn: string;
+            /** @description First rune offset (0-based) of the grammar span in sentenceJa. */
+            spanStart: number;
+            /** @description Rune offset just past the last character of the grammar span. */
+            spanEnd: number;
+            /** @description sentenceJa[spanStart:spanEnd]; the part of the sentence the point explains. */
+            spanText: string;
+            /** @enum {string} */
+            source: "ai" | "manual";
+        };
+        GrammarPointDetail: {
+            /** Format: int64 */
+            id: number;
+            jlptLevel: components["schemas"]["GrammarJLPTLevel"];
+            catalogueNumber: number;
+            pattern: string;
+            meaning: string;
+            variants: string[];
+            /** @description Markdown generated by the assigned AI Provider or edited by the Learner. Empty when the point has no explanation yet (no assigned provider, or generation never succeeded). */
+            explanation: string;
+            /** @description True when the Learner edited the explanation; regeneration keeps such edits. */
+            explanationEdited: boolean;
+            examples: components["schemas"]["GrammarExample"][];
+        };
+        GrammarPointUpdate: {
+            explanation: string;
+        };
+        GenerateExamplesRequest: {
+            /** @description How many validated examples to add (default 10). */
+            count?: number;
+        };
+        CandidateRejection: {
+            /** @description Stable reason code, e.g. unknown_word (the sentence or span is not in JMdict), span_text_mismatch, span_not_in_pattern, too_short, too_long, disallowed_characters, missing_translation. */
+            code: string;
+            message: string;
+            /** @description The rejected candidate sentence, when the provider supplied one. */
+            sentence?: string;
+        };
+        GenerationResult: {
+            /** @description Candidates that passed validation this call. */
+            generated: number;
+            /** @description New examples actually stored (duplicates already on the point are not counted). */
+            stored: number;
+            /** @description Candidates discarded by validation. */
+            rejected: number;
+            rejections: components["schemas"]["CandidateRejection"][];
+            /** @description Present when generation stopped early, e.g. the per-point example cap was reached. */
+            note?: string;
+            /** @description Every example sentence stored on the point after generation. */
+            examples: components["schemas"]["GrammarExample"][];
+        };
     };
     responses: {
         /** @description Missing, invalid or expired session token */
@@ -294,6 +612,8 @@ export interface components {
     parameters: {
         /** @description An AI Provider's UUID. Declared as a plain string on purpose: the generated router binds `format: uuid` parameters before the auth middleware runs, so a malformed id would be answered 400 to an unauthenticated caller. The handler parses it (404 if malformed). */
         ProviderId: string;
+        /** @description A grammar point's catalogue id. Declared as a plain string for the same reason as ProviderId: the generated router binds path parameters before auth, so the handler parses it itself (404 if malformed). */
+        GrammarPointId: string;
     };
     requestBodies: never;
     headers: never;
@@ -420,6 +740,185 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    listGrammarPoints: {
+        parameters: {
+            query?: {
+                level?: "N5" | "N4" | "N3" | "N2" | "N1";
+                q?: string;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of grammar points with their content status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrammarPointPage"];
+                };
+            };
+            /** @description Unknown level or out-of-range limit/offset (code `bad_request`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    getGrammarPoint: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A grammar point's catalogue id. Declared as a plain string for the same reason as ProviderId: the generated router binds path parameters before auth, so the handler parses it itself (404 if malformed). */
+                id: components["parameters"]["GrammarPointId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The grammar point with its explanation and validated example sentences */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrammarPointDetail"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateGrammarPoint: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A grammar point's catalogue id. Declared as a plain string for the same reason as ProviderId: the generated router binds path parameters before auth, so the handler parses it itself (404 if malformed). */
+                id: components["parameters"]["GrammarPointId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GrammarPointUpdate"];
+            };
+        };
+        responses: {
+            /** @description The updated grammar point */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrammarPointDetail"];
+                };
+            };
+            /** @description Empty explanation or malformed body (code `bad_request`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    generateGrammarExamples: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A grammar point's catalogue id. Declared as a plain string for the same reason as ProviderId: the generated router binds path parameters before auth, so the handler parses it itself (404 if malformed). */
+                id: components["parameters"]["GrammarPointId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["GenerateExamplesRequest"];
+            };
+        };
+        responses: {
+            /** @description The newly stored examples plus counts of rejected candidates */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationResult"];
+                };
+            };
+            /** @description Out-of-range count or malformed body (code `bad_request`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description No AI Provider is assigned to the `grammar_content` task (code `no_ai_provider`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    regenerateGrammarExplanation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A grammar point's catalogue id. Declared as a plain string for the same reason as ProviderId: the generated router binds path parameters before auth, so the handler parses it itself (404 if malformed). */
+                id: components["parameters"]["GrammarPointId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The grammar point with its new explanation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrammarPointDetail"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description No AI Provider is assigned to the `grammar_content` task (code `no_ai_provider`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     listAiProviders: {
@@ -714,6 +1213,140 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+        };
+    };
+    getMaruMoriStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current MaruMori status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaruMoriStatus"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    setMaruMoriKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MaruMoriKeyRequest"];
+            };
+        };
+        responses: {
+            /** @description Key stored; the new status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaruMoriStatus"];
+                };
+            };
+            /** @description Missing or empty API key (code `invalid_key`) or malformed body */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    deleteMaruMoriKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Key removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    syncMaruMori: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The Sync run that just finished */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaruMoriSyncRun"];
+                };
+            };
+            /** @description No MaruMori API key stored yet (code `no_key`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description A Sync is already running for this Learner (code `sync_running`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listMaruMoriSyncs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Recent Sync runs (a bounded window, e.g. the last 20) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaruMoriSyncRun"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
         };
     };
 }

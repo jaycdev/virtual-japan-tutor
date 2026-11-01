@@ -47,6 +47,29 @@ function fakeApi() {
                 { task: "grammar_content", providerId: null },
               ])
             : json(401, { code: "unauthorized", message: "no" });
+        case "GET /marumori":
+          return authed
+            ? json(200, { connected: false, connectedAt: null, lastSync: null, counts: null })
+            : json(401, { code: "unauthorized", message: "no" });
+        case "GET /grammar/points":
+          return authed
+            ? json(200, {
+                items: [
+                  {
+                    id: 1,
+                    jlptLevel: "N5",
+                    catalogueNumber: 1,
+                    pattern: "〜てしまう",
+                    meaning: "end up doing",
+                    hasExplanation: false,
+                    exampleCount: 0,
+                  },
+                ],
+                total: 1,
+                limit: 50,
+                offset: 0,
+              })
+            : json(401, { code: "unauthorized", message: "no" });
         default:
           throw new Error(`unexpected ${req.method} ${path}`);
       }
@@ -122,7 +145,7 @@ describe("App", () => {
     expect(calls).toContain("POST /auth/logout");
   });
 
-  it("navigates between Home and Settings from the signed-in shell", async () => {
+  it("navigates between Home, Grammar and Settings from the signed-in shell", async () => {
     localStorage.setItem("vjt.token", "tok-1");
     renderApp();
     await screen.findByText("Signed in as alice");
@@ -131,6 +154,10 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     expect(await screen.findByRole("heading", { name: "AI providers" })).toBeTruthy();
     expect(screen.getByLabelText("Story generation")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Grammar" }));
+    expect(await screen.findByRole("heading", { name: "Grammar" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "〜てしまう" })).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Home" }));
     expect(await screen.findByText("Signed in as alice")).toBeTruthy();

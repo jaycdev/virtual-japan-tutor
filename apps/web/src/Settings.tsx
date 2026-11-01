@@ -1,5 +1,5 @@
-import type { AiProvider, AiProviderTestResult, AiTask, ApiClient } from "@vjt/api-client";
-import { useAiSettings, type ActionResult } from "@vjt/core";
+import type { AiProvider, AiProviderTestResult, AiTask, ApiClient, MaruMoriSyncRun } from "@vjt/api-client";
+import { useAiSettings, useMarumori, type ActionResult } from "@vjt/core";
 import { useState, type FormEvent } from "react";
 
 const TASK_LABELS: Record<AiTask, string> = {
@@ -18,7 +18,7 @@ interface FormValues {
 const EMPTY: FormValues = { name: "", baseUrl: "", model: "", apiKey: "", removeKey: false };
 
 /** AI Provider settings: saved endpoints, a connection test for each, and which one serves each task. */
-export function Settings({ client }: { client: ApiClient }) {
+function AiProviders({ client }: { client: ApiClient }) {
   const settings = useAiSettings(client);
   const { state } = settings;
   const [error, setError] = useState<string | undefined>();
@@ -238,6 +238,187 @@ export function Settings({ client }: { client: ApiClient }) {
           </label>
         </p>
       ))}
+    </section>
+  );
+}
+
+/** The Settings page: AI providers and the MaruMori connection. */
+export function Settings({ client }: { client: ApiClient }) {
+  return (
+    <>
+      <AiProviders client={client} />
+      <MaruMoriSettings client={client} />
+    </>
+  );
+}
+
+const outcomeText = (run: MaruMoriSyncRun): string => {
+  if (run.status === "failed") return `Sync failed: ${run.error ?? "unknown error"}`;
+  const c = run.counts;
+  if (!c) return "Sync complete";
+  return `Sync complete — ${c.new} new Known Items, ${c.levelChanges} level changes, ${c.disappeared} disappeared`;
+};
+
+const runText = (r: MaruMoriSyncRun): string =>
+  `${r.startedAt} — ${r.status}` +
+  (r.error ? ` — ${r.error}` : "") +
+  (r.counts ? ` — ${r.counts.kanji} kanji, ${r.counts.vocabulary} vocabulary` : "");
+
+/** MaruMori settings: connect with an API key, Sync knowledge state, see what the last Sync found. */
+function MaruMoriSettings({ client }: { client: ApiClient }) {
+  const maru = useMarumori(client);
+  const { state } = maru;
+  const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | undefined>();
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ ok: boolean; text: string } | undefined>();
+  const [showRuns, setShowRuns] = useState(false);
+
+  if (state.status === "loading") {
+    return (
+      <section>
+        <h2>MaruMori</h2>
+        <p>Loading…</p>
+      </section>
+    );
+  }
+  if (state.status === "error") {
+    return (
+      <section>
+        <h2>MaruMori</h2>
+        <p>Cannot load MaruMori status: {state.message}</p>
+        <button type="button" onClick={maru.reload}>
+          Retry
+        </button>
+      </section>
+    );
+  }
+  const m = state.marumori;
+
+  const saveKey = async (e: FormEvent) => {
+    e.preventDefault();
+    const trimmed = key.trim();
+    if (!trimmed) return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      const res = await maru.saveKey(trimmed); // also drops the typed key from the form on success
+      if (res.ok) setKey("");
+      else setError(res.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async () => {
+    setConfirmRemove(false);
+    setBusy(true);
+    setError(undefined);
+    try {
+      const res = await maru.removeKey();
+      if (!res.ok) setError(res.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const sync = async () => {
+    setBusy(true);
+    setError(undefined);
+    setSyncResult(undefined);
+    try {
+      const outcome = await maru.sync();
+      if (outcome.status === "error") setSyncResult({ ok: false, text: outcome.message });
+      else setSyncResult({ ok: outcome.status === "ok", text: outcomeText(outcome) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleRuns = () => {
+    if (showRuns) setShowRuns(false);
+    else {
+      setShowRuns(true);
+      maru.loadRuns();
+    }
+  };
+
+  return (
+    <section>
+      <h2>MaruMori</h2>
+      {error && <p role="alert">{error}</p>}
+      {m.connected ? <strong>Connected to MaruMori</strong> : <p>Not connected. Paste your MaruMori API key to connect.</p>}
+
+      {m.connected && m.counts && (
+        <p>
+          Known kanji: {m.counts.kanji} · Known vocabulary: {m.counts.vocabulary} · Vocabulary linked:{" "}
+          {Math.round(m.counts.vocabularyLinkRate * 100)}%
+        </p>
+      )}
+      {m.connected && m.counts?.lastSyncAt && <p>Last Sync {m.counts.lastSyncAt}</p>}
+      {m.connected && m.lastFailure && (
+        <p className="test-result failed">Last Sync failed: {m.lastFailure.error ?? "unknown error"}</p>
+      )}
+
+      <form onSubmit={(e) => void saveKey(e)}>
+        <p>
+          <label>
+            MaruMori API key
+            <input
+              name="marumoriKey"
+              type="password"
+              autoComplete="off"
+              placeholder={m.connected ? "Key saved — paste a new one to replace it" : "Your MaruMori API key"}
+              value={key}
+              onChange={(e) => setKey(e.target.value)}
+            />
+          </label>
+        </p>
+        <button type="submit" disabled={busy}>
+          Save key
+        </button>{" "}
+        {m.connected &&
+          (confirmRemove ? (
+            <>
+              <button type="button" disabled={busy} onClick={() => void remove()}>
+                Confirm remove
+              </button>{" "}
+              <button type="button" onClick={() => setConfirmRemove(false)}>
+                Keep
+              </button>
+            </>
+          ) : (
+            <button type="button" disabled={busy} onClick={() => setConfirmRemove(true)}>
+              Remove key
+            </button>
+          ))}
+      </form>
+
+      {m.connected && (
+        <p>
+          <button type="button" disabled={busy} onClick={() => void sync()}>
+            Sync now
+          </button>{" "}
+          <button type="button" onClick={toggleRuns}>
+            {showRuns ? "Hide recent Syncs" : "Show recent Syncs"}
+          </button>
+        </p>
+      )}
+      {syncResult && (
+        <p role="status" className={`test-result ${syncResult.ok ? "ok" : "failed"}`}>
+          {syncResult.text}
+        </p>
+      )}
+      {showRuns && maru.runs.status === "loading" && <p>Loading Sync history…</p>}
+      {showRuns && maru.runs.status === "error" && <p>Cannot load Sync history: {maru.runs.message}</p>}
+      {showRuns && maru.runs.status === "ready" && (
+        <ul>
+          {maru.runs.runs.map((r) => (
+            <li key={r.id}>{runText(r)}</li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }

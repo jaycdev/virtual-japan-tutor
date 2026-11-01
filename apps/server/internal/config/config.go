@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/llm"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/marumori"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/secrets"
 )
 
@@ -40,6 +41,15 @@ type Config struct {
 	AIDefaultBaseURL string
 	AIDefaultModel   string
 	AIDefaultAPIKey  string
+	// MaruMoriBaseURL is the MaruMori API base URL (env MARUMORI_API_BASE_URL, default
+	// the public API). Normalised: no trailing slash. Point it at a stand-in in tests.
+	MaruMoriBaseURL string
+	// MaruMoriSyncInterval is how often scheduled Syncs run (env MARUMORI_SYNC_INTERVAL,
+	// default 4h). Jittered per sweep by the scheduler.
+	MaruMoriSyncInterval time.Duration
+	// MaruMoriSyncEnabled gates scheduled Syncs (env MARUMORI_SYNC_ENABLED, default true).
+	// Manual Syncs from Settings work regardless.
+	MaruMoriSyncEnabled bool
 }
 
 // Load builds a Config using getenv (typically os.Getenv).
@@ -83,6 +93,9 @@ func Load(getenv func(string) string) (Config, error) {
 	if err := loadAIDefault(getenv, &cfg); err != nil {
 		return Config{}, err
 	}
+	if err := loadMaruMori(getenv, &cfg); err != nil {
+		return Config{}, err
+	}
 	return cfg, nil
 }
 
@@ -102,6 +115,28 @@ func loadAIDefault(getenv func(string) string, cfg *Config) error {
 		return fmt.Errorf("AI_DEFAULT_BASE_URL: %w", err)
 	}
 	cfg.AIDefaultBaseURL, cfg.AIDefaultModel, cfg.AIDefaultAPIKey = norm, model, key
+	return nil
+}
+
+// loadMaruMori validates the MARUMORI_* settings.
+func loadMaruMori(getenv func(string) string, cfg *Config) error {
+	base, err := marumori.NormalizeBaseURL(getenv("MARUMORI_API_BASE_URL"))
+	if err != nil {
+		return fmt.Errorf("MARUMORI_API_BASE_URL: %w", err)
+	}
+	cfg.MaruMoriBaseURL = base
+	if cfg.MaruMoriSyncInterval, err = duration(getenv, "MARUMORI_SYNC_INTERVAL", 4*time.Hour); err != nil {
+		return err
+	}
+	enabled := getenv("MARUMORI_SYNC_ENABLED")
+	if enabled == "" {
+		cfg.MaruMoriSyncEnabled = true
+		return nil
+	}
+	cfg.MaruMoriSyncEnabled, err = strconv.ParseBool(enabled)
+	if err != nil {
+		return fmt.Errorf("MARUMORI_SYNC_ENABLED: %w", err)
+	}
 	return nil
 }
 

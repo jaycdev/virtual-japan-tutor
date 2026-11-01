@@ -14,6 +14,8 @@ import (
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/aiprovider"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/api"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/auth"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/grammar"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/marumorisync"
 )
 
 // Pinger reports whether the database is reachable.
@@ -36,10 +38,13 @@ var publicRoutes = map[string]bool{
 const DefaultMaxBodyBytes = 1 << 20
 
 type server struct {
-	db      Pinger
-	auth    *auth.Service
-	ai      *aiprovider.Service
-	maxBody int64
+	db         Pinger
+	auth       *auth.Service
+	ai         *aiprovider.Service
+	marumori   *marumorisync.Service
+	grammar    grammar.Store
+	grammarGen *grammar.Generator
+	maxBody    int64
 }
 
 // WithMaxBodyBytes sets the cap applied to every request body (default 1 MiB).
@@ -50,6 +55,9 @@ type Option func(*server)
 
 // WithAIProviders enables the /ai-providers and /ai-tasks routes.
 func WithAIProviders(svc *aiprovider.Service) Option { return func(s *server) { s.ai = svc } }
+
+// WithMaruMori enables the /marumori routes.
+func WithMaruMori(svc *marumorisync.Service) Option { return func(s *server) { s.marumori = svc } }
 
 // New returns the HTTP handler serving the API defined in api/openapi.yaml.
 func New(db Pinger, authn *auth.Service, opts ...Option) http.Handler {
@@ -151,9 +159,9 @@ func (s *server) GetHealth(ctx context.Context, _ api.GetHealthRequestObject) (a
 	ctx, cancel := context.WithTimeout(ctx, pingTimeout)
 	defer cancel()
 	if err := s.db.Ping(ctx); err != nil {
-		return api.GetHealth503JSONResponse{Status: api.Degraded, Database: api.Unreachable}, nil
+		return api.GetHealth503JSONResponse{Status: api.HealthStatusDegraded, Database: api.Unreachable}, nil
 	}
-	return api.GetHealth200JSONResponse{Status: api.Ok, Database: api.Connected}, nil
+	return api.GetHealth200JSONResponse{Status: api.HealthStatusOk, Database: api.Connected}, nil
 }
 
 func (s *server) Login(ctx context.Context, req api.LoginRequestObject) (api.LoginResponseObject, error) {

@@ -1,0 +1,27 @@
+{
+  "success": true,
+  "items": [
+    { "_id": "VocabularyForms/31288892", "item": "送別会", "level": 1 },
+    { "_id": "VocabularyForms/31337856", "item": "集める", "level": 1 },
+    { "_id": "VocabularyForms/31337907", "item": "飾る", "level": 1 },
+    { "_id": "VocabularyForms/31339483", "item": "まず", "level": 2 },
+    { "_id": "VocabularyForms/31200001", "item": "日本语", "level": 3 },
+    {
+      "_id": "VocabularyForms/31400002",
+      "item": {
+        "_id": "Vocabulary/45200",
+        "_key": "45200",
+        "type": "VocabularyForms",
+        "allDefinitions": ["first (of all); firstly; to begin with"],
+        "allForms": [
+          { "main": true, "text": "先ず" },
+          { "main": false, "text": "まず" }
+        ],
+        "currentForm": { "_key": "31400002", "form": "先ず", "main": true },
+        "personalData": { "notes": "My private MaruMori note", "synonyms": ["anyways"] }
+      },
+      "level": 2
+    },
+    { "_id": "VocabularyForms/31000001", "item": "送別会", "level": 0 }
+  ]
+}

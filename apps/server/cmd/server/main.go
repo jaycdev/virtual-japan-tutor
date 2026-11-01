@@ -17,7 +17,11 @@ import (
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/auth"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/config"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/db"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/grammar"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/httpapi"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/marumori"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/marumorisync"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/refdata"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/secrets"
 )
 
@@ -64,14 +68,32 @@ func run(args []string) error {
 	}
 	ai := aiprovider.NewService(aiprovider.NewPostgresStore(pool), box)
 
+	// MaruMori Sync: the Service decrypts each learner's key per run and hands it to a
+	// fresh upstream reader (ADR-0002: knowledge state only, never item content).
+	maru := marumorisync.NewService(
+		marumorisync.NewPostgresStore(pool), box, refdata.NewStore(pool),
+		func(baseURL, apiKey string) (marumorisync.Upstream, error) { return marumori.New(baseURL, apiKey) },
+		marumorisync.WithBaseURL(cfg.MaruMoriBaseURL),
+	)
+	// The grammar store doubles as the JMdict-backed dictionary the example
+	// validator checks words against.
+	grammarStore := grammar.NewPostgresStore(pool)
+	grammarGen := grammar.NewGenerator(grammarStore, grammarStore, ai)
+
 	// Migrate (then seed the first account and the default AI Provider) in the background so
 	// the server (and /health) is up even while Postgres is still starting; retry until it
 	// succeeds or we shut down.
 	go prepareDatabase(ctx, cfg, svc, pool, ai)
 
+	if cfg.MaruMoriSyncEnabled {
+		scheduler := marumorisync.NewScheduler(maru, cfg.MaruMoriSyncInterval)
+		go scheduler.Run(ctx)
+		slog.Info("marumori scheduled syncs enabled", "interval", cfg.MaruMoriSyncInterval)
+	}
+
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.New(pool, svc, httpapi.WithAIProviders(ai), httpapi.WithMaxBodyBytes(cfg.MaxBodyBytes)),
+		Handler:           httpapi.New(pool, svc, httpapi.WithAIProviders(ai), httpapi.WithMaruMori(maru), httpapi.WithGrammar(grammarStore, grammarGen), httpapi.WithMaxBodyBytes(cfg.MaxBodyBytes)),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       cfg.ReadTimeout,
 		WriteTimeout:      cfg.WriteTimeout,

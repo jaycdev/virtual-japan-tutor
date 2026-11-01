@@ -1,0 +1,48 @@
+{
+  "success": true,
+  "counts": {
+    "total": 1240,
+    "lessons": 12,
+    "reviews": 34,
+    "levels": { "1": 120, "2": 200, "3": 300, "4": 260, "5": 180, "6": 90, "7": 50, "8": 30, "9": 10 },
+    "grammarTotal": 60,
+    "grammarLessons": 2,
+    "grammarReviews": 5,
+    "grammarLevels": { "1": 10, "2": 15, "3": 12, "4": 8, "5": 5, "6": 4, "7": 3, "8": 2, "9": 1 }
+  },
+  "stats": {
+    "kanjiLearned": 512,
+    "vocabularyLearned": 728,
+    "totalGrammarLessonsDone": 60,
+    "levelsDone": 42,
+    "totalLevels": 130,
+    "streakDays": [1714435200000, 1714521600000],
+    "lastRegion": "region-3",
+    "lastStreakRestoreTimestamp": 0
+  },
+  "timeline": [
+    { "grammar": false, "time": 1714597200000, "total": 12 },
+    { "grammar": true, "time": 1714611600000, "total": 3 }
+  ],
+  "vocabularyOfTheDay": {
+    "_id": "Vocabulary/1111111",
+    "_key": "1111111",
+    "kanji": "興味",
+    "kana": ["こうみ"],
+    "meanings": ["interest", "curiosity"],
+    "senses": [{ "glosses": ["interest", "curiosity"] }],
+    "exampleSentences": ["数学に興味がない。"]
+  },
+  "kanjiOfTheDay": {
+    "_id": "Kanji/3964299",
+    "_key": "3964299",
+    "literal": "肌",
+    "meanings": ["skin"],
+    "on": ["キ"],
+    "kun": ["はだ"],
+    "mnemonics": ["a moon over a flesh radical"]
+  },
+  "accuracy": 87.5,
+  "grammarAccurary": 91.25,
+  "hasStreakRestoreToken": true
+}

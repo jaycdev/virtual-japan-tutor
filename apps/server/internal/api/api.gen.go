@@ -11,7 +11,9 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"path"
@@ -67,6 +69,51 @@ func (e AiTask) Valid() bool {
 	}
 }
 
+// Defines values for GrammarExampleSource.
+const (
+	Ai     GrammarExampleSource = "ai"
+	Manual GrammarExampleSource = "manual"
+)
+
+// Valid indicates whether the value is a known member of the GrammarExampleSource enum.
+func (e GrammarExampleSource) Valid() bool {
+	switch e {
+	case Ai:
+		return true
+	case Manual:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GrammarJLPTLevel.
+const (
+	GrammarJLPTLevelN1 GrammarJLPTLevel = "N1"
+	GrammarJLPTLevelN2 GrammarJLPTLevel = "N2"
+	GrammarJLPTLevelN3 GrammarJLPTLevel = "N3"
+	GrammarJLPTLevelN4 GrammarJLPTLevel = "N4"
+	GrammarJLPTLevelN5 GrammarJLPTLevel = "N5"
+)
+
+// Valid indicates whether the value is a known member of the GrammarJLPTLevel enum.
+func (e GrammarJLPTLevel) Valid() bool {
+	switch e {
+	case GrammarJLPTLevelN1:
+		return true
+	case GrammarJLPTLevelN2:
+		return true
+	case GrammarJLPTLevelN3:
+		return true
+	case GrammarJLPTLevelN4:
+		return true
+	case GrammarJLPTLevelN5:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for HealthDatabase.
 const (
 	Connected   HealthDatabase = "connected"
@@ -87,16 +134,64 @@ func (e HealthDatabase) Valid() bool {
 
 // Defines values for HealthStatus.
 const (
-	Degraded HealthStatus = "degraded"
-	Ok       HealthStatus = "ok"
+	HealthStatusDegraded HealthStatus = "degraded"
+	HealthStatusOk       HealthStatus = "ok"
 )
 
 // Valid indicates whether the value is a known member of the HealthStatus enum.
 func (e HealthStatus) Valid() bool {
 	switch e {
-	case Degraded:
+	case HealthStatusDegraded:
 		return true
-	case Ok:
+	case HealthStatusOk:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MaruMoriSyncRunStatus.
+const (
+	MaruMoriSyncRunStatusFailed  MaruMoriSyncRunStatus = "failed"
+	MaruMoriSyncRunStatusOk      MaruMoriSyncRunStatus = "ok"
+	MaruMoriSyncRunStatusRunning MaruMoriSyncRunStatus = "running"
+)
+
+// Valid indicates whether the value is a known member of the MaruMoriSyncRunStatus enum.
+func (e MaruMoriSyncRunStatus) Valid() bool {
+	switch e {
+	case MaruMoriSyncRunStatusFailed:
+		return true
+	case MaruMoriSyncRunStatusOk:
+		return true
+	case MaruMoriSyncRunStatusRunning:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListGrammarPointsParamsLevel.
+const (
+	ListGrammarPointsParamsLevelN1 ListGrammarPointsParamsLevel = "N1"
+	ListGrammarPointsParamsLevelN2 ListGrammarPointsParamsLevel = "N2"
+	ListGrammarPointsParamsLevelN3 ListGrammarPointsParamsLevel = "N3"
+	ListGrammarPointsParamsLevelN4 ListGrammarPointsParamsLevel = "N4"
+	ListGrammarPointsParamsLevelN5 ListGrammarPointsParamsLevel = "N5"
+)
+
+// Valid indicates whether the value is a known member of the ListGrammarPointsParamsLevel enum.
+func (e ListGrammarPointsParamsLevel) Valid() bool {
+	switch e {
+	case ListGrammarPointsParamsLevelN1:
+		return true
+	case ListGrammarPointsParamsLevelN2:
+		return true
+	case ListGrammarPointsParamsLevelN3:
+		return true
+	case ListGrammarPointsParamsLevelN4:
+		return true
+	case ListGrammarPointsParamsLevelN5:
 		return true
 	default:
 		return false
@@ -166,11 +261,122 @@ type AiTaskAssignment struct {
 	Task AiTask `json:"task"`
 }
 
+// CandidateRejection defines model for CandidateRejection.
+type CandidateRejection struct {
+	// Code Stable reason code, e.g. unknown_word (the sentence or span is not in JMdict), span_text_mismatch, span_not_in_pattern, too_short, too_long, disallowed_characters, missing_translation.
+	Code    string `json:"code"`
+	Message string `json:"message"`
+
+	// Sentence The rejected candidate sentence, when the provider supplied one.
+	Sentence *string `json:"sentence,omitempty"`
+}
+
 // Error defines model for Error.
 type Error struct {
 	// Code Stable machine-readable error code (e.g. unauthorized, invalid_credentials, too_many_attempts).
 	Code    string `json:"code"`
 	Message string `json:"message"`
+}
+
+// GenerateExamplesRequest defines model for GenerateExamplesRequest.
+type GenerateExamplesRequest struct {
+	// Count How many validated examples to add (default 10).
+	Count *int `json:"count,omitempty"`
+}
+
+// GenerationResult defines model for GenerationResult.
+type GenerationResult struct {
+	// Examples Every example sentence stored on the point after generation.
+	Examples []GrammarExample `json:"examples"`
+
+	// Generated Candidates that passed validation this call.
+	Generated int `json:"generated"`
+
+	// Note Present when generation stopped early, e.g. the per-point example cap was reached.
+	Note *string `json:"note,omitempty"`
+
+	// Rejected Candidates discarded by validation.
+	Rejected   int                  `json:"rejected"`
+	Rejections []CandidateRejection `json:"rejections"`
+
+	// Stored New examples actually stored (duplicates already on the point are not counted).
+	Stored int `json:"stored"`
+}
+
+// GrammarExample defines model for GrammarExample.
+type GrammarExample struct {
+	Id         openapi_types.UUID   `json:"id"`
+	SentenceJa string               `json:"sentenceJa"`
+	Source     GrammarExampleSource `json:"source"`
+
+	// SpanEnd Rune offset just past the last character of the grammar span.
+	SpanEnd int `json:"spanEnd"`
+
+	// SpanStart First rune offset (0-based) of the grammar span in sentenceJa.
+	SpanStart int `json:"spanStart"`
+
+	// SpanText sentenceJa[spanStart:spanEnd]; the part of the sentence the point explains.
+	SpanText      string `json:"spanText"`
+	TranslationEn string `json:"translationEn"`
+}
+
+// GrammarExampleSource defines model for GrammarExample.Source.
+type GrammarExampleSource string
+
+// GrammarJLPTLevel JLPT difficulty band the grammar point is catalogued under.
+type GrammarJLPTLevel string
+
+// GrammarPointDetail defines model for GrammarPointDetail.
+type GrammarPointDetail struct {
+	CatalogueNumber int              `json:"catalogueNumber"`
+	Examples        []GrammarExample `json:"examples"`
+
+	// Explanation Markdown generated by the assigned AI Provider or edited by the Learner. Empty when the point has no explanation yet (no assigned provider, or generation never succeeded).
+	Explanation string `json:"explanation"`
+
+	// ExplanationEdited True when the Learner edited the explanation; regeneration keeps such edits.
+	ExplanationEdited bool  `json:"explanationEdited"`
+	Id                int64 `json:"id"`
+
+	// JlptLevel JLPT difficulty band the grammar point is catalogued under.
+	JlptLevel GrammarJLPTLevel `json:"jlptLevel"`
+	Meaning   string           `json:"meaning"`
+	Pattern   string           `json:"pattern"`
+	Variants  []string         `json:"variants"`
+}
+
+// GrammarPointPage defines model for GrammarPointPage.
+type GrammarPointPage struct {
+	Items  []GrammarPointSummary `json:"items"`
+	Limit  int                   `json:"limit"`
+	Offset int                   `json:"offset"`
+
+	// Total Total grammar points matching the filter, before pagination.
+	Total int `json:"total"`
+}
+
+// GrammarPointSummary defines model for GrammarPointSummary.
+type GrammarPointSummary struct {
+	CatalogueNumber int `json:"catalogueNumber"`
+
+	// ExampleCount Number of stored, JMdict-validated example sentences.
+	ExampleCount   int  `json:"exampleCount"`
+	HasExplanation bool `json:"hasExplanation"`
+
+	// Id Stable catalogue id (the grammar point's number in its level).
+	Id int64 `json:"id"`
+
+	// JlptLevel JLPT difficulty band the grammar point is catalogued under.
+	JlptLevel GrammarJLPTLevel `json:"jlptLevel"`
+	Meaning   string           `json:"meaning"`
+
+	// Pattern The teaching pattern, e.g. 〜てしまう.
+	Pattern string `json:"pattern"`
+}
+
+// GrammarPointUpdate defines model for GrammarPointUpdate.
+type GrammarPointUpdate struct {
+	Explanation string `json:"explanation"`
 }
 
 // Health defines model for Health.
@@ -200,11 +406,98 @@ type LoginResponse struct {
 	User  User   `json:"user"`
 }
 
+// MaruMoriCounts What one completed Sync found and stored.
+type MaruMoriCounts struct {
+	// Ambiguous Known Items with more than one possible reference-data match; the closest by JLPT Level was chosen.
+	Ambiguous int `json:"ambiguous"`
+
+	// Disappeared Known Items no longer known in MaruMori; marked, never deleted.
+	Disappeared int `json:"disappeared"`
+
+	// GrammarLessons Grammar lesson SRS levels recorded.
+	GrammarLessons int `json:"grammarLessons"`
+
+	// GrammarReviews Grammar review SRS levels recorded.
+	GrammarReviews int `json:"grammarReviews"`
+
+	// Kanji Known kanji (SRS level 1+) read from MaruMori.
+	Kanji int `json:"kanji"`
+
+	// LevelChanges Known Items whose SRS Level changed since the previous Sync.
+	LevelChanges int `json:"levelChanges"`
+
+	// Linked Known Items linked to a KANJIDIC or JMdict entry.
+	Linked int `json:"linked"`
+
+	// New Known Items that appeared since the previous Sync.
+	New int `json:"new"`
+
+	// SkippedLevelZero Items reported at SRS level 0 (learning, not Known) and therefore not stored.
+	SkippedLevelZero int `json:"skippedLevelZero"`
+
+	// Unlinked Known Items kept by their MaruMori text only (no reference-data match).
+	Unlinked int `json:"unlinked"`
+
+	// Vocabulary Known vocabulary (SRS level 1+) read from MaruMori.
+	Vocabulary int `json:"vocabulary"`
+}
+
+// MaruMoriKeyRequest defines model for MaruMoriKeyRequest.
+type MaruMoriKeyRequest struct {
+	// ApiKey The Learner's MaruMori API key. Write-only: encrypted at rest, never returned, never logged. Replaces any previously stored key.
+	ApiKey stdjson.RawMessage `json:"apiKey"`
+}
+
+// MaruMoriStatus Whether the Learner has a MaruMori API key stored, and what the most recent Sync found. `lastSync` and `counts` are null before the first successful Sync. `lastFailure` reports the most recent failed Sync only while it is newer than `lastSync`.
+type MaruMoriStatus struct {
+	// Connected Whether a MaruMori API key is stored. The key itself is never exposed.
+	Connected   bool                  `json:"connected"`
+	ConnectedAt *time.Time            `json:"connectedAt,omitempty"`
+	Counts      *MaruMoriStatusCounts `json:"counts,omitempty"`
+
+	// LastFailure The most recent failed Sync, shown only while it is the newest news: null when a later Sync succeeded, and null when there is no failure. Its `error` never contains the API key.
+	LastFailure *MaruMoriSyncRun `json:"lastFailure,omitempty"`
+	LastSync    *MaruMoriSyncRun `json:"lastSync,omitempty"`
+}
+
+// MaruMoriStatusCounts Totals over the Learner's stored knowledge state, from the last successful Sync.
+type MaruMoriStatusCounts struct {
+	// Kanji Known kanji at SRS level 1 or above.
+	Kanji int `json:"kanji"`
+
+	// LastSyncAt When the data was last synced.
+	LastSyncAt *time.Time `json:"lastSyncAt,omitempty"`
+
+	// Vocabulary Known vocabulary at SRS level 1 or above.
+	Vocabulary int `json:"vocabulary"`
+
+	// VocabularyLinkRate Share of Known vocabulary linked to a JMdict entry (0..1).
+	VocabularyLinkRate float32 `json:"vocabularyLinkRate"`
+}
+
+// MaruMoriSyncRun One Sync run. A run that started but could not finish is `failed` with an `error`; it is returned as a 200 body, not an HTTP error.
+type MaruMoriSyncRun struct {
+	Counts *MaruMoriCounts `json:"counts,omitempty"`
+
+	// Error Why the Sync failed, in Learner-facing words. Never contains the API key.
+	Error      *string               `json:"error,omitempty"`
+	FinishedAt *time.Time            `json:"finishedAt,omitempty"`
+	Id         openapi_types.UUID    `json:"id"`
+	StartedAt  time.Time             `json:"startedAt"`
+	Status     MaruMoriSyncRunStatus `json:"status"`
+}
+
+// MaruMoriSyncRunStatus defines model for MaruMoriSyncRun.Status.
+type MaruMoriSyncRunStatus string
+
 // User defines model for User.
 type User struct {
 	Id       openapi_types.UUID `json:"id"`
 	Username string             `json:"username"`
 }
+
+// GrammarPointId defines model for GrammarPointId.
+type GrammarPointId = string
 
 // ProviderId defines model for ProviderId.
 type ProviderId = string
@@ -220,6 +513,17 @@ type SetAiTaskJSONBody struct {
 	ProviderId openapi_types.UUID `json:"providerId"`
 }
 
+// ListGrammarPointsParams defines parameters for ListGrammarPoints.
+type ListGrammarPointsParams struct {
+	Level  *ListGrammarPointsParamsLevel `form:"level,omitempty" json:"level,omitempty"`
+	Q      *string                       `form:"q,omitempty" json:"q,omitempty"`
+	Limit  *int                          `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *int                          `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// ListGrammarPointsParamsLevel defines parameters for ListGrammarPoints.
+type ListGrammarPointsParamsLevel string
+
 // CreateAiProviderJSONRequestBody defines body for CreateAiProvider for application/json ContentType.
 type CreateAiProviderJSONRequestBody = AiProviderCreate
 
@@ -231,6 +535,15 @@ type SetAiTaskJSONRequestBody SetAiTaskJSONBody
 
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody = LoginRequest
+
+// UpdateGrammarPointJSONRequestBody defines body for UpdateGrammarPoint for application/json ContentType.
+type UpdateGrammarPointJSONRequestBody = GrammarPointUpdate
+
+// GenerateGrammarExamplesJSONRequestBody defines body for GenerateGrammarExamples for application/json ContentType.
+type GenerateGrammarExamplesJSONRequestBody = GenerateExamplesRequest
+
+// SetMaruMoriKeyJSONRequestBody defines body for SetMaruMoriKey for application/json ContentType.
+type SetMaruMoriKeyJSONRequestBody = MaruMoriKeyRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -267,9 +580,39 @@ type ServerInterface interface {
 	// Logout Invalidate the current session token
 	// (POST /auth/logout)
 	Logout(w http.ResponseWriter, r *http.Request)
+	// ListGrammarPoints Grammar points in catalogue order (level N5→N1, then catalogue number)
+	// (GET /grammar/points)
+	ListGrammarPoints(w http.ResponseWriter, r *http.Request, params ListGrammarPointsParams)
+	// GetGrammarPoint Read a grammar point, generating missing content on first read
+	// (GET /grammar/points/{id})
+	GetGrammarPoint(w http.ResponseWriter, r *http.Request, id GrammarPointId)
+	// UpdateGrammarPoint Edit the explanation of a grammar point
+	// (PATCH /grammar/points/{id})
+	UpdateGrammarPoint(w http.ResponseWriter, r *http.Request, id GrammarPointId)
+	// GenerateGrammarExamples Generate example sentences, validating each against JMdict before storing it
+	// (POST /grammar/points/{id}/examples)
+	GenerateGrammarExamples(w http.ResponseWriter, r *http.Request, id GrammarPointId)
+	// RegenerateGrammarExplanation Regenerate the explanation, replacing any existing one
+	// (POST /grammar/points/{id}/explanation/regenerate)
+	RegenerateGrammarExplanation(w http.ResponseWriter, r *http.Request, id GrammarPointId)
 	// GetHealth Liveness and database connectivity check
 	// (GET /health)
 	GetHealth(w http.ResponseWriter, r *http.Request)
+	// GetMaruMoriStatus Whether MaruMori is connected, and what the last Sync found
+	// (GET /marumori)
+	GetMaruMoriStatus(w http.ResponseWriter, r *http.Request)
+	// DeleteMaruMoriKey Stop the MaruMori connection and forget the key
+	// (DELETE /marumori/key)
+	DeleteMaruMoriKey(w http.ResponseWriter, r *http.Request)
+	// SetMaruMoriKey Store the Learner's MaruMori API key
+	// (PUT /marumori/key)
+	SetMaruMoriKey(w http.ResponseWriter, r *http.Request)
+	// SyncMaruMori Sync the Learner's knowledge state from MaruMori now
+	// (POST /marumori/sync)
+	SyncMaruMori(w http.ResponseWriter, r *http.Request)
+	// ListMaruMoriSyncs The Learner's recent Sync runs, newest first
+	// (GET /marumori/syncs)
+	ListMaruMoriSyncs(w http.ResponseWriter, r *http.Request)
 	// GetMe The authenticated user
 	// (GET /me)
 	GetMe(w http.ResponseWriter, r *http.Request)
@@ -510,11 +853,257 @@ func (siw *ServerInterfaceWrapper) Logout(w http.ResponseWriter, r *http.Request
 	handler.ServeHTTP(w, r)
 }
 
+// ListGrammarPoints operation middleware
+func (siw *ServerInterfaceWrapper) ListGrammarPoints(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListGrammarPointsParams
+
+	// ------------- Optional query parameter "level" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "level", r.URL.Query(), &params.Level, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "level"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "level", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "q", r.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "q"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListGrammarPoints(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetGrammarPoint operation middleware
+func (siw *ServerInterfaceWrapper) GetGrammarPoint(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id GrammarPointId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetGrammarPoint(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateGrammarPoint operation middleware
+func (siw *ServerInterfaceWrapper) UpdateGrammarPoint(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id GrammarPointId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateGrammarPoint(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GenerateGrammarExamples operation middleware
+func (siw *ServerInterfaceWrapper) GenerateGrammarExamples(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id GrammarPointId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GenerateGrammarExamples(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RegenerateGrammarExplanation operation middleware
+func (siw *ServerInterfaceWrapper) RegenerateGrammarExplanation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id GrammarPointId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RegenerateGrammarExplanation(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetHealth operation middleware
 func (siw *ServerInterfaceWrapper) GetHealth(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetHealth(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetMaruMoriStatus operation middleware
+func (siw *ServerInterfaceWrapper) GetMaruMoriStatus(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetMaruMoriStatus(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteMaruMoriKey operation middleware
+func (siw *ServerInterfaceWrapper) DeleteMaruMoriKey(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteMaruMoriKey(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetMaruMoriKey operation middleware
+func (siw *ServerInterfaceWrapper) SetMaruMoriKey(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetMaruMoriKey(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SyncMaruMori operation middleware
+func (siw *ServerInterfaceWrapper) SyncMaruMori(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SyncMaruMori(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListMaruMoriSyncs operation middleware
+func (siw *ServerInterfaceWrapper) ListMaruMoriSyncs(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListMaruMoriSyncs(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -662,6 +1251,11 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/auth/login", wrapper.Login)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/auth/logout", wrapper.Logout)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/me", wrapper.GetMe)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/grammar/points", wrapper.ListGrammarPoints)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/grammar/points/{id}", wrapper.GetGrammarPoint)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/grammar/points/{id}", wrapper.UpdateGrammarPoint)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/grammar/points/{id}/examples", wrapper.GenerateGrammarExamples)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/grammar/points/{id}/explanation/regenerate", wrapper.RegenerateGrammarExplanation)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/ai-providers", wrapper.ListAiProviders)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/ai-providers", wrapper.CreateAiProvider)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/ai-providers/{id}", wrapper.DeleteAiProvider)
@@ -671,6 +1265,11 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/ai-tasks", wrapper.ListAiTasks)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/ai-tasks/{task}", wrapper.ClearAiTask)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/ai-tasks/{task}", wrapper.SetAiTask)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/marumori", wrapper.GetMaruMoriStatus)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/marumori/key", wrapper.DeleteMaruMoriKey)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/marumori/key", wrapper.SetMaruMoriKey)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/marumori/sync", wrapper.SyncMaruMori)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/marumori/syncs", wrapper.ListMaruMoriSyncs)
 
 	return m
 }
@@ -1266,6 +1865,314 @@ func (response Logout401JSONResponse) VisitLogoutResponse(w http.ResponseWriter)
 	return err
 }
 
+type ListGrammarPointsRequestObject struct {
+	Params ListGrammarPointsParams
+}
+
+type ListGrammarPointsResponseObject interface {
+	VisitListGrammarPointsResponse(w http.ResponseWriter) error
+}
+
+type ListGrammarPoints200JSONResponse GrammarPointPage
+
+func (response ListGrammarPoints200JSONResponse) VisitListGrammarPointsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListGrammarPoints400JSONResponse Error
+
+func (response ListGrammarPoints400JSONResponse) VisitListGrammarPointsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListGrammarPoints401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListGrammarPoints401JSONResponse) VisitListGrammarPointsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGrammarPointRequestObject struct {
+	Id GrammarPointId `json:"id"`
+}
+
+type GetGrammarPointResponseObject interface {
+	VisitGetGrammarPointResponse(w http.ResponseWriter) error
+}
+
+type GetGrammarPoint200JSONResponse GrammarPointDetail
+
+func (response GetGrammarPoint200JSONResponse) VisitGetGrammarPointResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGrammarPoint401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetGrammarPoint401JSONResponse) VisitGetGrammarPointResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGrammarPoint404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetGrammarPoint404JSONResponse) VisitGetGrammarPointResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateGrammarPointRequestObject struct {
+	Id   GrammarPointId `json:"id"`
+	Body *UpdateGrammarPointJSONRequestBody
+}
+
+type UpdateGrammarPointResponseObject interface {
+	VisitUpdateGrammarPointResponse(w http.ResponseWriter) error
+}
+
+type UpdateGrammarPoint200JSONResponse GrammarPointDetail
+
+func (response UpdateGrammarPoint200JSONResponse) VisitUpdateGrammarPointResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateGrammarPoint400JSONResponse Error
+
+func (response UpdateGrammarPoint400JSONResponse) VisitUpdateGrammarPointResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateGrammarPoint401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response UpdateGrammarPoint401JSONResponse) VisitUpdateGrammarPointResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateGrammarPoint404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UpdateGrammarPoint404JSONResponse) VisitUpdateGrammarPointResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GenerateGrammarExamplesRequestObject struct {
+	Id   GrammarPointId `json:"id"`
+	Body *GenerateGrammarExamplesJSONRequestBody
+}
+
+type GenerateGrammarExamplesResponseObject interface {
+	VisitGenerateGrammarExamplesResponse(w http.ResponseWriter) error
+}
+
+type GenerateGrammarExamples200JSONResponse GenerationResult
+
+func (response GenerateGrammarExamples200JSONResponse) VisitGenerateGrammarExamplesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GenerateGrammarExamples400JSONResponse Error
+
+func (response GenerateGrammarExamples400JSONResponse) VisitGenerateGrammarExamplesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GenerateGrammarExamples401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GenerateGrammarExamples401JSONResponse) VisitGenerateGrammarExamplesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GenerateGrammarExamples404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GenerateGrammarExamples404JSONResponse) VisitGenerateGrammarExamplesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GenerateGrammarExamples409JSONResponse Error
+
+func (response GenerateGrammarExamples409JSONResponse) VisitGenerateGrammarExamplesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegenerateGrammarExplanationRequestObject struct {
+	Id GrammarPointId `json:"id"`
+}
+
+type RegenerateGrammarExplanationResponseObject interface {
+	VisitRegenerateGrammarExplanationResponse(w http.ResponseWriter) error
+}
+
+type RegenerateGrammarExplanation200JSONResponse GrammarPointDetail
+
+func (response RegenerateGrammarExplanation200JSONResponse) VisitRegenerateGrammarExplanationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegenerateGrammarExplanation401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response RegenerateGrammarExplanation401JSONResponse) VisitRegenerateGrammarExplanationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegenerateGrammarExplanation404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response RegenerateGrammarExplanation404JSONResponse) VisitRegenerateGrammarExplanationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegenerateGrammarExplanation409JSONResponse Error
+
+func (response RegenerateGrammarExplanation409JSONResponse) VisitRegenerateGrammarExplanationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetHealthRequestObject struct {
 }
 
@@ -1297,6 +2204,218 @@ func (response GetHealth503JSONResponse) VisitGetHealthResponse(w http.ResponseW
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMaruMoriStatusRequestObject struct {
+}
+
+type GetMaruMoriStatusResponseObject interface {
+	VisitGetMaruMoriStatusResponse(w http.ResponseWriter) error
+}
+
+type GetMaruMoriStatus200JSONResponse MaruMoriStatus
+
+func (response GetMaruMoriStatus200JSONResponse) VisitGetMaruMoriStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMaruMoriStatus401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetMaruMoriStatus401JSONResponse) VisitGetMaruMoriStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteMaruMoriKeyRequestObject struct {
+}
+
+type DeleteMaruMoriKeyResponseObject interface {
+	VisitDeleteMaruMoriKeyResponse(w http.ResponseWriter) error
+}
+
+type DeleteMaruMoriKey204Response struct {
+}
+
+func (response DeleteMaruMoriKey204Response) VisitDeleteMaruMoriKeyResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteMaruMoriKey401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response DeleteMaruMoriKey401JSONResponse) VisitDeleteMaruMoriKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetMaruMoriKeyRequestObject struct {
+	Body *SetMaruMoriKeyJSONRequestBody
+}
+
+type SetMaruMoriKeyResponseObject interface {
+	VisitSetMaruMoriKeyResponse(w http.ResponseWriter) error
+}
+
+type SetMaruMoriKey200JSONResponse MaruMoriStatus
+
+func (response SetMaruMoriKey200JSONResponse) VisitSetMaruMoriKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetMaruMoriKey400JSONResponse Error
+
+func (response SetMaruMoriKey400JSONResponse) VisitSetMaruMoriKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetMaruMoriKey401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response SetMaruMoriKey401JSONResponse) VisitSetMaruMoriKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SyncMaruMoriRequestObject struct {
+}
+
+type SyncMaruMoriResponseObject interface {
+	VisitSyncMaruMoriResponse(w http.ResponseWriter) error
+}
+
+type SyncMaruMori200JSONResponse MaruMoriSyncRun
+
+func (response SyncMaruMori200JSONResponse) VisitSyncMaruMoriResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SyncMaruMori400JSONResponse Error
+
+func (response SyncMaruMori400JSONResponse) VisitSyncMaruMoriResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SyncMaruMori401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response SyncMaruMori401JSONResponse) VisitSyncMaruMoriResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SyncMaruMori409JSONResponse Error
+
+func (response SyncMaruMori409JSONResponse) VisitSyncMaruMoriResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListMaruMoriSyncsRequestObject struct {
+}
+
+type ListMaruMoriSyncsResponseObject interface {
+	VisitListMaruMoriSyncsResponse(w http.ResponseWriter) error
+}
+
+type ListMaruMoriSyncs200JSONResponse []MaruMoriSyncRun
+
+func (response ListMaruMoriSyncs200JSONResponse) VisitListMaruMoriSyncsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListMaruMoriSyncs401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListMaruMoriSyncs401JSONResponse) VisitListMaruMoriSyncsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -1371,9 +2490,39 @@ type StrictServerInterface interface {
 	// Logout Invalidate the current session token
 	// (POST /auth/logout)
 	Logout(ctx context.Context, request LogoutRequestObject) (LogoutResponseObject, error)
+	// ListGrammarPoints Grammar points in catalogue order (level N5→N1, then catalogue number)
+	// (GET /grammar/points)
+	ListGrammarPoints(ctx context.Context, request ListGrammarPointsRequestObject) (ListGrammarPointsResponseObject, error)
+	// GetGrammarPoint Read a grammar point, generating missing content on first read
+	// (GET /grammar/points/{id})
+	GetGrammarPoint(ctx context.Context, request GetGrammarPointRequestObject) (GetGrammarPointResponseObject, error)
+	// UpdateGrammarPoint Edit the explanation of a grammar point
+	// (PATCH /grammar/points/{id})
+	UpdateGrammarPoint(ctx context.Context, request UpdateGrammarPointRequestObject) (UpdateGrammarPointResponseObject, error)
+	// GenerateGrammarExamples Generate example sentences, validating each against JMdict before storing it
+	// (POST /grammar/points/{id}/examples)
+	GenerateGrammarExamples(ctx context.Context, request GenerateGrammarExamplesRequestObject) (GenerateGrammarExamplesResponseObject, error)
+	// RegenerateGrammarExplanation Regenerate the explanation, replacing any existing one
+	// (POST /grammar/points/{id}/explanation/regenerate)
+	RegenerateGrammarExplanation(ctx context.Context, request RegenerateGrammarExplanationRequestObject) (RegenerateGrammarExplanationResponseObject, error)
 	// GetHealth Liveness and database connectivity check
 	// (GET /health)
 	GetHealth(ctx context.Context, request GetHealthRequestObject) (GetHealthResponseObject, error)
+	// GetMaruMoriStatus Whether MaruMori is connected, and what the last Sync found
+	// (GET /marumori)
+	GetMaruMoriStatus(ctx context.Context, request GetMaruMoriStatusRequestObject) (GetMaruMoriStatusResponseObject, error)
+	// DeleteMaruMoriKey Stop the MaruMori connection and forget the key
+	// (DELETE /marumori/key)
+	DeleteMaruMoriKey(ctx context.Context, request DeleteMaruMoriKeyRequestObject) (DeleteMaruMoriKeyResponseObject, error)
+	// SetMaruMoriKey Store the Learner's MaruMori API key
+	// (PUT /marumori/key)
+	SetMaruMoriKey(ctx context.Context, request SetMaruMoriKeyRequestObject) (SetMaruMoriKeyResponseObject, error)
+	// SyncMaruMori Sync the Learner's knowledge state from MaruMori now
+	// (POST /marumori/sync)
+	SyncMaruMori(ctx context.Context, request SyncMaruMoriRequestObject) (SyncMaruMoriResponseObject, error)
+	// ListMaruMoriSyncs The Learner's recent Sync runs, newest first
+	// (GET /marumori/syncs)
+	ListMaruMoriSyncs(ctx context.Context, request ListMaruMoriSyncsRequestObject) (ListMaruMoriSyncsResponseObject, error)
 	// GetMe The authenticated user
 	// (GET /me)
 	GetMe(ctx context.Context, request GetMeRequestObject) (GetMeResponseObject, error)
@@ -1722,6 +2871,153 @@ func (sh *strictHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ListGrammarPoints operation middleware
+func (sh *strictHandler) ListGrammarPoints(w http.ResponseWriter, r *http.Request, params ListGrammarPointsParams) {
+	var request ListGrammarPointsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListGrammarPoints(ctx, request.(ListGrammarPointsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListGrammarPoints")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListGrammarPointsResponseObject); ok {
+		if err := validResponse.VisitListGrammarPointsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetGrammarPoint operation middleware
+func (sh *strictHandler) GetGrammarPoint(w http.ResponseWriter, r *http.Request, id GrammarPointId) {
+	var request GetGrammarPointRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetGrammarPoint(ctx, request.(GetGrammarPointRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetGrammarPoint")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetGrammarPointResponseObject); ok {
+		if err := validResponse.VisitGetGrammarPointResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateGrammarPoint operation middleware
+func (sh *strictHandler) UpdateGrammarPoint(w http.ResponseWriter, r *http.Request, id GrammarPointId) {
+	var request UpdateGrammarPointRequestObject
+
+	request.Id = id
+
+	var body UpdateGrammarPointJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateGrammarPoint(ctx, request.(UpdateGrammarPointRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateGrammarPoint")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateGrammarPointResponseObject); ok {
+		if err := validResponse.VisitUpdateGrammarPointResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GenerateGrammarExamples operation middleware
+func (sh *strictHandler) GenerateGrammarExamples(w http.ResponseWriter, r *http.Request, id GrammarPointId) {
+	var request GenerateGrammarExamplesRequestObject
+
+	request.Id = id
+
+	var body GenerateGrammarExamplesJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		if !errors.Is(err, io.EOF) {
+			sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+			return
+		}
+	} else {
+		request.Body = &body
+	}
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GenerateGrammarExamples(ctx, request.(GenerateGrammarExamplesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GenerateGrammarExamples")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GenerateGrammarExamplesResponseObject); ok {
+		if err := validResponse.VisitGenerateGrammarExamplesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RegenerateGrammarExplanation operation middleware
+func (sh *strictHandler) RegenerateGrammarExplanation(w http.ResponseWriter, r *http.Request, id GrammarPointId) {
+	var request RegenerateGrammarExplanationRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RegenerateGrammarExplanation(ctx, request.(RegenerateGrammarExplanationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RegenerateGrammarExplanation")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RegenerateGrammarExplanationResponseObject); ok {
+		if err := validResponse.VisitRegenerateGrammarExplanationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetHealth operation middleware
 func (sh *strictHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 	var request GetHealthRequestObject
@@ -1739,6 +3035,133 @@ func (sh *strictHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetHealthResponseObject); ok {
 		if err := validResponse.VisitGetHealthResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetMaruMoriStatus operation middleware
+func (sh *strictHandler) GetMaruMoriStatus(w http.ResponseWriter, r *http.Request) {
+	var request GetMaruMoriStatusRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetMaruMoriStatus(ctx, request.(GetMaruMoriStatusRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetMaruMoriStatus")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetMaruMoriStatusResponseObject); ok {
+		if err := validResponse.VisitGetMaruMoriStatusResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteMaruMoriKey operation middleware
+func (sh *strictHandler) DeleteMaruMoriKey(w http.ResponseWriter, r *http.Request) {
+	var request DeleteMaruMoriKeyRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteMaruMoriKey(ctx, request.(DeleteMaruMoriKeyRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteMaruMoriKey")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteMaruMoriKeyResponseObject); ok {
+		if err := validResponse.VisitDeleteMaruMoriKeyResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SetMaruMoriKey operation middleware
+func (sh *strictHandler) SetMaruMoriKey(w http.ResponseWriter, r *http.Request) {
+	var request SetMaruMoriKeyRequestObject
+
+	var body SetMaruMoriKeyJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SetMaruMoriKey(ctx, request.(SetMaruMoriKeyRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetMaruMoriKey")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetMaruMoriKeyResponseObject); ok {
+		if err := validResponse.VisitSetMaruMoriKeyResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SyncMaruMori operation middleware
+func (sh *strictHandler) SyncMaruMori(w http.ResponseWriter, r *http.Request) {
+	var request SyncMaruMoriRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SyncMaruMori(ctx, request.(SyncMaruMoriRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SyncMaruMori")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SyncMaruMoriResponseObject); ok {
+		if err := validResponse.VisitSyncMaruMoriResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListMaruMoriSyncs operation middleware
+func (sh *strictHandler) ListMaruMoriSyncs(w http.ResponseWriter, r *http.Request) {
+	var request ListMaruMoriSyncsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListMaruMoriSyncs(ctx, request.(ListMaruMoriSyncsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListMaruMoriSyncs")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListMaruMoriSyncsResponseObject); ok {
+		if err := validResponse.VisitListMaruMoriSyncsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -1775,55 +3198,110 @@ func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"HDrsbz4BHH43+G7A1rfrfw8A",
+	"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",
+	"sPm3UCZ/GP9hnNy9u/vvAQA=",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,
