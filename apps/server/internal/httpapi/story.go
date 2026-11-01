@@ -279,7 +279,10 @@ func (s *server) GetReadingSettings(ctx context.Context, request api.GetReadingS
 	if err != nil {
 		return nil, err
 	}
-	return api.GetReadingSettings200JSONResponse{BlurTranslation: rs.BlurTranslation}, nil
+	return api.GetReadingSettings200JSONResponse{
+		BlurTranslation: rs.BlurTranslation,
+		LookupHoldMs:    rs.LookupHoldMs,
+	}, nil
 }
 
 func (s *server) PutReadingSettings(ctx context.Context, request api.PutReadingSettingsRequestObject) (api.PutReadingSettingsResponseObject, error) {
@@ -294,11 +297,23 @@ func (s *server) PutReadingSettings(ctx context.Context, request api.PutReadingS
 	if request.Body == nil {
 		return api.PutReadingSettings400JSONResponse{Code: "bad_request", Message: "blurTranslation is required"}, nil
 	}
-	rs, err := svc.PutReadingSettings(ctx, id.ID, story.ReadingSettings{BlurTranslation: request.Body.BlurTranslation})
+	// The lookup-hold threshold (issue #12) drives a client-side timer; a
+	// nonsense value would either signal every lookup or never signal, so
+	// the spec bounds it.
+	if request.Body.LookupHoldMs < 0 || request.Body.LookupHoldMs > 10000 {
+		return api.PutReadingSettings400JSONResponse{Code: "invalid_settings", Message: "lookupHoldMs must be between 0 and 10000 ms"}, nil
+	}
+	rs, err := svc.PutReadingSettings(ctx, id.ID, story.ReadingSettings{
+		BlurTranslation: request.Body.BlurTranslation,
+		LookupHoldMs:    request.Body.LookupHoldMs,
+	})
 	if err != nil {
 		return nil, err
 	}
-	return api.PutReadingSettings200JSONResponse{BlurTranslation: rs.BlurTranslation}, nil
+	return api.PutReadingSettings200JSONResponse{
+		BlurTranslation: rs.BlurTranslation,
+		LookupHoldMs:    rs.LookupHoldMs,
+	}, nil
 }
 
 // storyView maps a stored story onto the API shape. showFurigana is computed

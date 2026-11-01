@@ -86,15 +86,19 @@ func TestPostgresStoreLists(t *testing.T) {
 	}
 
 	// Names are unique per user ignoring case; another user may collide.
-	if _, err := store.Insert(ctx, user, "Travel", false); !errors.Is(err, itemlist.ErrDuplicateName) {
+	// ("travel" was deleted above, so seed a fresh name to collide with.)
+	if _, err := store.Insert(ctx, user, "food", true); err != nil {
+		t.Fatalf("Insert food: %v", err)
+	}
+	if _, err := store.Insert(ctx, user, "Food", false); !errors.Is(err, itemlist.ErrDuplicateName) {
 		t.Errorf("Insert duplicate error = %v, want ErrDuplicateName", err)
 	}
 	other := uuid.New()
 	if _, err := pool.Exec(ctx, `INSERT INTO users (id, username, password_hash) VALUES ($1, 'other', 'x')`, other); err != nil {
 		t.Fatalf("seed other user: %v", err)
 	}
-	if _, err := store.Insert(ctx, other, "travel", false); err != nil {
-		t.Errorf("other user inserting 'travel' = %v, want success (lists are per user)", err)
+	if _, err := store.Insert(ctx, other, "food", false); err != nil {
+		t.Errorf("other user inserting 'food' = %v, want success (lists are per user)", err)
 	}
 	// ByName is scoped to the user too.
 	if _, found, err := store.ByName(ctx, user, "nope"); err != nil || found {
@@ -105,7 +109,7 @@ func TestPostgresStoreLists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Lists(other): %v", err)
 	}
-	if len(lists) != 1 || lists[0].Name != "travel" {
+	if len(lists) != 1 || lists[0].Name != "food" {
 		t.Errorf("Lists(other) = %+v, want only their own row (no lazy Saved yet)", lists)
 	}
 }

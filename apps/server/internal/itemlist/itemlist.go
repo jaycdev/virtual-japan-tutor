@@ -207,6 +207,12 @@ func (s *Service) DefaultListID(ctx context.Context, userID uuid.UUID) (uuid.UUI
 	return s.store.EnsureSaved(ctx, userID)
 }
 
+// Current fetches one list by id for the caller's user, so a partial update
+// can keep the values the request omitted.
+func (s *Service) Current(ctx context.Context, userID, listID uuid.UUID) (List, bool, error) {
+	return s.store.ByID(ctx, userID, listID)
+}
+
 // Create adds a new list. Names are unique per Learner case-insensitively.
 func (s *Service) Create(ctx context.Context, userID uuid.UUID, name string, boosting bool) (List, error) {
 	n, err := normalizedName(name)
@@ -221,7 +227,7 @@ func (s *Service) Create(ctx context.Context, userID uuid.UUID, name string, boo
 	id, err := s.store.Insert(ctx, userID, n, boosting)
 	if err != nil {
 		// Close the check-insert race onto the same answer.
-		if errors.Is(err, errUniqueName) {
+		if errors.Is(err, errUniqueName) || errors.Is(err, ErrDuplicateName) {
 			return List{}, ErrDuplicateName
 		}
 		return List{}, err
@@ -256,7 +262,11 @@ func (s *Service) Update(ctx context.Context, userID, listID uuid.UUID, name str
 			return List{}, ErrDuplicateName
 		}
 	}
-	if err := s.store.Update(ctx, userID, listID, n, boosting); err != nil && !errors.Is(err, errUniqueName) {
+	if err := s.store.Update(ctx, userID, listID, n, boosting); err != nil {
+		// A race past the ByName pre-check still answers duplicate_name.
+		if errors.Is(err, errUniqueName) || errors.Is(err, ErrDuplicateName) {
+			return List{}, ErrDuplicateName
+		}
 		return List{}, err
 	}
 	return List{ID: listID, Name: n, Boosting: boosting, IsDefault: cur.IsDefault}, nil

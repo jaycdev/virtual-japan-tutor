@@ -147,23 +147,28 @@ func (c *PostgresContent) ClozeDistractors(ctx context.Context, level string, ex
 // addressed link-first, MaruMori id for unlinked; known grammar by point
 // id), so "not known" here and "known" there are the same predicate seen
 // from both sides — an item can never be a Stretch Item and a Focus Set
-// member at once. Oldest membership first keeps draws stable across
-// sessions; added_at + key tie-break is total.
+// member at once. One membership per list means an item in two Boosting
+// Lists appears twice: DISTINCT ON collapses it to its oldest membership,
+// and the outer sort keeps draws stable across sessions (added_at + key
+// tie-break is total).
 const stretchItemsSQL = `
-	SELECT m.item_kind, m.item_ref
-	FROM item_list_items m
-	JOIN item_lists l ON l.id = m.list_id
-	WHERE l.user_id = $1 AND l.boosting
-	  AND NOT (
-	    (m.item_kind = 'grammar' AND EXISTS (
-	       SELECT 1 FROM known_grammar_points p
-	       WHERE p.user_id = l.user_id AND p.grammar_point_id::text = m.item_ref))
-	    OR (m.item_kind <> 'grammar' AND EXISTS (
-	       SELECT 1 FROM marumori_known_items k
-	       WHERE k.user_id = l.user_id AND k.kind = m.item_kind AND k.disappeared_at IS NULL
-	         AND (k.jmdict_ent_seq::text = m.item_ref OR k.kanji_literal = m.item_ref OR k.marumori_id = m.item_ref)))
-	  )
-	ORDER BY m.added_at, m.item_kind, m.item_ref
+	SELECT item_kind, item_ref FROM (
+		SELECT DISTINCT ON (m.item_kind, m.item_ref) m.item_kind, m.item_ref, m.added_at
+		FROM item_list_items m
+		JOIN item_lists l ON l.id = m.list_id
+		WHERE l.user_id = $1 AND l.boosting
+		  AND NOT (
+		    (m.item_kind = 'grammar' AND EXISTS (
+		       SELECT 1 FROM known_grammar_points p
+		       WHERE p.user_id = l.user_id AND p.grammar_point_id::text = m.item_ref))
+		    OR (m.item_kind <> 'grammar' AND EXISTS (
+		       SELECT 1 FROM marumori_known_items k
+		       WHERE k.user_id = l.user_id AND k.kind = m.item_kind AND k.disappeared_at IS NULL
+		         AND (k.jmdict_ent_seq::text = m.item_ref OR k.kanji_literal = m.item_ref OR k.marumori_id = m.item_ref)))
+		  )
+		ORDER BY m.item_kind, m.item_ref, m.added_at, m.list_id
+	) t
+	ORDER BY added_at, item_kind, item_ref
 	LIMIT $2`
 
 func (c *PostgresContent) StretchItems(ctx context.Context, userID uuid.UUID, limit int) ([]mastery.ItemKey, error) {

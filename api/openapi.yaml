@@ -1163,13 +1163,18 @@ paths:
         - $ref: "#/components/parameters/ListId"
         - name: itemKind
           in: query
-          required: true
+          required: false
+          description: >
+            Declared optional only so the auth middleware runs before parameter
+            parsing; a missing value is answered 400 by the server.
           schema:
             $ref: "#/components/schemas/ItemKind"
         - name: itemRef
           in: query
-          required: true
-          description: The item's stable ref, as everywhere items are addressed.
+          required: false
+          description: >
+            The item's stable ref, as everywhere items are addressed. Missing is
+            answered 400 by the server.
           schema:
             type: string
       responses:

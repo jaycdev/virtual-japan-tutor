@@ -97,7 +97,7 @@ func (s *PostgresStore) Insert(ctx context.Context, userID uuid.UUID, name strin
 		`INSERT INTO item_lists (user_id, name, boosting) VALUES ($1, $2, $3) RETURNING id`,
 		userID, name, boosting).Scan(&id)
 	if isUniqueName(err) {
-		return uuid.Nil, errUniqueName
+		return uuid.Nil, ErrDuplicateName
 	}
 	return id, err
 }
@@ -107,7 +107,7 @@ func (s *PostgresStore) Update(ctx context.Context, userID, listID uuid.UUID, na
 		`UPDATE item_lists SET name = $3, boosting = $4 WHERE user_id = $1 AND id = $2`,
 		userID, listID, name, boosting)
 	if isUniqueName(err) {
-		return errUniqueName
+		return ErrDuplicateName
 	}
 	return err
 }
@@ -162,16 +162,15 @@ func (s *PostgresStore) RemoveItem(ctx context.Context, userID, listID uuid.UUID
 func (s *PostgresStore) IsKnownItem(ctx context.Context, userID uuid.UUID, item ItemKey) (bool, error) {
 	var exists bool
 	err := s.pool.QueryRow(ctx,
-		`SELECT EXISTS (
-		   CASE WHEN $2 = 'grammar' THEN
-		     (SELECT 1 FROM known_grammar_points p
-		       WHERE p.user_id = $1 AND p.grammar_point_id::text = $3 LIMIT 1)
-		   ELSE
-		     (SELECT 1 FROM marumori_known_items k
-		       WHERE k.user_id = $1 AND k.kind = $2 AND k.disappeared_at IS NULL
-		         AND (k.jmdict_ent_seq::text = $3 OR k.kanji_literal = $3 OR k.marumori_id = $3)
-		       LIMIT 1)
-		   END
+		`SELECT (
+		   ($2 = 'grammar' AND EXISTS (
+		     SELECT 1 FROM known_grammar_points p
+		      WHERE p.user_id = $1 AND p.grammar_point_id::text = $3))
+		   OR
+		   ($2 IN ('kanji', 'vocabulary') AND EXISTS (
+		     SELECT 1 FROM marumori_known_items k
+		      WHERE k.user_id = $1 AND k.kind = $2 AND k.disappeared_at IS NULL
+		        AND (k.jmdict_ent_seq::text = $3 OR k.kanji_literal = $3 OR k.marumori_id = $3)))
 		 )`, userID, item.Kind, item.Ref).Scan(&exists)
 	return exists, err
 }
