@@ -1,0 +1,13 @@
+{
+  "name": "@vjt/server",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Go server. This package.json only wraps Go commands so Turborepo can orchestrate them.",
+  "scripts": {
+    "generate": "go generate ./...",
+    "build": "go build -o bin/ ./cmd/server",
+    "typecheck": "go vet ./...",
+    "lint": "go vet ./... && node scripts/gofmt-check.mjs",
+    "test": "go test ./..."
+  }
+}
