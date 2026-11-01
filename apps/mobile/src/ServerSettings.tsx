@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import { normalizeServerUrl } from "./config.ts";
-import { Body, ErrorText, Field, LinkButton, Muted, PrimaryButton, Screen, Scroll, StatusText, Title } from "./ui.tsx";
+import { Body, ErrorText, Field, LinkButton, Muted, PrimaryButton, Screen, Scroll, Title } from "./ui.tsx";
 
 /**
  * The server connection (issue #13): a phone cannot use the web app's
@@ -22,11 +22,9 @@ export function ServerSettings({
   const [url, setUrl] = useState(currentUrl);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
-  const [saved, setSaved] = useState(false);
 
   const save = async () => {
     const next = normalizeServerUrl(url);
-    setSaved(false);
     if (!next) {
       setError("Enter the full address, like http://192.168.1.10:8080");
       return;
@@ -36,7 +34,6 @@ export function ServerSettings({
     try {
       await onSave(next);
       setUrl(next);
-      setSaved(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save the address");
     } finally {
@@ -60,7 +57,6 @@ export function ServerSettings({
           disabled={busy}
         />
         <PrimaryButton label="Save server" onPress={() => void save()} disabled={busy} />
-        {saved && <StatusText text="Saved — reconnected to this server." />}
         {error && <ErrorText text={error} />}
         <LinkButton
           label="Use the emulator default (http://10.0.2.2:8080)"

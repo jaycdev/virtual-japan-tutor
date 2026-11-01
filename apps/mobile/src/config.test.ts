@@ -43,4 +43,17 @@ describe("normalizeServerUrl", () => {
     expect(normalizeServerUrl("ws://example.test")).toBeNull();
     expect(normalizeServerUrl("javascript:alert(1)")).toBeNull();
   });
+
+  it("rejects urls with embedded credentials (auth is the bearer token's job)", () => {
+    expect(normalizeServerUrl("http://admin:hunter2@192.168.1.10:8080")).toBeNull();
+    expect(normalizeServerUrl("https://user@api.example.com")).toBeNull();
+  });
+});
+
+describe("resolveApiBaseUrl with a stored override", () => {
+  it("ignores a stored url that carries credentials", () => {
+    expect(
+      resolveApiBaseUrl({}, "http://admin:hunter2@192.168.1.10:8080"),
+    ).toBe("http://10.0.2.2:8080");
+  });
 });

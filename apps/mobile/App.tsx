@@ -25,13 +25,13 @@ import { ErrorText, Field, LinkButton, Muted, PrimaryButton, Screen, Scroll, Tit
  * session restoration whenever the Learner edits it in Settings → Server.
  */
 
+// One adapter pair for the whole app: the secure store is a process singleton,
+// so module scope is honest and keeps the Root props referentially stable.
+const tokenStorage = secureStoreTokenStorage(SecureStore);
+const urlStorage = secureStoreServerUrl(SecureStore);
+
 export default function App() {
-  return (
-    <Root
-      tokenStorage={secureStoreTokenStorage(SecureStore)}
-      urlStorage={secureStoreServerUrl(SecureStore)}
-    />
-  );
+  return <Root tokenStorage={tokenStorage} urlStorage={urlStorage} />;
 }
 
 /**
@@ -65,6 +65,12 @@ export function Root({
 
   const changeServerUrl = async (url: string) => {
     await urlStorage.set(url);
+    if (url !== serverUrl) {
+      // The session token was minted by the old host: forget it before the
+      // remounted tree starts talking to the new one, so its bearer token is
+      // never sent to a different server. The Learner signs in again there.
+      await tokenStorage.clear();
+    }
     setServerUrl(url);
   };
 
@@ -190,6 +196,24 @@ function ChangeServer({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
 
+  const save = async () => {
+    const next = normalizeServerUrl(url);
+    if (!next) {
+      setError("Enter the full address, like http://192.168.1.10:8080");
+      return;
+    }
+    setBusy(true);
+    setError(undefined);
+    try {
+      await onSave(next);
+      setEditing(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save the address");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (!editing) {
     return (
       <>
@@ -210,18 +234,7 @@ function ChangeServer({
       {error ? <ErrorText text={error} /> : null}
       <PrimaryButton
         label="Save server"
-        onPress={() => {
-          const next = normalizeServerUrl(url);
-          if (!next) {
-            setError("Enter the full address, like http://192.168.1.10:8080");
-            return;
-          }
-          setBusy(true);
-          void onSave(next).finally(() => {
-            setBusy(false);
-            setEditing(false);
-          });
-        }}
+        onPress={() => void save()}
         disabled={busy}
       />
       <LinkButton label="Cancel" onPress={() => setEditing(false)} />

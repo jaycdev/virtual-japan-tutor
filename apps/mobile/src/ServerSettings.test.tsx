@@ -21,7 +21,10 @@ describe('mobile ServerSettings', () => {
     await waitFor(() => {
       expect(saved).toEqual(['http://192.168.1.50:8080']);
     });
-    expect(screen.getByText('Saved — reconnected to this server.')).toBeTruthy();
+    // No "saved" banner: on a real URL change this screen unmounts when the
+    // tree rebuilds against the new address, so any success message here would
+    // fire post-unmount or lie when the address did not actually change.
+    expect(screen.queryByText(/Saved/)).toBeNull();
   });
 
   it('rejects an invalid URL without saving', async () => {

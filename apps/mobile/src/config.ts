@@ -30,5 +30,8 @@ export function normalizeServerUrl(input: string): string | null {
     return null;
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+  // Embedded credentials would leak into the on-screen "Server:" lines and into
+  // every request's URL; the API never needs them (auth is via bearer token).
+  if (parsed.username || parsed.password) return null;
   return trimmed.replace(/\/+$/, "");
 }

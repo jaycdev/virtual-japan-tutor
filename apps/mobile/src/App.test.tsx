@@ -26,6 +26,12 @@ function fakeStore(initial: Record<string, string> = {}): SecureStoreLike & {
 
 const USER = { username: 'learner', roles: ['student'] };
 
+interface LoggedRequest {
+  url: string;
+  method: string;
+  authorization: string | null;
+}
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -35,9 +41,15 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 // Minimal stand-in for the Go server: login, /me session check, one practice
 // session (the tab shell loads Practice immediately), item-list plumbing 404s.
-function makeFetch(): typeof fetch {
+// Every request is recorded so tests can assert which host saw what.
+function makeFetch(log: LoggedRequest[]): typeof fetch {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const request = new Request(input, init);
+    log.push({
+      url: request.url,
+      method: request.method,
+      authorization: request.headers.get('authorization'),
+    });
     const path = new URL(request.url).pathname;
     if (request.method === 'POST' && path === '/auth/login') {
       const body = (await request.json()) as { username: string; password: string };
@@ -79,9 +91,11 @@ async function submitLogin(username: string, password: string) {
 
 describe('mobile App', () => {
   let fetchMock: typeof fetch;
+  let logged: LoggedRequest[];
 
   beforeEach(() => {
-    fetchMock = makeFetch();
+    logged = [];
+    fetchMock = makeFetch(logged);
   });
 
   it('shows the login screen when no session token is stored', async () => {
@@ -158,7 +172,7 @@ describe('mobile App', () => {
     expect(screen.getByText(/Server address: http:\/\/10\.0\.2\.2:8080/)).toBeTruthy();
   });
 
-  it('persists a new server address from Settings and reconnects', async () => {
+  it('persists a new server address, drops the old session, and talks only to the new host', async () => {
     const store = fakeStore({ 'vjt.token': 'session-1' });
     renderApp(store, fetchMock);
 
@@ -175,13 +189,63 @@ describe('mobile App', () => {
     await waitFor(() => {
       expect(store.dump()['vjt.serverUrl']).toBe('http://192.168.1.50:8080');
     });
-    // The remounted tree restores the session against the new address.
+    // The old host minted the session token, so changing the address forgets it…
+    await waitFor(() => {
+      expect(store.dump()['vjt.token']).toBeUndefined();
+    });
+    // …the rebuilt tree lands on the login form, and nothing — least of all a
+    // bearer token from the previous server — ever reached the new host.
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Log in' })).toBeTruthy();
+    });
+    expect(logged.filter((r) => r.url.startsWith('http://192.168.1.50:8080'))).toEqual([]);
+
+    // Signing in again resumes the session against the new base URL.
+    await submitLogin('learner', 'hunter2');
     await waitFor(() => {
       expect(screen.getByRole('tab', { name: 'Practice' })).toBeTruthy();
     });
+    expect(logged.some((r) => r.url === 'http://192.168.1.50:8080/auth/login')).toBe(true);
   });
 
-  it('ships production wiring that reads the real secure store', () => {
-    expect(<App />).toBeTruthy();
+  it('shows an error when saving a new server address fails', async () => {
+    const store = fakeStore();
+    const failingUrlStorage = {
+      get: async () => null,
+      set: async () => {
+        throw new Error('Could not remember the address');
+      },
+    };
+    render(
+      <Root
+        tokenStorage={secureStoreTokenStorage(store)}
+        urlStorage={failingUrlStorage}
+        fetchOverride={fetchMock}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Log in' })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Change server' }));
+    fireEvent.change(screen.getByLabelText('Server address'), {
+      target: { value: 'http://192.168.1.50:8080' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save server' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Could not remember the address')).toBeTruthy();
+    });
+    // Still editing, so the Learner can fix the address.
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy();
+  });
+
+  it('the default export wires the real secure-store adapters', async () => {
+    // The test-harness expo-secure-store stub holds no token, so the production
+    // App (no props injected) must hydrate and land on the login form.
+    render(<App />);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Log in' })).toBeTruthy();
+    });
   });
 });
