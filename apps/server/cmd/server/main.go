@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -10,26 +11,41 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/auth"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/config"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/db"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/httpapi"
 )
 
 func main() {
-	if err := run(); err != nil {
+	if err := run(os.Args[1:]); err != nil {
 		slog.Error("server failed", "err", err)
 		os.Exit(1)
 	}
 }
 
-func run() error {
+// run serves the API, or runs a subcommand (`create-user`).
+func run(args []string) error {
 	cfg, err := config.Load(os.Getenv)
 	if err != nil {
 		return err
 	}
+	// Fail fast on a bootstrap account we could never create.
+	if cfg.BootstrapUsername != "" {
+		if err := auth.ValidateCredentials(cfg.BootstrapUsername, cfg.BootstrapPassword); err != nil {
+			return fmt.Errorf("VJT_BOOTSTRAP_USERNAME / VJT_BOOTSTRAP_PASSWORD: %w", err)
+		}
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	if len(args) > 0 {
+		if args[0] != "create-user" {
+			return fmt.Errorf("unknown command %q (available: create-user)", args[0])
+		}
+		return createUserCmd(ctx, cfg, args[1:])
+	}
 
 	pool, err := db.Open(ctx, cfg.DatabaseURL)
 	if err != nil {
@@ -37,13 +53,15 @@ func run() error {
 	}
 	defer pool.Close()
 
-	// Migrate in the background so the server (and /health) is up even while
-	// Postgres is still starting; retry until it succeeds or we shut down.
-	go migrateWithRetry(ctx, cfg.DatabaseURL)
+	svc := auth.NewService(auth.NewPostgresStore(pool), auth.Options{TTL: cfg.SessionTTL})
+
+	// Migrate (then seed the first account) in the background so the server (and /health)
+	// is up even while Postgres is still starting; retry until it succeeds or we shut down.
+	go prepareDatabase(ctx, cfg, svc)
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.New(pool),
+		Handler:           httpapi.New(pool, svc),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       cfg.ReadTimeout,
 		WriteTimeout:      cfg.WriteTimeout,
@@ -71,17 +89,40 @@ func run() error {
 	return nil
 }
 
-func migrateWithRetry(ctx context.Context, url string) {
+func prepareDatabase(ctx context.Context, cfg config.Config, svc *auth.Service) {
+	if !retry(ctx, "migration", func() error { return db.Migrate(ctx, cfg.DatabaseURL) }) {
+		return
+	}
+	slog.Info("migrations applied")
+
+	if cfg.BootstrapUsername == "" {
+		return
+	}
+	var created bool
+	if !retry(ctx, "bootstrap user", func() (err error) {
+		created, err = svc.Bootstrap(ctx, cfg.BootstrapUsername, cfg.BootstrapPassword)
+		return err
+	}) {
+		return
+	}
+	if created {
+		slog.Info("created bootstrap user", "username", cfg.BootstrapUsername)
+	} else {
+		slog.Info("bootstrap user skipped: users already exist")
+	}
+}
+
+// retry runs fn with backoff until it succeeds (true) or ctx is cancelled (false).
+func retry(ctx context.Context, what string, fn func() error) bool {
 	for delay := time.Second; ; delay = min(delay*2, 15*time.Second) {
-		err := db.Migrate(ctx, url)
+		err := fn()
 		if err == nil {
-			slog.Info("migrations applied")
-			return
+			return true
 		}
-		slog.Warn("migration failed, retrying", "err", err, "in", delay)
+		slog.Warn(what+" failed, retrying", "err", err, "in", delay)
 		select {
 		case <-ctx.Done():
-			return
+			return false
 		case <-time.After(delay):
 		}
 	}

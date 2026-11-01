@@ -7,11 +7,11 @@ import (
 
 func TestReadPasswordLineTakesTheFirstLineWithoutTheNewline(t *testing.T) {
 	for in, want := range map[string]string{
-		"s3cret-pass\n":          "s3cret-pass",
-		"s3cret-pass\r\n":        "s3cret-pass",
-		"s3cret-pass":            "s3cret-pass", // no trailing newline (e.g. printf)
-		"with spaces inside \n":  "with spaces inside ",
-		"first\nsecond\n":        "first",
+		"s3cret-pass\n":         "s3cret-pass",
+		"s3cret-pass\r\n":       "s3cret-pass",
+		"s3cret-pass":           "s3cret-pass", // no trailing newline (e.g. printf)
+		"with spaces inside \n": "with spaces inside ",
+		"first\nsecond\n":       "first",
 	} {
 		got, err := readPasswordLine(strings.NewReader(in))
 		if err != nil || got != want {
