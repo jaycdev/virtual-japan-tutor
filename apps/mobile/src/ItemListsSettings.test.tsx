@@ -1,6 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
+import { fakeBackHandler } from '../test/back-handler-fake.ts';
+import { setBackHandlerForTests } from './hardwareBack.ts';
 import { ItemListsSettings } from './ItemListsSettings.tsx';
 import { createApiClient } from '@vjt/api-client';
 
@@ -27,6 +29,8 @@ function jsonResponse(body: unknown, status = 200): Response {
 const noContent = () => new Response(null, { status: 204 });
 
 describe('mobile ItemListsSettings', () => {
+  afterEach(() => setBackHandlerForTests(undefined));
+
   let fetchMock: ReturnType<typeof vi.fn>;
   let lists: FakeList[];
   let members: Record<string, FakeMember[]>;
@@ -300,5 +304,20 @@ describe('mobile ItemListsSettings', () => {
       expect(screen.getByRole('button', { name: 'Saved' })).toBeTruthy();
     });
     expect(screen.queryByRole('button', { name: 'Textbook ch. 1' })).toBeNull();
+  });
+
+  it('pops an open list back to the master view on hardware Back', async () => {
+    const back = fakeBackHandler();
+    setBackHandlerForTests(back);
+    renderApp();
+    await openList('Textbook ch. 1');
+
+    expect(screen.getByRole('button', { name: 'Close Item Lists' })).toBeTruthy();
+    expect(back.press()).toBe(true);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Saved' })).toBeTruthy();
+    });
+    // Master view again: no listener, so Android's default (leave the app) stands.
+    expect(back.press()).toBe(false);
   });
 });

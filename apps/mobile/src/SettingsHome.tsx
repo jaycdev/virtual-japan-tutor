@@ -1,7 +1,8 @@
 import type { ApiClient } from "@vjt/api-client";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 import { AiProvidersSettings } from "./AiProvidersSettings.tsx";
+import { useHardwareBack } from "./hardwareBack.ts";
 import { ItemListsSettings } from "./ItemListsSettings.tsx";
 import { MaruMoriSettings } from "./MaruMoriSettings.tsx";
 import { ReadingSettingsSection } from "./ReadingSettingsSection.tsx";
@@ -32,7 +33,10 @@ export function SettingsHome({
   onSaveServerUrl: (url: string) => Promise<void>;
 }) {
   const [section, setSection] = useState<Section | null>(null);
-  const back = () => setSection(null);
+  const back = useCallback(() => setSection(null), []);
+  // Hardware Back pops a drill-in back to the hub; on the hub itself no
+  // listener is attached, so Android's default (leave Settings) stands.
+  useHardwareBack(section !== null, back);
 
   if (section === "marumori") return <MaruMoriSettings client={client} onBack={back} />;
   if (section === "ai") return <AiProvidersSettings client={client} onBack={back} />;

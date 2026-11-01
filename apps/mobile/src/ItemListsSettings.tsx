@@ -1,8 +1,8 @@
 import type { ApiClient, ItemList, ItemListMember, components } from "@vjt/api-client";
 import { useItemLists, type ActionResult } from "@vjt/core";
-import { useEffect, useState } from "react";
-import { FlatList } from "react-native";
+import { useCallback, useEffect, useState } from "react";
 
+import { useHardwareBack } from "./hardwareBack.ts";
 import { Body, Card, Chip, ChipRow, ErrorText, Field, LinkButton, Muted, PrimaryButton, Row, Screen, Scroll, SectionTitle, StatusText, Title, ToggleRow } from "./ui.tsx";
 
 type ItemKind = components["schemas"]["ItemKind"];
@@ -34,6 +34,10 @@ interface MembersState {
 export function ItemListsSettings({ client, onBack }: { client: ApiClient; onBack: () => void }) {
   const lists = useItemLists(client);
   const [openId, setOpenId] = useState<string | null>(null);
+  const closeDetail = useCallback(() => setOpenId(null), []);
+  // Hardware Back pops the open list back to the master view; on the master
+  // (and on the section's own Back header button) nothing overrides Android.
+  useHardwareBack(openId !== null, closeDetail);
 
   const open =
     lists.state.status === "ready"
@@ -50,7 +54,7 @@ export function ItemListsSettings({ client, onBack }: { client: ApiClient; onBac
         lists={lists}
         list={open}
         isDefault={lists.state.status === "ready" && lists.state.defaultListId === open.id}
-        onBackToLists={() => setOpenId(null)}
+        onBackToLists={closeDetail}
         onSectionBack={onBack}
       />
     );
@@ -226,7 +230,6 @@ function ItemListDetail({
   };
 
   const shown = members?.listId === list.id ? members : null;
-  // Narrowed once so the FlatList renderItem closure sees a non-null array.
   const memberRows = shown?.rows ?? null;
 
   return (
@@ -302,26 +305,25 @@ function ItemListDetail({
           </>
         ) : memberRows ? (
           <Card>
-            <FlatList
-              scrollEnabled={false}
-              data={memberRows}
-              keyExtractor={(m) => `${m.itemKind}:${m.itemRef}`}
-              renderItem={({ item, index }) => (
-                <Row
-                  label={item.surface}
-                  hint={item.gloss ?? undefined}
-                  right={
-                    <LinkButton
-                      label={`Remove ${item.surface}`}
-                      onPress={() => void removeMember(item)}
-                      disabled={busy}
-                      danger
-                    />
-                  }
-                  last={index === memberRows.length - 1}
-                />
-              )}
-            />
+            {/* Plain keyed rows: a virtualized FlatList inside the screen's
+                Scroll is exactly the nested-scroll pattern it warns about,
+                and these lists are short enough to map directly. */}
+            {memberRows.map((item) => (
+              <Row
+                key={`${item.itemKind}:${item.itemRef}`}
+                label={item.surface}
+                hint={item.gloss ?? undefined}
+                right={
+                  <LinkButton
+                    label={`Remove ${item.surface}`}
+                    onPress={() => void removeMember(item)}
+                    disabled={busy}
+                    danger
+                  />
+                }
+                last={item === memberRows[memberRows.length - 1]}
+              />
+            ))}
             {memberRows.length === 0 && <Body text="No items yet." />}
           </Card>
         ) : (

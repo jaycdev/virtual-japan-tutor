@@ -259,6 +259,7 @@ export function Row({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityHint={hint}
       onPress={onPress}
       style={({ pressed }) => pressed && styles.pressed}
     >
@@ -303,7 +304,7 @@ export function ToggleRow({
   );
 }
 
-/** Small pill for a single choice among a few values (furigana 0–9). */
+/** Small pill for a single choice among a few values (furigana 1–9). */
 export function Chip({
   label,
   selected,
@@ -380,7 +381,7 @@ const styles = StyleSheet.create({
   rowHint: { fontSize: 13 },
   rowRight: { flexDirection: "row", alignItems: "center", gap: 8 },
   chip: {
-    minHeight: 36,
+    minHeight: MIN_TOUCH,
     minWidth: 44,
     borderRadius: 18,
     borderWidth: 1,
