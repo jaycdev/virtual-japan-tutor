@@ -314,7 +314,7 @@ func (s *Store) GrammarPointIDsAtOrBelow(ctx context.Context, level Level) ([]in
 	const jlptOrder = `array_position(ARRAY['N5','N4','N3','N2','N1'], jlpt_level)`
 	rows, err := s.q.Query(ctx, `
 		SELECT id FROM grammar_points
-		WHERE `+jlptOrder+` <= `+jlptOrder+`
+		WHERE `+jlptOrder+` <= array_position(ARRAY['N5','N4','N3','N2','N1'], $1)
 		ORDER BY `+jlptOrder+`, catalogue_number, ordinal`, string(level))
 	if err != nil {
 		return nil, fmt.Errorf("grammar ids at or below %s: %w", level, err)

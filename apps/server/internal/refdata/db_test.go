@@ -65,7 +65,7 @@ func TestImportPopulatesEveryTable(t *testing.T) {
 		"jlpt_vocab_links":   7,
 		"jlpt_kanji":         6,
 		"pitch_accents":      18,
-		"grammar_points":     10,
+		"grammar_points":     12,
 	}
 	if !reflect.DeepEqual(counts, want) {
 		t.Errorf("row counts\n got %v\nwant %v", counts, want)
@@ -120,7 +120,7 @@ func TestImportOnlyRunsTheRequestedDatasets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if counts["grammar_points"] != 10 || counts["jmdict_entries"] != 0 || counts["import_runs"] != 1 {
+	if counts["grammar_points"] != 12 || counts["jmdict_entries"] != 0 || counts["import_runs"] != 1 {
 		t.Errorf("counts = %v", counts)
 	}
 }
@@ -387,6 +387,42 @@ func TestGrammarLookup(t *testing.T) {
 			t.Errorf("%+v %v", got, err)
 		}
 	})
+}
+
+// Seeded Grammar (issue #6) selects the Catalogue through this method, so the
+// Starting Level must bound the result by JLPT Level: N4 covers N5 and N4 only.
+// Fixture ids, easiest first: N5 1-4, N4 5-7, N3 8-10, N2 11, N1 12.
+func TestGrammarPointIDsAtOrBelow(t *testing.T) {
+	ctx := context.Background()
+	store := refdata.NewStore(importedPool(t))
+
+	all := []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}
+	for _, tc := range []struct {
+		level refdata.Level
+		want  []int64
+	}{
+		{refdata.N5, []int64{1, 2, 3, 4}},
+		// The review case: N5+N4 points, and none of the N3, N2 or N1 ones.
+		{refdata.N4, []int64{1, 2, 3, 4, 5, 6, 7}},
+		{refdata.N3, []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}},
+		{refdata.N2, all[:11]},
+		{refdata.N1, all},
+	} {
+		got, err := store.GrammarPointIDsAtOrBelow(ctx, tc.level)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.level, err)
+		}
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%s = %v, want %v", tc.level, got, tc.want)
+		}
+	}
+
+	// An unknown Level matches no array position, so it selects nothing
+	// rather than everything.
+	got, err := store.GrammarPointIDsAtOrBelow(ctx, refdata.Level("N6"))
+	if err != nil || len(got) != 0 {
+		t.Errorf("N6 = %v, %v, want nothing", got, err)
+	}
 }
 
 func TestCoverageReportsWhatMatchedAndWhatDidNot(t *testing.T) {

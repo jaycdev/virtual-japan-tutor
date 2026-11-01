@@ -75,9 +75,9 @@ func TestParseGrammarCSV(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Blank rows and the source note column are ignored: 10 real rows.
-	if len(points) != 10 {
-		t.Fatalf("got %d points, want 10", len(points))
+	// Blank rows and the source note column are ignored: 12 real rows.
+	if len(points) != 12 {
+		t.Fatalf("got %d points, want 12", len(points))
 	}
 
 	first := points[0]
