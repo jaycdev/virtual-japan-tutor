@@ -15,6 +15,7 @@ import (
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/api"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/auth"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/grammar"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/knowngrammar"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/marumorisync"
 )
 
@@ -38,13 +39,14 @@ var publicRoutes = map[string]bool{
 const DefaultMaxBodyBytes = 1 << 20
 
 type server struct {
-	db         Pinger
-	auth       *auth.Service
-	ai         *aiprovider.Service
-	marumori   *marumorisync.Service
-	grammar    grammar.Store
-	grammarGen *grammar.Generator
-	maxBody    int64
+	db           Pinger
+	auth         *auth.Service
+	ai           *aiprovider.Service
+	marumori     *marumorisync.Service
+	grammar      grammar.Store
+	grammarGen   *grammar.Generator
+	knownGrammar *knowngrammar.Service
+	maxBody      int64
 }
 
 // WithMaxBodyBytes sets the cap applied to every request body (default 1 MiB).
@@ -58,6 +60,12 @@ func WithAIProviders(svc *aiprovider.Service) Option { return func(s *server) { 
 
 // WithMaruMori enables the /marumori routes.
 func WithMaruMori(svc *marumorisync.Service) Option { return func(s *server) { s.marumori = svc } }
+
+// WithKnownGrammar enables the /starting-level and /grammar/review routes
+// (issue #6: onboarding and Observed Grammar review).
+func WithKnownGrammar(svc *knowngrammar.Service) Option {
+	return func(s *server) { s.knownGrammar = svc }
+}
 
 // New returns the HTTP handler serving the API defined in api/openapi.yaml.
 func New(db Pinger, authn *auth.Service, opts ...Option) http.Handler {

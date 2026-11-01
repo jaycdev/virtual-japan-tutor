@@ -19,6 +19,7 @@ import (
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/db"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/grammar"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/httpapi"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/knowngrammar"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/marumori"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/marumorisync"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/refdata"
@@ -70,10 +71,13 @@ func run(args []string) error {
 
 	// MaruMori Sync: the Service decrypts each learner's key per run and hands it to a
 	// fresh upstream reader (ADR-0002: knowledge state only, never item content).
+	refStore := refdata.NewStore(pool)
+	knownGrammar := knowngrammar.NewService(knowngrammar.NewPostgresStore(pool), refStore, refdata.NormalisePattern)
 	maru := marumorisync.NewService(
-		marumorisync.NewPostgresStore(pool), box, refdata.NewStore(pool),
+		marumorisync.NewPostgresStore(pool), box, refStore,
 		func(baseURL, apiKey string) (marumorisync.Upstream, error) { return marumori.New(baseURL, apiKey) },
 		marumorisync.WithBaseURL(cfg.MaruMoriBaseURL),
+		marumorisync.WithGrammarObserver(knownGrammar),
 	)
 	// The grammar store doubles as the JMdict-backed dictionary the example
 	// validator checks words against.
@@ -93,7 +97,7 @@ func run(args []string) error {
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.New(pool, svc, httpapi.WithAIProviders(ai), httpapi.WithMaruMori(maru), httpapi.WithGrammar(grammarStore, grammarGen), httpapi.WithMaxBodyBytes(cfg.MaxBodyBytes)),
+		Handler:           httpapi.New(pool, svc, httpapi.WithAIProviders(ai), httpapi.WithMaruMori(maru), httpapi.WithGrammar(grammarStore, grammarGen), httpapi.WithKnownGrammar(knownGrammar), httpapi.WithMaxBodyBytes(cfg.MaxBodyBytes)),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       cfg.ReadTimeout,
 		WriteTimeout:      cfg.WriteTimeout,
