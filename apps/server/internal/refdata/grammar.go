@@ -24,7 +24,7 @@ type GrammarPoint struct {
 	Number  int // catalogue number within the level, as in the spreadsheet
 	Ordinal int // 1-based occurrence of NormalisedPattern within Level
 
-	Pattern  string   // as written in the spreadsheet
+	Pattern  string // as written in the spreadsheet
 	Romaji   string
 	Meaning  string
 	Variants []string // Pattern split on ・ and / (see SplitVariants)
