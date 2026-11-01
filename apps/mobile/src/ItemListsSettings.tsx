@@ -226,6 +226,8 @@ function ItemListDetail({
   };
 
   const shown = members?.listId === list.id ? members : null;
+  // Narrowed once so the FlatList renderItem closure sees a non-null array.
+  const memberRows = shown?.rows ?? null;
 
   return (
     <Screen>
@@ -298,11 +300,11 @@ function ItemListDetail({
             <ErrorText text={shown.error} />
             <LinkButton label="Retry" onPress={() => void reread()} />
           </>
-        ) : shown?.rows ? (
+        ) : memberRows ? (
           <Card>
             <FlatList
               scrollEnabled={false}
-              data={shown.rows}
+              data={memberRows}
               keyExtractor={(m) => `${m.itemKind}:${m.itemRef}`}
               renderItem={({ item, index }) => (
                 <Row
@@ -316,11 +318,11 @@ function ItemListDetail({
                       danger
                     />
                   }
-                  last={index === shown.rows.length - 1}
+                  last={index === memberRows.length - 1}
                 />
               )}
             />
-            {shown.rows.length === 0 && <Body text="No items yet." />}
+            {memberRows.length === 0 && <Body text="No items yet." />}
           </Card>
         ) : (
           <Muted text="Loading items…" />
