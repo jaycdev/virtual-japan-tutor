@@ -59,7 +59,7 @@ type env struct {
 	now   time.Time
 }
 
-func newEnv(t *testing.T, refs *fakeRef) *env {
+func newEnv(t *testing.T, refs *fakeRef, opts ...marumorisync.Option) *env {
 	t.Helper()
 	now := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
 	e := &env{
@@ -77,7 +77,7 @@ func newEnv(t *testing.T, refs *fakeRef) *env {
 	e.box = box
 	e.svc = marumorisync.NewService(e.store, box, e.ref,
 		func(_, _ string) (marumorisync.Upstream, error) { return e.up, nil },
-		marumorisync.WithClock(func() time.Time { t := e.now; e.now = t.Add(time.Second); return t }))
+		append([]marumorisync.Option{marumorisync.WithClock(func() time.Time { t := e.now; e.now = t.Add(time.Second); return t })}, opts...)...)
 	return e
 }
 

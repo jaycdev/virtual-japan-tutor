@@ -341,6 +341,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/starting-level": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The Learner's declared Starting Level, if they have chosen one
+         * @description Onboarding shows its level picker while `configured` is false. Seeded Grammar — every Grammar Point at or below the level, known at medium Mastery — is applied when the level is set (issue #6).
+         */
+        get: operations["getStartingLevel"];
+        /**
+         * Choose or change the Starting Level
+         * @description Setting the level adds Seeded Grammar: every Grammar Point at or below it becomes a Known Item at medium Mastery. Changing it later adds or removes Seeded Grammar only; Observed Grammar from MaruMori Syncs is always kept.
+         */
+        put: operations["setStartingLevel"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/grammar/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * MaruMori grammar the Learner knows that the Catalogue Matching could not resolve cleanly
+         * @description The settings "review these" list (issue #6): confirmed grammar observations whose Catalogue Matching found no Grammar Point at all, or resolved a duplicate pattern without MaruMori's JLPT Level. Unmatched entries are re-matched automatically by later Syncs once the catalogue gains the point.
+         */
+        get: operations["listGrammarReviewItems"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -587,6 +631,46 @@ export interface components {
             note?: string;
             /** @description Every example sentence stored on the point after generation. */
             examples: components["schemas"]["GrammarExample"][];
+        };
+        /** @description The Learner's Starting Level. `level` is null until onboarding chooses one; `added` and `removed` appear only on the PUT response, reporting what that change did to Seeded Grammar. */
+        StartingLevelStatus: {
+            /** @description Whether the Learner has declared a Starting Level yet. */
+            configured: boolean;
+            /**
+             * @description null until one is chosen.
+             * @enum {string|null}
+             */
+            level?: "N5" | "N4" | "N3" | "N2" | "N1" | null;
+            /** @description Grammar Points Seeded by the most recent change. */
+            added?: number;
+            /** @description Seeded Grammar Points the most recent change dropped (Observed Grammar is never dropped). */
+            removed?: number;
+        };
+        StartingLevelUpdate: {
+            /**
+             * @description The Learner's declared starting level.
+             * @enum {string}
+             */
+            level: "N5" | "N4" | "N3" | "N2" | "N1";
+        };
+        /** @description One confirmed MaruMori grammar observation and its Catalogue Matching outcome. Unmatched entries have no `matchedPointId` and point at a possible missing Grammar Catalogue entry. */
+        GrammarReviewItem: {
+            /** @description The observation's MaruMori id, e.g. Grammar/6578. */
+            marumoriId: string;
+            /** @description The pattern text MaruMori showed (empty when upstream sent none). */
+            pattern: string;
+            /**
+             * @description MaruMori's own level for the point, when it states one.
+             * @enum {string}
+             */
+            jlptLevel?: "N5" | "N4" | "N3" | "N2" | "N1";
+            /**
+             * Format: int64
+             * @description The Grammar Catalogue point this observation matched, when it matched one.
+             */
+            matchedPointId?: number;
+            /** @description True when the entry needs the Learner's eye: no match, or a duplicate pattern resolved without MaruMori's level. */
+            flagged: boolean;
         };
     };
     responses: {
@@ -1344,6 +1428,85 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MaruMoriSyncRun"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    getStartingLevel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The current Starting Level state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StartingLevelStatus"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    setStartingLevel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartingLevelUpdate"];
+            };
+        };
+        responses: {
+            /** @description The level now set, and how many points the change added or removed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StartingLevelStatus"];
+                };
+            };
+            /** @description Missing or unknown level (code `invalid_level`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    listGrammarReviewItems: {
+        parameters: {
+            query?: {
+                /** @description false returns every observation, flagged or not, for a fuller picture. */
+                flagged?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The Learner's grammar observations, oldest first (`observed_at`, MaruMori id as tie-break) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrammarReviewItem"][];
                 };
             };
             401: components["responses"]["Unauthorized"];
