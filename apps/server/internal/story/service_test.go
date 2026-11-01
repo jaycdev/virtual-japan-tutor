@@ -1244,7 +1244,7 @@ func TestReadingSettingsRoundTrip(t *testing.T) {
 	user := uuid.New()
 	svc, store, _, _ := newTestService(t, nil)
 
-	s, err := svc.PutReadingSettings(ctx, user, ReadingSettings{BlurTranslation: false})
+	s, err := svc.PutReadingSettings(ctx, user, ReadingSettingsUpdate{BlurTranslation: false})
 	if err != nil {
 		t.Fatalf("PutReadingSettings(false): %v", err)
 	}
@@ -1263,7 +1263,7 @@ func TestReadingSettingsRoundTrip(t *testing.T) {
 		t.Errorf("store BlurTranslation = %v/%v, want false/nil", blur, err)
 	}
 
-	s, err = svc.PutReadingSettings(ctx, user, ReadingSettings{BlurTranslation: true})
+	s, err = svc.PutReadingSettings(ctx, user, ReadingSettingsUpdate{BlurTranslation: true})
 	if err != nil {
 		t.Fatalf("PutReadingSettings(true): %v", err)
 	}
@@ -1272,7 +1272,8 @@ func TestReadingSettingsRoundTrip(t *testing.T) {
 	}
 
 	// Issue #12: the lookup-hold threshold rides along and round-trips.
-	s, err = svc.PutReadingSettings(ctx, user, ReadingSettings{BlurTranslation: true, LookupHoldMs: 1500})
+	hold := 1500
+	s, err = svc.PutReadingSettings(ctx, user, ReadingSettingsUpdate{BlurTranslation: true, LookupHoldMs: &hold})
 	if err != nil {
 		t.Fatalf("PutReadingSettings(hold 1500): %v", err)
 	}
@@ -1284,6 +1285,20 @@ func TestReadingSettingsRoundTrip(t *testing.T) {
 	}
 	if hold, err := store.LookupHoldMs(ctx, user); err != nil || hold != 1500 {
 		t.Errorf("store LookupHoldMs = %d/%v, want 1500/nil", hold, err)
+	}
+
+	// An update without lookupHoldMs keeps the stored threshold: 0 is a
+	// meaningful value ("signal every lookup"), so an absent field must
+	// never land as 0.
+	s, err = svc.PutReadingSettings(ctx, user, ReadingSettingsUpdate{BlurTranslation: false})
+	if err != nil {
+		t.Fatalf("PutReadingSettings(no hold): %v", err)
+	}
+	if s.LookupHoldMs != 1500 {
+		t.Errorf("hold after omitted-field put = %d, want the prior 1500 kept", s.LookupHoldMs)
+	}
+	if s.BlurTranslation {
+		t.Errorf("blur = true, want the updated false (the required field still applied)")
 	}
 }
 

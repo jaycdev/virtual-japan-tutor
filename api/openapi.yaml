@@ -964,13 +964,14 @@ paths:
       summary: Update the reading settings
       description: >
         Saves the Blur Translation preference. It is stored per Learner, so the
-        reader looks the same on every session.
+        reader looks the same on every session. lookupHoldMs is optional: an
+        omitted threshold keeps the stored one.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ReadingSettings"
+              $ref: "#/components/schemas/ReadingSettingsUpdate"
       responses:
         "200":
           description: The stored settings
@@ -2389,6 +2390,26 @@ components:
             Signal (issue #12): the Lookup Menu stays open past this many milliseconds, or the
             menu is opened at all, and the item gets a signal. 0 signals every lookup; the
             default is 800. The timer runs in the reader; only a threshold hit is reported.
+    ReadingSettingsUpdate:
+      type: object
+      description: >
+        PUT body for the reading settings. blurTranslation is required; lookupHoldMs is
+        optional — omitting it keeps the stored threshold (0 is a meaningful value, so an
+        absent field must not decode to it).
+      required: [blurTranslation]
+      properties:
+        blurTranslation:
+          type: boolean
+          description: >
+            Blur sentence translations in the Reading Panel until the Learner clicks to reveal
+            them. Defaults to true.
+        lookupHoldMs:
+          type: integer
+          minimum: 0
+          maximum: 10000
+          description: >
+            The new lookup-hold threshold, or absent to keep the stored one. Bounded like the
+            stored value: 0 signals every lookup.
     DictionaryEntry:
       type: object
       description: >

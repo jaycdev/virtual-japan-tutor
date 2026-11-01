@@ -299,11 +299,12 @@ func (s *server) PutReadingSettings(ctx context.Context, request api.PutReadingS
 	}
 	// The lookup-hold threshold (issue #12) drives a client-side timer; a
 	// nonsense value would either signal every lookup or never signal, so
-	// the spec bounds it.
-	if request.Body.LookupHoldMs < 0 || request.Body.LookupHoldMs > 10000 {
+	// the spec bounds it. An absent field keeps the stored threshold: 0 is
+	// a meaningful value, so it must arrive as a pointer, not decode to it.
+	if h := request.Body.LookupHoldMs; h != nil && (*h < 0 || *h > 10000) {
 		return api.PutReadingSettings400JSONResponse{Code: "invalid_settings", Message: "lookupHoldMs must be between 0 and 10000 ms"}, nil
 	}
-	rs, err := svc.PutReadingSettings(ctx, id.ID, story.ReadingSettings{
+	rs, err := svc.PutReadingSettings(ctx, id.ID, story.ReadingSettingsUpdate{
 		BlurTranslation: request.Body.BlurTranslation,
 		LookupHoldMs:    request.Body.LookupHoldMs,
 	})

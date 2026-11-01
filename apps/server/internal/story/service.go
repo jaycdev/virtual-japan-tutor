@@ -451,6 +451,16 @@ type ReadingSettings struct {
 // until they choose another (issue #12).
 const DefaultLookupHoldMs = 800
 
+// ReadingSettingsUpdate is the PUT body's shape on the service side: an
+// omitted lookupHoldMs (nil) keeps the stored threshold. 0 is a legitimate
+// stored value ("signal every lookup"), so the field cannot be a plain int
+// — an absent JSON field would decode to exactly the value it must not
+// imply.
+type ReadingSettingsUpdate struct {
+	BlurTranslation bool
+	LookupHoldMs    *int
+}
+
 // GetReadingSettings returns the user's reading settings.
 func (s *Service) GetReadingSettings(ctx context.Context, userID uuid.UUID) (ReadingSettings, error) {
 	blur, err := s.store.BlurTranslation(ctx, userID)
@@ -464,9 +474,18 @@ func (s *Service) GetReadingSettings(ctx context.Context, userID uuid.UUID) (Rea
 	return ReadingSettings{BlurTranslation: blur, LookupHoldMs: hold}, nil
 }
 
-// PutReadingSettings updates the user's reading settings. Range validation
-// lives at the HTTP edge; the store just keeps what it is given.
-func (s *Service) PutReadingSettings(ctx context.Context, userID uuid.UUID, rs ReadingSettings) (ReadingSettings, error) {
+// PutReadingSettings applies the update over the stored settings: a nil
+// LookupHoldMs keeps what is stored. Range validation lives at the HTTP
+// edge; the store just keeps what it is given.
+func (s *Service) PutReadingSettings(ctx context.Context, userID uuid.UUID, u ReadingSettingsUpdate) (ReadingSettings, error) {
+	rs, err := s.GetReadingSettings(ctx, userID)
+	if err != nil {
+		return ReadingSettings{}, err
+	}
+	rs.BlurTranslation = u.BlurTranslation
+	if u.LookupHoldMs != nil {
+		rs.LookupHoldMs = *u.LookupHoldMs
+	}
 	if err := s.store.SetBlurTranslation(ctx, userID, rs.BlurTranslation); err != nil {
 		return ReadingSettings{}, err
 	}

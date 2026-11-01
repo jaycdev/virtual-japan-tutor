@@ -618,7 +618,7 @@ export interface paths {
         get: operations["getReadingSettings"];
         /**
          * Update the reading settings
-         * @description Saves the Blur Translation preference. It is stored per Learner, so the reader looks the same on every session.
+         * @description Saves the Blur Translation preference. It is stored per Learner, so the reader looks the same on every session. lookupHoldMs is optional: an omitted threshold keeps the stored one.
          */
         put: operations["putReadingSettings"];
         post?: never;
@@ -1327,6 +1327,13 @@ export interface components {
             blurTranslation: boolean;
             /** @description How long the Learner must hold a dictionary lookup open before it counts as a Weak Signal (issue #12): the Lookup Menu stays open past this many milliseconds, or the menu is opened at all, and the item gets a signal. 0 signals every lookup; the default is 800. The timer runs in the reader; only a threshold hit is reported. */
             lookupHoldMs: number;
+        };
+        /** @description PUT body for the reading settings. blurTranslation is required; lookupHoldMs is optional — omitting it keeps the stored threshold (0 is a meaningful value, so an absent field must not decode to it). */
+        ReadingSettingsUpdate: {
+            /** @description Blur sentence translations in the Reading Panel until the Learner clicks to reveal them. Defaults to true. */
+            blurTranslation: boolean;
+            /** @description The new lookup-hold threshold, or absent to keep the stored one. Bounded like the stored value: 0 signals every lookup. */
+            lookupHoldMs?: number;
         };
         /** @description Everything the Dictionary Entry window shows for a looked-up word (issue #11): all JMdict senses with their parts of speech, every kanji form and reading, the JLPT Level, the pitch pattern for the tapped reading, and the Learner's Known Item state for the word and each of its constituent kanji. */
         DictionaryEntry: {
@@ -2601,7 +2608,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ReadingSettings"];
+                "application/json": components["schemas"]["ReadingSettingsUpdate"];
             };
         };
         responses: {

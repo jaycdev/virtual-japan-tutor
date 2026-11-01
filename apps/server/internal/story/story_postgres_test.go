@@ -333,6 +333,54 @@ func TestPostgresStoreAgainstPostgres(t *testing.T) {
 	}
 }
 
+// The PUT pointer-merge (issue #12 fix) over the real schema: an update
+// without lookupHoldMs keeps the stored threshold in Postgres, exactly as
+// the fakeStore round-trip proves it in memory. Only the settings path of
+// the service runs here, so the generation seams stay nil.
+func TestPostgresReadingSettingsKeepsHoldWhenAbsent(t *testing.T) {
+	pool := dbtest.New(t)
+	ctx := context.Background()
+	svc := NewService(NewPostgresStore(pool), nil, nil, nil, nil, Settings{}, nil)
+
+	user := uuid.New()
+	if _, err := pool.Exec(ctx, `INSERT INTO users (id, username, password_hash) VALUES ($1, 'settings', 'x')`, user); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+
+	hold := 1500
+	got, err := svc.PutReadingSettings(ctx, user, ReadingSettingsUpdate{BlurTranslation: true, LookupHoldMs: &hold})
+	if err != nil {
+		t.Fatalf("PutReadingSettings(hold 1500): %v", err)
+	}
+	if got.LookupHoldMs != 1500 {
+		t.Fatalf("first put returned hold = %d, want 1500", got.LookupHoldMs)
+	}
+
+	got, err = svc.PutReadingSettings(ctx, user, ReadingSettingsUpdate{BlurTranslation: false})
+	if err != nil {
+		t.Fatalf("PutReadingSettings(no hold): %v", err)
+	}
+	if got.LookupHoldMs != 1500 {
+		t.Errorf("hold after omitted-field put = %d, want the stored 1500 kept", got.LookupHoldMs)
+	}
+	if got.BlurTranslation {
+		t.Errorf("blur = true, want the sent false")
+	}
+	if s, err := svc.GetReadingSettings(ctx, user); err != nil || s.LookupHoldMs != 1500 || s.BlurTranslation {
+		t.Errorf("Get after omitted-field put = %+v/%v, want hold 1500 and blur false", s, err)
+	}
+
+	// Explicit 0 still lands (present field, meaningful value).
+	zero := 0
+	got, err = svc.PutReadingSettings(ctx, user, ReadingSettingsUpdate{BlurTranslation: false, LookupHoldMs: &zero})
+	if err != nil {
+		t.Fatalf("PutReadingSettings(hold 0): %v", err)
+	}
+	if got.LookupHoldMs != 0 {
+		t.Errorf("hold after explicit-0 put = %d, want 0", got.LookupHoldMs)
+	}
+}
+
 // The 00009 schema's guards, against the real schema: the SRS Level CHECK,
 // the withdrawn-entry behaviour of story_tokens.ent_seq, and the two
 // lookup indexes the read paths need.

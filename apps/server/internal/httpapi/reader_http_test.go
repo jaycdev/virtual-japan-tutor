@@ -141,9 +141,55 @@ func TestReadingSettingsPutRoundTripAndScoping(t *testing.T) {
 	}
 }
 
-// ReadingSettings carries a single required boolean, exactly like
-// PutStorySettings' threshold: a malformed or missing body is answered by the
-// shared decode guard, and there is no partial body the handler could misread.
+// Issue #12 fix: lookupHoldMs is optional on PUT. 0 is a meaningful stored
+// value ("signal every lookup"), so an absent field must keep the stored
+// threshold rather than decode to 0.
+func TestReadingSettingsPutKeepsHoldWhenFieldAbsent(t *testing.T) {
+	o := newReaderEnv(t)
+	alice := "Bearer " + o.e.login(t, "alice")
+
+	rec := o.e.do(t, "PUT", "/reading-settings", alice,
+		`{"blurTranslation": true, "lookupHoldMs": 1500}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PUT with hold status = %d (%s)", rec.Code, rec.Body)
+	}
+	var put api.ReadingSettings
+	mustJSON(t, rec, &put)
+	if put.LookupHoldMs != 1500 {
+		t.Fatalf("PUT returned lookupHoldMs = %d, want the sent 1500", put.LookupHoldMs)
+	}
+
+	// Same PUT shape the web app sends when only the blur toggle changed:
+	// no lookupHoldMs in the body at all.
+	rec = o.e.do(t, "PUT", "/reading-settings", alice, `{"blurTranslation": false}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PUT without hold status = %d (%s)", rec.Code, rec.Body)
+	}
+	mustJSON(t, rec, &put)
+	if put.LookupHoldMs != 1500 {
+		t.Errorf("PUT without lookupHoldMs returned %d, want the stored 1500 kept", put.LookupHoldMs)
+	}
+	if put.BlurTranslation {
+		t.Errorf("blurTranslation = true, want the sent false (the required field still applies)")
+	}
+
+	rec = o.e.do(t, "GET", "/reading-settings", alice, nil)
+	mustJSON(t, rec, &put)
+	if put.LookupHoldMs != 1500 {
+		t.Errorf("GET after omitted-field PUT = %d, want 1500 persisted", put.LookupHoldMs)
+	}
+
+	// An explicit 0 still lands (the field present is an instruction, not an omission).
+	rec = o.e.do(t, "PUT", "/reading-settings", alice, `{"blurTranslation": false, "lookupHoldMs": 0}`)
+	mustJSON(t, rec, &put)
+	if put.LookupHoldMs != 0 {
+		t.Errorf("PUT with explicit 0 returned %d, want 0", put.LookupHoldMs)
+	}
+
+	// Out-of-range is still refused, now only when the field is present.
+	wantError(t, o.e.do(t, "PUT", "/reading-settings", alice, `{"blurTranslation": false, "lookupHoldMs": 20000}`),
+		http.StatusBadRequest, "invalid_settings")
+}
 
 func TestReadingSettingsPutRejectsBadBodies(t *testing.T) {
 	o := newReaderEnv(t)
