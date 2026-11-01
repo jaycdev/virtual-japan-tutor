@@ -142,9 +142,18 @@ func TestReadingSettingsPutRoundTripAndScoping(t *testing.T) {
 }
 
 // ReadingSettings carries a single required boolean, exactly like
-// PutStorySettings' threshold: a malformed body is answered by the shared
-// decode guard (400 bad_request for invalid JSON), and there is no partial
-// body the handler could misread.
+// PutStorySettings' threshold: a malformed or missing body is answered by the
+// shared decode guard, and there is no partial body the handler could misread.
+
+func TestReadingSettingsPutRejectsBadBodies(t *testing.T) {
+	o := newReaderEnv(t)
+	alice := "Bearer " + o.e.login(t, "alice")
+
+	wantError(t, o.e.do(t, "PUT", "/reading-settings", alice, ""),
+		http.StatusBadRequest, "bad_request")
+	wantError(t, o.e.do(t, "PUT", "/reading-settings", alice, "{ not json"),
+		http.StatusBadRequest, "bad_request")
+}
 
 func TestReadingSettingsNotConfiguredIsAServiceError(t *testing.T) {
 	// The pre-issue-#11 wiring (no WithStory) answers 500, like the other

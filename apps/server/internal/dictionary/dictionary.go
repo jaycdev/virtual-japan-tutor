@@ -151,13 +151,26 @@ func (s *Service) Entry(ctx context.Context, userID uuid.UUID, entSeq int64, sur
 		e.SRSLevel = &srs
 	}
 
-	scores, err := s.scorer.Score(ctx, userID)
+	literals := kanjiIn(e.Headword)
+	knownKanji, err := s.known.KnownKanji(ctx, userID, literals)
 	if err != nil {
 		return Entry{}, err
 	}
-	masteryBy := make(map[mastery.ItemKey]float64, len(scores))
-	for _, sc := range scores {
-		masteryBy[sc.Key()] = sc.Mastery
+
+	// Score only when something in this entry is a Known Item. Score walks
+	// the Learner's whole Known Item set (four table queries); for a word
+	// and kanji the Learner has never touched, every Mastery it could fill
+	// is absent anyway, so hovering an unknown word costs no scoring.
+	var masteryBy map[mastery.ItemKey]float64
+	if known || len(knownKanji) > 0 {
+		scores, err := s.scorer.Score(ctx, userID)
+		if err != nil {
+			return Entry{}, err
+		}
+		masteryBy = make(map[mastery.ItemKey]float64, len(scores))
+		for _, sc := range scores {
+			masteryBy[sc.Key()] = sc.Mastery
+		}
 	}
 	if known {
 		if m, ok := masteryBy[mastery.ItemKey{Kind: mastery.KindVocabulary, Ref: strconv.FormatInt(entSeq, 10)}]; ok {
@@ -165,11 +178,6 @@ func (s *Service) Entry(ctx context.Context, userID uuid.UUID, entSeq int64, sur
 		}
 	}
 
-	literals := kanjiIn(e.Headword)
-	knownKanji, err := s.known.KnownKanji(ctx, userID, literals)
-	if err != nil {
-		return Entry{}, err
-	}
 	for _, lit := range literals {
 		c := Component{Literal: lit}
 		if lvl, ok := knownKanji[lit]; ok {
