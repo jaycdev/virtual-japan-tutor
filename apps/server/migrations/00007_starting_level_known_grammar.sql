@@ -15,15 +15,17 @@ ALTER TABLE users
 -- rows only (issue #6).
 CREATE TABLE known_grammar_points (
     user_id          uuid        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    -- ON DELETE CASCADE: when the importer prunes a Grammar Point from the
+    -- Catalogue, the Learner's Known Item for it goes with it.
     grammar_point_id bigint      NOT NULL REFERENCES grammar_points(id) ON DELETE CASCADE,
     source           text        NOT NULL CHECK (source IN ('seeded', 'observed')),
     -- Initial Mastery per docs/adr/0003: Seeded starts medium, newly Observed
     -- starts low so it is targeted straight away. Later Practice rewrites it.
     mastery          text        NOT NULL CHECK (mastery IN ('low', 'medium', 'high')),
     updated_at       timestamptz NOT NULL DEFAULT now(),
+    -- The PK already serves per-user lookups: no extra user_id index.
     PRIMARY KEY (user_id, grammar_point_id)
 );
-CREATE INDEX known_grammar_points_user_id_idx ON known_grammar_points (user_id);
 
 -- The confirmed MaruMori grammar observations and their Catalogue Matching
 -- outcome (issue #6). matched_point is NULL while the observation is unmatched;
