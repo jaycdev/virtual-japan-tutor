@@ -385,6 +385,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/focus-set": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The rotating Focus Set of low-Mastery Known Items
+         * @description The 15–20 Known Items Practice Sessions and Stories target (issue #7): the lowest-Mastery items, mixing vocabulary, kanji and grammar, in the order they should be practised. Items the Learner has demonstrably nailed (a run of correct Practice results across separate days) rotate out and the next weakest backfills; recently Observed Grammar is pinned to the front (docs/adr/0003). Mastery is recomputed from the stored signals on every read — it is never stored, and the app schedules nothing (docs/adr/0004).
+         */
+        get: operations["getFocusSet"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -671,6 +691,30 @@ export interface components {
             matchedPointId?: number;
             /** @description True when the entry needs the Learner's eye: no match, or a duplicate pattern resolved without MaruMori's level. */
             flagged: boolean;
+        };
+        /** @description The Learner's current Focus Set (issue #7), in the order Practice should use it: pinned Newly Observed Grammar first, then ascending Mastery. `size` is the configured capacity; a Learner who knows fewer items simply gets a shorter set. */
+        FocusSet: {
+            /** @description The set's configured capacity (15–20; server config FOCUS_SET_SIZE). */
+            size: number;
+            items: components["schemas"]["FocusSetItem"][];
+        };
+        /** @description One Known Item in the Focus Set, with its current Mastery. Later features (Practice Sessions, Weak Signals ingestion) address the item by `kind` plus `itemRef`. */
+        FocusSetItem: {
+            /** @enum {string} */
+            kind: "kanji" | "vocabulary" | "grammar";
+            /** @description The item's stable ref: the JMdict ent_seq (as text) for linked vocabulary, the literal for linked kanji, the MaruMori id for items no reference-data link covers yet, and the Grammar Catalogue point id (as text) for grammar. */
+            itemRef: string;
+            /**
+             * @description Why the item is known — Synced, Seeded Grammar, or Observed Grammar.
+             * @enum {string}
+             */
+            source: "marumori" | "seeded" | "observed";
+            /** @description The item's current Mastery score, recomputed from SRS Level, Level Trend, Practice Record and Weak Signals on this read. Never stored. */
+            mastery: number;
+            /** @description MaruMori's SRS Level for the item; null when it reports none (e.g. Seeded Grammar). */
+            srsLevel?: number | null;
+            /** @description True for Observed Grammar first seen within the new-grammar window; those items are pinned to the front. */
+            newlyObservedGrammar: boolean;
         };
     };
     responses: {
@@ -1507,6 +1551,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GrammarReviewItem"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    getFocusSet: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The current Focus Set */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FocusSet"];
                 };
             };
             401: components["responses"]["Unauthorized"];

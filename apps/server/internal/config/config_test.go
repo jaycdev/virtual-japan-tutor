@@ -7,6 +7,7 @@ import (
 
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/config"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/marumori"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/mastery"
 )
 
 const testKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" // 32 zero bytes, base64
@@ -271,6 +272,96 @@ func TestLoadRejectsBadMaruMoriConfig(t *testing.T) {
 			_, err := config.Load(env(extra))
 			if err == nil || !strings.Contains(err.Error(), "MARUMORI_") {
 				t.Fatalf("err = %v, want a MARUMORI_* error", err)
+			}
+		})
+	}
+}
+
+func TestLoadMasteryDefaults(t *testing.T) {
+	cfg, err := config.Load(env(map[string]string{"DATABASE_URL": "postgres://x"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	def := mastery.DefaultOptions()
+	if cfg.Mastery.Weights != def.Weights {
+		t.Errorf("Weights = %+v, want %+v", cfg.Mastery.Weights, def.Weights)
+	}
+	if cfg.Mastery.PracticeHalfLife != 14*24*time.Hour || cfg.Mastery.WeakSignalHalfLife != 30*24*time.Hour {
+		t.Errorf("half-lives = %v / %v", cfg.Mastery.PracticeHalfLife, cfg.Mastery.WeakSignalHalfLife)
+	}
+	if cfg.Mastery.TrendDropPenalty != 1.0 {
+		t.Errorf("TrendDropPenalty = %v, want 1.0", cfg.Mastery.TrendDropPenalty)
+	}
+	if cfg.Mastery.SetSize != 20 || cfg.Mastery.MaxPerKind != 12 {
+		t.Errorf("SetSize/MaxPerKind = %d/%d, want 20/12", cfg.Mastery.SetSize, cfg.Mastery.MaxPerKind)
+	}
+	if cfg.Mastery.GraduateStreak != 3 || cfg.Mastery.GraduateMinDays != 2 {
+		t.Errorf("graduation = %d/%d, want 3/2", cfg.Mastery.GraduateStreak, cfg.Mastery.GraduateMinDays)
+	}
+	if cfg.Mastery.NewGrammarWindow != 14*24*time.Hour {
+		t.Errorf("NewGrammarWindow = %v, want 14d", cfg.Mastery.NewGrammarWindow)
+	}
+}
+
+func TestLoadMasteryOverrides(t *testing.T) {
+	cfg, err := config.Load(env(map[string]string{
+		"DATABASE_URL":                  "postgres://x",
+		"MASTERY_WEIGHT_SRS":            "0",
+		"MASTERY_WEIGHT_PRACTICE":       "0.6",
+		"MASTERY_WEIGHT_TREND":          "0.2",
+		"MASTERY_WEIGHT_WEAK_SIGNALS":   "0.35",
+		"MASTERY_TREND_DROP_PENALTY":    "0.5",
+		"MASTERY_PRACTICE_HALF_LIFE":    "72h",
+		"MASTERY_WEAK_SIGNAL_HALF_LIFE": "168h",
+		"FOCUS_SET_SIZE":                "15",
+		"FOCUS_SET_MAX_PER_KIND":        "15",
+		"FOCUS_SET_GRADUATE_STREAK":     "5",
+		"FOCUS_SET_GRADUATE_MIN_DAYS":   "3",
+		"FOCUS_SET_NEW_GRAMMAR_WINDOW":  "48h",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := mastery.Weights{SRS: 0, Practice: 0.6, Trend: 0.2, WeakSignals: 0.35}
+	if cfg.Mastery.Weights != want {
+		t.Errorf("Weights = %+v, want %+v", cfg.Mastery.Weights, want)
+	}
+	if cfg.Mastery.PracticeHalfLife != 72*time.Hour || cfg.Mastery.WeakSignalHalfLife != 168*time.Hour {
+		t.Errorf("half-lives = %v / %v", cfg.Mastery.PracticeHalfLife, cfg.Mastery.WeakSignalHalfLife)
+	}
+	if cfg.Mastery.TrendDropPenalty != 0.5 {
+		t.Errorf("TrendDropPenalty = %v, want 0.5", cfg.Mastery.TrendDropPenalty)
+	}
+	if cfg.Mastery.SetSize != 15 || cfg.Mastery.MaxPerKind != 15 {
+		t.Errorf("SetSize/MaxPerKind = %d/%d, want 15/15", cfg.Mastery.SetSize, cfg.Mastery.MaxPerKind)
+	}
+	if cfg.Mastery.GraduateStreak != 5 || cfg.Mastery.GraduateMinDays != 3 {
+		t.Errorf("graduation = %d/%d, want 5/3", cfg.Mastery.GraduateStreak, cfg.Mastery.GraduateMinDays)
+	}
+	if cfg.Mastery.NewGrammarWindow != 48*time.Hour {
+		t.Errorf("NewGrammarWindow = %v, want 48h", cfg.Mastery.NewGrammarWindow)
+	}
+}
+
+func TestLoadRejectsBadMasteryConfig(t *testing.T) {
+	cases := map[string]map[string]string{
+		"weight over one":    {"MASTERY_WEIGHT_SRS": "1.5"},
+		"negative weight":    {"MASTERY_WEIGHT_PRACTICE": "-0.1"},
+		"garbage weight":     {"MASTERY_WEIGHT_WEAK_SIGNALS": "heavy"},
+		"penalty over one":   {"MASTERY_TREND_DROP_PENALTY": "2"},
+		"zero half-life":     {"MASTERY_PRACTICE_HALF_LIFE": "0h"},
+		"set too small":      {"FOCUS_SET_SIZE": "14"},
+		"set too big":        {"FOCUS_SET_SIZE": "21"},
+		"cap above set size": {"FOCUS_SET_SIZE": "16", "FOCUS_SET_MAX_PER_KIND": "17"},
+		"zero streak":        {"FOCUS_SET_GRADUATE_STREAK": "0"},
+		"garbage window":     {"FOCUS_SET_NEW_GRAMMAR_WINDOW": "new"},
+	}
+	for name, extra := range cases {
+		t.Run(name, func(t *testing.T) {
+			extra["DATABASE_URL"] = "postgres://x"
+			_, err := config.Load(env(extra))
+			if err == nil || !(strings.Contains(err.Error(), "MASTERY_") || strings.Contains(err.Error(), "FOCUS_SET_")) {
+				t.Fatalf("err = %v, want a MASTERY_*/FOCUS_SET_* error", err)
 			}
 		})
 	}

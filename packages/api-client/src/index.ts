@@ -25,6 +25,8 @@ export type GenerationResult = components["schemas"]["GenerationResult"];
 export type StartingLevelStatus = components["schemas"]["StartingLevelStatus"];
 export type StartingLevelUpdate = components["schemas"]["StartingLevelUpdate"];
 export type GrammarReviewItem = components["schemas"]["GrammarReviewItem"];
+export type FocusSet = components["schemas"]["FocusSet"];
+export type FocusSetItem = components["schemas"]["FocusSetItem"];
 export type ApiMiddleware = Middleware;
 
 export interface ApiClientOptions {
