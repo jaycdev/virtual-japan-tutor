@@ -604,6 +604,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/reading-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Reading settings for the Learner
+         * @description How the story reader behaves (issue #11): the Blur Translation preference (sentence translations start blurred in the Reading Panel; the Learner's click to reveal them is remembered here so the reading experience carries across sessions and devices).
+         */
+        get: operations["getReadingSettings"];
+        /**
+         * Update the reading settings
+         * @description Saves the Blur Translation preference. It is stored per Learner, so the reader looks the same on every session.
+         */
+        put: operations["putReadingSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dictionary/entries/{entSeq}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Look a word up for the Dictionary Entry window
+         * @description Everything the Dictionary Entry window shows for a tapped word (issue #11): every JMdict meaning with its parts of speech, all kanji forms and readings, the JLPT Level, the pitch pattern for the tapped reading (null when the Kanjium tables hold no rows for it — clients render the pitch graph only when there is data), and for each constituent kanji whether the Learner has it as a Known Item, with its SRS Level and Mastery. The word itself gets the same Known Item reporting. Optional surface/reading query parameters say which form the Learner tapped: the headword echo, the pitch lookup and the kanji breakdown follow them.
+         */
+        get: operations["getDictionaryEntry"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1086,12 +1130,86 @@ export interface components {
             /** @description Whether it belongs to the Focus Set the story was built around; comprehension answers write Practice Records for exactly these. */
             isFocus: boolean;
         };
-        /** @description A stretch of a sentence annotated with the grammar point it exercises. Offsets are codepoint (rune) indexes into the sentence's ja text, counting from 0 — the same units the tokeniser reports — so clients can slice and highlight without byte arithmetic. */
+        /** @description A stretch of a sentence annotated with the grammar point it exercises. Offsets are codepoint (rune) indexes into the sentence's ja text, counting from 0 — the same units the tokeniser reports — so clients can slice and highlight without byte arithmetic. The point's pattern, meaning and level ride along (issue #11) so hovering a Grammar Span shows the Grammar Point instantly, without a second request. */
         StoryGrammarSpan: {
             start: number;
             end: number;
             /** @description The grammar_points catalogue id. */
             grammarPointId: string;
+            /** @description Whether the story was built around this grammar point (focus spans get the stronger underline). */
+            isFocus: boolean;
+            /** @description The Grammar Point's pattern as catalogued (e.g. "～てしまう"). */
+            pattern: string;
+            /** @description The Grammar Point's one-line meaning. */
+            meaning: string;
+            jlptLevel: components["schemas"]["GrammarJLPTLevel"];
+        };
+        /** @description Per-Learner reader preferences (issue #11), stored so the reading experience is the same in every session and on every device. */
+        ReadingSettings: {
+            /** @description Blur sentence translations in the Reading Panel until the Learner clicks to reveal them. Defaults to true. */
+            blurTranslation: boolean;
+        };
+        /** @description Everything the Dictionary Entry window shows for a looked-up word (issue #11): all JMdict senses with their parts of speech, every kanji form and reading, the JLPT Level, the pitch pattern for the tapped reading, and the Learner's Known Item state for the word and each of its constituent kanji. */
+        DictionaryEntry: {
+            /** Format: int64 */
+            entSeq: number;
+            /** @description false when the tokeniser linked the token but JMdict has no row (rare) — the window then shows the word alone. */
+            found: boolean;
+            /** @description The form shown — the tapped surface when it is one of the entry's kanji forms, else the entry's first kanji form, else the first reading. */
+            headword: string;
+            /** @description The reading shown — the tapped reading when the entry has it, else the entry's first reading. */
+            reading: string;
+            /** @description The easiest JLPT Level the word is listed at, null when it is on no list. */
+            jlptLevel: components["schemas"]["GrammarJLPTLevel"] | null;
+            /** @description Every JMdict sense, in dictionary order; the Lookup row shows the first few glosses. */
+            senses: components["schemas"]["DictionarySense"][];
+            /** @description All kanji forms of the entry, in JMdict order. */
+            kanjiForms: string[];
+            /** @description All readings of the entry, in JMdict order. */
+            readings: string[];
+            /** @description Kanjium pitch data for the shown reading (ADR-0006). Null when the pitch_accents tables have no rows for the pair — render the pitch graph only when this is present. */
+            pitch: components["schemas"]["PitchPattern"] | null;
+            /** @description MaruMori SRS Level when the word itself is a Known Item, null otherwise. */
+            srsLevel: number | null;
+            /**
+             * Format: double
+             * @description The word's Mastery when it is a Known Item, null otherwise.
+             */
+            mastery: number | null;
+            /** @description The constituent kanji of the shown headword, in order, each with the Learner's Known Item state. */
+            kanji: components["schemas"]["DictionaryKanji"][];
+        };
+        DictionarySense: {
+            glosses: string[];
+            /** @description Parts of speech in JMdict's words ("noun", "transitive verb", …). */
+            partsOfSpeech: string[];
+        };
+        /** @description One reading's pitch pattern from Kanjium (ADR-0006). The client draws the mora graph from these numbers; no new scraping happens for this feature. */
+        PitchPattern: {
+            /** @description The kana reading this pattern belongs to. */
+            reading: string;
+            /** @description Moras in the reading (approximated from kana; sound changes not split). */
+            moraCount: number;
+            /** @description Kanjium's accent number — 0 is heiban (no downstep); N means the downstep comes after mora N. */
+            accentPosition: number;
+            /** @description True when there is no downstep — the graph shows the flat pattern explicitly. */
+            heiban: boolean;
+            /** @description The mora index (1-based) after which the pitch drops; equals moraCount for an accent-on-last-mora word, moraCount+1 (i.e. nowhere) when heiban. */
+            downstepAfterMora: number;
+            /** @description Kanjium's optional tag for the pattern (e.g. a variant marker), empty when none. */
+            tag?: string;
+        };
+        DictionaryKanji: {
+            literal: string;
+            /** @description Whether the Learner has this kanji as a Known Item. */
+            known: boolean;
+            /** @description MaruMori SRS Level when known, null otherwise. */
+            srsLevel: number | null;
+            /**
+             * Format: double
+             * @description Mastery when known, null otherwise.
+             */
+            mastery: number | null;
         };
     };
     responses: {
@@ -2270,6 +2388,91 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    getReadingSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadingSettings"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    putReadingSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReadingSettings"];
+            };
+        };
+        responses: {
+            /** @description The stored settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadingSettings"];
+                };
+            };
+            /** @description Body missing blurTranslation (`invalid_settings`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    getDictionaryEntry: {
+        parameters: {
+            query?: {
+                /** @description The token surface the Learner tapped, when it is a kanji form. */
+                surface?: string;
+                /** @description The token's kana reading; selects which reading's pitch pattern is returned. */
+                reading?: string;
+            };
+            header?: never;
+            path: {
+                /** @description JMdict ent_seq from the Story Token (or any known entry id). Declared as a plain string for the same reason as StoryId: the generated router binds path parameters before auth, so the handler parses it itself (404 if malformed). */
+                entSeq: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The entry. Words the tokeniser links without a JMdict row are answered too: found=false with empty senses/forms — the Lookup row then shows the word alone. 404 only answers for malformed entSeq values. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DictionaryEntry"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
         };
     };
 }

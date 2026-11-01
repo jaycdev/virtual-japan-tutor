@@ -195,12 +195,22 @@ type Token struct {
 // Practice Records for (the gate rejects spans citing other points, so a
 // validated Story's spans are all focus spans; failed Stories may keep
 // others, stored unflagged).
+//
+// Pattern, Meaning and JLPTLevel are not stored on the span: readers fill
+// them in from grammar_points when they load a Story (the Postgres store
+// joins them in), so the reader's hover shows the Grammar Point instantly.
+// A Span built without them reads as empty strings.
 type Span struct {
 	ID             uuid.UUID
 	Start          int
 	End            int
 	GrammarPointID int64
 	IsFocus        bool
+
+	// Read-time enrichment from grammar_points (issue #11).
+	Pattern   string
+	Meaning   string
+	JLPTLevel string
 }
 
 // Question is one comprehension question. AnswerIndex is server-side only:

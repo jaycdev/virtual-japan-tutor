@@ -433,6 +433,34 @@ func (s *Service) PutSettings(ctx context.Context, userID uuid.UUID, us UserSett
 	return us, nil
 }
 
+// ReadingSettings is the reader-behaviour preference set (issue #11), kept
+// apart from UserSettings: story settings steer generation and are rewritten
+// wholesale by the settings form, while the Blur Translation flag belongs to
+// the reader and is written on its own whenever the Learner clicks it.
+type ReadingSettings struct {
+	// BlurTranslation: story translations start blurred in the Reading
+	// Panel; the Learner's reveal click flips this stored flag.
+	BlurTranslation bool
+}
+
+// GetReadingSettings returns the user's reading settings.
+func (s *Service) GetReadingSettings(ctx context.Context, userID uuid.UUID) (ReadingSettings, error) {
+	blur, err := s.store.BlurTranslation(ctx, userID)
+	if err != nil {
+		return ReadingSettings{}, err
+	}
+	return ReadingSettings{BlurTranslation: blur}, nil
+}
+
+// PutReadingSettings updates the user's reading settings. There is nothing
+// to validate: blurTranslation is a plain boolean.
+func (s *Service) PutReadingSettings(ctx context.Context, userID uuid.UUID, rs ReadingSettings) (ReadingSettings, error) {
+	if err := s.store.SetBlurTranslation(ctx, userID, rs.BlurTranslation); err != nil {
+		return ReadingSettings{}, err
+	}
+	return rs, nil
+}
+
 // Scheduler regenerates ready stories in the background: the request path
 // never waits on an LLM. Each pass checks every user once with EnsureReady,
 // which is cheap when the Focus Set is unchanged.

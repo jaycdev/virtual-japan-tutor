@@ -175,6 +175,7 @@ type fakeStore struct {
 	stories   map[uuid.UUID]*Story
 	users     map[uuid.UUID]bool
 	threshold map[uuid.UUID]int
+	blur      map[uuid.UUID]bool      // missing = default true, like the users column
 	prefs     map[uuid.UUID][2]string // genre, theme ("" = surprise-me / no theme)
 	snapshots map[uuid.UUID][]string
 	now       time.Time
@@ -189,6 +190,7 @@ func newFakeStore() *fakeStore {
 		stories:   map[uuid.UUID]*Story{},
 		users:     map[uuid.UUID]bool{},
 		threshold: map[uuid.UUID]int{},
+		blur:      map[uuid.UUID]bool{},
 		prefs:     map[uuid.UUID][2]string{},
 		snapshots: map[uuid.UUID][]string{},
 		now:       time.Unix(1700000000, 0).UTC(),
@@ -389,6 +391,23 @@ func (s *fakeStore) SetFuriganaThreshold(_ context.Context, userID uuid.UUID, le
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.threshold[userID] = level
+	return nil
+}
+
+func (s *fakeStore) BlurTranslation(_ context.Context, userID uuid.UUID) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	v, ok := s.blur[userID]
+	if !ok {
+		return true, nil // the users column defaults to TRUE
+	}
+	return v, nil
+}
+
+func (s *fakeStore) SetBlurTranslation(_ context.Context, userID uuid.UUID, blur bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.blur[userID] = blur
 	return nil
 }
 
@@ -1180,6 +1199,54 @@ func TestPutSettingsStripsControlCharactersFromPrefs(t *testing.T) {
 	}
 	if us.PreferredTheme != "ramen shop visit" {
 		t.Fatalf("theme = %q, want control characters collapsed", us.PreferredTheme)
+	}
+}
+
+func TestReadingSettingsDefaultToBlurred(t *testing.T) {
+	svc, store, _, _ := newTestService(t, nil)
+	s, err := svc.GetReadingSettings(context.Background(), uuid.New())
+	if err != nil {
+		t.Fatalf("GetReadingSettings: %v", err)
+	}
+	if !s.BlurTranslation {
+		t.Errorf("BlurTranslation = false, want the default true")
+	}
+	// Sanity: the fake store models the users column, which defaults to TRUE.
+	if blur, err := store.BlurTranslation(context.Background(), uuid.New()); err != nil || !blur {
+		t.Errorf("store default = %v/%v, want true/nil", blur, err)
+	}
+}
+
+func TestReadingSettingsRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	user := uuid.New()
+	svc, store, _, _ := newTestService(t, nil)
+
+	s, err := svc.PutReadingSettings(ctx, user, ReadingSettings{BlurTranslation: false})
+	if err != nil {
+		t.Fatalf("PutReadingSettings(false): %v", err)
+	}
+	if s.BlurTranslation {
+		t.Errorf("returned BlurTranslation = true, want false")
+	}
+
+	s, err = svc.GetReadingSettings(ctx, user)
+	if err != nil {
+		t.Fatalf("GetReadingSettings: %v", err)
+	}
+	if s.BlurTranslation {
+		t.Errorf("GetReadingSettings after save = true, want the saved false")
+	}
+	if blur, err := store.BlurTranslation(ctx, user); err != nil || blur {
+		t.Errorf("store BlurTranslation = %v/%v, want false/nil", blur, err)
+	}
+
+	s, err = svc.PutReadingSettings(ctx, user, ReadingSettings{BlurTranslation: true})
+	if err != nil {
+		t.Fatalf("PutReadingSettings(true): %v", err)
+	}
+	if !s.BlurTranslation {
+		t.Errorf("re-enabled BlurTranslation = false, want true")
 	}
 }
 

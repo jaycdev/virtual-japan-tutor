@@ -1,0 +1,180 @@
+/* Reader styles for the story reader (issue #11). */
+
+.reading-panel {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: #fff;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin: 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  /* Fixed size: the panel never grows with its content. */
+  height: 7.5em;
+}
+
+.reading-panel .sentence-area {
+  /* Two lines of sentence in a fixed box — the panel keeps its size. Long
+     text first shrinks one step; what still overflows scrolls. The height
+     carries the furigana ruby: each ruby line box is ~2.2em. The box's own
+     font-size never changes, so its em height never changes with it. */
+  height: 4.4em;
+  overflow-y: auto;
+}
+
+/* The one shrink step lands on the inner wrapper only: taking the box's own
+   font-size down would shrink its 4.4em height too, and the fixed panel
+   would change size. */
+.reading-panel .sentence-area.shrunk .sentence-content {
+  font-size: 0.8em;
+}
+
+.reading-panel .lookup-row {
+  height: 1.6em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid #ddd;
+}
+
+/* Fixed slot so the Lookup content appearing never shifts the row. */
+.lookup-label {
+  flex: 0 0 6.4em;
+  color: #555;
+}
+
+.lookup-word {
+  color: #1a56db;
+  font-weight: 600;
+}
+
+.lookup-reading {
+  color: #c2410c;
+}
+
+.lookup-right {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.jlpt-badge {
+  border: 1px solid #666;
+  border-radius: 3px;
+  padding: 0 4px;
+  font-size: 0.8em;
+}
+
+.translation {
+  cursor: pointer;
+}
+
+.translation.blurred {
+  filter: blur(5px);
+}
+
+.story-sentence {
+  line-height: 2;
+}
+
+.token {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* Underline rules: solid = Known Item, dotted = unknown with a dictionary
+   entry, none = unlinked token; Grammar Spans override with a purple wavy
+   line, clearly distinct from the plain/known/unknown underlines, and the
+   story's focus grammar adds a thicker, stronger line. */
+.tok-known {
+  text-decoration: underline solid #444;
+}
+
+.tok-dotted {
+  text-decoration: underline dotted #444;
+}
+
+.tok-grammar {
+  text-decoration: underline wavy #7c3aed;
+}
+
+.tok-grammar-focus {
+  text-decoration: underline wavy #5b21b6;
+  text-decoration-thickness: 2.5px;
+}
+
+.token.is-hovered {
+  background: #eef2ff;
+}
+
+.token-wrap {
+  position: relative;
+}
+
+.token-menu {
+  position: absolute;
+  top: 1.3em;
+  left: 0;
+  z-index: 10;
+  background: #fff;
+  border: 1px solid #888;
+  border-radius: 4px;
+  padding: 4px;
+  display: flex;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.entry-windows {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.entry-window {
+  border: 1px solid #888;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 2px 2px 6px rgba(0, 0, 0, 0.15);
+  padding: 8px 10px;
+  margin-top: 8px;
+  max-width: 24em;
+}
+
+.entry-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.entry-head button {
+  margin-left: auto;
+}
+
+.senses li {
+  margin-bottom: 4px;
+}
+
+.pos {
+  color: #555;
+}
+
+.pitch-graph {
+  vertical-align: middle;
+}
+
+.kanji-table td {
+  padding: 1px 6px;
+}

@@ -115,6 +115,12 @@ type Store interface {
 	FuriganaThreshold(ctx context.Context, userID uuid.UUID) (int, error)
 	SetFuriganaThreshold(ctx context.Context, userID uuid.UUID, level int) error
 
+	// BlurTranslation reads and SetBlurTranslation write the reader's Blur
+	// Translation preference (issue #11): story translations start blurred
+	// when true. Default true, stored on the user row.
+	BlurTranslation(ctx context.Context, userID uuid.UUID) (bool, error)
+	SetBlurTranslation(ctx context.Context, userID uuid.UUID, blur bool) error
+
 	// StoryPrefs reads and SetStoryPrefs write the Learner's preferred
 	// genre/theme for future stories ("" = "surprise me" / no theme).
 	StoryPrefs(ctx context.Context, userID uuid.UUID) (genre, theme string, err error)

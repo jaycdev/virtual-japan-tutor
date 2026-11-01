@@ -263,6 +263,44 @@ func (s *server) PutStorySettings(ctx context.Context, request api.PutStorySetti
 	}, nil
 }
 
+// GetReadingSettings serves the reader preferences (issue #11) the Reading
+// Panel restores on every visit — kept apart from story settings so the two
+// forms cannot clobber each other.
+func (s *server) GetReadingSettings(ctx context.Context, request api.GetReadingSettingsRequestObject) (api.GetReadingSettingsResponseObject, error) {
+	svc, err := s.storyService()
+	if err != nil {
+		return nil, err
+	}
+	id, ok := auth.IdentityFrom(ctx)
+	if !ok {
+		return nil, auth.ErrUnauthenticated
+	}
+	rs, err := svc.GetReadingSettings(ctx, id.ID)
+	if err != nil {
+		return nil, err
+	}
+	return api.GetReadingSettings200JSONResponse{BlurTranslation: rs.BlurTranslation}, nil
+}
+
+func (s *server) PutReadingSettings(ctx context.Context, request api.PutReadingSettingsRequestObject) (api.PutReadingSettingsResponseObject, error) {
+	svc, err := s.storyService()
+	if err != nil {
+		return nil, err
+	}
+	id, ok := auth.IdentityFrom(ctx)
+	if !ok {
+		return nil, auth.ErrUnauthenticated
+	}
+	if request.Body == nil {
+		return api.PutReadingSettings400JSONResponse{Code: "bad_request", Message: "blurTranslation is required"}, nil
+	}
+	rs, err := svc.PutReadingSettings(ctx, id.ID, story.ReadingSettings{BlurTranslation: request.Body.BlurTranslation})
+	if err != nil {
+		return nil, err
+	}
+	return api.PutReadingSettings200JSONResponse{BlurTranslation: rs.BlurTranslation}, nil
+}
+
 // storyView maps a stored story onto the API shape. showFurigana is computed
 // here, against the Learner's current Furigana Threshold (GLOSSARY.md):
 // unknown tokens always show their reading; Known Items show it only below
@@ -301,6 +339,10 @@ func storyView(st *story.Story, threshold int) api.Story {
 				Start:          sp.Start,
 				End:            sp.End,
 				GrammarPointId: strconv.FormatInt(sp.GrammarPointID, 10),
+				IsFocus:        sp.IsFocus,
+				Pattern:        sp.Pattern,
+				Meaning:        sp.Meaning,
+				JlptLevel:      jlptLevel(string(sp.JLPTLevel)),
 			})
 		}
 		sentences = append(sentences, api.StorySentence{
