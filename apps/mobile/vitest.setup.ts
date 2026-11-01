@@ -1,3 +1,6 @@
+// expo (pulled in by App's production wiring) reads the Metro build flag.
+(globalThis as Record<string, unknown>).__DEV__ = true;
+
 // jsdom gaps that react-native-web expects at import time.
 if (!window.matchMedia) {
   window.matchMedia = (query: string) =>
