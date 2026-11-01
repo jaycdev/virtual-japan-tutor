@@ -1,6 +1,7 @@
 import type { ApiClient } from "@vjt/api-client";
 import { createApiClient } from "@vjt/api-client";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { StyleSheet } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fakeBackHandler, type FakeBackHandler } from "../test/back-handler-fake.ts";
@@ -218,6 +219,36 @@ async function openStory(client: ApiClient) {
 
 const token = (sentence: number, index: number) => screen.getByTestId(`token-${sentence}-${index}`);
 
+/**
+ * React-fiber helper: the generated DOM carries only resolved CSS, so to see
+ * a component's *style prop* (the RN-side declaration, before the host's
+ * cascade) tests walk the fiber from a rendered element. RN attaches the
+ * fiber to each host element under a `__reactFiber$…` key.
+ */
+type Fiber = { memoizedProps: Record<string, unknown> | null; return: Fiber | null };
+
+function fiberFrom(el: Element): Fiber | null {
+  const key = Object.keys(el).find((k) => k.startsWith("__reactFiber$"));
+  return key ? ((el as unknown as Record<string, Fiber>)[key] ?? null) : null;
+}
+
+/** The flattened style prop of the nearest component at/above `el` that has one. */
+function styleOfTokenSurface(testID: string): Record<string, unknown> {
+  const el = screen.getByTestId(testID);
+  for (const node of [el, ...Array.from(el.querySelectorAll("*"))]) {
+    let f = fiberFrom(node);
+    while (f) {
+      const p = f.memoizedProps;
+      if (p && typeof p.style === "object" && p.style !== null) {
+        const flat = (StyleSheet.flatten(p.style as object) ?? {}) as Record<string, unknown>;
+        if ("textDecorationLine" in flat) return flat;
+      }
+      f = f.return;
+    }
+  }
+  return {};
+}
+
 /** Finger down at (x, y) and held past the Lookup threshold. */
 async function pressAndHold(sentence: number, index: number, x = 300, y = 300) {
   fireEvent.mouseDown(token(sentence, index), { clientX: x, clientY: y });
@@ -274,23 +305,25 @@ describe("Stories library (mobile)", () => {
 });
 
 describe("Story reader gestures (mobile)", () => {
-  it("a quick tap selects the sentence and primes the Lookup row without menu or Weak Signal", async () => {
+  it("a quick tap selects the sentence, primes the Lookup row, and hands the panel back to sentence-mode", async () => {
     const { client, requests } = fakeApi();
     await openStory(client);
+    const panel = await screen.findByLabelText("Reading Panel");
 
     fireEvent.mouseDown(token(0, 0), { clientX: 300, clientY: 300 });
+    // While the finger is down the panel is in word-mode: the word's Lookup
+    // details replace the sentence in the same fixed box, and the entry fetch
+    // is already primed.
+    expect(within(panel).getByText("Word meaning")).toBeTruthy();
+    expect(within(panel).queryByLabelText("Sentence Translation")).toBeNull();
+    await waitFor(() => expect(requests.some((r) => r.path === "/dictionary/entries/990101")).toBe(true));
     fireEvent.mouseUp(token(0, 0), { clientX: 300, clientY: 300 });
 
-    // Sentence selected: its (blurred) translation row is up in the panel.
-    expect(await screen.findByLabelText("Sentence Translation")).toBeTruthy();
-    // The Lookup row shows the pressed word; the Focus Set gloss is there
-    // first, and the dictionary entry fills in the fuller gloss line.
-    expect(screen.getByText("Word meaning")).toBeTruthy();
-    await waitFor(() => expect(requests.some((r) => r.path === "/dictionary/entries/990101")).toBe(true));
-    expect(await screen.findByText("school, colloquial reading…")).toBeTruthy();
-
-    // Released before the threshold: no menu, no Weak Signal.
+    // Released before the threshold: no menu, no Weak Signal — and the panel
+    // is back to sentence-mode, not showing the stale word.
     expect(screen.queryByLabelText("Lookup menu")).toBeNull();
+    expect(await within(panel).findByLabelText("Sentence Translation")).toBeTruthy();
+    expect(within(panel).queryByText("Word meaning")).toBeNull();
     await act(async () => {
       await new Promise((r) => setTimeout(r, HOLD_MS + 40));
     });
@@ -494,6 +527,144 @@ describe("Reading Panel (mobile)", () => {
     expect(await screen.findByRole("alert")).toBeTruthy();
     expect(screen.getByText(/server exploded/)).toBeTruthy();
     expect(screen.getByText("Translation hidden — tap to show")).toBeTruthy();
+  });
+});
+
+describe("Reading Panel placement, modes and scroll lock (review fixes)", () => {
+  it("renders the Reading Panel above the story, not below it", async () => {
+    const { client } = fakeApi();
+    await openStory(client);
+
+    const panel = await screen.findByLabelText("Reading Panel");
+    const storyText = screen.getByLabelText("Story text");
+    // The story must come after the panel in document order: the panel is the
+    // fixed area on top and the story scrolls under it.
+    expect(panel.compareDocumentPosition(storyText) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("after a held press released outside every option, the panel shows the sentence, not the stale word", async () => {
+    const { client } = fakeApi();
+    await openStory(client);
+    const panel = await screen.findByLabelText("Reading Panel");
+
+    await pressAndHold(0, 0);
+    // Held: word-mode — the Lookup details live in the panel's one fixed box,
+    // and the sentence is not shown beside them.
+    expect(within(panel).getByText("Word meaning")).toBeTruthy();
+    expect(within(panel).queryByLabelText("Sentence Translation")).toBeNull();
+
+    releaseAt(0, 0, 5, 5); // outside every option: the menu just closes
+    await waitFor(() => expect(screen.queryByLabelText("Lookup menu")).toBeNull());
+    expect(await within(panel).findByLabelText("Sentence Translation")).toBeTruthy();
+    expect(within(panel).queryByText("Word meaning")).toBeNull();
+  });
+
+  it("Back closing the menu also hands the panel back to sentence-mode", async () => {
+    const { client } = fakeApi();
+    await openStory(client);
+    const panel = await screen.findByLabelText("Reading Panel");
+
+    await pressAndHold(0, 0);
+    expect(within(panel).getByText("Word meaning")).toBeTruthy();
+    back.press();
+    await waitFor(() => expect(screen.queryByLabelText("Lookup menu")).toBeNull());
+    expect(await within(panel).findByLabelText("Sentence Translation")).toBeTruthy();
+    expect(within(panel).queryByText("Word meaning")).toBeNull();
+  });
+
+  it("the panel is one fixed-height container in both modes", async () => {
+    const { client } = fakeApi();
+    await openStory(client);
+
+    // Read the height off what react-native-web rendered (r-* class CSS):
+    // one fixed dp constant, the same in sentence-mode and word-mode.
+    const panelHeight = () => {
+      const el = screen.getByTestId("reading-panel");
+      for (const cls of Array.from(el.classList)) {
+        if (!cls.startsWith("r-")) continue;
+        for (const style of Array.from(document.querySelectorAll("style"))) {
+          for (const rule of Array.from((style as HTMLStyleElement).sheet?.cssRules ?? [])) {
+            const r = rule as CSSStyleRule;
+            if (r.selectorText === `.${cls}` && r.style.getPropertyValue("height")) {
+              return r.style.getPropertyValue("height");
+            }
+          }
+        }
+      }
+      return undefined;
+    };
+    const sentenceModeHeight = panelHeight();
+    expect(sentenceModeHeight).toBe("148px");
+
+    fireEvent.mouseDown(token(0, 0), { clientX: 300, clientY: 300 });
+    expect(panelHeight()).toBe(sentenceModeHeight);
+    fireEvent.mouseUp(token(0, 0), { clientX: 300, clientY: 300 });
+  });
+
+  it("scrolling is locked while a token press primes a hold, and restored on release", async () => {
+    const { client } = fakeApi();
+    await openStory(client);
+
+    // RNW implements scrollEnabled by flipping the scroll container's own
+    // overflow (auto ↔ hidden) — that is what the browser uses to decide who
+    // pans, so read it off the rendered CSS rather than component props.
+    const scrollable = () => {
+      const el = screen.getByTestId("story-scroll");
+      for (const cls of Array.from(el.classList)) {
+        if (!cls.startsWith("r-overflowY")) continue;
+        for (const style of Array.from(document.querySelectorAll("style"))) {
+          for (const rule of Array.from((style as HTMLStyleElement).sheet?.cssRules ?? [])) {
+            const r = rule as CSSStyleRule;
+            if (r.selectorText === `.${cls}`) return r.style.getPropertyValue("overflow-y") === "auto";
+          }
+        }
+      }
+      return false;
+    };
+    expect(scrollable()).toBe(true);
+
+    // Press: the hold is primed, so the ScrollView stops stealing the gesture
+    // — this is what makes slide-and-release work on a real Android.
+    fireEvent.mouseDown(token(0, 0), { clientX: 300, clientY: 300 });
+    expect(scrollable()).toBe(false);
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, HOLD_MS + 30));
+    });
+    expect(screen.getByLabelText("Lookup menu")).toBeTruthy();
+    expect(scrollable()).toBe(false);
+
+    fireEvent.mouseUp(token(0, 0), { clientX: 5, clientY: 5 }); // released outside: cancel
+    expect(scrollable()).toBe(true);
+  });
+
+  it("the four token classes get underlines that survive Android: colour + weight, no iOS-only props", async () => {
+    const { client } = fakeApi();
+    await openStory(client);
+
+    const known = styleOfTokenSurface("token-0-0"); // がっこう — Known Item
+    const unknown = styleOfTokenSurface("token-0-1"); // で — unknown with an entry
+    const unlinked = styleOfTokenSurface("token-0-2"); // べんきょう — no entry
+    const focusGrammar = styleOfTokenSurface("token-0-3"); // しました — inside the Focus Grammar span
+
+    // textDecorationStyle/textDecorationColor are iOS-only in RN: using them
+    // on Android collapses every underline to the same solid line, so the
+    // mapping must never emit them.
+    for (const style of [known, unknown, unlinked, focusGrammar]) {
+      expect(style).not.toHaveProperty("textDecorationStyle");
+      expect(style).not.toHaveProperty("textDecorationColor");
+    }
+
+    expect(known.textDecorationLine).toBe("underline");
+    expect(unknown.textDecorationLine).toBe("underline");
+    expect(unlinked.textDecorationLine ?? "none").toBe("none");
+    expect(focusGrammar.textDecorationLine).toBe("underline");
+    // Android paints the underline in the text's colour, so the colour (and
+    // for Focus Grammar the weight) carries the distinction the web draws
+    // with line styles.
+    expect(known.color).not.toBe(unknown.color);
+    expect(focusGrammar.color).toBe("#5b21b6");
+    expect(focusGrammar.fontWeight).toBe("600");
   });
 });
 

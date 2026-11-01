@@ -26,14 +26,17 @@ import {
 } from "./holdMenu.ts";
 
 /**
- * The mobile Story reader (issue #14): the story text scrolls under a fixed
- * Reading Panel; pressing a token selects its sentence, primes its Lookup
- * row, and starts the hold timer. Holding past lookupHoldMs opens the Lookup
- * Menu at the finger — that hold is the Weak Signal — and lifting the finger
- * over a menu option runs it (Dictionary / Grammar open centred windows,
- * Save writes to the Default List, Save to… opens the bottom sheet);
- * anywhere else the release cancels. Android Back unwinds one layer at a
- * time: sheet, then window, then menu, then back to the library.
+ * The mobile Story reader (issue #14): a fixed Reading Panel sits above the
+ * story, which scrolls under it. Pressing a token selects its sentence,
+ * switches the panel to word-mode for that word (sentence-mode returns on
+ * release / cancel), and starts the hold timer; scrolling is locked for the
+ * duration so Android cannot steal the slide gesture. Holding past
+ * lookupHoldMs opens the Lookup Menu at the finger — that hold is the Weak
+ * Signal — and lifting the finger over a menu option runs it (Dictionary /
+ * Grammar open centred windows, Save writes to the Default List, Save to…
+ * opens the bottom sheet); anywhere else the release cancels. Android Back
+ * unwinds one layer at a time: sheet, then window, then menu, then back to
+ * the library.
  */
 
 interface OpenMenu {
@@ -77,6 +80,10 @@ export function StoryReader({
   const [sheetError, setSheetError] = useState<string | null>(null);
   const [saveNote, setSaveNote] = useState<string | null>(null);
   const [screen, setScreen] = useState({ width: 0, height: 0 });
+  // True from the token press that primes a hold until its release/terminate:
+  // the story ScrollView is disabled while set so it cannot steal the slide
+  // gesture on Android (see onTokenGrant).
+  const [gestureLock, setGestureLock] = useState(false);
 
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelHold = () => {
@@ -120,9 +127,10 @@ export function StoryReader({
   const closeMenu = () => {
     setMenu(null);
     setMenuRects(null);
+    setLooked(null); // the panel switches back to sentence-mode
   };
 
-  /** Finger down on a token: select, prime the Lookup row, start the hold. */
+  /** Finger down on a token: select, switch the panel to word-mode, start the hold. */
   const onTokenGrant = (ref: TokenRef, e: NativeSyntheticEvent<NativeTouchEvent>) => {
     cancelHold();
     closeMenu();
@@ -132,6 +140,13 @@ export function StoryReader({
     setSelected(ref.sentence);
     setLooked({ ...ref, kind: coveringSpan(sen, token) ? "grammar" : "token" });
     if (token.entSeq !== undefined) lookup.load(token.entSeq, token.surface, token.reading);
+    // Lock the story's scrolling the moment the press primes a hold — not
+    // just while the menu is open: on Android the ScrollView steals the
+    // gesture as soon as the finger passes the touch slop, which would
+    // terminate the responder and kill slide-and-release before the menu is
+    // even up. It unlocks on release/terminate. (Manual checklist: verify
+    // the slide gesture on a device.)
+    setGestureLock(true);
 
     const holdMs = reading.state.status === "ready" ? reading.state.settings.lookupHoldMs : 800;
     const { pageX, pageY } = e.nativeEvent;
@@ -155,6 +170,8 @@ export function StoryReader({
   /** Finger up: before the threshold this is a tap; after it, the option under the release runs. */
   const onTokenRelease = (ref: TokenRef, e: NativeSyntheticEvent<NativeTouchEvent>) => {
     cancelHold();
+    setGestureLock(false);
+    setLooked(null); // every token release hands the panel back to sentence-mode
     if (!menu || !sameRef(menu.ref, ref)) return;
     const rects: Partial<Record<MenuOptionId, Rect>> = {};
     for (const option of menu.options) {
@@ -169,7 +186,9 @@ export function StoryReader({
 
   const onTokenTerminate = (ref: TokenRef) => {
     cancelHold();
+    setGestureLock(false);
     if (menu && sameRef(menu.ref, ref)) closeMenu();
+    setLooked(null);
   };
 
   const runMenuOption = (option: MenuOptionId, ref: TokenRef) => {
@@ -227,6 +246,10 @@ export function StoryReader({
       onResponderMove: () => {},
       onResponderRelease: (e) => onTokenRelease(ref, e),
       onResponderTerminate: () => onTokenTerminate(ref),
+      // Refuse any steal attempt (ScrollView, parent): the scrollEnabled lock
+      // is the main defence, this is the guarantee that no in-flight gesture
+      // can take the responder between grant and release.
+      onResponderTerminationRequest: () => false,
     };
   };
 
@@ -297,7 +320,24 @@ export function StoryReader({
         <RatingButtons view={view} storyId={story.id} rating={story.rating} />
       </View>
 
-      <ScrollView style={styles.fill} accessibilityLabel="Story text">
+      {/* The Reading Panel is the fixed area ABOVE the story (mirrors the web
+          reader, Stories.tsx): the story scrolls under it, and the panel's
+          one fixed box switches between sentence-mode and word-mode. */}
+      <ReadingPanel
+        story={story}
+        selected={selected}
+        looked={looked}
+        reading={reading}
+        lookup={lookup}
+        onUnblur={onUnblur}
+      />
+
+      <ScrollView
+        testID="story-scroll"
+        style={styles.fill}
+        scrollEnabled={!gestureLock}
+        accessibilityLabel="Story text"
+      >
         {story.sentences.map((sen, i) => (
           <StoryParagraph
             key={i}
@@ -341,15 +381,6 @@ export function StoryReader({
           </View>
         ) : null}
       </ScrollView>
-
-      <ReadingPanel
-        story={story}
-        selected={selected}
-        looked={looked}
-        reading={reading}
-        lookup={lookup}
-        onUnblur={onUnblur}
-      />
 
       {menu && (screenSize ?? screen).width > 0 ? (
         <TokenMenu

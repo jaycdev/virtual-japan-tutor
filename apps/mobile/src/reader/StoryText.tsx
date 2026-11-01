@@ -2,7 +2,7 @@ import type { StoryGrammarSpan, StorySentence, StoryToken } from "@vjt/api-clien
 import type { ReactNode } from "react";
 import { StyleSheet, Text, View, type NativeSyntheticEvent, type NativeTouchEvent } from "react-native";
 
-import { useColors } from "../theme.ts";
+import { type ThemeColors, useColors } from "../theme.ts";
 import { coveringSpan, type TokenRef } from "./holdMenu.ts";
 
 /**
@@ -13,11 +13,12 @@ import { coveringSpan, type TokenRef } from "./holdMenu.ts";
  *
  * Furigana: react-native has no ruby element, so a token with showFurigana
  * stacks its reading above its surface as one small inline block — one text
- * line for the reading, one for the word. Underline rules match the web
- * reader: solid = Known Item, dotted = unknown with a dictionary entry, none
- * = unlinked; Grammar Spans override with a purple wavy underline (thicker
- * for the story's Focus Grammar). (Android may render wavy as its own
- * underline style — the colour still carries the meaning.)
+ * line for the reading, one for the word. Underline rules echo the web
+ * reader, adapted for Android: RN's textDecorationStyle/textDecorationColor
+ * are iOS-only (reactnative.dev/docs/next/text-style-props, RN 0.88), so on
+ * Android every underline is solid and painted in the text's colour. The
+ * four web classes are therefore told apart by underline presence + text
+ * colour + weight (see tokenDecoration), not by dotted/wavy line styles.
  */
 
 export interface TokenHandlers {
@@ -26,6 +27,7 @@ export interface TokenHandlers {
   onResponderMove: (e: NativeSyntheticEvent<NativeTouchEvent>) => void;
   onResponderRelease: (e: NativeSyntheticEvent<NativeTouchEvent>) => void;
   onResponderTerminate: (e: NativeSyntheticEvent<NativeTouchEvent>) => void;
+  onResponderTerminationRequest: () => boolean;
 }
 
 /**
@@ -113,6 +115,40 @@ export function StoryParagraph({
   );
 }
 
+/**
+ * The underline mapping (issue #14 review, fix 5). Web draws: solid Known
+ * Item, dotted unknown-with-entry, none unlinked, wavy purple Grammar
+ * (thicker for Focus Grammar). `textDecorationStyle` and `textDecorationColor`
+ * are iOS-only props in RN (reactnative.dev/docs/next/text-style-props —
+ * both marked iOS, checked against RN 0.88.1), so on Android they are no-ops
+ * and all underlines collapse into one solid line in the text's colour.
+ * Nested-Text borders can fake per-token lines but are known-flaky on
+ * Android, so the mobile reader keeps to the props Android definitely
+ * honours and lets the underline follow the text colour:
+ *   known item         → underline, body colour (dark)
+ *   unknown w/ entry   → underline, dim grey (the web's dotted class)
+ *   unlinked           → no underline
+ *   Grammar Span       → underline, purple
+ *   Focus Grammar      → underline, darker purple + bold weight
+ * Five visually distinct treatments on Android, the same colour logic the
+ * web reader uses for Grammar.
+ */
+export function tokenDecoration(
+  token: StoryToken,
+  spans: StoryGrammarSpan[],
+  colors: ThemeColors,
+): { textDecorationLine: "underline" | "none"; color?: string; fontWeight?: string } {
+  const covered = spans.filter((sp) => token.start < sp.end && sp.start < token.end);
+  if (covered.length > 0) {
+    return covered.some((sp) => sp.isFocus)
+      ? { textDecorationLine: "underline", color: "#5b21b6", fontWeight: "600" }
+      : { textDecorationLine: "underline", color: "#7c3aed" };
+  }
+  if (token.tag === "known") return { textDecorationLine: "underline", color: colors.label };
+  if (token.entSeq !== undefined) return { textDecorationLine: "underline", color: colors.subtle };
+  return { textDecorationLine: "none" };
+}
+
 /** A token in the story body: touchable, underlined by its item status. */
 function StoryToken({
   token,
@@ -130,25 +166,7 @@ function StoryToken({
   handlers: TokenHandlers;
 }) {
   const colors = useColors();
-  const covered = spans.filter((sp) => token.start < sp.end && sp.start < token.end);
-  const style: object[] = [{ textDecorationLine: "underline" }];
-  if (covered.length > 0) {
-    const focus = covered.some((sp) => sp.isFocus);
-    // The web marks Focus Grammar with a thicker wavy line; Android cannot
-    // vary underline thickness, so the focus Span gets a darker solid line
-    // instead — the colour still separates it from plain Grammar spans.
-    style.push(
-      focus
-        ? { textDecorationStyle: "solid", textDecorationColor: "#5b21b6" }
-        : { textDecorationStyle: "wavy", textDecorationColor: "#7c3aed" },
-    );
-  } else if (token.tag === "known") {
-    style.push({ textDecorationStyle: "solid", textDecorationColor: colors.subtle });
-  } else if (token.entSeq !== undefined) {
-    style.push({ textDecorationStyle: "dotted", textDecorationColor: colors.subtle });
-  } else {
-    style.push({ textDecorationLine: "none" });
-  }
+  const style: object[] = [tokenDecoration(token, spans, colors)];
   if (active) style.push({ backgroundColor: `${colors.accent}33` });
   const ruby = token.showFurigana && token.reading && token.reading !== token.surface;
   return (
