@@ -1,9 +1,18 @@
 import type { ApiClient, GenerationResult, GrammarPointDetail } from "@vjt/api-client";
-import { useGrammar, type ActionResult, type Grammar, type GrammarLevelFilter } from "@vjt/core";
-import { useEffect, useState } from "react";
+import {
+  useGrammar,
+  type ActionResult,
+  type GenerateOutcome,
+  type Grammar,
+  type GrammarLevelFilter,
+} from "@vjt/core";
+import { useState } from "react";
 
 const LEVELS: GrammarLevelFilter[] = ["all", "N5", "N4", "N3", "N2", "N1"];
 const COUNTS = [5, 10, 20];
+
+/** Runs a mutating action and hands back its (typed) outcome. */
+type RunAction = <T extends ActionResult>(action: () => Promise<T>) => Promise<T>;
 
 /** The grammar catalogue: level filter and search, and per point an explanation and validated examples. */
 export function Grammar({ client }: { client: ApiClient }) {
@@ -13,7 +22,7 @@ export function Grammar({ client }: { client: ApiClient }) {
   const [busy, setBusy] = useState(false);
 
   /** Runs a mutating action, surfacing its failure message. */
-  const run = async (action: () => Promise<ActionResult>): Promise<ActionResult> => {
+  const run = async <T extends ActionResult>(action: () => Promise<T>): Promise<T> => {
     setBusy(true);
     setError(undefined);
     try {
@@ -103,9 +112,9 @@ function PointList({ grammar }: { grammar: Grammar }) {
   );
 }
 
-function PointDetail({ grammar, run, busy }: { grammar: Grammar; run: (action: () => Promise<ActionResult>) => Promise<ActionResult>; busy: boolean }) {
+function PointDetail({ grammar, run, busy }: { grammar: Grammar; run: RunAction; busy: boolean }) {
   const { detail } = grammar;
-  if (detail.status === "loading") return <p>Loading…</p>;
+  if (detail.status === "idle" || detail.status === "loading") return <p>Loading…</p>;
   if (detail.status === "error") {
     return (
       <>
@@ -127,18 +136,23 @@ function PointReady({
 }: {
   grammar: Grammar;
   point: GrammarPointDetail;
-  run: (action: () => Promise<ActionResult>) => Promise<ActionResult>;
+  run: RunAction;
   busy: boolean;
 }) {
   const [draft, setDraft] = useState(point.explanation);
   const [count, setCount] = useState(5);
   const [generation, setGeneration] = useState<GenerationResult | null>(null);
-  // Adopt the server's copy after a save or regeneration.
-  useEffect(() => setDraft(point.explanation), [point.explanation]);
+  // Adopt the server's copy after a save or regeneration (render-time reset,
+  // the pattern React prescribes for prop-derived state).
+  const [adopted, setAdopted] = useState(point.explanation);
+  if (point.explanation !== adopted) {
+    setAdopted(point.explanation);
+    setDraft(point.explanation);
+  }
 
   const generate = async () => {
     setGeneration(null);
-    const res = await run(() => grammar.generateExamples(point.id, count));
+    const res: GenerateOutcome = await run(() => grammar.generateExamples(point.id, count));
     if (res.ok) setGeneration(res.result);
   };
 
