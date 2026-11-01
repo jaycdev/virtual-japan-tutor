@@ -1,6 +1,7 @@
 import type { ApiClient } from "@vjt/api-client";
 import { useAuth, useHealth, type Auth, type TokenStorage } from "@vjt/core";
 import { useState, type FormEvent } from "react";
+import { Grammar } from "./Grammar.tsx";
 import { Settings } from "./Settings.tsx";
 
 export function App({ client, storage }: { client: ApiClient; storage: TokenStorage }) {
@@ -82,7 +83,7 @@ function Shell({
   onLogout: () => Promise<void>;
 }) {
   const health = useHealth(client);
-  const [page, setPage] = useState<"home" | "settings">("home");
+  const [page, setPage] = useState<"home" | "grammar" | "settings">("home");
 
   return (
     <section>
@@ -90,12 +91,16 @@ function Shell({
         <button type="button" aria-current={page === "home" ? "page" : undefined} onClick={() => setPage("home")}>
           Home
         </button>{" "}
+        <button type="button" aria-current={page === "grammar" ? "page" : undefined} onClick={() => setPage("grammar")}>
+          Grammar
+        </button>{" "}
         <button type="button" aria-current={page === "settings" ? "page" : undefined} onClick={() => setPage("settings")}>
           Settings
         </button>
       </nav>
       <p>Signed in as {username}</p>
       {page === "settings" && <Settings client={client} />}
+      {page === "grammar" && <Grammar client={client} />}
       {page === "home" && (
         <>
           {health.state === "loading" && <p>Checking server…</p>}
