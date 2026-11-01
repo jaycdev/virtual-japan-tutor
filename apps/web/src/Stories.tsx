@@ -2,7 +2,6 @@ import type {
   ApiClient,
   DictionaryEntry,
   GrammarPointDetail,
-  ItemKind,
   PitchPattern,
   Story as StoryData,
   StoryGrammarSpan,
@@ -136,14 +135,20 @@ type OpenWindow =
   | { kind: "dictionary"; key: string; entSeq: number; surface: string; reading?: string; by: TokenRef }
   | { kind: "grammar"; key: string; grammarPointId: string; by: TokenRef };
 
+// The server's own lookup-hold default, used only while reading settings have
+// not loaded yet (or failed) — same number the API seeds the column with.
+const DEFAULT_LOOKUP_HOLD_MS = 800;
+
 function StoryReader({ view, client }: { view: StoryView; client: ApiClient }) {
   const story = view.story as StoryData;
   const reading = useReadingSettings(client);
+  const lists = useItemLists(client);
   const lookup = useEntryLookup(client);
   const [selected, setSelected] = useState<number | null>(null);
   const [hovered, setHovered] = useState<HoverTarget | null>(null);
   const [menu, setMenu] = useState<OpenMenu | null>(null);
   const [windows, setWindows] = useState<OpenWindow[]>([]);
+  const [saveNote, setSaveNote] = useState<string | null>(null);
 
   const openWindow = useCallback((w: OpenWindow) => {
     setWindows((prev) => (prev.some((x) => x.key === w.key) ? prev : [...prev, w]));
@@ -154,6 +159,42 @@ function StoryReader({ view, client }: { view: StoryView; client: ApiClient }) {
   const focusToken = (at: TokenRef) => {
     document.querySelector<HTMLButtonElement>(`button[data-token="${at.sentence}:${at.index}"]`)?.focus();
   };
+
+  // Weak Signals (issue #12): reader behaviour that hints a Known Item may be
+  // shakier than its level says. Each (item, reason) pair is reported once per
+  // open story; the server keeps only signals about the caller's Known Items
+  // and drops the rest, so this is fire-and-forget.
+  const signaled = useRef<Set<string>>(new Set());
+  const reportSignals = (signals: WeakSignalRequest[]) => {
+    const fresh = signals.filter((s) => {
+      const key = `${s.itemKind}|${s.itemRef}|${s.reason}`;
+      if (signaled.current.has(key)) return false;
+      signaled.current.add(key);
+      return true;
+    });
+    if (fresh.length > 0) void lists.reportWeakSignals(fresh);
+  };
+
+  // The Lookup Menu hold: a Known word whose Lookup row stays up past the
+  // configured threshold signals a shakier word. The timer starts on hover
+  // (or Tab) and dies on hover-out, on the menu opening (menu_open counts
+  // instead), and on leaving the reader.
+  const holdMs = reading.state.status === "ready" ? reading.state.settings.lookupHoldMs : DEFAULT_LOOKUP_HOLD_MS;
+  const holdTimer = useRef<number | null>(null);
+  const cancelHold = () => {
+    if (holdTimer.current !== null) window.clearTimeout(holdTimer.current);
+    holdTimer.current = null;
+  };
+  const startHold = (token: StoryToken) => {
+    cancelHold();
+    if (token.tag !== "known" || token.entSeq === undefined || holdMs <= 0) return;
+    const entSeq = token.entSeq;
+    holdTimer.current = window.setTimeout(() => {
+      holdTimer.current = null;
+      reportSignals([{ itemKind: "vocabulary", itemRef: String(entSeq), reason: "lookup" }]);
+    }, holdMs);
+  };
+  useEffect(() => cancelHold, []);
 
   const onTokenActivate = (sentenceIdx: number, tokenIdx: number) => {
     const sentence = story.sentences[sentenceIdx];
@@ -167,7 +208,63 @@ function StoryReader({ view, client }: { view: StoryView; client: ApiClient }) {
       setMenu(null);
       return;
     }
+    // Opening the Lookup Menu is itself a Weak Signal for the word (the
+    // hold-timer signal would otherwise double up, so the timer dies here).
+    cancelHold();
+    if (token.entSeq !== undefined) {
+      reportSignals([{ itemKind: "vocabulary", itemRef: String(token.entSeq), reason: "menu_open" }]);
+    }
     setMenu({ sentence: sentenceIdx, index: tokenIdx });
+  };
+
+  // Unblurring a Sentence Translation signals its Focus Set items: the
+  // Learner reached for the answer, so recognition of those items wobbled.
+  // Only items actually in this sentence count; the server ignores any that
+  // are not the caller's Known Items.
+  const onUnblur = (sentenceIdx: number) => {
+    const sen = story.sentences[sentenceIdx];
+    if (!sen) return;
+    const inSentence = new Set(sen.tokens.flatMap((t) => (t.entSeq === undefined ? [] : [t.entSeq])));
+    const signals: WeakSignalRequest[] = [];
+    for (const v of story.vocabItems ?? []) {
+      if (v.isFocus && v.entSeq !== undefined && inSentence.has(v.entSeq)) {
+        signals.push({ itemKind: "vocabulary", itemRef: String(v.entSeq), reason: "translation_unblur" });
+      }
+    }
+    for (const sp of sen.grammarSpans) {
+      if (sp.isFocus) signals.push({ itemKind: "grammar", itemRef: sp.grammarPointId, reason: "translation_unblur" });
+    }
+    reportSignals(signals);
+  };
+
+  // Save / Save to…: one item into one list. A plain Save targets the Default
+  // List; the server records its own Weak Signal when a Known Item lands in a
+  // Boosting List. The menu closes either way and focus returns to the token.
+  // `lists` goes through a ref: the click handler's closure may predate the
+  // re-render that a create or save triggered, and must not read stale state.
+  const listsRef = useRef(lists);
+  useEffect(() => {
+    listsRef.current = lists;
+  }, [lists]);
+  const saveTokenToList = async (at: TokenRef, entSeq: number, listId: string | null, listName?: string) => {
+    setMenu(null);
+    focusToken(at);
+    const view = listsRef.current;
+    const target = listId ?? view.defaultListId;
+    if (!target) {
+      setSaveNote("Could not save — your Item Lists are not loaded.");
+      return;
+    }
+    const res = await view.addToList(target, { itemKind: "vocabulary", itemRef: String(entSeq) });
+    if (!res.ok) {
+      setSaveNote(`Could not save — ${res.message}`);
+      return;
+    }
+    // The picker knows the name it chose (including a list it just created);
+    // a plain Save reads the Default List's name from the latest state.
+    const name =
+      listName ?? (view.state.status === "ready" ? view.state.lists.find((l) => l.id === target)?.name : undefined);
+    setSaveNote(name ? `Saved to ${name}.` : "Saved.");
   };
 
   const escape = (e: KeyboardEvent<HTMLElement>) => {
@@ -199,7 +296,19 @@ function StoryReader({ view, client }: { view: StoryView; client: ApiClient }) {
       </h3>
       <RatingButtons view={view} story={story} />
 
-      <ReadingPanel story={story} selected={selected} hovered={hovered} lookup={lookup} reading={reading} />
+      <ReadingPanel
+        story={story}
+        selected={selected}
+        hovered={hovered}
+        lookup={lookup}
+        reading={reading}
+        onUnblur={onUnblur}
+      />
+      {saveNote && (
+        <p className={saveNote.startsWith("Could not") ? "error" : "saved"} role="status">
+          {saveNote}
+        </p>
+      )}
 
       {story.sentences.map((sen, i) => {
         // A hovered Grammar Span lights up every token it covers, not just the
@@ -226,17 +335,24 @@ function StoryReader({ view, client }: { view: StoryView; client: ApiClient }) {
                   setHovered({ kind: coveringSpan(sen, tok) ? "grammar" : "token", sentence: i, index: j });
                   if (coveringSpan(sen, tok) === null && tok.entSeq !== undefined) {
                     lookup.load(tok.entSeq, tok.surface, tok.reading);
+                    startHold(tok);
                   }
                 }}
-                onLeave={() =>
-                  setHovered((h) => (h && h.sentence === i && h.index === j ? null : h))
-                }
+                onLeave={() => {
+                  cancelHold();
+                  setHovered((h) => (h && h.sentence === i && h.index === j ? null : h));
+                }}
                 onActivate={() => onTokenActivate(i, j)}
                 menu={
                   menu && menu.sentence === i && menu.index === j ? (
                     <TokenMenu
                       token={tok}
                       span={coveringSpan(sen, tok)}
+                      lists={lists}
+                      onSave={(listId, name) => {
+                        if (tok.entSeq === undefined) return;
+                        void saveTokenToList({ sentence: i, index: j }, tok.entSeq, listId, name);
+                      }}
                       onDictionary={() => {
                         if (tok.entSeq === undefined) return;
                         setMenu(null);
@@ -257,6 +373,9 @@ function StoryReader({ view, client }: { view: StoryView; client: ApiClient }) {
                         if (!sp) return;
                         setMenu(null);
                         focusToken({ sentence: i, index: j });
+                        // Opening a Grammar Point window is the span's menu-open
+                        // signal; the server drops it unless the point is known.
+                        reportSignals([{ itemKind: "grammar", itemRef: sp.grammarPointId, reason: "menu_open" }]);
                         openWindow({
                           kind: "grammar",
                           key: `grammar-${sp.grammarPointId}`,
@@ -346,12 +465,15 @@ function ReadingPanel({
   hovered,
   lookup,
   reading,
+  onUnblur,
 }: {
   story: StoryData;
   selected: number | null;
   hovered: HoverTarget | null;
   lookup: EntryLookup;
   reading: ReturnType<typeof useReadingSettings>;
+  /** Reports Weak Signals when a blurred Sentence Translation is revealed. */
+  onUnblur: (sentenceIdx: number) => void;
 }) {
   const blur = reading.state.status === "ready" ? reading.state.settings.blurTranslation : true;
   const sen = selected !== null ? story.sentences[selected] : null;
@@ -359,9 +481,13 @@ function ReadingPanel({
 
   // A failed save leaves the stored preference — and the screen — as they
   // were; the only change is the message that says the click did not stick.
+  // A *successful* reveal is a Weak Signal for the sentence's Focus Set
+  // items (issue #12): the Learner reached for the answer.
   const toggleBlur = async () => {
+    const revealing = blur;
     const res = await reading.setBlurTranslation(!blur);
     setBlurError(res.ok ? null : res.message);
+    if (res.ok && revealing && selected !== null) onUnblur(selected);
   };
 
   // Two lines don't fit (long sentence, furigana ruby inflating the lines)?
@@ -492,27 +618,65 @@ function LookupRow({
 /**
  * The menu over a tapped word or Grammar Span token. Dictionary is the
  * word's own entry; a token inside a Grammar Span also gets a Grammar item
- * for the point, keeping words inside spans reachable. Save / Save to…
- * arrive with Saved Items (issue #12). Opening moves focus to the first
- * enabled item.
+ * for the point, keeping words inside spans reachable. Save puts the word in
+ * the Default List (Saved unless the Learner chose another); Save to… opens
+ * a picker of every Item List with an inline "new list" row, and creating a
+ * list saves the word straight into it. Either Save closes the menu and
+ * hands focus back to the token. Opening moves focus to the first enabled
+ * item.
  */
 function TokenMenu({
   token,
   span,
+  lists,
+  onSave,
   onDictionary,
   onGrammar,
 }: {
   token: StoryToken;
   span: StoryGrammarSpan | null;
+  lists: ItemListsView;
+  /** Save this token into `listId` (named `name`), or the Default List when null. */
+  onSave: (listId: string | null, name?: string) => void;
   onDictionary: () => void;
   onGrammar: () => void;
 }) {
-  const later = { disabled: true, title: "Saving words comes with Saved Items (issue #12)" } as const;
+  const [picking, setPicking] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [createError, setCreateError] = useState<string | null>(null);
   const rootRef = useRef<HTMLSpanElement>(null);
   useEffect(() => {
     const first = rootRef.current?.querySelector<HTMLButtonElement>("[role=menuitem]:not([disabled])");
     first?.focus();
   }, []);
+
+  const ready = lists.state.status === "ready";
+  const state = lists.state;
+  const defaultName =
+    state.status === "ready"
+      ? state.lists.find((l) => l.id === state.defaultListId)?.name
+      : undefined;
+  const saveTitle =
+    token.entSeq === undefined
+      ? "This word did not match a dictionary entry"
+      : ready
+        ? `Save to ${defaultName ?? "the default list"}`
+        : "Your Item Lists are still loading";
+
+  const createAndSave = async (e: FormEvent) => {
+    e.preventDefault();
+    const name = newName.trim();
+    if (!name) return;
+    setCreateError(null);
+    const created = await lists.createList({ name, boosting: false });
+    // Only save once the list genuinely exists — a failed create must not
+    // silently aim the item at some other list.
+    if (created.ok) {
+      if (created.list) onSave(created.list.id, created.list.name);
+      else setCreateError("The new list was created but could not be read back.");
+    } else setCreateError(created.message);
+  };
+
   return (
     <span ref={rootRef} className="token-menu" role="menu" onClick={(e) => e.stopPropagation()}>
       <button
@@ -529,12 +693,52 @@ function TokenMenu({
           Grammar
         </button>
       )}
-      <button type="button" role="menuitem" {...later}>
+      <button
+        type="button"
+        role="menuitem"
+        disabled={token.entSeq === undefined || !ready}
+        title={saveTitle}
+        onClick={() => onSave(null)}
+      >
         Save
       </button>
-      <button type="button" role="menuitem" {...later}>
+      <button
+        type="button"
+        role="menuitem"
+        disabled={token.entSeq === undefined || !ready}
+        title={ready ? "Save into another Item List" : "Your Item Lists are still loading"}
+        onClick={() => setPicking(true)}
+      >
         Save to…
       </button>
+      {picking && (
+        <span className="token-menu-picker" onClick={(e) => e.stopPropagation()}>
+          {lists.state.status === "ready" &&
+            lists.state.lists.map((l) => (
+              <button key={l.id} type="button" role="menuitem" onClick={() => onSave(l.id, l.name)}>
+                {l.name}
+                {l.isDefault ? " (default)" : ""}
+              </button>
+            ))}
+          <form onSubmit={(e) => void createAndSave(e)}>
+            <input
+              name="newListName"
+              maxLength={60}
+              placeholder="new list name"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+            />{" "}
+            <button type="submit" role="menuitem" disabled={newName.trim() === ""}>
+              Create and save
+            </button>
+          </form>
+          {createError && (
+            <span className="error" role="alert">
+              {createError}
+            </span>
+          )}
+        </span>
+      )}
     </span>
   );
 }

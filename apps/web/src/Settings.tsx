@@ -1,9 +1,19 @@
-import type { AiProvider, AiProviderTestResult, AiTask, ApiClient, GrammarReviewItem, MaruMoriSyncRun } from "@vjt/api-client";
+import type {
+  AiProvider,
+  AiProviderTestResult,
+  AiTask,
+  ApiClient,
+  GrammarReviewItem,
+  ItemList,
+  MaruMoriSyncRun,
+} from "@vjt/api-client";
 import {
   STARTING_LEVELS,
   useAiSettings,
   useGrammarReview,
+  useItemLists,
   useMarumori,
+  useReadingSettings,
   useStartingLevel,
   type ActionResult,
   type StartingLevel,
@@ -250,15 +260,287 @@ function AiProviders({ client }: { client: ApiClient }) {
   );
 }
 
-/** The Settings page: AI providers, the Starting Level, the MaruMori connection and flagged grammar. */
+/** The Settings page: AI providers, Item Lists, the Starting Level, the MaruMori connection and flagged grammar. */
 export function Settings({ client }: { client: ApiClient }) {
   return (
     <>
       <AiProviders client={client} />
+      <ItemListsSettings client={client} />
+      <ReadingSettingsSection client={client} />
       <StartingLevelSettings client={client} />
       <MaruMoriSettings client={client} />
       <GrammarReviewSettings client={client} />
     </>
+  );
+}
+
+/** The built-in Saved list: it cannot be renamed or deleted, only configured. */
+const isSavedList = (l: ItemList): boolean => l.name.toLowerCase() === "saved";
+
+/**
+ * Item Lists (issue #12): the named groups Save fills, and the Boosting
+ * Lists that push their not-yet-Known members into Focus Sets. The Default
+ * List is where a one-tap Save goes; the built-in Saved list can be
+ * configured (even made a Boosting List) but never renamed or deleted.
+ */
+function ItemListsSettings({ client }: { client: ApiClient }) {
+  const lists = useItemLists(client);
+  const { state } = lists;
+  const [error, setError] = useState<string | undefined>();
+  const [busy, setBusy] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [renaming, setRenaming] = useState<ItemList | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
+
+  const run = async (action: () => Promise<ActionResult>): Promise<boolean> => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      const res = await action();
+      if (!res.ok) setError(res.message);
+      return res.ok;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const addList = async (e: FormEvent) => {
+    e.preventDefault();
+    const name = newName.trim();
+    if (!name) return;
+    if (await run(() => lists.createList({ name, boosting: false }))) setNewName("");
+  };
+
+  const rename = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!renaming) return;
+    const name = renameValue.trim();
+    if (!name) return;
+    if (await run(() => lists.updateList(renaming.id, { name }))) setRenaming(null);
+  };
+
+  const remove = async (l: ItemList) => {
+    setConfirmingDelete(null);
+    await run(() => lists.deleteList(l.id));
+  };
+
+  return (
+    <section>
+      <h2>Item Lists</h2>
+      {state.status === "loading" && <p>Loading…</p>}
+      {state.status === "error" && (
+        <>
+          <p>Cannot load your Item Lists: {state.message}</p>
+          <button type="button" onClick={lists.reload}>
+            Retry
+          </button>
+        </>
+      )}
+      {state.status === "ready" && (
+        <>
+          {error && <p role="alert">{error}</p>}
+          <p>
+            Saving a word from a story adds it to the Default List. A Boosting List also pulls
+            its not-yet-known items into your stories&apos; Focus Sets.
+          </p>
+          <ul>
+            {state.lists.map((l) => (
+              <li key={l.id}>
+                {renaming?.id === l.id ? (
+                  <form onSubmit={(e) => void rename(e)} className="inline-form">
+                    <input
+                      name="listName"
+                      aria-label="New name"
+                      maxLength={60}
+                      value={renameValue}
+                      disabled={busy}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                    />{" "}
+                    <button type="submit" disabled={busy || renameValue.trim() === ""}>
+                      Save name
+                    </button>{" "}
+                    <button type="button" onClick={() => setRenaming(null)}>
+                      Cancel
+                    </button>
+                  </form>
+                ) : (
+                  <>
+                    <strong>{l.name}</strong>
+                    {l.isDefault && " — default"} · {l.itemCount}{" "}
+                    {l.itemCount === 1 ? "item" : "items"}
+                    <div>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={l.boosting}
+                          disabled={busy}
+                          onChange={(e) => void run(() => lists.updateList(l.id, { boosting: e.target.checked }))}
+                        />{" "}
+                        Boosting
+                      </label>{" "}
+                      {!l.isDefault && (
+                        <button type="button" disabled={busy} onClick={() => void run(() => lists.setDefaultList(l.id))}>
+                          Make default
+                        </button>
+                      )}{" "}
+                      {!isSavedList(l) && (
+                        <>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => {
+                              setRenaming(l);
+                              setRenameValue(l.name);
+                              setError(undefined);
+                            }}
+                          >
+                            Rename
+                          </button>{" "}
+                          {confirmingDelete === l.id ? (
+                            <>
+                              <button type="button" disabled={busy} onClick={() => void remove(l)}>
+                                Confirm delete
+                              </button>{" "}
+                              <button type="button" onClick={() => setConfirmingDelete(null)}>
+                                Keep
+                              </button>
+                            </>
+                          ) : (
+                            <button type="button" disabled={busy} onClick={() => setConfirmingDelete(l.id)}>
+                              Delete
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+          <h3>Add a list</h3>
+          <form onSubmit={(e) => void addList(e)}>
+            <p>
+              <label>
+                List name
+                <input
+                  name="newListName"
+                  maxLength={60}
+                  placeholder="food, travel…"
+                  value={newName}
+                  disabled={busy}
+                  onChange={(e) => setNewName(e.target.value)}
+                />
+              </label>
+            </p>
+            <button type="submit" disabled={busy || newName.trim() === ""}>
+              Add list
+            </button>
+          </form>
+        </>
+      )}
+    </section>
+  );
+}
+
+/**
+ * Reading preferences (issue #11, extended by issue #12): the translation
+ * blur and the Lookup Menu hold threshold past which a Known Item's lookup
+ * becomes a Weak Signal. Kept on the server, so every device reads the same.
+ */
+function ReadingSettingsSection({ client }: { client: ApiClient }) {
+  const reading = useReadingSettings(client);
+  const [holdMs, setHoldMs] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | undefined>();
+  const [saved, setSaved] = useState(false);
+
+  const stored = reading.state.status === "ready" ? reading.state.settings : null;
+  const holdValue = holdMs ?? String(stored?.lookupHoldMs ?? 800);
+
+  const saveHold = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(undefined);
+    setSaved(false);
+    const ms = Number(holdValue);
+    if (!Number.isInteger(ms) || ms < 0 || ms > 10000) {
+      setError("The hold is a whole number of milliseconds from 0 to 10000.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await reading.setLookupHoldMs(ms);
+      if (res.ok) {
+        setHoldMs(null);
+        setSaved(true);
+      } else setError(res.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section>
+      <h2>Reading</h2>
+      {reading.state.status === "loading" && <p>Loading…</p>}
+      {reading.state.status === "error" && (
+        <>
+          <p>Cannot load your reading settings: {reading.state.message}</p>
+          <button type="button" onClick={reading.reload}>
+            Retry
+          </button>
+        </>
+      )}
+      {reading.state.status === "ready" && (
+        <>
+          <p>
+            <label>
+              <input
+                type="checkbox"
+                checked={reading.state.settings.blurTranslation}
+                disabled={busy}
+                onChange={(e) =>
+                  void (async () => {
+                    setBusy(true);
+                    const res = await reading.setBlurTranslation(e.target.checked);
+                    setBusy(false);
+                    if (!res.ok) setError(res.message);
+                  })()
+                }
+              />{" "}
+              Blur sentence translations until clicked
+            </label>
+          </p>
+          <form onSubmit={(e) => void saveHold(e)}>
+            <p>
+              <label>
+                Lookup hold before a Weak Signal (ms, 0–10000)
+                <input
+                  name="lookupHoldMs"
+                  type="number"
+                  min={0}
+                  max={10000}
+                  step={50}
+                  value={holdValue}
+                  disabled={busy}
+                  onChange={(e) => setHoldMs(e.target.value)}
+                />
+              </label>
+            </p>
+            <button type="submit" disabled={busy}>
+              Save reading settings
+            </button>
+          </form>
+          {saved && (
+            <p className="test-result ok" role="status">
+              Saved — the reader uses this from the next lookup on.
+            </p>
+          )}
+          {error && <p role="alert">{error}</p>}
+        </>
+      )}
+    </section>
   );
 }
 

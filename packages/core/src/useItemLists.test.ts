@@ -138,6 +138,26 @@ describe("useItemLists", () => {
     expect(delCall.url).toContain("/item-lists/l2");
   });
 
+  it("removes one item from a list, carrying the item in the query", async () => {
+    const { client, fetchImpl, json } = fakeClient();
+    fetchImpl
+      .mockImplementationOnce(async () => json(200, listsBody))
+      .mockImplementationOnce(async () => json(204, undefined))
+      .mockImplementationOnce(async () => json(200, listsBody));
+    const { result } = renderHook(() => useItemLists(client));
+    await waitFor(() => expect(result.current.state.status).toBe("ready"));
+
+    const res = await act(async () =>
+      result.current.removeFromList("l2", { itemKind: "vocabulary", itemRef: "990101" }),
+    );
+    expect(res.ok).toBe(true);
+    const delCall = fetchImpl.mock.calls[1]?.[0] as Request;
+    expect(delCall.method).toBe("DELETE");
+    // The path id AND the query pair must both survive: losing either one
+    // would silently aim the DELETE at the wrong list or item.
+    expect(delCall.url).toContain("/item-lists/l2/items?itemKind=vocabulary&itemRef=990101");
+  });
+
   it("reports a failed load as an error the screen can retry", async () => {
     const { client, fetchImpl, json } = fakeClient();
     fetchImpl

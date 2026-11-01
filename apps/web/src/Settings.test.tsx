@@ -40,6 +40,14 @@ interface Maru {
   runs: Record<string, unknown>[];
 }
 
+interface ItemListRow {
+  id: string;
+  name: string;
+  boosting: boolean;
+  isDefault: boolean;
+  itemCount: number;
+}
+
 const syncRun = (id: string, status: "ok" | "failed", extra: Record<string, unknown> = {}) => ({
   id,
   status,
@@ -70,6 +78,8 @@ function fakeApi(
     maruMori?: Partial<Maru>;
     startingLevel?: Record<string, unknown>;
     reviewItems?: Record<string, unknown>[];
+    itemLists?: ItemListRow[];
+    readingSettings?: Record<string, unknown>;
   } = {},
 ) {
   const providers: P[] = [mk(A, "OpenAI", true), mk(B, "Local Ollama", false, "llama3")];
@@ -78,6 +88,17 @@ function fakeApi(
   let startingLevel: Record<string, unknown> = opts.startingLevel ?? { configured: false, level: null };
   const reviewItems = opts.reviewItems ?? [];
   const taskList = () => Object.entries(tasks).map(([task, providerId]) => ({ task, providerId }));
+
+  // Item Lists (issue #12) and reading preferences (issue #11/#12).
+  const itemLists = opts.itemLists ?? [
+    { id: "l1", name: "Saved", boosting: true, isDefault: true, itemCount: 0 },
+    { id: "l2", name: "Travel", boosting: false, isDefault: false, itemCount: 4 },
+  ];
+  let defaultListId = "l1";
+  const markDefault = () => {
+    for (const l of itemLists) l.isDefault = l.id === defaultListId;
+  };
+  const reading = opts.readingSettings ?? { blurTranslation: true, lookupHoldMs: 800 };
   const maru: Maru = {
     connected: false,
     connectedAt: null,
@@ -178,11 +199,56 @@ function fakeApi(
         startingLevel = { configured: true, level: body.level, added: 120, removed: 0 };
         return json(200, startingLevel);
       }
+      if (key === "GET /item-lists") {
+        markDefault();
+        return json(200, { items: itemLists, defaultListId });
+      }
+      if (key === "POST /item-lists") {
+        const name = String(body.name ?? "");
+        if (itemLists.some((l) => l.name.toLowerCase() === name.toLowerCase())) {
+          return json(409, { code: "duplicate_name", message: "Another list already has that name." });
+        }
+        const l: ItemListRow = { id: `l${itemLists.length + 1}`, name, boosting: false, isDefault: false, itemCount: 0 };
+        itemLists.push(l);
+        return json(201, l);
+      }
+      if (key === "PUT /item-lists/default") {
+        const id = String(body.listId ?? "");
+        if (!itemLists.some((l) => l.id === id)) return json(404, { code: "not_found", message: "no such list" });
+        defaultListId = id;
+        markDefault();
+        return new Response(null, { status: 204 });
+      }
+      const lm = /^\/item-lists\/([^/]+)$/.exec(path);
+      if (lm) {
+        const l = itemLists.find((x) => x.id === lm[1]);
+        if (!l) return json(404, { code: "not_found", message: "no such list" });
+        if (req.method === "PUT") {
+          if (l.name.toLowerCase() === "saved" && body.name !== undefined) {
+            return json(400, { code: "bad_request", message: "The Saved list cannot be renamed." });
+          }
+          if (body.name !== undefined) l.name = String(body.name);
+          if (body.boosting !== undefined) l.boosting = !!body.boosting;
+          return json(200, l);
+        }
+        if (req.method === "DELETE") {
+          if (l.name.toLowerCase() === "saved") {
+            return json(400, { code: "bad_request", message: "The Saved list cannot be deleted." });
+          }
+          itemLists.splice(itemLists.indexOf(l), 1);
+          return new Response(null, { status: 204 });
+        }
+      }
+      if (key === "GET /reading-settings") return json(200, reading);
+      if (key === "PUT /reading-settings") {
+        Object.assign(reading, body);
+        return json(200, reading);
+      }
       if (key === "GET /grammar/review") return json(200, reviewItems);
       throw new Error(`unexpected ${key}`);
     },
   });
-  return { client, requests, providers, tasks, maru };
+  return { client, requests, providers, tasks, maru, itemLists, reading };
 }
 
 async function renderSettings(opts?: Parameters<typeof fakeApi>[0]) {
@@ -337,8 +403,146 @@ describe("Settings", () => {
     expect(await screen.findByText(/Cannot load MaruMori status/)).toBeTruthy();
     expect(await screen.findByText(/Cannot load your Starting Level/)).toBeTruthy();
     expect(await screen.findByText(/Cannot load the review list/)).toBeTruthy();
+    expect(await screen.findByText(/Cannot load your Item Lists/)).toBeTruthy();
+    expect(await screen.findByText(/Cannot load your reading settings/)).toBeTruthy();
     // Every section offers a retry; the Learner is never logged out by a transport failure.
-    expect(screen.getAllByRole("button", { name: "Retry" }).length).toBe(4);
+    expect(screen.getAllByRole("button", { name: "Retry" }).length).toBe(6);
+  });
+});
+
+describe("Settings — Item Lists section", () => {
+  const listRow = (name: string) =>
+    screen.queryAllByRole("listitem").find((li) => within(li).queryByText(name, { selector: "strong" }));
+
+  it("shows each list with its count, the default marker and the Boosting flag", async () => {
+    await renderSettings();
+    const saved = await waitFor(() => listRow("Saved"));
+    const travel = listRow("Travel");
+    expect(saved?.textContent).toContain("— default");
+    expect(saved?.textContent).toContain("0 items");
+    expect(travel?.textContent).toContain("4 items");
+
+    const listUl = saved!.closest("ul");
+    if (!listUl) throw new Error("item list <ul> not found");
+    const boosting = within(listUl).getAllByRole("checkbox", { name: "Boosting" });
+    expect(boosting).toHaveLength(2);
+    expect((boosting[0] as HTMLInputElement).checked).toBe(true); // Saved starts as a Boosting List
+    expect((boosting[1] as HTMLInputElement).checked).toBe(false);
+
+    // Saved is reserved: it can be configured but never renamed or deleted.
+    expect(within(saved!).queryByRole("button", { name: "Rename" })).toBeNull();
+    expect(within(saved!).queryByRole("button", { name: "Delete" })).toBeNull();
+    expect(within(travel!).getByRole("button", { name: "Rename" })).toBeTruthy();
+    expect(within(travel!).getByRole("button", { name: "Make default" })).toBeTruthy();
+  });
+
+  it("creates a list and repeats the server's message for a duplicate name", async () => {
+    const api = await renderSettings();
+    await screen.findByRole("heading", { name: "Item Lists" });
+
+    fireEvent.change(screen.getByLabelText("List name"), { target: { value: "travel" } }); // case-insensitive names
+    fireEvent.click(screen.getByRole("button", { name: "Add list" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("already has that name");
+
+    fireEvent.change(screen.getByLabelText("List name"), { target: { value: "Books" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add list" }));
+    await waitFor(() => expect(listRow("Books")).toBeTruthy());
+    expect(last(api, "POST")).toMatchObject({ path: "/item-lists", body: { name: "Books" } });
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("toggles Boosting, and moves the default with Make default", async () => {
+    const api = await renderSettings();
+    const travel = await waitFor(() => listRow("Travel"));
+
+    const boost = within(travel!).getByRole("checkbox", { name: "Boosting" });
+    fireEvent.click(boost);
+    await waitFor(() => expect(lastBody(api, "PUT")).toMatchObject({ boosting: true }));
+    expect(last(api, "PUT")?.path).toBe("/item-lists/l2");
+    expect((lastBody(api, "PUT") as { boosting?: boolean }).boosting).toBe(true);
+
+    fireEvent.click(within(travel!).getByRole("button", { name: "Make default" }));
+    await waitFor(() =>
+      expect(last(api, "PUT")).toMatchObject({ path: "/item-lists/default", body: { listId: "l2" } }),
+    );
+    await waitFor(() => expect(listRow("Travel")?.textContent).toContain("— default"));
+    expect(listRow("Saved")?.textContent).not.toContain("— default");
+  });
+
+  it("renames after editing the prefilled name, and deletes behind a confirmation", async () => {
+    const api = await renderSettings();
+    const travel = await waitFor(() => listRow("Travel"));
+
+    fireEvent.click(within(travel!).getByRole("button", { name: "Rename" }));
+    const input = screen.getByLabelText("New name") as HTMLInputElement;
+    expect(input.value).toBe("Travel"); // prefilled
+    fireEvent.change(input, { target: { value: "Trips" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+    await waitFor(() => expect(listRow("Trips")).toBeTruthy());
+    expect(last(api, "PUT")).toMatchObject({ path: "/item-lists/l2", body: { name: "Trips" } });
+
+    fireEvent.click(within(listRow("Trips")!).getByRole("button", { name: "Delete" }));
+    expect(api.requests.some((r) => r.method === "DELETE")).toBe(false); // one click is not enough
+    fireEvent.click(within(listRow("Trips")!).getByRole("button", { name: "Confirm delete" }));
+    await waitFor(() => expect(listRow("Trips")).toBeFalsy());
+    expect(api.requests.some((r) => r.method === "DELETE" && r.path === "/item-lists/l2")).toBe(true);
+  });
+});
+
+describe("Settings — Reading section", () => {
+  it("holds at the stored threshold and saves the whole settings object", async () => {
+    const api = await renderSettings();
+    const heading = await screen.findByRole("heading", { name: "Reading" });
+    const el = heading.closest("section")!;
+
+    const blur = within(el).getByRole("checkbox", { name: "Blur sentence translations until clicked" }) as HTMLInputElement;
+    expect(blur.checked).toBe(true);
+    const hold = within(el).getByLabelText(/Lookup hold before a Weak Signal/) as HTMLInputElement;
+    expect(hold.value).toBe("800");
+
+    fireEvent.change(hold, { target: { value: "1200" } });
+    fireEvent.click(within(el).getByRole("button", { name: "Save reading settings" }));
+    await waitFor(() =>
+      expect(last(api, "PUT")).toMatchObject({
+        path: "/reading-settings",
+        body: { blurTranslation: true, lookupHoldMs: 1200 },
+      }),
+    );
+    const status = await within(el).findByRole("status");
+    expect(status.textContent).toContain("Saved");
+  });
+
+  it("rejects a hold outside 0 to 10000 without asking the server", async () => {
+    const api = await renderSettings();
+    const el = await (async () => {
+      const heading = await screen.findByRole("heading", { name: "Reading" });
+      return heading.closest("section")!;
+    })();
+
+    const hold = within(el).getByLabelText(/Lookup hold before a Weak Signal/) as HTMLInputElement;
+    fireEvent.change(hold, { target: { value: "10001" } });
+    // The browser would reject this before submit (max=10000); the app's own check is the backstop,
+    // so drive the form directly.
+    if (!hold.form) throw new Error("hold input is not inside a form");
+    fireEvent.submit(hold.form);
+    expect((await screen.findByRole("alert")).textContent).toContain("whole number of milliseconds from 0 to 10000");
+    expect(api.requests.some((r) => r.method === "PUT" && r.path === "/reading-settings")).toBe(false);
+  });
+
+  it("saves the blur preference on its own, keeping the hold", async () => {
+    const api = await renderSettings();
+    const el = await (async () => {
+      const heading = await screen.findByRole("heading", { name: "Reading" });
+      return heading.closest("section")!;
+    })();
+
+    fireEvent.click(within(el).getByRole("checkbox", { name: "Blur sentence translations until clicked" }));
+    await waitFor(() =>
+      expect(last(api, "PUT")).toMatchObject({
+        path: "/reading-settings",
+        body: { blurTranslation: false, lookupHoldMs: 800 },
+      }),
+    );
   });
 });
 

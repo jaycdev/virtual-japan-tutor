@@ -29,7 +29,7 @@ export interface ItemListsView {
   state: ItemListsState;
   /** The list a plain Save targets; null until the lists are known. */
   defaultListId: string | null;
-  createList(list: ItemListCreateRequest): Promise<ActionResult>;
+  createList(list: ItemListCreateRequest): Promise<ActionResult & { list?: ItemList }>;
   updateList(
     listId: string,
     patch: { name?: string; boosting?: boolean },
@@ -102,10 +102,16 @@ export function useItemLists(client: ApiClient): ItemListsView {
   }, [client]);
 
   const createList = useCallback(
-    async (list: ItemListCreateRequest): Promise<ActionResult> => {
+    async (list: ItemListCreateRequest): Promise<ActionResult & { list?: ItemList }> => {
       try {
-        const { error: err, response } = await client.POST("/item-lists", { body: list });
-        if (response.status === 201) return refresh();
+        const { data, error: err, response } = await client.POST("/item-lists", { body: list });
+        if (response.status === 201 && data) {
+          // Hand back the created list (the reader's inline "Save to a new
+          // list" needs its id); the re-read keeps the shared view honest.
+          const created = data;
+          const res = await refresh();
+          return res.ok ? { ok: true, list: created } : res;
+        }
         return { ok: false, message: message(err, response.status) };
       } catch {
         return { ok: false, message: UNREACHABLE };
@@ -180,8 +186,7 @@ export function useItemLists(client: ApiClient): ItemListsView {
     async (listId: string, item: ItemListAddRequest): Promise<ActionResult> => {
       try {
         const { error: err, response } = await client.DELETE("/item-lists/{listId}/items", {
-          params: { path: { listId } },
-          params: { query: { itemKind: item.itemKind, itemRef: item.itemRef } },
+          params: { path: { listId }, query: { itemKind: item.itemKind, itemRef: item.itemRef } },
         });
         if (response.status === 204) return refresh();
         return { ok: false, message: message(err, response.status) };
