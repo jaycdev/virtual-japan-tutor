@@ -171,9 +171,11 @@ func (s *server) RateStory(ctx context.Context, request api.RateStoryRequestObje
 }
 
 // AnswerStoryQuestion grades one comprehension question. The first answer
-// for a story also appends the Practice Records for its Focus Set items
-// (see internal/story and docs/adr/0008-practice-records.md); the view never
-// reveals answer indexes before the Learner answers.
+// for a story also appends the Practice Records for its Focus Set items —
+// vocabulary and Grammar Points alike (see internal/story and the write-side
+// note in apps/server/migrations/00008_practice_and_weak_signals.sql; the
+// practice log itself comes with ADR 0004); the view never reveals answer
+// indexes before the Learner answers.
 func (s *server) AnswerStoryQuestion(ctx context.Context, request api.AnswerStoryQuestionRequestObject) (api.AnswerStoryQuestionResponseObject, error) {
 	svc, err := s.storyService()
 	if err != nil {
@@ -219,7 +221,13 @@ func (s *server) GetStorySettings(ctx context.Context, request api.GetStorySetti
 	if err != nil {
 		return nil, err
 	}
-	return api.GetStorySettings200JSONResponse{FuriganaThresholdSrsLevel: us.FuriganaThresholdSRSLevel}, nil
+	// Echo the preferences always (empty string = "surprise me") so the
+	// settings form round-trips without guessing what an absent field means.
+	return api.GetStorySettings200JSONResponse{
+		FuriganaThresholdSrsLevel: us.FuriganaThresholdSRSLevel,
+		PreferredGenre:            &us.PreferredGenre,
+		PreferredTheme:            &us.PreferredTheme,
+	}, nil
 }
 
 func (s *server) PutStorySettings(ctx context.Context, request api.PutStorySettingsRequestObject) (api.PutStorySettingsResponseObject, error) {
@@ -234,14 +242,25 @@ func (s *server) PutStorySettings(ctx context.Context, request api.PutStorySetti
 	if request.Body == nil {
 		return api.PutStorySettings400JSONResponse{Code: "bad_request", Message: "furiganaThresholdSrsLevel is required"}, nil
 	}
-	us, err := svc.PutSettings(ctx, id.ID, story.UserSettings{FuriganaThresholdSRSLevel: request.Body.FuriganaThresholdSrsLevel})
+	in := story.UserSettings{FuriganaThresholdSRSLevel: request.Body.FuriganaThresholdSrsLevel}
+	if request.Body.PreferredGenre != nil {
+		in.PreferredGenre = *request.Body.PreferredGenre
+	}
+	if request.Body.PreferredTheme != nil {
+		in.PreferredTheme = *request.Body.PreferredTheme
+	}
+	us, err := svc.PutSettings(ctx, id.ID, in)
 	if err != nil {
 		if sErr, is := asStoryError(err); is && sErr.Status == 400 {
 			return api.PutStorySettings400JSONResponse{Code: sErr.Code, Message: sErr.Message}, nil
 		}
 		return nil, err
 	}
-	return api.PutStorySettings200JSONResponse{FuriganaThresholdSrsLevel: us.FuriganaThresholdSRSLevel}, nil
+	return api.PutStorySettings200JSONResponse{
+		FuriganaThresholdSrsLevel: us.FuriganaThresholdSRSLevel,
+		PreferredGenre:            &us.PreferredGenre,
+		PreferredTheme:            &us.PreferredTheme,
+	}, nil
 }
 
 // storyView maps a stored story onto the API shape. showFurigana is computed

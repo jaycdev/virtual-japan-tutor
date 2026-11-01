@@ -1,11 +1,13 @@
-import type { ApiClient, Story as StoryData, StoryToken } from "@vjt/api-client";
+import type { ApiClient, Story as StoryData, StorySettings, StoryToken } from "@vjt/api-client";
 import { useStory, type StoryView } from "@vjt/core";
+import { useState, type FormEvent } from "react";
 
 /**
  * Stories (issue #10): read the Story the background generator has ready,
  * browse the Story Library, rate stories (thumbs up/down steer future
- * genres), and answer the comprehension questions — the first answer writes
- * Practice Records for the story's Focus Set items. Generation is never
+ * genres), answer the comprehension questions — the first answer writes
+ * Practice Records for the story's Focus Set items — and choose the story
+ * settings (Furigana Threshold, preferred genre/theme). Generation is never
  * triggered from this screen, so opening a story is instant.
  *
  * Sentences render token by token: the reading goes above the surface as
@@ -24,6 +26,7 @@ export function Stories({ client }: { client: ApiClient }) {
         </p>
       )}
       {view.open && view.story ? <StoryReader view={view} /> : <StoryLibrary view={view} />}
+      <StorySettingsForm view={view} />
     </section>
   );
 }
@@ -179,5 +182,135 @@ function RatingButtons({ view, story }: { view: StoryView; story: StoryData }) {
         👎
       </button>
     </span>
+  );
+}
+
+/** The Furigana Threshold and preferred genre/theme, steering future stories. */
+function StorySettingsForm({ view }: { view: StoryView }) {
+  const s = view.settings;
+  return (
+    <section>
+      <h3>Story settings</h3>
+      {s.status === "loading" && <p className="muted">Loading your story settings…</p>}
+      {s.status === "error" && (
+        <p>
+          Cannot load your story settings: {s.message}{" "}
+          <button type="button" onClick={view.reloadSettings}>
+            Retry
+          </button>
+        </p>
+      )}
+      {s.status === "ready" && <StorySettingsFields view={view} stored={s.settings} />}
+    </section>
+  );
+}
+
+/**
+ * The form itself. Local edits overlay the stored settings; a successful
+ * save clears the overlay, so the fields then show the server's answer.
+ */
+function StorySettingsFields({ view, stored }: { view: StoryView; stored: StorySettings }) {
+  const [genre, setGenre] = useState<string | null>(null);
+  const [theme, setTheme] = useState<string | null>(null);
+  const [threshold, setThreshold] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | undefined>();
+  const [saved, setSaved] = useState(false);
+
+  const genreValue = genre ?? stored.preferredGenre ?? "";
+  const themeValue = theme ?? stored.preferredTheme ?? "";
+  const thresholdValue = threshold ?? String(stored.furiganaThresholdSrsLevel);
+
+  const save = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(undefined);
+    setSaved(false);
+    const level = Number(thresholdValue);
+    if (!Number.isInteger(level) || level < 1 || level > 9) {
+      setError("The furigana threshold is a whole number from 1 to 9.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await view.saveSettings({
+        furiganaThresholdSrsLevel: level,
+        preferredGenre: genreValue,
+        preferredTheme: themeValue,
+      });
+      if (res.ok) {
+        setGenre(null);
+        setTheme(null);
+        setThreshold(null);
+        setSaved(true);
+      } else setError(res.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <form onSubmit={(e) => void save(e)}>
+        <p>
+          <label>
+            Furigana threshold (SRS level 1–9)
+            <input
+              name="furiganaThreshold"
+              type="number"
+              min={1}
+              max={9}
+              step={1}
+              value={thresholdValue}
+              disabled={busy}
+              onChange={(e) => setThreshold(e.target.value)}
+            />
+          </label>
+        </p>
+        <p>
+          <label>
+            Preferred genre
+            <input
+              name="preferredGenre"
+              maxLength={60}
+              placeholder="travel, mystery… empty = surprise me"
+              value={genreValue}
+              disabled={busy}
+              onChange={(e) => setGenre(e.target.value)}
+            />
+          </label>
+        </p>
+        <p>
+          <label>
+            Preferred theme
+            <input
+              name="preferredTheme"
+              maxLength={200}
+              placeholder="a robot running a ramen shop — empty = none"
+              value={themeValue}
+              disabled={busy}
+              onChange={(e) => setTheme(e.target.value)}
+            />
+          </label>
+        </p>
+        <button type="submit" disabled={busy}>
+          Save settings
+        </button>
+      </form>
+      {saved && (
+        <p className="saved" role="status">
+          Saved — future stories will aim for these.
+        </p>
+      )}
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+      <p className="muted">
+        Genre and theme steer what the generator is asked for; the validation gate still has the last
+        word, so a preference it cannot fill falls back rather than forcing a bad story. The furigana
+        threshold applies when stories are read.
+      </p>
+    </>
   );
 }

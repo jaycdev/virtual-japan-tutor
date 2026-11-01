@@ -589,12 +589,12 @@ export interface paths {
         };
         /**
          * Story settings for the Learner
-         * @description The per-user Story settings: the Furigana Threshold, the SRS Level at or above which Known Items appear without furigana (GLOSSARY.md). Default 3, on mastery's 1–9 scale.
+         * @description The per-user Story settings: the Furigana Threshold (the SRS Level at or above which Known Items appear without furigana, GLOSSARY.md; default 3 on mastery's 1–9 scale), and the optional preferred genre and theme for future stories (empty means "surprise me" and the server picks, steered by ratings).
          */
         get: operations["getStorySettings"];
         /**
-         * Update the Furigana Threshold
-         * @description Changes how much furigana future story views show. Existing stories keep their stored token SRS Levels; the threshold is applied when a story is read.
+         * Update the story settings
+         * @description Changes how much furigana future story views show, and which genre/theme future stories aim for. Existing stories keep their stored token SRS Levels; the threshold is applied when a story is read. Empty preferredGenre/preferredTheme mean "surprise me".
          */
         put: operations["putStorySettings"];
         post?: never;
@@ -1000,8 +1000,12 @@ export interface components {
          */
         StoryRating: "up" | "down";
         StorySettings: {
-            /** @description The Furigana Threshold (GLOSSARY.md): Known Items with an SRS Level at or above this value are shown without furigana; below it, and for unknown tokens, the reading is shown. mastery's 1–9 scale; the default is 3. */
+            /** @description The Furigana Threshold (GLOSSARY.md): Known Items with an SRS Level at or above this value are shown without furigana; below it, and for unknown tokens with kanji in their surface, the reading is shown. mastery's 1–9 scale; the default is 3. */
             furiganaThresholdSrsLevel: number;
+            /** @description The genre the Learner wants for their stories ("travel", "mystery", ...). Empty or absent means "surprise me" — the server then picks, steered by ratings. Prompt-only: it never relaxes the validation gate, so an unfillable preference falls back rather than forcing bad output. */
+            preferredGenre?: string;
+            /** @description A free-text theme for the Learner's stories ("a robot running a ramen shop"). Empty or absent means no theme. Prompt-only, like preferredGenre. */
+            preferredTheme?: string;
         };
         StoryAnswer: {
             questionIndex: number;
@@ -1064,7 +1068,7 @@ export interface components {
             tag: "known" | "unknown";
             /** @description MaruMori SRS Level for known linked items (drives furigana). */
             srsLevel?: number;
-            /** @description Whether to render the reading: true for unknown tokens (always) and for Known Items below the Learner's Furigana Threshold; false at or above it. */
+            /** @description Whether to render the reading above the surface. True only when the surface actually contains kanji AND the token is unknown, or a Known Item below the Learner's Furigana Threshold; kana-only surfaces never show ruby (their reading is the surface). */
             showFurigana: boolean;
         };
         StoryQuestion: {
@@ -2256,7 +2260,7 @@ export interface operations {
                     "application/json": components["schemas"]["StorySettings"];
                 };
             };
-            /** @description Threshold outside 0–9 (code `invalid_threshold`) */
+            /** @description Threshold outside 0–9 (`invalid_threshold`) or genre/theme over the length cap (`invalid_preference`) */
             400: {
                 headers: {
                     [name: string]: unknown;

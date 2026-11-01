@@ -57,7 +57,7 @@ func TestPostgresStoreAgainstPostgres(t *testing.T) {
 				{Pos: 2, Surface: "べんきょう", Start: 5, End: 9, Reading: "べんきょう", Dictionary: "べんきょう", EntSeq: ptr(int64(entFire)), Tag: TagUnknown},
 				{Pos: 3, Surface: "しました", Start: 9, End: 13, Reading: "しました", Dictionary: "する", Tag: TagUnknown},
 			},
-			Spans: []Span{{Start: 9, End: 13, GrammarPointID: grammarPoint}},
+			Spans: []Span{{Start: 9, End: 13, GrammarPointID: grammarPoint, IsFocus: true}},
 		}},
 		Questions: []Question{
 			{Pos: 0, PromptJA: "どこで べんきょう しましたか。", OptionsJA: []string{"がっこう", "いえ"}, AnswerIndex: 0},
@@ -113,6 +113,9 @@ func TestPostgresStoreAgainstPostgres(t *testing.T) {
 	}
 	if len(sen.Spans) != 1 || sen.Spans[0].GrammarPointID != grammarPoint || sen.Spans[0].Start != 9 || sen.Spans[0].End != 13 {
 		t.Errorf("grammar spans: %+v", sen.Spans)
+	}
+	if !sen.Spans[0].IsFocus {
+		t.Errorf("span is_focus did not round-trip: %+v", sen.Spans[0])
 	}
 	if len(got.Questions) != 3 || got.Questions[2].AnswerIndex != 0 || len(got.Questions[0].OptionsJA) != 2 {
 		t.Errorf("questions: %+v", got.Questions)
@@ -259,6 +262,7 @@ func TestPostgresStoreAgainstPostgres(t *testing.T) {
 		t.Errorf("threshold for unknown user: %v, want ErrNotFound", err)
 	}
 
+	// Checked while the user has no story_user_state row at all.
 	if keys, err := st.FocusSnapshot(ctx, user); err != nil || keys != nil {
 		t.Errorf("empty snapshot: %v err=%v", keys, err)
 	}
@@ -274,6 +278,24 @@ func TestPostgresStoreAgainstPostgres(t *testing.T) {
 	}
 	if keys, err := st.FocusSnapshot(ctx, user); err != nil || len(keys) != 0 {
 		t.Errorf("cleared snapshot: %v err=%v", keys, err)
+	}
+
+	// Story prefs: empty means "surprise me", and the round trip stores
+	// genre and theme together.
+	if g, th, err := st.StoryPrefs(ctx, user); err != nil || g != "" || th != "" {
+		t.Errorf("default prefs: %q/%q err=%v, want empty", g, th, err)
+	}
+	if err := st.SetStoryPrefs(ctx, user, "mystery", "ロボット"); err != nil {
+		t.Fatal(err)
+	}
+	if g, th, err := st.StoryPrefs(ctx, user); err != nil || g != "mystery" || th != "ロボット" {
+		t.Errorf("prefs round trip: %q/%q err=%v", g, th, err)
+	}
+	if err := st.SetStoryPrefs(ctx, user, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if g, th, err := st.StoryPrefs(ctx, user); err != nil || g != "" || th != "" {
+		t.Errorf("cleared prefs: %q/%q err=%v, want empty", g, th, err)
 	}
 
 	// UserIDs drives the background sweep.

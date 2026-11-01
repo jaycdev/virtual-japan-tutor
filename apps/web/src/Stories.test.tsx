@@ -56,9 +56,11 @@ function fakeApi(opts: { ready?: boolean; stories?: unknown[] } = {}) {
   };
 
   const requests: { method: string; path: string; body: unknown }[] = [];
+  const settings = { furiganaThresholdSrsLevel: 3, preferredGenre: "", preferredTheme: "" };
   const fetchImpl = vi.fn(async (request: Request) => {
     const { pathname } = new URL(request.url);
-    requests.push({ method: request.method, path: pathname, body: request.body ? await request.json() : null });
+    const body = request.body ? await request.json() : null;
+    requests.push({ method: request.method, path: pathname, body });
     if (pathname === "/stories" && request.method === "GET") return json(200, page);
     if (pathname === "/stories/ready" && request.method === "GET") {
       return hasReady ? json(200, storyView) : json(404, { code: "no_ready_story", message: "no story ready" });
@@ -67,6 +69,11 @@ function fakeApi(opts: { ready?: boolean; stories?: unknown[] } = {}) {
     if (pathname === "/stories/st-1/rate" && request.method === "POST") return new Response(null, { status: 204 });
     if (pathname === "/stories/st-1/answers" && request.method === "POST")
       return json(200, { correct: true, practiceRecorded: true });
+    if (pathname === "/story-settings" && request.method === "GET") return json(200, settings);
+    if (pathname === "/story-settings" && request.method === "PUT") {
+      Object.assign(settings, body as Partial<typeof settings>);
+      return json(200, settings);
+    }
     return json(404, { code: "not_found", message: "not found" });
   });
   const client = createApiClient({ baseUrl: "http://127.0.0.1:8787", fetch: fetchImpl });
@@ -86,9 +93,14 @@ describe("Stories screen", () => {
     // solid Known Item (no ruby), で and しました carry readings.
     const rtTexts = Array.from(document.querySelectorAll("ruby rt")).map((rt) => rt.textContent);
     expect(rtTexts).toEqual(["で", "しました"]);
-    // One GET for the library, one for the opened story; nothing else — no generation call.
-    await waitFor(() => expect(requests.length).toBe(2));
-    expect(requests.map((r) => `${r.method} ${r.path}`)).toEqual(["GET /stories", "GET /stories/st-1"]);
+    // One GET for the library, one for the story settings, one for the
+    // opened story; nothing else — no generation call.
+    await waitFor(() => expect(requests.length).toBe(3));
+    expect(requests.map((r) => `${r.method} ${r.path}`)).toEqual([
+      "GET /stories",
+      "GET /story-settings",
+      "GET /stories/st-1",
+    ]);
   });
 
   it("opens the ready story instantly and answers a comprehension question once", async () => {
@@ -131,5 +143,42 @@ describe("Stories screen", () => {
     await waitFor(() => expect(thumb.getAttribute("aria-pressed")).toBe("true"));
     const rate = requests.find((r) => r.path === "/stories/st-1/rate");
     expect(rate?.body).toBe("up");
+  });
+
+  it("shows and saves the story settings", async () => {
+    const { client, requests } = fakeApi({ ready: false });
+    render(<Stories client={client} />);
+    await screen.findByRole("button", { name: "diary" });
+
+    const threshold = screen.getByLabelText(/Furigana threshold/) as HTMLInputElement;
+    const genre = screen.getByLabelText(/Preferred genre/) as HTMLInputElement;
+    expect(threshold.value).toBe("3");
+    expect(genre.value).toBe("");
+
+    fireEvent.change(threshold, { target: { value: "7" } });
+    fireEvent.change(genre, { target: { value: "mystery" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+
+    expect(await screen.findByText(/Saved — future stories will aim for these/)).toBeTruthy();
+    const put = requests.find((r) => r.path === "/story-settings" && r.method === "PUT");
+    expect(put?.body).toEqual({ furiganaThresholdSrsLevel: 7, preferredGenre: "mystery", preferredTheme: "" });
+    // The fields show what the server stored, not a cleared form.
+    await waitFor(() => expect(genre.value).toBe("mystery"));
+    expect(threshold.value).toBe("7");
+  });
+
+  it("keeps an empty furigana threshold off the wire", async () => {
+    const { client, requests } = fakeApi({ ready: false });
+    render(<Stories client={client} />);
+    await screen.findByRole("button", { name: "diary" });
+
+    const threshold = screen.getByLabelText(/Furigana threshold/) as HTMLInputElement;
+    // An empty field passes HTML validation (min/max only bound filled
+    // values), so this checks the form's own guard before any PUT.
+    fireEvent.change(threshold, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+
+    expect(await screen.findByText(/whole number from 1 to 9/)).toBeTruthy();
+    expect(requests.some((r) => r.method === "PUT")).toBe(false);
   });
 });

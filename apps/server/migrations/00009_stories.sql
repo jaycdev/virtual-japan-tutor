@@ -16,6 +16,9 @@ CREATE TABLE stories (
     id             UUID        PRIMARY KEY,
     user_id        UUID        NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     genre          TEXT        NOT NULL CHECK (genre <> ''),
+    -- The generation brief sent to the model (base user prompt, not the
+    -- retry feedback): what was asked of the model, kept for debugging a
+    -- Story's gate outcome.
     prompt         TEXT        NOT NULL,
     text           TEXT        NOT NULL,
     -- Vocabulary the Story covers: every sentence token that linked to a
@@ -57,7 +60,10 @@ CREATE TABLE story_sentences (
 -- Every morpheme of every sentence as kagome tokenised it, tagged known or
 -- unknown against the user's Known Items at generation time. Function-word
 -- tokens are stored too (the display needs their exact surfaces), but only
--- content words drive the coverage counts.
+-- content words drive the coverage counts — and only content words are
+-- looked up, so non-content tokens carry NO ent_seq link. Widening those
+-- links belongs to the #11 reading experience (tappable word lookups), not
+-- to generation.
 CREATE TABLE story_tokens (
     id          UUID       PRIMARY KEY,
     story_id    UUID       NOT NULL REFERENCES stories (id) ON DELETE CASCADE,
@@ -80,7 +86,13 @@ CREATE TABLE story_grammar_spans (
     sentence_id      UUID       NOT NULL REFERENCES story_sentences (id) ON DELETE CASCADE,
     start            INTEGER    NOT NULL CHECK (start >= 0),
     "end"            INTEGER    NOT NULL CHECK ("end" > start),
-    grammar_point_id BIGINT     NOT NULL REFERENCES grammar_points (id)
+    grammar_point_id BIGINT     NOT NULL REFERENCES grammar_points (id),
+    -- The point was in the Focus Set the Story was generated for. Answering
+    -- a comprehension question writes Practice Records for these Grammar
+    -- Points (once per point per Story), matching vocab_items' IsFocus flag.
+    -- Validated Stories' spans are all focus spans (the gate rejects the
+    -- rest); failed ones may store others unflagged.
+    is_focus         BOOLEAN    NOT NULL DEFAULT FALSE
 );
 
 CREATE TABLE story_questions (
@@ -102,13 +114,19 @@ CREATE TABLE story_ratings (
 );
 
 -- Per-user background state: the membership of the Focus Set captured when
--- the last Story was generated. A significant change (see
--- internal/story: at least a third of the members differ) re-arms
--- generation; the keys are mastery ItemKey refs ("vocabulary:1234").
+-- the last VALIDATED Story was generated (a failed attempt leaves the old
+-- snapshot so the next pass re-tries against the same Focus Set). A
+-- significant change (see internal/story: at least a third of the members
+-- differ) re-arms generation; the keys are mastery ItemKey refs
+-- ("vocabulary:1234"). preferred_genre/preferred_theme are the Learner's
+-- story preferences ('' = "surprise me" / no theme): they steer the prompt's
+-- genre/theme choice, never the validation gate.
 CREATE TABLE story_user_state (
-    user_id        UUID        PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
-    focus_snapshot TEXT[]      NOT NULL DEFAULT '{}',
-    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+    user_id         UUID        PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+    focus_snapshot  TEXT[]      NOT NULL DEFAULT '{}',
+    preferred_genre TEXT        NOT NULL DEFAULT '',
+    preferred_theme TEXT        NOT NULL DEFAULT '',
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- +goose Down

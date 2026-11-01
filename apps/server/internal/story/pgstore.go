@@ -74,8 +74,8 @@ func (st *PostgresStore) Save(ctx context.Context, s *Story) error {
 				sp.ID = uuid.New()
 			}
 			if _, err := tx.Exec(ctx, `
-				INSERT INTO story_grammar_spans (id, story_id, sentence_id, start, "end", grammar_point_id)
-				VALUES ($1,$2,$3,$4,$5,$6)`, sp.ID, s.ID, sen.ID, sp.Start, sp.End, sp.GrammarPointID); err != nil {
+				INSERT INTO story_grammar_spans (id, story_id, sentence_id, start, "end", grammar_point_id, is_focus)
+				VALUES ($1,$2,$3,$4,$5,$6,$7)`, sp.ID, s.ID, sen.ID, sp.Start, sp.End, sp.GrammarPointID, sp.IsFocus); err != nil {
 				return fmt.Errorf("story save: span: %w", err)
 			}
 		}
@@ -184,7 +184,7 @@ func (st *PostgresStore) loadChildren(ctx context.Context, s *Story) error {
 	}
 
 	srows, err := st.pool.Query(ctx, `
-		SELECT id, sentence_id, start, "end", grammar_point_id
+		SELECT id, sentence_id, start, "end", grammar_point_id, is_focus
 		FROM story_grammar_spans WHERE story_id = $1 ORDER BY sentence_id, start`, s.ID)
 	if err != nil {
 		return fmt.Errorf("story spans: %w", err)
@@ -192,7 +192,7 @@ func (st *PostgresStore) loadChildren(ctx context.Context, s *Story) error {
 	for srows.Next() {
 		var sp Span
 		var senID uuid.UUID
-		if err := srows.Scan(&sp.ID, &senID, &sp.Start, &sp.End, &sp.GrammarPointID); err != nil {
+		if err := srows.Scan(&sp.ID, &senID, &sp.Start, &sp.End, &sp.GrammarPointID, &sp.IsFocus); err != nil {
 			srows.Close()
 			return fmt.Errorf("story spans: %w", err)
 		}
@@ -386,6 +386,36 @@ func (st *PostgresStore) SetFuriganaThreshold(ctx context.Context, userID uuid.U
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
+	}
+	return nil
+}
+
+// StoryPrefs reads the user's preferred genre/theme, creating the state row
+// with empty ("surprise me") defaults when there is none yet.
+func (st *PostgresStore) StoryPrefs(ctx context.Context, userID uuid.UUID) (string, string, error) {
+	var genre, theme string
+	err := st.pool.QueryRow(ctx, `
+		SELECT preferred_genre, preferred_theme
+		FROM story_user_state
+		WHERE user_id = $1`, userID).Scan(&genre, &theme)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", "", nil
+	}
+	if err != nil {
+		return "", "", fmt.Errorf("story prefs: %w", err)
+	}
+	return genre, theme, nil
+}
+
+func (st *PostgresStore) SetStoryPrefs(ctx context.Context, userID uuid.UUID, genre, theme string) error {
+	_, err := st.pool.Exec(ctx, `
+		INSERT INTO story_user_state (user_id, preferred_genre, preferred_theme)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (user_id) DO UPDATE
+		SET preferred_genre = EXCLUDED.preferred_genre, preferred_theme = EXCLUDED.preferred_theme, updated_at = now()`,
+		userID, genre, theme)
+	if err != nil {
+		return fmt.Errorf("story prefs: %w", err)
 	}
 	return nil
 }

@@ -13,9 +13,12 @@
 //
 // Comprehension answers write Practice Records lightly: the first answer for
 // a Story appends one practice_records row per Focus Set item the Story
-// covers (correct = that answer's verdict), and stories.practiced_at marks
-// the one-shot. practice_records itself stays the plain append-only log of
-// ADR 0008 — story practice is an ordinary Exercise result for Mastery.
+// covers — vocabulary and Grammar Points alike (correct = that answer's
+// verdict) — and stories.practiced_at marks the one-shot. practice_records
+// itself stays the plain append-only log documented in
+// apps/server/migrations/00008_practice_and_weak_signals.sql (ADR 0004): a
+// story answer is an ordinary Exercise result for Mastery, and for now it
+// carries the same AppendResult weight as a Session result.
 package story
 
 import (
@@ -34,6 +37,11 @@ var ErrNotFound = errors.New("story: not found")
 // issue's acceptance criteria (95% Known-word coverage, roughly half the
 // Focus Set included); the character bounds keep the passage in the short
 // range the prompt asks for.
+//
+// Note the deliberate asymmetry: the prompt ASKS for 400–800 characters,
+// but the gate only REJECTS outside 400–1200. A model that overshoots its
+// length ask slightly gets a usable story rather than a wasted retry; the
+// gate rejects only shapes far outside the intended range.
 const (
 	MinChars     = 400
 	MaxChars     = 1200
@@ -82,6 +90,8 @@ type Story struct {
 	ID     uuid.UUID
 	UserID uuid.UUID
 	Genre  string
+	// Prompt is the generation brief sent to the model (the base user prompt,
+	// not the retry feedback). Stored for debugging a story's outcome.
 	Prompt string
 
 	Text       string
@@ -118,6 +128,11 @@ type Sentence struct {
 // Token is one kagome morpheme of a sentence, tagged against the Learner's
 // Known Items. Reading is the surface's kana reading (furigana material);
 // Dictionary is the dictionary form; EntSeq links linked vocabulary.
+//
+// Only content words are looked up, so non-content tokens (particles,
+// auxiliaries, inflection endings) carry no ent_seq link: the coverage gate
+// counts Known Items over content words only. Widening those links is part
+// of the #11 reading experience (tappable words), not of generation.
 type Token struct {
 	Pos        int
 	Surface    string
@@ -136,12 +151,17 @@ type Token struct {
 }
 
 // Span is a Grammar Span inside a sentence: runes [Start,End) realising one
-// of the Focus Set's Grammar Points.
+// of the Focus Set's Grammar Points. IsFocus marks a span whose point was in
+// the Focus Set — the grammar half of the items a comprehension answer writes
+// Practice Records for (the gate rejects spans citing other points, so a
+// validated Story's spans are all focus spans; failed Stories may keep
+// others, stored unflagged).
 type Span struct {
 	ID             uuid.UUID
 	Start          int
 	End            int
 	GrammarPointID int64
+	IsFocus        bool
 }
 
 // Question is one comprehension question. AnswerIndex is server-side only:
@@ -210,11 +230,29 @@ func (s *Story) Validate() error {
 	return nil
 }
 
+// hasKanji reports whether a surface contains a kanji codepoint (CJK
+// Unified Ideographs plus the Extension A block; Japanese sentence
+// punctuation and kana are not kanji).
+func hasKanji(s string) bool {
+	for _, r := range s {
+		if r >= 0x4E00 && r <= 0x9FFF || r >= 0x3400 && r <= 0x4DBF {
+			return true
+		}
+	}
+	return false
+}
+
 // Furigana reports whether a token's reading should be shown for a user with
 // the given Furigana Threshold (GLOSSARY.md): the threshold is the SRS Level
-// at or above which Known Items appear without furigana. Unknown tokens
-// always show theirs — the Learner has no reading for them yet.
+// at or above which Known Items appear without furigana. Ruby is only worth
+// rendering when the surface actually contains kanji — a kana particle's
+// "reading" is just its surface, so kana-only tokens never get ruby. Among
+// kanji surfaces: unknown tokens always show the reading (the Learner has no
+// reading for them yet), Known Items show it only below the threshold.
 func Furigana(t Token, threshold int) bool {
+	if !hasKanji(t.Surface) {
+		return false
+	}
 	if t.Tag != TagKnown || t.SRSLevel == nil {
 		return true
 	}

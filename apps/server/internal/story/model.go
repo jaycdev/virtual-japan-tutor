@@ -105,6 +105,11 @@ type Store interface {
 	FuriganaThreshold(ctx context.Context, userID uuid.UUID) (int, error)
 	SetFuriganaThreshold(ctx context.Context, userID uuid.UUID, level int) error
 
+	// StoryPrefs reads and SetStoryPrefs write the Learner's preferred
+	// genre/theme for future stories ("" = "surprise me" / no theme).
+	StoryPrefs(ctx context.Context, userID uuid.UUID) (genre, theme string, err error)
+	SetStoryPrefs(ctx context.Context, userID uuid.UUID, genre, theme string) error
+
 	// FocusSnapshot reads and SetFocusSnapshot write the membership of the
 	// Focus Set captured at the last generation (mastery ItemKey refs).
 	FocusSnapshot(ctx context.Context, userID uuid.UUID) ([]string, error)

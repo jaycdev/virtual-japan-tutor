@@ -9,7 +9,12 @@ export type { MaruMori, MaruMoriRunsState, MaruMoriState, SyncOutcome } from "./
 export { usePractice } from "./usePractice.ts";
 export type { AnswerFeedback, ExerciseView, PracticeView } from "./usePractice.ts";
 export { NO_READY_STORY, useStory } from "./useStory.ts";
-export type { StoryLibraryState, StoryQuestionView, StoryView } from "./useStory.ts";
+export type {
+  StoryLibraryState,
+  StoryQuestionView,
+  StorySettingsState,
+  StoryView,
+} from "./useStory.ts";
 export { useGrammar } from "./useGrammar.ts";
 export type {
   GenerateOutcome,

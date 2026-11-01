@@ -60,33 +60,44 @@ const dirtyClause = "ねこはほんをみつけました。"
 
 func sentence(n int, clause string) string { return strings.Repeat(clause, n) }
 
+type fSpan struct {
+	Start          int   `json:"start"`
+	End            int   `json:"end"`
+	GrammarPointID int64 `json:"grammar_point_id"`
+}
+
+type fSent struct {
+	JA           string  `json:"ja"`
+	EN           string  `json:"en"`
+	GrammarSpans []fSpan `json:"grammar_spans"`
+}
+
+type fQ struct {
+	PromptJA  string   `json:"prompt_ja"`
+	OptionsJA []string `json:"options_ja"`
+	AnswerIdx int      `json:"answer_index"`
+}
+
 func fixture(t *testing.T, genre string, clauses ...string) []byte {
 	t.Helper()
-	type span struct {
-		Start          int   `json:"start"`
-		End            int   `json:"end"`
-		GrammarPointID int64 `json:"grammar_point_id"`
-	}
-	type sent struct {
-		JA           string `json:"ja"`
-		EN           string `json:"en"`
-		GrammarSpans []span `json:"grammar_spans"`
-	}
-	type q struct {
-		PromptJA  string   `json:"prompt_ja"`
-		OptionsJA []string `json:"options_ja"`
-		AnswerIdx int      `json:"answer_index"`
-	}
+	return fixtureSpans(t, genre, nil, clauses...)
+}
+
+// fixtureSpans is the variant where every sentence carries the given
+// Grammar Spans (coordinates inside each sentence): the gate's span rules
+// and the grammar half of the focus fraction are tested through it.
+func fixtureSpans(t *testing.T, genre string, spans []fSpan, clauses ...string) []byte {
+	t.Helper()
 	out := struct {
-		Genre     string `json:"genre"`
-		Sentences []sent `json:"sentences"`
-		Questions []q    `json:"questions"`
+		Genre     string  `json:"genre"`
+		Sentences []fSent `json:"sentences"`
+		Questions []fQ    `json:"questions"`
 	}{Genre: genre}
 	for _, c := range clauses {
-		out.Sentences = append(out.Sentences, sent{JA: sentence(12, c), EN: "The cat found it.", GrammarSpans: []span{}})
+		out.Sentences = append(out.Sentences, fSent{JA: sentence(12, c), EN: "The cat found it.", GrammarSpans: spans})
 	}
 	for i := 0; i < 3; i++ {
-		out.Questions = append(out.Questions, q{PromptJA: "ねこは何を見つけましたか。", OptionsJA: []string{"ねこ", "ほん"}, AnswerIdx: 0})
+		out.Questions = append(out.Questions, fQ{PromptJA: "ねこは何を見つけましたか。", OptionsJA: []string{"ねこ", "ほん"}, AnswerIdx: 0})
 	}
 	b, err := json.Marshal(out)
 	if err != nil {
@@ -146,6 +157,12 @@ func TestGenerateRetryThenAccept(t *testing.T) {
 	if st.KnownWords != st.ContentWords || st.ContentWords == 0 {
 		t.Fatalf("counts known=%d content=%d, want all known and nonzero", st.KnownWords, st.ContentWords)
 	}
+	// The story keeps the brief that was asked of the model, so a stored
+	// story can be debugged against what it was told to do. (Retry
+	// feedback is conversation history, not the brief.)
+	if st.Prompt == "" || !strings.Contains(st.Prompt, "ねこ") || !strings.Contains(st.Prompt, "Genre/theme") {
+		t.Fatalf("story.Prompt is not the generation brief: %q", st.Prompt)
+	}
 }
 
 func TestGenerateExhaustionStoresCounts(t *testing.T) {
@@ -192,8 +209,8 @@ func TestGenerateFocusFractionEnforced(t *testing.T) {
 	if err == nil {
 		t.Fatal("want rejection when too few focus words appear")
 	}
-	if !strings.Contains(err.Error(), "focus words") {
-		t.Fatalf("error %q should name the focus-word problem", err)
+	if !strings.Contains(err.Error(), "focus items") {
+		t.Fatalf("error %q should name the focus-item problem (words AND grammar)", err)
 	}
 	if st == nil || st.FocusItems != 5 || st.FocusHit != 2 {
 		t.Fatalf("focus counts not stored: %+v", st)
@@ -208,6 +225,103 @@ func TestGenerateFocusFractionEnforced(t *testing.T) {
 	}
 	if focusCount != 2 {
 		t.Fatalf("IsFocus flagged on %d vocab items, want 2", focusCount)
+	}
+}
+
+func TestGateFocusFractionCountsGrammarPoints(t *testing.T) {
+	// Every focus WORD appears, but a suggested grammar point is never
+	// realised: with the fraction counting both halves of the Focus Set
+	// that is 2 of 3 and must fail, where words alone would pass.
+	const point = int64(900001)
+	client := &fakeChat{responses: [][]byte{
+		fixture(t, "classroom", cleanClause, cleanClause, cleanClause, cleanClause),
+	}}
+	req := baseRequest()
+	req.Settings.MaxAttempts = 1
+	req.Settings.MinFocusFraction = 1.0
+	req.Known = fakeKnown{1: {IsKnown: true, SRSLevel: 5}, 2: {IsKnown: true, SRSLevel: 4}}
+	req.Focus = FocusSet{
+		Vocab:   []VocabFocus{{EntSeq: 1}, {EntSeq: 2}},
+		Grammar: []GrammarFocus{{PointID: point}},
+	}
+
+	gen := NewGenerator(cleanLookup())
+	st, err := gen.Generate(context.Background(), client, req)
+	if err == nil {
+		t.Fatal("want rejection when a suggested grammar point is missing")
+	}
+	if !strings.Contains(err.Error(), "grammar") {
+		t.Fatalf("error %q should name the grammar half of the fraction", err)
+	}
+	if st == nil || st.FocusItems != 3 || st.FocusHit != 2 {
+		t.Fatalf("focus counts not stored: %+v", st)
+	}
+}
+
+func TestGateAcceptsPatternOnlySpan(t *testing.T) {
+	// The same passage with a span over the auxiliary only (しました at
+	// runes [9,12)) is accepted, flagged IsFocus, and counted as a hit on
+	// the Focus Set's grammar point.
+	const point = int64(900001)
+	client := &fakeChat{responses: [][]byte{
+		fixtureSpans(t, "classroom", []fSpan{{Start: 9, End: 12, GrammarPointID: point}},
+			cleanClause, cleanClause, cleanClause, cleanClause),
+	}}
+	req := baseRequest()
+	req.Settings.MaxAttempts = 1
+	req.Settings.MinFocusFraction = 1.0
+	req.Known = fakeKnown{1: {IsKnown: true, SRSLevel: 5}, 2: {IsKnown: true, SRSLevel: 4}}
+	req.Focus = FocusSet{
+		Vocab:   []VocabFocus{{EntSeq: 1}, {EntSeq: 2}},
+		Grammar: []GrammarFocus{{PointID: point}},
+	}
+
+	gen := NewGenerator(cleanLookup())
+	st, err := gen.Generate(context.Background(), client, req)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if !st.Validated {
+		t.Fatal("a span covering the pattern's own characters must pass the gate")
+	}
+	if st.FocusItems != 3 || st.FocusHit != 3 {
+		t.Fatalf("focus items=%d hit=%d, want the grammar point counted (3 of 3)", st.FocusItems, st.FocusHit)
+	}
+	for _, sen := range st.Sentences {
+		if len(sen.Spans) != 1 || !sen.Spans[0].IsFocus {
+			t.Fatalf("sentence %d spans %+v, want one focus-flagged span", sen.Pos, sen.Spans)
+		}
+	}
+}
+
+func TestGateRejectsSpanIncludingVerbStem(t *testing.T) {
+	// The pattern-only rule: 食べてしまった must be spanned てしまった,
+	// not from 食べ. Here the span starts at the verb stem みつけ ([6,12)
+	// instead of [9,12)): token boundaries alone are not enough, and the
+	// retry feedback must say so in those terms.
+	const point = int64(900001)
+	client := &fakeChat{responses: [][]byte{
+		fixtureSpans(t, "classroom", []fSpan{{Start: 6, End: 12, GrammarPointID: point}},
+			cleanClause, cleanClause, cleanClause, cleanClause),
+	}}
+	req := baseRequest()
+	req.Settings.MaxAttempts = 1
+	req.Known = fakeKnown{1: {IsKnown: true, SRSLevel: 5}, 2: {IsKnown: true, SRSLevel: 4}}
+	req.Focus = FocusSet{
+		Vocab:   []VocabFocus{{EntSeq: 1}, {EntSeq: 2}},
+		Grammar: []GrammarFocus{{PointID: point}},
+	}
+
+	gen := NewGenerator(cleanLookup())
+	st, err := gen.Generate(context.Background(), client, req)
+	if err == nil {
+		t.Fatal("a span opening at the verb stem must be rejected")
+	}
+	if !strings.Contains(err.Error(), "content word") || !strings.Contains(err.Error(), "てしまった") {
+		t.Fatalf("error %q should name the stem inclusion with the pattern example", err)
+	}
+	if st == nil || st.Validated {
+		t.Fatalf("candidate %+v, want stored unvalidated", st)
 	}
 }
 
@@ -260,24 +374,50 @@ func TestPickGenreSteeredByRatings(t *testing.T) {
 	if got != "a" && got != "b" {
 		t.Fatalf("PickGenre = %q, want one of the tied upvoted genres", got)
 	}
+	// Disliked genres drop out of the recent-reading fallback: ratings
+	// steer away even from what the learner just read.
+	got = PickGenre(map[string]map[Rating]int{"mystery": {RatingDown: 1}}, []string{"mystery", "fairy tale"})
+	if got != "fairy tale" {
+		t.Fatalf("PickGenre = %q, want the disliked recent genre skipped", got)
+	}
+	// All recent genres disliked: surprise me rather than re-serve them.
+	if got = PickGenre(map[string]map[Rating]int{"mystery": {RatingDown: 1}}, []string{"mystery"}); got != "" {
+		t.Fatalf("PickGenre = %q, want surprise-me when every recent genre is disliked", got)
+	}
+	// dislikedGenres lists the net-down genres for the prompt's avoid
+	// line, sorted for a stable prompt. Net-neutral genres are not listed.
+	ds := dislikedGenres(map[string]map[Rating]int{
+		"mystery": {RatingDown: 2}, "horror": {RatingDown: 1}, "travel": {RatingUp: 1}, "fable": {RatingUp: 1, RatingDown: 1},
+	})
+	if len(ds) != 2 || ds[0] != "horror" || ds[1] != "mystery" {
+		t.Fatalf("dislikedGenres = %v, want [horror mystery]", ds)
+	}
 }
 
 func TestFuriganaThreshold(t *testing.T) {
-	known := func(level int) Token {
+	known := func(level int, surface string) Token {
 		l := level
-		return Token{Tag: TagKnown, SRSLevel: &l}
+		return Token{Surface: surface, Tag: TagKnown, SRSLevel: &l}
 	}
-	if Furigana(known(5), 3) {
+	if Furigana(known(5, "猫"), 3) {
 		t.Fatal("known item at/above the threshold should hide furigana")
 	}
-	if Furigana(known(3), 3) {
+	if Furigana(known(3, "猫"), 3) {
 		t.Fatal("the threshold itself is inclusive: at it, furigana stays hidden")
 	}
-	if !Furigana(known(2), 3) {
+	if !Furigana(known(2, "猫"), 3) {
 		t.Fatal("known item below the threshold should show furigana")
 	}
-	if !Furigana(Token{Tag: TagUnknown}, 3) {
-		t.Fatal("unknown tokens always show furigana")
+	if !Furigana(Token{Surface: "猫", Tag: TagUnknown}, 3) {
+		t.Fatal("unknown tokens with kanji always show furigana")
+	}
+	// Ruby is only worth rendering over kanji: a kana-only surface's
+	// "reading" is just its own surface, so no ruby at any level.
+	if Furigana(known(1, "ねこ"), 3) {
+		t.Fatal("kana-only known surface must not get ruby")
+	}
+	if Furigana(Token{Surface: "ねこ", Tag: TagUnknown}, 3) {
+		t.Fatal("kana-only unknown surface must not get ruby either")
 	}
 }
 

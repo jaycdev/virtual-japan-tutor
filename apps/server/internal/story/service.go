@@ -8,7 +8,10 @@ import (
 	"math/rand"
 	"sort"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -38,6 +41,11 @@ type Service struct {
 	results  practice.ResultWriter
 	settings Settings
 	log      *slog.Logger
+
+	// regenMu guards regenInFlight: the user ids with a post-open
+	// regeneration currently running (at most one per user).
+	regenMu       sync.Mutex
+	regenInFlight map[uuid.UUID]bool
 }
 
 // NewService wires a Service. settings carries the gate bounds (STORY_* env
@@ -79,6 +87,10 @@ func (s *Service) EnsureReady(ctx context.Context, userID uuid.UUID) error {
 	if err != nil {
 		return fmt.Errorf("known words: %w", err)
 	}
+	prefGenre, prefTheme, err := s.store.StoryPrefs(ctx, userID)
+	if err != nil {
+		return err
+	}
 	ratings, err := s.store.RatingCounts(ctx, userID)
 	if err != nil {
 		return err
@@ -96,13 +108,23 @@ func (s *Service) EnsureReady(ctx context.Context, userID uuid.UUID) error {
 		return aiprovider.ErrNotAssigned
 	}
 
+	// The Learner's chosen genre beats the rating-steered pick; empty means
+	// "surprise me" and PickGenre decides. Disliked genres (net-down-rated)
+	// are named in the prompt as "avoid" and already dropped from
+	// PickGenre's fallback.
+	genre := prefGenre
+	if genre == "" {
+		genre = PickGenre(ratings, recent)
+	}
 	req := Request{
-		UserID:     userID,
-		Settings:   s.settings,
-		Focus:      fset,
-		Known:      s.focus,
-		KnownWords: knownWords,
-		Genre:      PickGenre(ratings, recent),
+		UserID:         userID,
+		Settings:       s.settings,
+		Focus:          fset,
+		Known:          s.focus,
+		KnownWords:     knownWords,
+		Genre:          genre,
+		Theme:          prefTheme,
+		DislikedGenres: dislikedGenres(ratings),
 	}
 	st, genErr := s.gen.Generate(ctx, resolved.Client, req)
 	if st == nil {
@@ -115,6 +137,12 @@ func (s *Service) EnsureReady(ctx context.Context, userID uuid.UUID) error {
 		if err := s.store.SetReady(ctx, st.ID, userID); err != nil {
 			return err
 		}
+		// Only a VALIDATED story retires the significance snapshot: a failed
+		// attempt must leave the generator re-armed against the same Focus
+		// Set so the next pass retries.
+		if err := s.store.SetFocusSnapshot(ctx, userID, keys); err != nil {
+			return err
+		}
 	} else {
 		// Failed-story policy: stored for analysis, never offered; the
 		// previous ready story (if any) stays.
@@ -123,15 +151,15 @@ func (s *Service) EnsureReady(ctx context.Context, userID uuid.UUID) error {
 			"known_words", st.KnownWords, "content_words", st.ContentWords,
 			"focus_hit", st.FocusHit, "focus_items", st.FocusItems)
 	}
-	if err := s.store.SetFocusSnapshot(ctx, userID, keys); err != nil {
-		return err
-	}
 	return genErr
 }
 
 // OpenReady returns the ready story and clears its ready marker, so the next
-// background pass re-arms generation. Reading is a plain store read — the
-// request path never waits on an LLM.
+// generation pass re-arms. Reading is a plain store read — the request path
+// never waits on an LLM. Having consumed the ready story, it also queues a
+// background regeneration for this user (detached context, one in flight per
+// user at most) so the next story becomes ready without waiting for the
+// scheduler's next tick.
 func (s *Service) OpenReady(ctx context.Context, userID uuid.UUID) (*Story, error) {
 	id, isReady, err := s.store.ReadyStoryID(ctx, userID)
 	if err != nil {
@@ -147,7 +175,37 @@ func (s *Service) OpenReady(ctx context.Context, userID uuid.UUID) (*Story, erro
 	if err := s.store.ClearReady(ctx, id); err != nil {
 		return nil, err
 	}
+	s.regenerate(userID)
 	return st, nil
+}
+
+// regenerate starts a detached EnsureReady for one user. It answers quickly
+// (no second LLM call while one is running) and is best-effort: failures are
+// logged and the scheduler pass remains the safety net.
+func (s *Service) regenerate(userID uuid.UUID) {
+	s.regenMu.Lock()
+	if s.regenInFlight == nil {
+		s.regenInFlight = map[uuid.UUID]bool{}
+	}
+	if s.regenInFlight[userID] {
+		s.regenMu.Unlock()
+		return
+	}
+	s.regenInFlight[userID] = true
+	s.regenMu.Unlock()
+
+	go func() {
+		defer func() {
+			s.regenMu.Lock()
+			delete(s.regenInFlight, userID)
+			s.regenMu.Unlock()
+		}()
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+		if err := s.EnsureReady(ctx, userID); err != nil && !errors.Is(err, aiprovider.ErrNotAssigned) {
+			s.log.Error("story: regeneration after open failed", "user_id", userID, "err", err)
+		}
+	}()
 }
 
 // Get returns one of the user's stories.
@@ -188,10 +246,14 @@ type AnswerResult struct {
 }
 
 // Answer grades one comprehension question. On the first answer for a story
-// it appends one Practice Record per Focus Set vocabulary item the story
-// covers (correct = this answer's verdict); stories.practiced_at guards the
-// at-most-once. The rows are ordinary practice_records rows, so ADR 0008's
-// Mastery semantics are unchanged — see the package doc.
+// it appends one Practice Record per Focus Set item the story covers —
+// vocabulary (stories.vocab_items' IsFocus flag) and Grammar Points alike
+// (the story_grammar_spans' IsFocus flag), correct = this answer's verdict;
+// stories.practiced_at guards the at-most-once. The rows are ordinary
+// practice_records rows, so the Mastery semantics of the practice log
+// (migrations/00008, ADR 0004) are unchanged — see the package doc. The
+// records are "lighter" than a Session's in coverage only, not in weight:
+// for now each carries the same AppendResult weight as a Session result.
 func (s *Service) Answer(ctx context.Context, storyID, userID uuid.UUID, questionIndex, answerIndex int) (AnswerResult, error) {
 	st, err := s.store.Get(ctx, storyID, userID)
 	if err != nil {
@@ -221,6 +283,21 @@ func (s *Service) Answer(ctx context.Context, storyID, userID uuid.UUID, questio
 				return AnswerResult{}, err
 			}
 		}
+		// The grammar half: every Focus Set point the story realised, once
+		// however many spans share it.
+		seenGrammar := map[int64]bool{}
+		for _, sen := range st.Sentences {
+			for _, sp := range sen.Spans {
+				if !sp.IsFocus || seenGrammar[sp.GrammarPointID] {
+					continue
+				}
+				seenGrammar[sp.GrammarPointID] = true
+				key := mastery.ItemKey{Kind: mastery.KindGrammar, Ref: strconv.FormatInt(sp.GrammarPointID, 10)}
+				if err := s.results.AppendResult(ctx, userID, key, correct, at); err != nil {
+					return AnswerResult{}, err
+				}
+			}
+		}
 		return AnswerResult{Correct: correct, PracticeRecorded: true}, nil
 	}
 	return AnswerResult{Correct: correct}, nil
@@ -232,7 +309,15 @@ func (s *Service) GetSettings(ctx context.Context, userID uuid.UUID) (UserSettin
 	if err != nil {
 		return UserSettings{}, err
 	}
-	return UserSettings{FuriganaThresholdSRSLevel: thr}, nil
+	genre, theme, err := s.store.StoryPrefs(ctx, userID)
+	if err != nil {
+		return UserSettings{}, err
+	}
+	return UserSettings{
+		FuriganaThresholdSRSLevel: thr,
+		PreferredGenre:            genre,
+		PreferredTheme:            theme,
+	}, nil
 }
 
 // UserSettings is the per-user half of Settings: what the Learner can change
@@ -241,19 +326,40 @@ type UserSettings struct {
 	// FuriganaThresholdSRSLevel: Known Items at or above this SRS Level are
 	// shown without furigana (GLOSSARY.md). 0–9, mastery's scale.
 	FuriganaThresholdSRSLevel int
+	// PreferredGenre / PreferredTheme: what the next stories aim for; ""
+	// means "surprise me" / no theme, and the server picks steered by
+	// ratings. These steer the prompt only — never the validation gate.
+	PreferredGenre string
+	PreferredTheme string
 }
 
-// PutSettings updates the Furigana Threshold. The next story's tokens use the
-// new value; existing stories keep theirs (their views read the stored SRS
-// Levels against the current threshold).
+// Genre/theme length caps: long enough for any real preference, short
+// enough to stay a usable prompt line.
+const (
+	maxPreferredGenreLen = 60
+	maxPreferredThemeLen = 200
+)
+
+// PutSettings updates the story settings. The next story's tokens use the
+// new threshold; existing stories keep theirs (their views read the stored
+// SRS Levels against the current threshold).
 func (s *Service) PutSettings(ctx context.Context, userID uuid.UUID, us UserSettings) (UserSettings, error) {
 	if us.FuriganaThresholdSRSLevel < 0 || us.FuriganaThresholdSRSLevel > mastery.MaxSRSLevel {
 		return UserSettings{}, &Error{Status: 400, Code: "invalid_threshold",
 			Message: fmt.Sprintf("furigana_threshold_srs_level must be between 0 and %d", mastery.MaxSRSLevel)}
 	}
+	genre, theme := strings.TrimSpace(us.PreferredGenre), strings.TrimSpace(us.PreferredTheme)
+	if utf8.RuneCountInString(genre) > maxPreferredGenreLen || utf8.RuneCountInString(theme) > maxPreferredThemeLen {
+		return UserSettings{}, &Error{Status: 400, Code: "invalid_preference",
+			Message: fmt.Sprintf("preferredGenre is capped at %d characters, preferredTheme at %d", maxPreferredGenreLen, maxPreferredThemeLen)}
+	}
 	if err := s.store.SetFuriganaThreshold(ctx, userID, us.FuriganaThresholdSRSLevel); err != nil {
 		return UserSettings{}, err
 	}
+	if err := s.store.SetStoryPrefs(ctx, userID, genre, theme); err != nil {
+		return UserSettings{}, err
+	}
+	us.PreferredGenre, us.PreferredTheme = genre, theme
 	return us, nil
 }
 
@@ -312,20 +418,25 @@ func (sc *Scheduler) pass(ctx context.Context) {
 
 // PickGenre chooses the genre/theme for the next generation: genres the user
 // rated up (net of downvotes, ties broken randomly) come first, then genres
-// of the stories they read most recently. An empty result means "surprise
-// me" — issue #10's story-rating-steers-genre rule.
+// of the stories they read most recently — minus any the user rated net
+// down, which are never re-picked even when they were read recently. An
+// empty result means "surprise me" — issue #10's story-rating-steers-genre
+// rule.
 func PickGenre(ratings map[string]map[Rating]int, recentGenres []string) string {
 	type gs struct {
 		genre string
 		score int
 	}
+	net := func(g string) int {
+		c := ratings[g]
+		return c[RatingUp] - c[RatingDown]
+	}
 	var best []gs
-	for g, c := range ratings {
-		net := c[RatingUp] - c[RatingDown]
-		if net <= 0 {
+	for g := range ratings {
+		if net(g) <= 0 {
 			continue
 		}
-		best = append(best, gs{g, net})
+		best = append(best, gs{g, net(g)})
 	}
 	if len(best) > 0 {
 		sort.Slice(best, func(i, j int) bool {
@@ -345,10 +456,30 @@ func PickGenre(ratings map[string]map[Rating]int, recentGenres []string) string 
 		}
 		return top[rand.Intn(len(top))]
 	}
-	if len(recentGenres) > 0 {
-		return recentGenres[rand.Intn(len(recentGenres))]
+	var fallback []string
+	for _, g := range recentGenres {
+		if net(g) < 0 {
+			continue // disliked: ratings steer away even from recent reading
+		}
+		fallback = append(fallback, g)
+	}
+	if len(fallback) > 0 {
+		return fallback[rand.Intn(len(fallback))]
 	}
 	return ""
+}
+
+// dislikedGenres lists the genres the user rated net down, sorted for a
+// stable prompt; the generator names them as "avoid".
+func dislikedGenres(ratings map[string]map[Rating]int) []string {
+	var out []string
+	for g, c := range ratings {
+		if c[RatingUp]-c[RatingDown] < 0 {
+			out = append(out, g)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // FocusChanged implements the significance rule from the issue: regenerate

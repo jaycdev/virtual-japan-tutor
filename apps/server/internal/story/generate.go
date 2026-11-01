@@ -88,7 +88,8 @@ type Generator struct {
 func NewGenerator(lookup VocabLookup) *Generator { return &Generator{lookup: lookup} }
 
 // Request is one generation: the user, gate settings, their Focus Set and
-// Known Items, and the chosen genre ("" asks the model to surprise us).
+// Known Items, and the genre/theme chosen for them ("" asks the model to
+// surprise us).
 type Request struct {
 	UserID   uuid.UUID
 	Settings Settings
@@ -98,6 +99,12 @@ type Request struct {
 	Known      KnownSource
 	KnownWords []VocabFocus
 	Genre      string
+	// Theme is the Learner's free-text preference (prompt-only, like Genre).
+	Theme string
+	// DislikedGenres are the genres the Learner rated net down: the prompt
+	// names them as "avoid", and PickGenre already dropped them from its
+	// fallback.
+	DislikedGenres []string
 }
 
 // Generate produces one Story for the request. It returns the final candidate
@@ -119,6 +126,10 @@ func (g *Generator) Generate(ctx context.Context, client ChatClient, req Request
 		{Role: llm.RoleSystem, Content: systemPrompt},
 		{Role: llm.RoleUser, Content: userPrompt(req, settings)},
 	}
+	// The base brief, kept verbatim so the stored Story can show what was
+	// asked of the model (retry feedback is conversation history, not the
+	// brief).
+	brief := msgs[1].Content
 	var last *Story
 	var lastErr error
 	for attempt := 1; attempt <= settings.MaxAttempts; attempt++ {
@@ -149,6 +160,7 @@ func (g *Generator) Generate(ctx context.Context, client ChatClient, req Request
 			)
 			continue
 		}
+		story.Prompt = brief
 		story.Attempts = attempt
 
 		// Tag tokens against the user's Known Items: unlinked vocabulary
@@ -221,7 +233,12 @@ func (g *Generator) materialise(ctx context.Context, raw *storyJSON, userID uuid
 			sen.Tokens = append(sen.Tokens, tok)
 		}
 		for _, sp := range in.GrammarSpans {
-			sen.Spans = append(sen.Spans, Span{Start: sp.Start, End: sp.End, GrammarPointID: sp.GrammarPointID})
+			sen.Spans = append(sen.Spans, Span{
+				Start:          sp.Start,
+				End:            sp.End,
+				GrammarPointID: sp.GrammarPointID,
+				IsFocus:        focus.hasGrammar(sp.GrammarPointID),
+			})
 		}
 		s.Sentences = append(s.Sentences, sen)
 		texts = append(texts, in.JA)
@@ -299,9 +316,10 @@ func (g *Generator) tagKnown(ctx context.Context, s *Story, req Request) error {
 
 // gate runs the deterministic checks over an already-tokenised, already-
 // tagged candidate: Known-word coverage over content tokens, Focus Set
-// inclusion, and Grammar Spans citing suggested points on token boundaries.
-// It fills the Story's count fields either way, so a rejected Story still
-// records what the gate saw.
+// inclusion over BOTH the vocabulary and grammar halves, and Grammar Spans
+// citing suggested points on token boundaries and covering only the
+// pattern's own characters. It fills the Story's count fields either way, so
+// a rejected Story still records what the gate saw.
 func (g *Generator) gate(s *Story, settings Settings, focus FocusSet) []string {
 	if err := s.Validate(); err != nil {
 		return []string{err.Error()}
@@ -312,8 +330,13 @@ func (g *Generator) gate(s *Story, settings Settings, focus FocusSet) []string {
 	for _, v := range focus.Vocab {
 		focusWant[v.EntSeq] = true
 	}
+	focusGrammar := make(map[int64]bool, len(focus.Grammar))
+	for _, gm := range focus.Grammar {
+		focusGrammar[gm.PointID] = true
+	}
 	content, knownCount := 0, 0
 	focusHit := map[int64]bool{}
+	grammarHit := map[int64]bool{}
 	for _, sen := range s.Sentences {
 		for _, t := range sen.Tokens {
 			if !t.content {
@@ -330,7 +353,7 @@ func (g *Generator) gate(s *Story, settings Settings, focus FocusSet) []string {
 		}
 		for si := range sen.Spans {
 			sp := &sen.Spans[si]
-			if !focus.hasGrammar(sp.GrammarPointID) {
+			if !focusGrammar[sp.GrammarPointID] {
 				problems = append(problems, fmt.Sprintf(
 					"grammar span [%d,%d) in sentence %d cites point %d, which was not in the suggested list",
 					sp.Start, sp.End, sen.Pos, sp.GrammarPointID))
@@ -341,10 +364,19 @@ func (g *Generator) gate(s *Story, settings Settings, focus FocusSet) []string {
 					"grammar span [%d,%d) in sentence %d cuts across word boundaries; spans must cover whole words",
 					sp.Start, sp.End, sen.Pos))
 			}
+			if surf, atStem := spanStartsAtContentWord(sen.Tokens, sp.Start); atStem {
+				problems = append(problems, fmt.Sprintf(
+					"grammar span [%d,%d) in sentence %d opens at the content word %s; a span must cover the pattern's own characters only, never the verb or adjective stem (for 食べてしまった with pattern てしまった the span covers てしまった)",
+					sp.Start, sp.End, sen.Pos, surf))
+			}
+			grammarHit[sp.GrammarPointID] = true
 		}
 	}
-	focusTotal := len(focusWant)
-	s.ContentWords, s.KnownWords, s.FocusItems, s.FocusHit = content, knownCount, focusTotal, len(focusHit)
+	// The focus fraction counts both halves of the Focus Set: a point counts
+	// as hit when at least one span in the Story realises it.
+	focusTotal := len(focusWant) + len(focusGrammar)
+	focusHits := len(focusHit) + len(grammarHit)
+	s.ContentWords, s.KnownWords, s.FocusItems, s.FocusHit = content, knownCount, focusTotal, focusHits
 
 	if content > 0 {
 		cov := float64(knownCount) / float64(content)
@@ -355,14 +387,27 @@ func (g *Generator) gate(s *Story, settings Settings, focus FocusSet) []string {
 		}
 	}
 	if focusTotal > 0 {
-		frac := float64(len(focusHit)) / float64(focusTotal)
+		frac := float64(focusHits) / float64(focusTotal)
 		if frac < settings.MinFocusFraction {
 			problems = append(problems, fmt.Sprintf(
-				"only %d of the %d focus words appear (%.0f%%); at least %.0f%% must appear — build the passage around the focus words, they are the point of the exercise",
-				len(focusHit), focusTotal, frac*100, settings.MinFocusFraction*100))
+				"only %d of the %d focus items appear (%d of %d focus words, %d of %d focus grammar points; %.0f%%); at least %.0f%% must appear — build the passage around the focus items, they are the point of the exercise",
+				focusHits, focusTotal, len(focusHit), len(focusWant), len(grammarHit), len(focusGrammar), frac*100, settings.MinFocusFraction*100))
 		}
 	}
 	return problems
+}
+
+// spanStartsAtContentWord reports whether a span opens at the first
+// character of a content-word token — the stem-inclusion the pattern-only
+// rule forbids (食べてしまった must be spanned てしまった, not from 食べ).
+// It returns the offending surface for the retry feedback.
+func spanStartsAtContentWord(toks []Token, start int) (string, bool) {
+	for _, t := range toks {
+		if t.Start == start && t.content {
+			return t.Surface, true
+		}
+	}
+	return "", false
 }
 
 // hasGrammar reports whether the Focus Set suggested this grammar point;
@@ -415,6 +460,12 @@ Passage rules:
 	} else {
 		fmt.Fprintf(&b, "- Genre/theme: surprise the reader with any genre you think they would enjoy. Name it in the genre field.\n")
 	}
+	if req.Theme != "" {
+		fmt.Fprintf(&b, "- Theme: %s.\n", req.Theme)
+	}
+	if len(req.DislikedGenres) > 0 {
+		fmt.Fprintf(&b, "- Avoid these genres, the reader did not like them: %s.\n", strings.Join(req.DislikedGenres, ", "))
+	}
 
 	if len(req.Focus.Vocab) > 0 {
 		minUse := int(float64(len(req.Focus.Vocab))*settings.MinFocusFraction + 0.999)
@@ -440,7 +491,7 @@ Known words (the only words you may use; focus words are included):
 	fmt.Fprintf(&b, `
 Comprehension questions: write %d to %d multiple-choice questions in Japanese about the passage. Each has 2 to 4 options and the index (from 0) of the correct option.
 
-Character positions: for each grammar span, start is the position of its first character (counting from 0 across the sentence) and end is the position just after its last character. Spans must cover whole words.
+Character positions: for each grammar span, start is the position of its first character (counting from 0 across the sentence) and end is the position just after its last character. Spans must cover whole words, and they cover the pattern's characters only — never the stem of the verb or adjective. Example: for 食べてしまった with the pattern てしまった, the span starts at the て, not at 食べ. A span that opens at the first character of a content word is rejected.
 
 Return JSON: {"genre": string, "sentences": [{"ja": string, "en": string, "grammar_spans": [{"start": int, "end": int, "grammar_point_id": int}]}], "questions": [{"prompt_ja": string, "options_ja": [string], "answer_index": int}]}`,
 		MinQuestions, MaxQuestions)

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -101,6 +102,14 @@ func (f *fakeProvider) lastUserPrompt() string {
 	return strings.Join(parts, "\n")
 }
 
+// setScript swaps what later calls answer with (the sequence index keeps
+// counting), so one test can fail one sweep and succeed at the next.
+func (f *fakeProvider) setScript(script ...string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.script = script
+}
+
 // --- fake resolver ---
 
 type fakeResolver struct{ client *llm.Client }
@@ -153,6 +162,7 @@ type fakeStore struct {
 	stories   map[uuid.UUID]*Story
 	users     map[uuid.UUID]bool
 	threshold map[uuid.UUID]int
+	prefs     map[uuid.UUID][2]string // genre, theme ("" = surprise-me / no theme)
 	snapshots map[uuid.UUID][]string
 	now       time.Time
 }
@@ -162,6 +172,7 @@ func newFakeStore() *fakeStore {
 		stories:   map[uuid.UUID]*Story{},
 		users:     map[uuid.UUID]bool{},
 		threshold: map[uuid.UUID]int{},
+		prefs:     map[uuid.UUID][2]string{},
 		snapshots: map[uuid.UUID][]string{},
 		now:       time.Unix(1700000000, 0).UTC(),
 	}
@@ -323,6 +334,20 @@ func (s *fakeStore) SetFuriganaThreshold(_ context.Context, userID uuid.UUID, le
 	return nil
 }
 
+func (s *fakeStore) StoryPrefs(_ context.Context, userID uuid.UUID) (string, string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p := s.prefs[userID]
+	return p[0], p[1], nil
+}
+
+func (s *fakeStore) SetStoryPrefs(_ context.Context, userID uuid.UUID, genre, theme string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.prefs[userID] = [2]string{genre, theme}
+	return nil
+}
+
 func (s *fakeStore) FocusSnapshot(_ context.Context, userID uuid.UUID) ([]string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -383,7 +408,14 @@ func (r *resultsSpy) AppendResult(_ context.Context, userID uuid.UUID, item mast
 
 func newTestService(t *testing.T, provider *fakeProvider) (*Service, *fakeStore, *fakeFocus, *resultsSpy) {
 	t.Helper()
-	store := newFakeStore()
+	return newTestServiceOn(t, provider, newFakeStore())
+}
+
+// newTestServiceOn wires a Service over an existing store, so a test can
+// hand one service's saved stories to another service (for instance a
+// provider-less one, to prove the read path needs no AI provider at all).
+func newTestServiceOn(t *testing.T, provider *fakeProvider, store *fakeStore) (*Service, *fakeStore, *fakeFocus, *resultsSpy) {
+	t.Helper()
 	focus := &fakeFocus{
 		set:   FocusSet{Vocab: []VocabFocus{{EntSeq: 1, JA: "ねこ", EN: "cat", SRSLevel: 5}}},
 		known: map[int64]KnownView{1: {IsKnown: true, SRSLevel: 5}, 2: {IsKnown: true, SRSLevel: 4}},
@@ -497,6 +529,62 @@ func TestEnsureReadyFailureStoredNotReady(t *testing.T) {
 	}
 }
 
+func TestEnsureReadyFailureKeepsSnapshotArmed(t *testing.T) {
+	// A failed sweep must not advance the significance snapshot: otherwise
+	// the new Focus Set is burned by the failure and the generator goes
+	// quiet without ever offering a story for it. Only a VALIDATED story
+	// retires the snapshot.
+	ctx := context.Background()
+	user := uuid.New()
+	clean := string(fixture(t, "travel", cleanClause, cleanClause, cleanClause, cleanClause))
+	dirty := string(fixture(t, "travel", dirtyClause, dirtyClause, dirtyClause, dirtyClause))
+	provider := newFakeProvider(t, clean, dirty, clean)
+	svc, store, focus, _ := newTestService(t, provider)
+
+	if err := svc.EnsureReady(ctx, user); err != nil {
+		t.Fatalf("EnsureReady (first): %v", err)
+	}
+	id1, ready, _ := store.ReadyStoryID(ctx, user)
+	if !ready {
+		t.Fatal("the first story should be ready")
+	}
+	snap1, err := store.FocusSnapshot(ctx, user)
+	if err != nil {
+		t.Fatalf("FocusSnapshot: %v", err)
+	}
+
+	// A significant Focus Set change re-arms, and this sweep fails the gate.
+	focus.set.Vocab = []VocabFocus{{EntSeq: 1}, {EntSeq: 2}, {EntSeq: 3}}
+	if err := svc.EnsureReady(ctx, user); err == nil {
+		t.Fatal("want the failed sweep surfaced as an error")
+	}
+	// The old ready story stays…
+	id2, ready, _ := store.ReadyStoryID(ctx, user)
+	if !ready || id2 != id1 {
+		t.Fatalf("failed sweep disturbed the ready story: id=%v ready=%v", id2, ready)
+	}
+	// …and the snapshot must NOT have advanced to the new Focus Set.
+	snap2, err := store.FocusSnapshot(ctx, user)
+	if err != nil {
+		t.Fatalf("FocusSnapshot: %v", err)
+	}
+	if !reflect.DeepEqual(snap2, snap1) {
+		t.Fatalf("snapshot advanced to %v after a failed sweep, want %v", snap2, snap1)
+	}
+
+	// The next sweep therefore retries the new Focus Set — and succeeds.
+	if err := svc.EnsureReady(ctx, user); err != nil {
+		t.Fatalf("EnsureReady (retry): %v", err)
+	}
+	if provider.callCount() != 3 {
+		t.Fatalf("provider calls = %d, want the failed Focus Set retried (3)", provider.callCount())
+	}
+	id3, ready, _ := store.ReadyStoryID(ctx, user)
+	if !ready || id3 == id1 {
+		t.Fatalf("the retry produced no new ready story: id=%v ready=%v", id3, ready)
+	}
+}
+
 func TestOpenReadyIsInstantAndConsumes(t *testing.T) {
 	ctx := context.Background()
 	user := uuid.New()
@@ -507,7 +595,12 @@ func TestOpenReadyIsInstantAndConsumes(t *testing.T) {
 	}
 	before := provider.callCount()
 
-	st, err := svc.OpenReady(ctx, user)
+	// The read path runs on a provider-less service: if opening a story
+	// needed anything but storage it would fail here — that is the
+	// instant-open rule. (The post-open regeneration kick gets its own
+	// test; with no provider it is a no-op.)
+	reader, _, _, _ := newTestServiceOn(t, nil, store)
+	st, err := reader.OpenReady(ctx, user)
 	if err != nil {
 		t.Fatalf("OpenReady: %v", err)
 	}
@@ -520,8 +613,48 @@ func TestOpenReadyIsInstantAndConsumes(t *testing.T) {
 	if _, ready, _ := store.ReadyStoryID(ctx, user); ready {
 		t.Fatal("opening the ready story must clear the ready flag")
 	}
-	if _, err := svc.OpenReady(ctx, user); !errors.Is(err, ErrNoReadyStory) {
+	if _, err := reader.OpenReady(ctx, user); !errors.Is(err, ErrNoReadyStory) {
 		t.Fatalf("second OpenReady err = %v, want ErrNoReadyStory", err)
+	}
+}
+
+func TestOpenReadyQueuesRegeneration(t *testing.T) {
+	// Having consumed the ready story, OpenReady kicks a background
+	// regeneration: the next story becomes ready without waiting for the
+	// scheduler's next sweep.
+	ctx := context.Background()
+	user := uuid.New()
+	provider := newFakeProvider(t, string(fixture(t, "travel", cleanClause, cleanClause, cleanClause, cleanClause)))
+	svc, store, _, _ := newTestService(t, provider)
+	if err := svc.EnsureReady(ctx, user); err != nil {
+		t.Fatalf("EnsureReady: %v", err)
+	}
+	first, ready, err := store.ReadyStoryID(ctx, user)
+	if err != nil || !ready {
+		t.Fatalf("want a ready story first, ready=%v err=%v", ready, err)
+	}
+	before := provider.callCount()
+
+	if _, err := svc.OpenReady(ctx, user); err != nil {
+		t.Fatalf("OpenReady: %v", err)
+	}
+
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		id, ready, err := store.ReadyStoryID(ctx, user)
+		if err != nil {
+			t.Fatalf("ReadyStoryID: %v", err)
+		}
+		if ready && id != first {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the post-open regeneration never produced a new ready story")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if after := provider.callCount(); after <= before {
+		t.Fatalf("provider calls = %d after opening, want a regeneration kick (was %d)", after, before)
 	}
 }
 
@@ -535,7 +668,17 @@ func TestAnswerWritesPracticeOnceForFocusItems(t *testing.T) {
 		UserID: user, Genre: "travel", Validated: true,
 		Questions:  []Question{{Pos: 0, PromptJA: "q", OptionsJA: []string{"a", "b"}, AnswerIndex: 1}},
 		VocabItems: []VocabItem{{EntSeq: 1, IsFocus: true, IsKnown: true}, {EntSeq: 2, IsFocus: false, IsKnown: true}},
-		Sentences:  []Sentence{{Pos: 0, JA: "ねこ", EN: "cat", Tokens: []Token{{Pos: 0, Surface: "ねこ", Tag: TagKnown, SRSLevel: &lvl}}}},
+		Sentences: []Sentence{{Pos: 0, JA: "ねこ", EN: "cat",
+			Tokens: []Token{{Pos: 0, Surface: "ねこ", Tag: TagKnown, SRSLevel: &lvl}},
+			// The grammar half of the Focus Set gets Practice Records too:
+			// one per distinct focus point however many spans share it;
+			// non-focus spans are skipped.
+			Spans: []Span{
+				{Start: 0, End: 2, GrammarPointID: 900, IsFocus: true},
+				{Start: 0, End: 2, GrammarPointID: 900, IsFocus: true},
+				{Start: 0, End: 2, GrammarPointID: 901},
+			},
+		}},
 	}
 	if err := store.Save(ctx, st); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -548,12 +691,24 @@ func TestAnswerWritesPracticeOnceForFocusItems(t *testing.T) {
 	if !res.Correct || !res.PracticeRecorded {
 		t.Fatalf("first answer: correct=%v recorded=%v, want both true", res.Correct, res.PracticeRecorded)
 	}
-	if len(results.calls) != 1 {
-		t.Fatalf("practice rows = %d, want exactly 1 (focus items only)", len(results.calls))
+	want := map[mastery.ItemKey]bool{
+		{Kind: mastery.KindVocabulary, Ref: "1"}: true,
+		{Kind: mastery.KindGrammar, Ref: "900"}:  true,
 	}
-	c := results.calls[0]
-	if c.Item != (mastery.ItemKey{Kind: mastery.KindVocabulary, Ref: "1"}) || !c.Correct {
-		t.Fatalf("practice row = %+v, want vocabulary:1 correct", c)
+	if len(results.calls) != len(want) {
+		t.Fatalf("practice rows = %d, want %d (focus vocab + distinct focus grammar)", len(results.calls), len(want))
+	}
+	for _, c := range results.calls {
+		if !want[c.Item] {
+			t.Fatalf("unexpected practice row %+v, want only focus items", c)
+		}
+		if !c.Correct {
+			t.Fatalf("practice row %+v: correct=false, want the answer's verdict", c)
+		}
+		delete(want, c.Item)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing practice rows for %v", want)
 	}
 
 	// At most once ever: a second answer grades but writes nothing new.
@@ -564,8 +719,8 @@ func TestAnswerWritesPracticeOnceForFocusItems(t *testing.T) {
 	if res2.Correct || res2.PracticeRecorded {
 		t.Fatalf("second answer: correct=%v recorded=%v, want grading only", res2.Correct, res2.PracticeRecorded)
 	}
-	if len(results.calls) != 1 {
-		t.Fatalf("practice rows = %d after a second answer, want still 1", len(results.calls))
+	if len(results.calls) != 2 {
+		t.Fatalf("practice rows = %d after a second answer, want still 2", len(results.calls))
 	}
 
 	if _, err := svc.Answer(ctx, st.ID, user, 9, 0); err == nil {
@@ -588,14 +743,108 @@ func TestStorySettingsRoundTrip(t *testing.T) {
 	if us.FuriganaThresholdSRSLevel != 3 {
 		t.Fatalf("default threshold = %d, want 3", us.FuriganaThresholdSRSLevel)
 	}
-	us, err = svc.PutSettings(ctx, user, UserSettings{FuriganaThresholdSRSLevel: 7})
+	if us.PreferredGenre != "" || us.PreferredTheme != "" {
+		t.Fatalf("default prefs = %q/%q, want surprise-me (empty)", us.PreferredGenre, us.PreferredTheme)
+	}
+
+	us, err = svc.PutSettings(ctx, user, UserSettings{FuriganaThresholdSRSLevel: 7, PreferredGenre: "  mystery  ", PreferredTheme: "robots"})
 	if err != nil {
 		t.Fatalf("PutSettings: %v", err)
 	}
 	if us.FuriganaThresholdSRSLevel != 7 {
 		t.Fatalf("threshold after PutSettings = %d, want 7", us.FuriganaThresholdSRSLevel)
 	}
+	if us.PreferredGenre != "mystery" || us.PreferredTheme != "robots" {
+		t.Fatalf("prefs after PutSettings = %q/%q, want trimmed round-trip", us.PreferredGenre, us.PreferredTheme)
+	}
+	us, err = svc.GetSettings(ctx, user)
+	if err != nil {
+		t.Fatalf("GetSettings (after put): %v", err)
+	}
+	if us.PreferredGenre != "mystery" || us.PreferredTheme != "robots" {
+		t.Fatalf("prefs after GetSettings = %q/%q, want the stored values", us.PreferredGenre, us.PreferredTheme)
+	}
+
 	if _, err := svc.PutSettings(ctx, user, UserSettings{FuriganaThresholdSRSLevel: 10}); err == nil {
 		t.Fatal("threshold above the mastery scale must be rejected")
+	}
+	// Length caps count runes, so Japanese text is capped like English.
+	long := strings.Repeat("猫", maxPreferredThemeLen+1)
+	if _, err := svc.PutSettings(ctx, user, UserSettings{FuriganaThresholdSRSLevel: 3, PreferredTheme: long}); err == nil {
+		t.Fatal("theme over the cap must be rejected")
+	}
+	long = strings.Repeat("猫", maxPreferredGenreLen+1)
+	if _, err := svc.PutSettings(ctx, user, UserSettings{FuriganaThresholdSRSLevel: 3, PreferredGenre: long}); err == nil {
+		t.Fatal("genre over the cap must be rejected")
+	}
+
+	// Putting without prefs means "surprise me" again: PUT replaces.
+	us, err = svc.PutSettings(ctx, user, UserSettings{FuriganaThresholdSRSLevel: 3})
+	if err != nil {
+		t.Fatalf("PutSettings (clearing prefs): %v", err)
+	}
+	if us.PreferredGenre != "" || us.PreferredTheme != "" {
+		t.Fatalf("prefs after clearing = %q/%q, want empty", us.PreferredGenre, us.PreferredTheme)
+	}
+}
+
+func TestEnsureReadyUsesPreferredGenreAndTheme(t *testing.T) {
+	// The Learner's chosen genre beats the rating-steered pick and the
+	// theme reaches the prompt; the stored story carries the preferred
+	// genre. All of it is prompt steering only — the gate is untouched.
+	ctx := context.Background()
+	user := uuid.New()
+	provider := newFakeProvider(t, string(fixture(t, "surprise", cleanClause, cleanClause, cleanClause, cleanClause)))
+	svc, store, _, _ := newTestService(t, provider)
+	if err := store.SetStoryPrefs(ctx, user, "mystery", "robots running a ramen shop"); err != nil {
+		t.Fatalf("SetStoryPrefs: %v", err)
+	}
+
+	if err := svc.EnsureReady(ctx, user); err != nil {
+		t.Fatalf("EnsureReady: %v", err)
+	}
+	prompt := provider.lastUserPrompt()
+	if !strings.Contains(prompt, "- Genre/theme: mystery.") {
+		t.Fatalf("prompt did not use the preferred genre:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "- Theme: robots running a ramen shop.") {
+		t.Fatalf("prompt missing the preferred theme:\n%s", prompt)
+	}
+	id, ready, _ := store.ReadyStoryID(ctx, user)
+	if !ready {
+		t.Fatal("want a ready story")
+	}
+	if g := store.stories[id].Genre; g != "mystery" {
+		t.Fatalf("stored genre = %q, want the preferred one", g)
+	}
+	if p := store.stories[id].Prompt; p == "" || !strings.Contains(p, "ねこ") {
+		t.Fatalf("stories.prompt not populated with the brief: %q", p)
+	}
+}
+
+func TestEnsureReadyAvoidsDislikedGenres(t *testing.T) {
+	// Net-down-rated genres never get re-picked — not even from recent
+	// reading — and the prompt names them as "avoid".
+	ctx := context.Background()
+	user := uuid.New()
+	provider := newFakeProvider(t, string(fixture(t, "travel", cleanClause, cleanClause, cleanClause, cleanClause)))
+	svc, store, _, _ := newTestService(t, provider)
+	down := RatingDown
+	if err := store.Save(ctx, &Story{UserID: user, Genre: "mystery", Validated: true, Rating: &down}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	if err := svc.EnsureReady(ctx, user); err != nil {
+		t.Fatalf("EnsureReady: %v", err)
+	}
+	prompt := provider.lastUserPrompt()
+	if !strings.Contains(prompt, "Avoid these genres, the reader did not like them: mystery") {
+		t.Fatalf("prompt missing the avoid-genres line:\n%s", prompt)
+	}
+	if strings.Contains(prompt, "- Genre/theme: mystery.") {
+		t.Fatal("a disliked genre must not be re-picked from recent reading")
+	}
+	if !strings.Contains(prompt, "surprise the reader") {
+		t.Fatal("with only disliked genres in history the fallback is surprise-me")
 	}
 }
