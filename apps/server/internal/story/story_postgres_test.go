@@ -166,8 +166,11 @@ func TestPostgresStoreAgainstPostgres(t *testing.T) {
 	// validated Automatic Story, whatever its Read mark, with the older one
 	// underneath it the moment the newest is deleted. One-per-local-day is
 	// the service's rule (service_test.go); this is what it reads.
-	if _, ok, err := st.LatestAutomaticStory(ctx, user); err != nil || ok {
-		t.Fatalf("fresh user has an automatic story: ok=%v err=%v", ok, err)
+	if _, ok, err := st.LatestAutomaticStory(ctx, other); err != nil || ok {
+		t.Fatalf("a user with no stories has an automatic story: ok=%v err=%v", ok, err)
+	}
+	if got, ok, err := st.LatestAutomaticStory(ctx, user); err != nil || !ok || got.ID != saved.ID {
+		t.Fatalf("the story saved above is the only automatic one: %+v ok=%v err=%v", got, ok, err)
 	}
 	first := saveStory(t, ctx, st, user, "ready one", true)
 	second := saveStory(t, ctx, st, user, "ready two", true)
