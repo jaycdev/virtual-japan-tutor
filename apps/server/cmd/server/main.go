@@ -29,6 +29,7 @@ import (
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/refdata"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/secrets"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/story"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/webui"
 )
 
 func main() {
@@ -131,9 +132,20 @@ func run(args []string) error {
 		slog.Info("story background generation enabled", "interval", cfg.StoryInterval)
 	}
 
+	api := httpapi.New(pool, svc, httpapi.WithAIProviders(ai), httpapi.WithMaruMori(maru), httpapi.WithGrammar(grammarStore, grammarGen), httpapi.WithKnownGrammar(knownGrammar), httpapi.WithFocusSet(focus), httpapi.WithPractice(practiceSvc), httpapi.WithStory(storySvc), httpapi.WithDictionary(dictionarySvc), httpapi.WithItemLists(itemListSvc), httpapi.WithMaxBodyBytes(cfg.MaxBodyBytes))
+	handler := api
+	if cfg.WebDir != "" {
+		if handler, err = webui.Handler(cfg.WebDir, api); err != nil {
+			return err
+		}
+		slog.Info("serving the web app", "dir", cfg.WebDir)
+	} else {
+		slog.Info("WEB_DIR not set: serving the API only")
+	}
+
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.New(pool, svc, httpapi.WithAIProviders(ai), httpapi.WithMaruMori(maru), httpapi.WithGrammar(grammarStore, grammarGen), httpapi.WithKnownGrammar(knownGrammar), httpapi.WithFocusSet(focus), httpapi.WithPractice(practiceSvc), httpapi.WithStory(storySvc), httpapi.WithDictionary(dictionarySvc), httpapi.WithItemLists(itemListSvc), httpapi.WithMaxBodyBytes(cfg.MaxBodyBytes)),
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       cfg.ReadTimeout,
 		WriteTimeout:      cfg.WriteTimeout,
