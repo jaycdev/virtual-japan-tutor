@@ -453,7 +453,7 @@ export function StoryReader({
       <View style={[styles.header, { borderBottomColor: colors.separator }]}>
         <View style={styles.headerRow}>
           <Pressable
-            testID="back-to-library"
+            testID="back-to-stories"
             accessibilityRole="button"
             accessibilityLabel="Back to stories"
             onPress={onBack}

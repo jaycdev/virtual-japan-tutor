@@ -103,7 +103,7 @@ export function StorySettingsSection({ client, onBack }: { client: ApiClient; on
               options={gen.suggestions.themes}
             />
             <SectionTitle text="Your timezone" />
-            <Body text="This decides which local day each daily story belongs to." />
+            <Body text="This decides which local day each Automatic Story belongs to." />
             <AutocompleteField
               label="Timezone"
               value={timezoneValue}
