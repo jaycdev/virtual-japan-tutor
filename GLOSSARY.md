@@ -80,6 +80,50 @@ _Avoid_: Review history, stats
 A short, AI-written Japanese text built mostly from Known Items, with Focus Set items deliberately included.
 _Avoid_: Passage, text, reading
 
+**Story Title**:
+The Japanese title every Story carries. Its English translation is hidden until the Learner reveals it.
+_Avoid_: Name, heading
+
+**Genre**:
+The kind of Story, such as mystery, travel or slice of life. Every Story has one.
+_Avoid_: Category, type
+
+**Theme**:
+What a Story is about, in free text, such as "a robot running a ramen shop". Every new Story has one.
+_Avoid_: Topic, prompt, subject
+
+**Preferred Genre** / **Preferred Theme**:
+The Genre and Theme the Learner wants most of their Stories to lean towards. Automatic Stories use them most of the time, but not always.
+_Avoid_: Default genre, fixed genre
+
+**Story Origin**:
+Whether a Story is Automatic or On-demand. Both kinds are AI-written.
+_Avoid_: Generated vs manual, source
+
+**Automatic Story**:
+A Story the app makes in the background, at most one per day in the Learner's Timezone and only when the Learner has no unread Automatic Story.
+_Avoid_: Daily story, generated story, background story
+
+**Today's Story**:
+The Learner's newest Automatic Story, which the Stories page opens on. It can be from an earlier day if that one is still unread. An On-demand Story is never Today's Story.
+_Avoid_: Ready story, current story, daily story
+
+**Learner's Timezone**:
+The timezone that decides when the Learner's day starts. If the Learner hasn't chosen one, the server's timezone is used.
+_Avoid_: Locale, region
+
+**On-demand Story**:
+A Story the Learner asks for, optionally choosing its Genre and Theme.
+_Avoid_: Manual story, custom story
+
+**Read**:
+The Learner's own mark that they have finished a Story. They can undo it. It is separate from a Story having written Practice Records.
+_Avoid_: Opened, seen, completed, practiced
+
+**Story Library**:
+All of the Learner's Stories, which they can browse, mark Read or delete.
+_Avoid_: Story list, history, archive
+
 **Furigana Threshold**:
 The SRS Level, set by the Learner (default 3), at or above which vocabulary in a Story is shown without furigana.
 
