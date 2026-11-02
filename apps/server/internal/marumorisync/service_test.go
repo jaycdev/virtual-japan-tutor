@@ -33,11 +33,14 @@ func (r *fakeRef) FindKanji(_ context.Context, literal string) (refdata.Kanji, b
 	return k, ok, nil
 }
 
-func (r *fakeRef) FindVocabulary(_ context.Context, written, reading string) ([]refdata.Vocabulary, error) {
-	if reading != "" {
-		return nil, nil // the linker never passes a reading
+func (r *fakeRef) LinkVocabulary(_ context.Context, written []string) (map[string][]refdata.Vocabulary, error) {
+	out := make(map[string][]refdata.Vocabulary)
+	for _, w := range written {
+		if hits := r.vocab[w]; len(hits) > 0 {
+			out[w] = hits
+		}
 	}
-	return r.vocab[written], nil
+	return out, nil
 }
 
 func vocab(entSeq int64, level refdata.Level) refdata.Vocabulary {
@@ -579,6 +582,86 @@ func TestCancelledRoundClosesItsRunAsFailed(t *testing.T) {
 	// The Learner can Sync again: no abandoned row blocks them.
 	if _, err := e.svc.Sync(e.ctx); err != nil {
 		t.Errorf("the abandoned run blocked the next Sync: %v", err)
+	}
+}
+
+// cancelDuringLinking cancels the caller's context just as the vocabulary lookup starts
+// and, like pgx, fails a lookup made on a context that is already done.
+type cancelDuringLinking struct {
+	*fakeRef
+	cancel context.CancelFunc
+}
+
+func (c *cancelDuringLinking) LinkVocabulary(ctx context.Context, written []string) (map[string][]refdata.Vocabulary, error) {
+	c.cancel()
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("link vocabulary: %w", err)
+	}
+	return c.fakeRef.LinkVocabulary(ctx, written)
+}
+
+// countingRef records how many dictionary calls a Sync makes for vocabulary.
+type countingRef struct {
+	*fakeRef
+	calls int
+}
+
+func (c *countingRef) LinkVocabulary(ctx context.Context, written []string) (map[string][]refdata.Vocabulary, error) {
+	c.calls++
+	return c.fakeRef.LinkVocabulary(ctx, written)
+}
+
+// Linking is one dictionary round trip however many words the Learner knows, not one per
+// word (thousands of queries inside a single HTTP request).
+func TestSyncLinksAllVocabularyInOneLookup(t *testing.T) {
+	ref := &countingRef{fakeRef: testRefs()}
+	e := newEnv(t, ref.fakeRef)
+	svc := marumorisync.NewService(e.store, e.box, ref,
+		func(_, _ string) (marumorisync.Upstream, error) { return e.up, nil })
+	e.svc = svc
+	e.connect(t)
+	happyData(e.up)
+
+	run, err := svc.Sync(e.ctx)
+	if err != nil || run.Status != marumorisync.RunOK {
+		t.Fatalf("Sync = %+v, %v", run, err)
+	}
+	if ref.calls != 1 {
+		t.Errorf("vocabulary lookups = %d, want 1 for the whole Sync", ref.calls)
+	}
+	if run.Counts == nil || run.Counts.Vocabulary != 2 || run.Counts.Ambiguous != 1 || run.Counts.Unlinked != 2 {
+		t.Errorf("counts = %+v, want 2 linked (1 ambiguous) and 2 unlinked (a MaruMori-only spelling, a kanji)", run.Counts)
+	}
+}
+
+// A Learner's Sync is slow (one dictionary lookup per Known word) and its HTTP request can
+// be cut off by a reload, a proxy or a client giving up. The round must still finish: dying
+// halfway with "find vocabulary: context canceled" throws away the whole fetch.
+func TestSyncCompletesWhenTheRequestIsCancelledMidLinking(t *testing.T) {
+	e := newEnv(t, testRefs())
+	e.connect(t)
+	happyData(e.up)
+
+	ctx, cancel := context.WithCancel(e.ctx)
+	defer cancel()
+	ref := &cancelDuringLinking{fakeRef: e.ref, cancel: cancel}
+	svc := marumorisync.NewService(e.store, e.box, ref,
+		func(_, _ string) (marumorisync.Upstream, error) { return e.up, nil },
+		marumorisync.WithClock(func() time.Time { t := e.now; e.now = t.Add(time.Second); return t }))
+
+	run, err := svc.Sync(ctx)
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if run.Status != marumorisync.RunOK {
+		msg := ""
+		if run.Error != nil {
+			msg = *run.Error
+		}
+		t.Fatalf("run = %s (%q), want the Sync to finish although its request was cancelled", run.Status, msg)
+	}
+	if run.Counts == nil || run.Counts.Vocabulary != 2 {
+		t.Errorf("counts = %+v, want both linkable vocabulary words stored", run.Counts)
 	}
 }
 

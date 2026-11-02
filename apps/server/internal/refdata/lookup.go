@@ -69,6 +69,48 @@ func (s *Store) FindVocabulary(ctx context.Context, written, reading string) ([]
 	return s.loadVocabulary(ctx, ids)
 }
 
+// LinkVocabulary resolves many written forms in one round trip. It matches exactly what
+// FindVocabulary(written, "") matches (a kanji form or a kana spelling), in the same order
+// (common first, then ent_seq), but returns each entry lean: only EntSeq, Common and
+// JLPTLevel are filled, because linking needs no forms or senses. Forms with no entry are
+// absent from the map. Callers that need the full entry pass the EntSeq to
+// VocabularyByEntSeq.
+func (s *Store) LinkVocabulary(ctx context.Context, written []string) (map[string][]Vocabulary, error) {
+	out := make(map[string][]Vocabulary)
+	if len(written) == 0 {
+		return out, nil
+	}
+	rows, err := s.q.Query(ctx, `
+		WITH w AS (SELECT DISTINCT t FROM unnest($1::text[]) AS t),
+		hits AS (
+		    SELECT w.t AS written, k.ent_seq FROM w JOIN jmdict_kanji_forms k ON k.text = w.t
+		    UNION
+		    SELECT w.t, r.ent_seq FROM w JOIN jmdict_readings r ON r.text = w.t
+		)
+		SELECT h.written, e.ent_seq, e.is_common, COALESCE(l.jlpt_level, '')
+		FROM hits h
+		JOIN jmdict_entries e ON e.ent_seq = h.ent_seq
+		LEFT JOIN jmdict_jlpt_level l ON l.ent_seq = e.ent_seq
+		ORDER BY h.written, e.is_common DESC, e.ent_seq`, written)
+	if err != nil {
+		return nil, fmt.Errorf("link vocabulary: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var form, level string
+		var v Vocabulary
+		if err := rows.Scan(&form, &v.EntSeq, &v.Common, &level); err != nil {
+			return nil, fmt.Errorf("link vocabulary: %w", err)
+		}
+		v.JLPTLevel = Level(level)
+		out[form] = append(out[form], v)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("link vocabulary: %w", err)
+	}
+	return out, nil
+}
+
 // VocabularyByEntSeq returns the entry with this ent_seq, or nil when JMdict
 // has no row for it. One entry at most — the Dictionary window's lookup key.
 func (s *Store) VocabularyByEntSeq(ctx context.Context, entSeq int64) ([]Vocabulary, error) {

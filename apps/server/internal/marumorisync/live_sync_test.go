@@ -30,7 +30,7 @@ func (liveMemRef) FindKanji(_ context.Context, _ string) (refdata.Kanji, bool, e
 	return refdata.Kanji{}, false, nil
 }
 
-func (liveMemRef) FindVocabulary(_ context.Context, _, _ string) ([]refdata.Vocabulary, error) {
+func (liveMemRef) LinkVocabulary(_ context.Context, _ []string) (map[string][]refdata.Vocabulary, error) {
 	return nil, nil
 }
 

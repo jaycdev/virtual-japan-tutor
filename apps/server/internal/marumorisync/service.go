@@ -34,7 +34,10 @@ type Upstream interface {
 // the kind-specific fallback in the Service.
 type Reference interface {
 	FindKanji(ctx context.Context, literal string) (refdata.Kanji, bool, error)
-	FindVocabulary(ctx context.Context, written, reading string) ([]refdata.Vocabulary, error)
+	// LinkVocabulary resolves every written form in one call: a Sync links thousands of
+	// words, and a lookup per word made it a long-lived request of ~16,000 queries.
+	// Forms with no JMdict entry are absent from the result.
+	LinkVocabulary(ctx context.Context, written []string) (map[string][]refdata.Vocabulary, error)
 }
 
 // maxAPIKeyLength bounds what we are willing to seal and forward upstream.
@@ -42,6 +45,9 @@ const maxAPIKeyLength = 4096
 
 // defaultRecentLimit is how many runs RecentSyncs lists.
 const defaultRecentLimit = 10
+
+// syncTimeout bounds one learner-triggered Sync that no longer stops with its request.
+const syncTimeout = 10 * time.Minute
 
 // finishRunTimeout bounds the write that closes a Sync run.
 const finishRunTimeout = 10 * time.Second
@@ -202,12 +208,21 @@ func (s *Service) Status(ctx context.Context) (Status, error) {
 }
 
 // Sync runs one Sync for the authenticated learner.
+//
+// The round does not belong to the HTTP request that started it. It is slow (one
+// dictionary lookup per Known word) and the request can be cut off by a reload, a proxy
+// or a client giving up; if the round shared the request's cancellation it would die
+// mid-linking with "find vocabulary: context canceled" and the whole fetch would be
+// lost. So it runs on a context that keeps the request's values (the identity) but not
+// its cancellation, bounded by syncTimeout instead.
 func (s *Service) Sync(ctx context.Context) (SyncRun, error) {
 	userID, err := auth.UserID(ctx)
 	if err != nil {
 		return SyncRun{}, err
 	}
-	return s.SyncUser(ctx, userID)
+	roundCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), syncTimeout)
+	defer cancel()
+	return s.SyncUser(roundCtx, userID)
 }
 
 // SyncUser runs one Sync for a specific user; the scheduler uses it after resolving
@@ -374,6 +389,20 @@ func (s *Service) collect(ctx context.Context, upstream Upstream) (Counts, SyncB
 		}
 	}
 
+	// One dictionary round trip for every word this Sync will link.
+	var forms []string
+	seenForm := make(map[string]bool, len(vocabulary))
+	for _, item := range vocabulary {
+		if item.MaruMoriID != "" && item.Text != "" && item.Level > 0 && item.Level <= 9 && !seenForm[item.Text] {
+			seenForm[item.Text] = true
+			forms = append(forms, item.Text)
+		}
+	}
+	linked, err := s.ref.LinkVocabulary(ctx, forms)
+	if err != nil {
+		return counts, batch, nil, fmt.Errorf("link vocabulary: %w", err)
+	}
+
 	for _, item := range vocabulary {
 		switch {
 		case item.MaruMoriID == "" || item.Text == "":
@@ -381,10 +410,8 @@ func (s *Service) collect(ctx context.Context, upstream Upstream) (Counts, SyncB
 			counts.SkippedLevelZero++ // learning, not Known; any stored row disappears below
 		case item.Level < 0 || item.Level > 9:
 		default:
-			candidates, err := s.ref.FindVocabulary(ctx, item.Text, "")
-			if err != nil {
-				return counts, batch, nil, fmt.Errorf("link vocabulary %q: %w", item.Text, err)
-			}
+			// Copy: sortCandidates reorders, and one form can back several MaruMori items.
+			candidates := append([]refdata.Vocabulary(nil), linked[item.Text]...)
 			if len(candidates) == 0 {
 				// No JMdict entry: this stays MaruMori-side; we count it, not copy it.
 				counts.Unlinked++

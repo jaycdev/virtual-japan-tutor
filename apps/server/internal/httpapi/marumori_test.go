@@ -41,11 +41,14 @@ func (memRef) FindKanji(_ context.Context, literal string) (refdata.Kanji, bool,
 	return refdata.Kanji{}, false, nil
 }
 
-func (memRef) FindVocabulary(_ context.Context, written, _ string) ([]refdata.Vocabulary, error) {
-	if written == "日本" {
-		return []refdata.Vocabulary{{JMdictEntry: refdata.JMdictEntry{EntSeq: 1234}, JLPTLevel: refdata.N5}}, nil
+func (memRef) LinkVocabulary(_ context.Context, written []string) (map[string][]refdata.Vocabulary, error) {
+	out := make(map[string][]refdata.Vocabulary)
+	for _, w := range written {
+		if w == "日本" {
+			out[w] = []refdata.Vocabulary{{JMdictEntry: refdata.JMdictEntry{EntSeq: 1234}, JLPTLevel: refdata.N5}}
+		}
 	}
-	return nil, nil
+	return out, nil
 }
 
 func newMarumoriEnvWith(t *testing.T, up marumorisync.Upstream) *marumoriEnv {

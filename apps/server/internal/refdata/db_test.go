@@ -262,6 +262,49 @@ func TestVocabularyLookup(t *testing.T) {
 	})
 }
 
+// LinkVocabulary is the batch form of FindVocabulary(written, ""): for every form it must
+// return the same entries in the same order, with the same JLPT Level and Common flag.
+func TestLinkVocabularyMatchesFindVocabulary(t *testing.T) {
+	ctx := context.Background()
+	store := refdata.NewStore(importedPool(t))
+
+	forms := []string{"会う", "あう", "合う", "ＣＤプレーヤー", "食べる", "存在しない", "会う"} // one duplicate, one unknown
+	got, err := store.LinkVocabulary(ctx, forms)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, form := range forms {
+		want, err := store.FindVocabulary(ctx, form, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(want) == 0 {
+			if _, present := got[form]; present {
+				t.Errorf("%q: unknown form present in result: %+v", form, got[form])
+			}
+			continue
+		}
+		if len(got[form]) != len(want) {
+			t.Errorf("%q: %d entries, want %d (%+v vs %+v)", form, len(got[form]), len(want), got[form], want)
+			continue
+		}
+		for i := range want {
+			g, w := got[form][i], want[i]
+			if g.EntSeq != w.EntSeq || g.Common != w.Common || g.JLPTLevel != w.JLPTLevel {
+				t.Errorf("%q[%d] = {%d %v %q}, want {%d %v %q}", form, i, g.EntSeq, g.Common, g.JLPTLevel, w.EntSeq, w.Common, w.JLPTLevel)
+			}
+		}
+	}
+	if len(got["あう"]) != 2 {
+		t.Errorf("あう = %+v, want both homophones", got["あう"])
+	}
+
+	empty, err := store.LinkVocabulary(ctx, nil)
+	if err != nil || len(empty) != 0 {
+		t.Errorf("no forms: %v %+v", err, empty)
+	}
+}
+
 func TestKanjiLookup(t *testing.T) {
 	ctx := context.Background()
 	store := refdata.NewStore(importedPool(t))
