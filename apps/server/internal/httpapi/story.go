@@ -14,8 +14,8 @@ import (
 )
 
 // WithStory enables the /stories routes (issue #10: story generation behind
-// the kagome validation gate, the ready-story background flow, the library,
-// ratings, comprehension answers, and story settings).
+// the kagome validation gate, the Automatic Story background flow, the
+// library, ratings, comprehension answers, and story settings).
 func WithStory(svc *story.Service) Option { return func(s *server) { s.story = svc } }
 
 func (s *server) storyService() (*story.Service, error) {
@@ -90,10 +90,11 @@ func (s *server) ListStories(ctx context.Context, request api.ListStoriesRequest
 	return api.ListStories200JSONResponse{Items: views, Total: total, Limit: cLim, Offset: cOff}, nil
 }
 
-// GetReadyStory serves the story the background generator prepared, from
-// storage only — the request never waits on an AI provider. Reading it
-// clears the ready marker so the next scheduler pass re-arms generation.
-func (s *server) GetReadyStory(ctx context.Context, request api.GetReadyStoryRequestObject) (api.GetReadyStoryResponseObject, error) {
+// GetTodaysStory serves Today's Story — the newest Automatic Story — from
+// storage only; the request never waits on an AI provider. Opening it changes
+// nothing: the daily rule, not the opening, decides when the next Automatic
+// Story is written.
+func (s *server) GetTodaysStory(ctx context.Context, request api.GetTodaysStoryRequestObject) (api.GetTodaysStoryResponseObject, error) {
 	svc, err := s.storyService()
 	if err != nil {
 		return nil, err
@@ -102,10 +103,10 @@ func (s *server) GetReadyStory(ctx context.Context, request api.GetReadyStoryReq
 	if !ok {
 		return nil, auth.ErrUnauthenticated
 	}
-	st, err := svc.OpenReady(ctx, id.ID)
+	st, err := svc.TodaysStory(ctx, id.ID)
 	if err != nil {
-		if errors.Is(err, story.ErrNoReadyStory) {
-			return api.GetReadyStory404JSONResponse{Code: "no_ready_story", Message: "No story is ready yet; the background generator is on it."}, nil
+		if errors.Is(err, story.ErrNoStory) {
+			return api.GetTodaysStory404JSONResponse{Code: "no_story", Message: "No Automatic Story yet; the background generator writes one every day."}, nil
 		}
 		return nil, err
 	}
@@ -113,7 +114,7 @@ func (s *server) GetReadyStory(ctx context.Context, request api.GetReadyStoryReq
 	if err != nil {
 		return nil, err
 	}
-	return api.GetReadyStory200JSONResponse(storyView(st, us.FuriganaThresholdSRSLevel)), nil
+	return api.GetTodaysStory200JSONResponse(storyView(st, us.FuriganaThresholdSRSLevel)), nil
 }
 
 func (s *server) GetStory(ctx context.Context, request api.GetStoryRequestObject) (api.GetStoryResponseObject, error) {
@@ -297,8 +298,11 @@ func (s *server) GetStorySettings(ctx context.Context, request api.GetStorySetti
 	}
 	// Echo the preferences always (empty string = "surprise me") so the
 	// settings form round-trips without guessing what an absent field means.
+	// An empty timezone means unset: the server's own timezone decides which
+	// local day an Automatic Story belongs to until the Learner picks one.
 	return api.GetStorySettings200JSONResponse{
 		FuriganaThresholdSrsLevel: us.FuriganaThresholdSRSLevel,
+		Timezone:                  &us.Timezone,
 		PreferredGenre:            &us.PreferredGenre,
 		PreferredTheme:            &us.PreferredTheme,
 	}, nil
@@ -317,6 +321,9 @@ func (s *server) PutStorySettings(ctx context.Context, request api.PutStorySetti
 		return api.PutStorySettings400JSONResponse{Code: "bad_request", Message: "furiganaThresholdSrsLevel is required"}, nil
 	}
 	in := story.UserSettings{FuriganaThresholdSRSLevel: request.Body.FuriganaThresholdSrsLevel}
+	if request.Body.Timezone != nil {
+		in.Timezone = *request.Body.Timezone
+	}
 	if request.Body.PreferredGenre != nil {
 		in.PreferredGenre = *request.Body.PreferredGenre
 	}
@@ -332,6 +339,7 @@ func (s *server) PutStorySettings(ctx context.Context, request api.PutStorySetti
 	}
 	return api.PutStorySettings200JSONResponse{
 		FuriganaThresholdSrsLevel: us.FuriganaThresholdSRSLevel,
+		Timezone:                  &us.Timezone,
 		PreferredGenre:            &us.PreferredGenre,
 		PreferredTheme:            &us.PreferredTheme,
 	}, nil

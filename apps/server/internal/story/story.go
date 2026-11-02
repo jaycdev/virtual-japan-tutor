@@ -4,12 +4,12 @@
 // Library. It follows ADR 0002: the model's output is treated as untrusted
 // data, the gate decides what is trustworthy, and the gate's outcome is kept
 // either way — a Story that failed validation is stored with Validated false
-// and never becomes the ready Story.
+// and never becomes Today's Story.
 //
 // Failed-Story policy: after all attempts fail the gate, the last candidate
 // is still stored (its coverage numbers and attempt count included, so the
-// failure is analysable) but is not marked ready; the previous ready Story,
-// if any, stays. The library shows only validated Stories.
+// failure is analysable) but stays unvalidated; the library and Today's
+// Story show only validated Stories.
 //
 // Comprehension answers write Practice Records lightly: the first answer for
 // a Story appends one practice_records row per Focus Set item the Story
@@ -59,10 +59,6 @@ const (
 	// DefaultMaxAttempts is total generation attempts, including the first:
 	// the gate's feedback drives at most two retries.
 	DefaultMaxAttempts = 3
-	// DefaultSignificanceFraction: a Focus Set whose membership differs from
-	// the last generation's snapshot by at least this share re-arms the
-	// background generator.
-	DefaultSignificanceFraction = 1.0 / 3.0
 	// DefaultPromptKnownLimit caps how many Known Items the prompt lists;
 	// truncation is safe because every listed word is genuinely Known.
 	DefaultPromptKnownLimit = 600
@@ -175,7 +171,6 @@ type Story struct {
 	// about Practice Records, not about finishing (issue #31).
 	ReadAt    *time.Time
 	CreatedAt time.Time
-	ReadyAt   *time.Time
 	// Rating is the Learner's own rating, when they gave one.
 	Rating *Rating
 }

@@ -10,11 +10,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ActionResult } from "./useAiSettings.ts";
 
 /**
- * State and actions behind the Story screens (issue #10), shared by web and
- * mobile. Generation is never triggered from here: the background generator
- * keeps one ready Story per Learner, and `openReady` fetches it from storage —
- * the request never waits on an AI provider, so opening a Story is instant.
- * Opening clears the ready marker; the next background pass writes a new one.
+ * State and actions behind the Story screens (issues #10, #31, #32), shared by
+ * web and mobile. Generation is never triggered from here: the background
+ * generator writes one Automatic Story per day in the Learner's Timezone, and
+ * `today` fetches Today's Story — the newest of them — from storage. The
+ * request never waits on an AI provider, so opening a Story is instant.
  *
  * Like the other hooks this never rejects: failures land in `error`. Answer
  * verdicts are kept per question position for the open Story (the server
@@ -24,15 +24,25 @@ import type { ActionResult } from "./useAiSettings.ts";
  * library page and the open Story so the thumbs show immediately.
  */
 
-export const NO_READY_STORY =
-  "No story is ready yet. The tutor writes them for you regularly — check back soon.";
+/**
+ * Today's Story (GLOSSARY.md): the newest Automatic Story, or `none` while
+ * the Learner has no Automatic Story yet — the generator writes one per
+ * local day, so "none" is the "a story is on its way" state, not an error.
+ * A read one carries its readAt; the view words it as "still unread from
+ * <day>".
+ */
+export type TodaysStoryState =
+  | { status: "loading" }
+  | { status: "story"; story: Story }
+  | { status: "none" }
+  | { status: "error"; message: string };
 
 export type StoryLibraryState =
   | { status: "loading" }
   | { status: "error"; message: string }
   | { status: "ready"; page: StoryPage };
 
-/** The Learner's Story settings: furigana threshold and preferred genre/theme. */
+/** The Learner's Story settings: furigana threshold, preferred genre/theme and timezone. */
 export type StorySettingsState =
   | { status: "loading" }
   | { status: "error"; message: string }
@@ -47,18 +57,22 @@ export interface StoryQuestionView {
 }
 
 export interface StoryView {
+  /** Today's Story: the newest Automatic Story, or `none` until the generator writes one. */
+  today: TodaysStoryState;
+  /** Re-fetch Today's Story (the empty state invites it once a story lands). */
+  reloadToday(): void;
   /** The Story Library, one page at a time, newest first. */
   library: StoryLibraryState;
-  /** The open Story, when one is open (ready or from the library). */
+  /** The open Story, when one is open (Today's Story or from the library). */
   story: Story | null;
-  /** True while `story` is a just-opened ready Story (shows a practice note once answered). */
+  /** True while `story` is a just-opened Story (shows a practice note once answered). */
   open: boolean;
   /** True while an open/answer/rate request is in flight. */
   pending: boolean;
   error: string | null;
   /** The library page's questions are not loaded here; only the open Story has them. */
   questions: StoryQuestionView[];
-  /** Story settings: furigana threshold, and the genre/theme future stories aim for. */
+  /** Story settings: furigana threshold, the genre/theme future stories aim for, and the Learner's Timezone. */
   settings: StorySettingsState;
   /** Save the settings; the server's answer becomes the new state. Empty genre/theme means "surprise me". */
   saveSettings(next: StorySettings): Promise<ActionResult>;
@@ -66,8 +80,6 @@ export interface StoryView {
   reloadSettings(): void;
   loadPage(offset: number): Promise<void>;
   reload(): void;
-  /** Fetch the ready Story and open it. `no_ready_story` shows NO_READY_STORY, not an error. */
-  openReady(): Promise<void>;
   /** Open one Story from the library by id. */
   openStory(id: string): Promise<void>;
   close(): void;
@@ -92,7 +104,7 @@ function message(error: { message?: string } | undefined, status: number): strin
 }
 
 export interface StorySettingsView {
-  /** Story settings: furigana threshold, and the genre/theme future stories aim for. */
+  /** Story settings: furigana threshold, the genre/theme future stories aim for, and the Learner's Timezone. */
   settings: StorySettingsState;
   /** Save the settings; the server's answer becomes the new state. Empty genre/theme means "surprise me". */
   saveSettings(next: StorySettings): Promise<ActionResult>;
@@ -157,6 +169,8 @@ export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
   const [offset, setOffset] = useState(0);
   const [attempt, setAttempt] = useState(0);
   const [library, setLibrary] = useState<StoryLibraryState>({ status: "loading" });
+  const [today, setToday] = useState<TodaysStoryState>({ status: "loading" });
+  const [todayAttempt, setTodayAttempt] = useState(0);
   const [story, setStory] = useState<Story | null>(null);
   // Which Story is open right now, readable from async callbacks without
   // re-creating them: an answer's response is only painted while the Story
@@ -189,6 +203,30 @@ export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
     };
   }, [fetchPage, attempt]);
 
+  // Today's Story comes from storage, exactly like opening it: a 404 is the
+  // "the generator has not written one (yet)" state, not a failure; anything
+  // else is a real error the view can retry.
+  const fetchToday = useCallback(async (): Promise<TodaysStoryState> => {
+    try {
+      const { data, error: err, response } = await client.GET("/stories/today");
+      if (data) return { status: "story", story: data };
+      if (response.status === 404) return { status: "none" };
+      return { status: "error", message: message(err, response.status) };
+    } catch {
+      return { status: "error", message: UNREACHABLE };
+    }
+  }, [client]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchToday().then((next) => {
+      if (!cancelled) setToday(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchToday, todayAttempt]);
+
   // Registered after the library effect so the settings fetch follows the
   // library fetch on mount, matching the web screen's request order.
   const storySettings = useStorySettings(client);
@@ -197,6 +235,11 @@ export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
     setOffset(Math.max(0, next));
   }, []);
   const reload = useCallback(() => setAttempt((n) => n + 1), []);
+  const reloadToday = useCallback(() => setTodayAttempt((n) => n + 1), []);
+
+  const refreshToday = useCallback(async () => {
+    setToday(await fetchToday());
+  }, [fetchToday]);
 
   const refreshList = useCallback(async () => {
     const next = await fetchPage();
@@ -210,26 +253,6 @@ export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
     setAnswers(new Map());
     setError(null);
   }, []);
-
-  const openReady = useCallback(async () => {
-    setPending(true);
-    setError(null);
-    try {
-      const { data, error: err, response } = await client.GET("/stories/ready");
-      if (data) {
-        showStory(data);
-        void refreshList();
-      } else if (response.status === 404) {
-        setError(NO_READY_STORY);
-      } else {
-        setError(message(err, response.status));
-      }
-    } catch {
-      setError(UNREACHABLE);
-    } finally {
-      setPending(false);
-    }
-  }, [client, showStory, refreshList]);
 
   const openStory = useCallback(
     async (id: string) => {
@@ -257,44 +280,10 @@ export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
     setAnswers(new Map());
   }, []);
 
-  const rate = useCallback(
-    async (storyId: string, rating: StoryRating) => {
-      setPending(true);
-      setError(null);
-      try {
-        const { error: err, response } = await client.POST("/stories/{storyId}/rate", {
-          params: { path: { storyId } },
-          body: rating,
-        });
-        if (response.status !== 204) {
-          setError(message(err, response.status));
-          return;
-        }
-        // Reflect the new rating on the open Story and on the library page.
-        setStory((prev) => (prev && prev.id === storyId ? { ...prev, rating } : prev));
-        setLibrary((prev) =>
-          prev.status === "ready"
-            ? {
-                status: "ready",
-                page: {
-                  ...prev.page,
-                  items: prev.page.items.map((s) => (s.id === storyId ? { ...s, rating } : s)),
-                },
-              }
-            : prev,
-        );
-      } catch {
-        setError(UNREACHABLE);
-      } finally {
-        setPending(false);
-      }
-    },
-    [client],
-  );
-
   // Paint one library item in place, leaving the page and its total alone.
   // The Read mark only needs a truthy readAt locally; the next fetch carries
-  // the server's exact stamp.
+  // the server's exact stamp. Today's Story, when it is the same Story, is
+  // painted too so its read mark and thumbs stay truthful on screen.
   const patchItem = useCallback((storyId: string, patch: Partial<Story>) => {
     setLibrary((prev) =>
       prev.status === "ready"
@@ -308,7 +297,33 @@ export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
         : prev,
     );
     setStory((prev) => (prev && prev.id === storyId ? { ...prev, ...patch } : prev));
+    setToday((prev) => (prev.status === "story" && prev.story.id === storyId ? { status: "story", story: { ...prev.story, ...patch } } : prev));
   }, []);
+
+  const rate = useCallback(
+    async (storyId: string, rating: StoryRating) => {
+      setPending(true);
+      setError(null);
+      try {
+        const { error: err, response } = await client.POST("/stories/{storyId}/rate", {
+          params: { path: { storyId } },
+          body: rating,
+        });
+        if (response.status !== 204) {
+          setError(message(err, response.status));
+          return;
+        }
+        // Reflect the new rating on the open Story, the library page and
+        // Today's Story.
+        patchItem(storyId, { rating });
+      } catch {
+        setError(UNREACHABLE);
+      } finally {
+        setPending(false);
+      }
+    },
+    [client, patchItem],
+  );
 
   const setRead = useCallback(
     async (storyId: string) => {
@@ -383,13 +398,16 @@ export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
             : prev,
         );
         if (openIdRef.current === storyId) close();
+        // Deleting Today's Story hands the day to the older Automatic Story
+        // underneath it (or to the empty state if that was the last one).
+        if (today.status === "story" && today.story.id === storyId) void refreshToday();
       } catch {
         setError(UNREACHABLE);
       } finally {
         setPending(false);
       }
     },
-    [client, close],
+    [client, close, today, refreshToday],
   );
 
   const answer = useCallback(
@@ -426,6 +444,8 @@ export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
   }));
 
   return {
+    today,
+    reloadToday,
     library,
     story,
     open,
@@ -435,7 +455,6 @@ export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
     ...storySettings,
     loadPage,
     reload,
-    openReady,
     openStory,
     close,
     rate,

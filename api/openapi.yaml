@@ -786,25 +786,28 @@ paths:
                 $ref: "#/components/schemas/StoryPage"
         "401":
           $ref: "#/components/responses/Unauthorized"
-  /stories/ready:
+  /stories/today:
     get:
-      operationId: getReadyStory
-      summary: The story waiting to be read, opening it instantly
+      operationId: getTodaysStory
+      summary: "Today's Story: the newest Automatic Story, opening it instantly"
       description: >
-        The one Story the background generator has ready for the Learner, served from storage —
-        the request never waits on an AI provider. Opening it clears the ready marker, so the
-        next background pass re-arms generation. `no_ready_story` when none is waiting. All
-        `start`/`end` offsets in sentences and grammar spans are codepoint (rune) indexes into
-        each sentence's `ja` text, counting from 0 — not UTF-16 indexes or byte offsets.
+        Today's Story (GLOSSARY.md): the newest Automatic Story, served from storage — the
+        request never waits on an AI provider. It is what the Stories screen opens on.
+        On-demand Stories are never Today's Story. A Story the Learner has already read comes
+        with its readAt, and the web UI says which day it was still unread from. `no_story`
+        when the Learner has no Automatic Story yet; the background generator writes one
+        per local day in the Learner's Timezone. All `start`/`end` offsets in sentences and
+        grammar spans are codepoint (rune) indexes into each sentence's `ja` text, counting
+        from 0 — not UTF-16 indexes or byte offsets.
       responses:
         "200":
-          description: The ready story
+          description: Today's Story
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Story"
         "404":
-          description: No story is ready yet (code `no_ready_story`)
+          description: No Automatic Story exists yet (code `no_story`)
           content:
             application/json:
               schema:
@@ -2218,6 +2221,14 @@ components:
             The Furigana Threshold (GLOSSARY.md): Known Items with an SRS Level at or above this
             value are shown without furigana; below it, and for unknown tokens with kanji in
             their surface, the reading is shown. mastery's 1–9 scale; the default is 3.
+        timezone:
+          type: string
+          maxLength: 64
+          description: >
+            The Learner's Timezone (GLOSSARY.md): an IANA name such as "Asia/Tokyo". It decides
+            which local day an Automatic Story belongs to. Empty or absent means unset — the
+            server's own timezone is used until the Learner chooses one. A name the server
+            cannot load is rejected with `invalid_timezone`.
         preferredGenre:
           type: string
           maxLength: 60

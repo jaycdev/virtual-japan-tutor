@@ -4,16 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
+	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+	_ "time/tzdata" // settings validation and the daily rule resolve IANA names anywhere the server runs
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -157,17 +156,6 @@ func (f *fakeFocus) KnownWords(_ context.Context, _ uuid.UUID, _ int) ([]VocabFo
 	return f.set.Vocab, nil
 }
 
-func (f *fakeFocus) SnapshotKeys(fs FocusSet) []string {
-	keys := make([]string, 0, len(fs.Vocab)+len(fs.Grammar))
-	for _, v := range fs.Vocab {
-		keys = append(keys, "vocabulary:"+strconv.FormatInt(v.EntSeq, 10))
-	}
-	for _, g := range fs.Grammar {
-		keys = append(keys, "grammar:"+strconv.FormatInt(g.PointID, 10))
-	}
-	return keys
-}
-
 // --- fake store ---
 
 type fakeStore struct {
@@ -177,13 +165,8 @@ type fakeStore struct {
 	threshold    map[uuid.UUID]int
 	blur         map[uuid.UUID]bool      // missing = default true, like the users column
 	lookupHoldMs map[uuid.UUID]int       // missing = default 800, like the users column
-	prefs        map[uuid.UUID][2]string // genre, theme ("" = surprise-me / no theme)
-	snapshots    map[uuid.UUID][]string
+	prefs        map[uuid.UUID][3]string // genre, theme ("" = surprise-me / no theme), timezone ("" = unset)
 	now          time.Time
-
-	// setReadyConflict makes SetReady answer like the Postgres store when a
-	// concurrent generator took the one ready slot first (23505).
-	setReadyConflict bool
 }
 
 func newFakeStore() *fakeStore {
@@ -193,8 +176,7 @@ func newFakeStore() *fakeStore {
 		threshold:    map[uuid.UUID]int{},
 		blur:         map[uuid.UUID]bool{},
 		lookupHoldMs: map[uuid.UUID]int{},
-		prefs:        map[uuid.UUID][2]string{},
-		snapshots:    map[uuid.UUID][]string{},
+		prefs:        map[uuid.UUID][3]string{},
 		now:          time.Unix(1700000000, 0).UTC(),
 	}
 }
@@ -204,6 +186,9 @@ func (s *fakeStore) Save(_ context.Context, st *Story) error {
 	defer s.mu.Unlock()
 	if st.ID == uuid.Nil {
 		st.ID = uuid.New()
+	}
+	if st.Origin == "" {
+		st.Origin = OriginAutomatic // the stories.origin column default
 	}
 	// Mirror the Postgres store's choke point: stored genres are sanitised
 	// labels no matter who built the story.
@@ -300,44 +285,24 @@ func (s *fakeStore) RatingCounts(_ context.Context, userID uuid.UUID) (map[strin
 	return out, nil
 }
 
-func (s *fakeStore) ReadyStoryID(_ context.Context, userID uuid.UUID) (uuid.UUID, bool, error) {
+// LatestAutomaticStory mirrors the Postgres store: the newest validated
+// Automatic Story whatever its Read mark, On-demand Stories excluded.
+func (s *fakeStore) LatestAutomaticStory(_ context.Context, userID uuid.UUID) (*Story, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	var newest *Story
 	for _, st := range s.stories {
-		if st.UserID == userID && st.ReadyAt != nil {
-			return st.ID, true, nil
+		if st.UserID != userID || !st.Validated || st.Origin != OriginAutomatic {
+			continue
+		}
+		if newest == nil || st.CreatedAt.After(newest.CreatedAt) {
+			newest = st
 		}
 	}
-	return uuid.Nil, false, nil
-}
-
-func (s *fakeStore) SetReady(_ context.Context, id, userID uuid.UUID) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.setReadyConflict {
-		return fmt.Errorf("story set ready: %w", errReadyConflict)
+	if newest == nil {
+		return nil, false, nil
 	}
-	st, err := s.get(id, userID)
-	if err != nil {
-		return err
-	}
-	now := time.Now()
-	for _, other := range s.stories {
-		if other.UserID == userID {
-			other.ReadyAt = nil
-		}
-	}
-	st.ReadyAt = &now
-	return nil
-}
-
-func (s *fakeStore) ClearReady(_ context.Context, id uuid.UUID) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if st, ok := s.stories[id]; ok {
-		st.ReadyAt = nil
-	}
-	return nil
+	return newest, true, nil
 }
 
 // LastFailedAt mirrors the Postgres store's contract: the timestamp counts
@@ -430,30 +395,17 @@ func (s *fakeStore) SetLookupHoldMs(_ context.Context, userID uuid.UUID, holdMs 
 	return nil
 }
 
-func (s *fakeStore) StoryPrefs(_ context.Context, userID uuid.UUID) (string, string, error) {
+func (s *fakeStore) StoryPrefs(_ context.Context, userID uuid.UUID) (string, string, string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	p := s.prefs[userID]
-	return p[0], p[1], nil
+	return p[0], p[1], p[2], nil
 }
 
-func (s *fakeStore) SetStoryPrefs(_ context.Context, userID uuid.UUID, genre, theme string) error {
+func (s *fakeStore) SetStoryPrefs(_ context.Context, userID uuid.UUID, genre, theme, timezone string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.prefs[userID] = [2]string{genre, theme}
-	return nil
-}
-
-func (s *fakeStore) FocusSnapshot(_ context.Context, userID uuid.UUID) ([]string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.snapshots[userID], nil
-}
-
-func (s *fakeStore) SetFocusSnapshot(_ context.Context, userID uuid.UUID, keys []string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.snapshots[userID] = keys
+	s.prefs[userID] = [3]string{genre, theme, timezone}
 	return nil
 }
 
@@ -584,93 +536,305 @@ func newTestServiceOn(t *testing.T, provider *fakeProvider, store *fakeStore) (*
 
 // --- tests ---
 
-func TestEnsureReadyGeneratesOnceUntilFocusChanges(t *testing.T) {
+func TestEnsureAutomaticStoryWritesOnePerLocalDay(t *testing.T) {
+	// The Automatic Story rule (issue #32): one per day in the Learner's
+	// Timezone, and the scheduler's repeated passes are a cheap no-op once
+	// the day's story is written.
 	ctx := context.Background()
 	user := uuid.New()
 	provider := newFakeProvider(t, string(fixture(t, "travel", cleanClause, cleanClause, cleanClause, cleanClause)))
-	svc, store, focus, _ := newTestService(t, provider)
+	svc, store, _, _ := newTestService(t, provider)
+	svc.now = store.storeNow // one clock: the daily rule compares store stamps
+	if err := store.SetStoryPrefs(ctx, user, "", "", "UTC"); err != nil {
+		t.Fatalf("SetStoryPrefs: %v", err)
+	}
 
-	if err := svc.EnsureReady(ctx, user); err != nil {
-		t.Fatalf("EnsureReady: %v", err)
+	// The first pass writes today's story — and the prompt carried the
+	// Focus Set and Known Items (issue #10).
+	if err := svc.ensureAutomaticStory(ctx, user); err != nil {
+		t.Fatalf("ensureAutomaticStory: %v", err)
 	}
 	if provider.callCount() != 1 {
 		t.Fatalf("provider calls = %d, want 1", provider.callCount())
 	}
-	id, ready, err := store.ReadyStoryID(ctx, user)
-	if err != nil || !ready {
-		t.Fatalf("want a ready story, ready=%v err=%v", ready, err)
+	st, ok, err := store.LatestAutomaticStory(ctx, user)
+	if err != nil || !ok {
+		t.Fatalf("want an Automatic Story, ok=%v err=%v", ok, err)
 	}
-	st := store.stories[id]
-	if !st.Validated || st.Attempts != 1 {
-		t.Fatalf("story validated=%v attempts=%d, want validated on the first try", st.Validated, st.Attempts)
+	if !st.Validated || st.Attempts != 1 || st.Origin != OriginAutomatic {
+		t.Fatalf("story validated=%v attempts=%d origin=%q, want validated on the first try", st.Validated, st.Attempts, st.Origin)
 	}
-	// The prompt carried the Focus Set and Known Items (issue #10).
+	if st.ReadAt != nil {
+		t.Fatal("a freshly written Automatic Story must start unread")
+	}
 	prompt := provider.lastUserPrompt()
 	if !strings.Contains(prompt, "ねこ") {
 		t.Fatal("prompt missing the focus word")
 	}
 
-	// Unchanged Focus Set: the cheap snapshot check must skip the provider.
-	if err := svc.EnsureReady(ctx, user); err != nil {
-		t.Fatalf("EnsureReady (unchanged): %v", err)
-	}
-	if provider.callCount() != 1 {
-		t.Fatalf("provider calls = %d after an unchanged sweep, want 1 (significance rule)", provider.callCount())
-	}
-
-	// A significant Focus Set change (2 of 3 members new, over the 1/3 rule)
-	// re-arms generation, and the older story loses its ready flag — always
-	// exactly one ready story.
-	focus.set.Vocab = []VocabFocus{{EntSeq: 1}, {EntSeq: 2}, {EntSeq: 3}}
-	if err := svc.EnsureReady(ctx, user); err != nil {
-		t.Fatalf("EnsureReady (changed focus): %v", err)
-	}
-	if provider.callCount() != 2 {
-		t.Fatalf("provider calls = %d, want regeneration after a significant focus change", provider.callCount())
-	}
-	var readyCount int
-	for _, st := range store.stories {
-		if st.UserID == user && st.ReadyAt != nil {
-			readyCount++
+	// Still the same local day (and unread besides): later passes skip the
+	// provider entirely.
+	for i := 0; i < 3; i++ {
+		if err := svc.ensureAutomaticStory(ctx, user); err != nil {
+			t.Fatalf("ensureAutomaticStory (same day): %v", err)
 		}
 	}
-	if readyCount != 1 {
-		t.Fatalf("ready stories = %d, want exactly 1", readyCount)
+	if provider.callCount() != 1 {
+		t.Fatalf("provider calls = %d on the same local day, want still 1", provider.callCount())
+	}
+
+	// Reading it does not open a second slot on the same day.
+	if err := store.MarkRead(ctx, st.ID, user, store.storeNow()); err != nil {
+		t.Fatalf("MarkRead: %v", err)
+	}
+	if err := svc.ensureAutomaticStory(ctx, user); err != nil {
+		t.Fatalf("ensureAutomaticStory (read, same day): %v", err)
+	}
+	if provider.callCount() != 1 {
+		t.Fatalf("provider calls = %d after reading on the same day, want still 1", provider.callCount())
+	}
+
+	// The next local day: the next pass writes the new day's story.
+	store.advanceNow(24 * time.Hour)
+	if err := svc.ensureAutomaticStory(ctx, user); err != nil {
+		t.Fatalf("ensureAutomaticStory (next day): %v", err)
+	}
+	if provider.callCount() != 2 {
+		t.Fatalf("provider calls = %d on the next local day, want 2", provider.callCount())
 	}
 }
 
-func TestEnsureReadySkipsEmptyFocusSet(t *testing.T) {
+func TestEnsureAutomaticStoryUnreadHoldsTheSlot(t *testing.T) {
+	// The unread rule: an unread Automatic Story holds the slot however
+	// many days pass — no second story stacks up behind it. Once it is
+	// read, the next pass writes for today (the catch-up case: the day
+	// started while the old story was still unread).
+	ctx := context.Background()
+	user := uuid.New()
+	provider := newFakeProvider(t, string(fixture(t, "travel", cleanClause, cleanClause, cleanClause, cleanClause)))
+	svc, store, _, _ := newTestService(t, provider)
+	svc.now = store.storeNow
+	if err := store.SetStoryPrefs(ctx, user, "", "", "UTC"); err != nil {
+		t.Fatalf("SetStoryPrefs: %v", err)
+	}
+	if err := svc.ensureAutomaticStory(ctx, user); err != nil {
+		t.Fatalf("ensureAutomaticStory: %v", err)
+	}
+	st, ok, _ := store.LatestAutomaticStory(ctx, user)
+	if !ok {
+		t.Fatal("want an Automatic Story first")
+	}
+
+	store.advanceNow(5 * 24 * time.Hour)
+	if err := svc.ensureAutomaticStory(ctx, user); err != nil {
+		t.Fatalf("ensureAutomaticStory (unread, five days on): %v", err)
+	}
+	if provider.callCount() != 1 {
+		t.Fatalf("provider calls = %d while the story sat unread, want still 1", provider.callCount())
+	}
+
+	// Opening it frees the day: the very next pass catches up.
+	if err := store.MarkRead(ctx, st.ID, user, store.storeNow()); err != nil {
+		t.Fatalf("MarkRead: %v", err)
+	}
+	if err := svc.ensureAutomaticStory(ctx, user); err != nil {
+		t.Fatalf("ensureAutomaticStory (caught up): %v", err)
+	}
+	if provider.callCount() != 2 {
+		t.Fatalf("provider calls = %d after reading, want the catch-up write", provider.callCount())
+	}
+	newer, ok, _ := store.LatestAutomaticStory(ctx, user)
+	if !ok || newer.ID == st.ID {
+		t.Fatal("the catch-up pass produced no new Automatic Story")
+	}
+}
+
+func TestEnsureAutomaticStoryUsesTheLearnersTimezone(t *testing.T) {
+	// The day is the Learner's, not the server's: Tokyo's date flips while
+	// the server's UTC day still has hours left, and the pass writes the
+	// new story then.
+	ctx := context.Background()
+	user := uuid.New()
+	provider := newFakeProvider(t, string(fixture(t, "travel", cleanClause, cleanClause, cleanClause, cleanClause)))
+	svc, store, _, _ := newTestService(t, provider)
+	svc.now = store.storeNow
+	if err := store.SetStoryPrefs(ctx, user, "", "", "Asia/Tokyo"); err != nil {
+		t.Fatalf("SetStoryPrefs: %v", err)
+	}
+
+	// Park the clock at 14:00 UTC — 23:00 the same day in Tokyo.
+	store.advanceNow(15*time.Hour + 46*time.Minute + 40*time.Second)
+	if err := svc.ensureAutomaticStory(ctx, user); err != nil {
+		t.Fatalf("ensureAutomaticStory: %v", err)
+	}
+	st, ok, _ := store.LatestAutomaticStory(ctx, user)
+	if !ok {
+		t.Fatal("want an Automatic Story first")
+	}
+	if err := store.MarkRead(ctx, st.ID, user, store.storeNow()); err != nil {
+		t.Fatalf("MarkRead: %v", err)
+	}
+
+	// Two hours on: still the same UTC day, but Tokyo has turned its date.
+	store.advanceNow(2 * time.Hour)
+	if err := svc.ensureAutomaticStory(ctx, user); err != nil {
+		t.Fatalf("ensureAutomaticStory (Tokyo's new day): %v", err)
+	}
+	if provider.callCount() != 2 {
+		t.Fatalf("provider calls = %d after the Learner's day rolled over, want 2", provider.callCount())
+	}
+
+	// And the same UTC-hours-later pass must NOT fire when the Learner's
+	// day has not rolled over: same clock walk with a UTC Learner.
+	user2 := uuid.New()
+	if err := store.SetStoryPrefs(ctx, user2, "", "", "UTC"); err != nil {
+		t.Fatalf("SetStoryPrefs (user2): %v", err)
+	}
+	if err := svc.ensureAutomaticStory(ctx, user2); err != nil {
+		t.Fatalf("ensureAutomaticStory (user2 first): %v", err)
+	}
+	st2, ok, _ := store.LatestAutomaticStory(ctx, user2)
+	if !ok {
+		t.Fatal("want user2's Automatic Story")
+	}
+	if err := store.MarkRead(ctx, st2.ID, user2, store.storeNow()); err != nil {
+		t.Fatalf("MarkRead (user2): %v", err)
+	}
+	before := provider.callCount()
+	store.advanceNow(2 * time.Hour) // same UTC day, a later Tokyo day
+	if err := svc.ensureAutomaticStory(ctx, user2); err != nil {
+		t.Fatalf("ensureAutomaticStory (user2 same UTC day): %v", err)
+	}
+	if provider.callCount() != before {
+		t.Fatalf("provider calls = %d on user2's same local day, want still %d", provider.callCount(), before)
+	}
+}
+
+func TestDeletingTodaysStoryFreesTheDay(t *testing.T) {
+	// Issue #32: deleting today's story frees the day, so the next pass
+	// writes a replacement.
+	ctx := context.Background()
+	user := uuid.New()
+	provider := newFakeProvider(t, string(fixture(t, "travel", cleanClause, cleanClause, cleanClause, cleanClause)))
+	svc, store, _, _ := newTestService(t, provider)
+	svc.now = store.storeNow
+	if err := store.SetStoryPrefs(ctx, user, "", "", "UTC"); err != nil {
+		t.Fatalf("SetStoryPrefs: %v", err)
+	}
+	if err := svc.ensureAutomaticStory(ctx, user); err != nil {
+		t.Fatalf("ensureAutomaticStory: %v", err)
+	}
+	st, ok, _ := store.LatestAutomaticStory(ctx, user)
+	if !ok {
+		t.Fatal("want an Automatic Story first")
+	}
+
+	if err := svc.Delete(ctx, st.ID, user); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if _, ok, _ := store.LatestAutomaticStory(ctx, user); ok {
+		t.Fatal("deleting the story must remove it from storage")
+	}
+	if err := svc.ensureAutomaticStory(ctx, user); err != nil {
+		t.Fatalf("ensureAutomaticStory (after delete): %v", err)
+	}
+	if provider.callCount() != 2 {
+		t.Fatalf("provider calls = %d after deleting today's story, want the replacement", provider.callCount())
+	}
+}
+
+func TestTodaysStoryReturnsTheNewestAutomaticStory(t *testing.T) {
+	// Today's Story (GLOSSARY.md): the newest validated Automatic Story
+	// whatever its Read mark; On-demand Stories and gate failures never
+	// qualify; opening it changes nothing.
+	ctx := context.Background()
+	user := uuid.New()
+	svc, store, _, _ := newTestService(t, nil) // the read path needs no provider
+
+	onDemand := &Story{UserID: user, Genre: "travel", Validated: true, Origin: OriginOnDemand}
+	if err := store.Save(ctx, onDemand); err != nil {
+		t.Fatalf("Save (on-demand): %v", err)
+	}
+	failed := &Story{UserID: user, Genre: "travel", Validated: false, Origin: OriginAutomatic}
+	if err := store.Save(ctx, failed); err != nil {
+		t.Fatalf("Save (failed): %v", err)
+	}
+	if _, err := svc.TodaysStory(ctx, user); !errors.Is(err, ErrNoStory) {
+		t.Fatalf("TodaysStory over on-demand and failed stories err = %v, want ErrNoStory", err)
+	}
+
+	first := &Story{UserID: user, Genre: "travel", Validated: true, Origin: OriginAutomatic}
+	if err := store.Save(ctx, first); err != nil {
+		t.Fatalf("Save (first): %v", err)
+	}
+	second := &Story{UserID: user, Genre: "mystery", Validated: true, Origin: OriginAutomatic}
+	if err := store.Save(ctx, second); err != nil {
+		t.Fatalf("Save (second): %v", err)
+	}
+
+	got, err := svc.TodaysStory(ctx, user)
+	if err != nil {
+		t.Fatalf("TodaysStory: %v", err)
+	}
+	if got.ID != second.ID {
+		t.Fatalf("TodaysStory = %v, want the newest Automatic Story %v", got.ID, second.ID)
+	}
+
+	// Reading it — or unreading it — leaves the same story offered.
+	if err := svc.MarkRead(ctx, second.ID, user, store.storeNow()); err != nil {
+		t.Fatalf("MarkRead: %v", err)
+	}
+	got, err = svc.TodaysStory(ctx, user)
+	if err != nil || got.ID != second.ID {
+		t.Fatalf("TodaysStory after reading = %v/%v, want %v", got, err, second.ID)
+	}
+
+	if _, err := svc.TodaysStory(ctx, uuid.New()); !errors.Is(err, ErrNoStory) {
+		t.Fatal("a user with no stories must get ErrNoStory")
+	}
+}
+
+func TestEnsureAutomaticStorySkipsEmptyFocusSet(t *testing.T) {
 	provider := newFakeProvider(t, "{}")
 	svc, _, focus, _ := newTestService(t, provider)
 	focus.set = FocusSet{}
-	if err := svc.EnsureReady(context.Background(), uuid.New()); err != nil {
-		t.Fatalf("EnsureReady (empty focus): %v", err)
+	if err := svc.ensureAutomaticStory(context.Background(), uuid.New()); err != nil {
+		t.Fatalf("ensureAutomaticStory (empty focus): %v", err)
 	}
 	if provider.callCount() != 0 {
 		t.Fatal("an empty Focus Set must not spend a provider call")
 	}
 }
 
-func TestEnsureReadyNoProvider(t *testing.T) {
+func TestEnsureAutomaticStoryNoProvider(t *testing.T) {
 	svc, _, _, _ := newTestService(t, nil) // resolver answers ErrNotAssigned
-	if err := svc.EnsureReady(context.Background(), uuid.New()); !errors.Is(err, aiprovider.ErrNotAssigned) {
-		t.Fatalf("EnsureReady err = %v, want ErrNotAssigned", err)
+	if err := svc.ensureAutomaticStory(context.Background(), uuid.New()); !errors.Is(err, aiprovider.ErrNotAssigned) {
+		t.Fatalf("ensureAutomaticStory err = %v, want ErrNotAssigned", err)
 	}
 }
 
-func TestEnsureReadyFailureStoredNotReady(t *testing.T) {
-	// Failed-story policy: the last candidate is stored with its counts but
-	// never becomes the ready story.
+func TestEnsureAutomaticStoryFailureStoredAndCooledDown(t *testing.T) {
+	// Failed-story policy: the last candidate is stored with its gate
+	// counts but never becomes Today's Story. The retry backoff keeps a
+	// stuck provider affordable: one generation per cooldown window, not
+	// one per scheduler pass.
 	ctx := context.Background()
 	user := uuid.New()
-	provider := newFakeProvider(t, string(fixture(t, "travel", dirtyClause, dirtyClause, dirtyClause, dirtyClause)))
+	dirty := string(fixture(t, "travel", dirtyClause, dirtyClause, dirtyClause, dirtyClause))
+	clean := string(fixture(t, "travel", cleanClause, cleanClause, cleanClause, cleanClause))
+	provider := newFakeProvider(t, dirty, clean)
 	svc, store, _, _ := newTestService(t, provider)
+	svc.settings.RetryCooldown = 6 * time.Hour
+	svc.now = store.storeNow // one clock: the cooldown compares store stamps
 
-	if err := svc.EnsureReady(ctx, user); err == nil {
+	if err := svc.ensureAutomaticStory(ctx, user); err == nil {
 		t.Fatal("want the gate's rejection surfaced as an error")
 	}
-	if _, ready, _ := store.ReadyStoryID(ctx, user); ready {
-		t.Fatal("a failed story must never become the ready story")
+	if provider.callCount() != 1 {
+		t.Fatalf("provider calls = %d, want 1", provider.callCount())
+	}
+	if _, ok, _ := store.LatestAutomaticStory(ctx, user); ok {
+		t.Fatal("a failed story must never become Today's Story")
 	}
 	var stored *Story
 	for _, st := range store.stories {
@@ -679,134 +843,83 @@ func TestEnsureReadyFailureStoredNotReady(t *testing.T) {
 	if stored == nil || stored.Validated || stored.ContentWords == 0 || stored.Attempts != 1 {
 		t.Fatalf("failed story not stored with its gate counts: %+v", stored)
 	}
-}
 
-func TestEnsureReadyFailureKeepsSnapshotArmed(t *testing.T) {
-	// A failed sweep must not advance the significance snapshot: otherwise
-	// the new Focus Set is burned by the failure and the generator goes
-	// quiet without ever offering a story for it. Only a VALIDATED story
-	// retires the snapshot.
-	ctx := context.Background()
-	user := uuid.New()
-	clean := string(fixture(t, "travel", cleanClause, cleanClause, cleanClause, cleanClause))
-	dirty := string(fixture(t, "travel", dirtyClause, dirtyClause, dirtyClause, dirtyClause))
-	provider := newFakeProvider(t, clean, dirty, clean)
-	svc, store, focus, _ := newTestService(t, provider)
-
-	if err := svc.EnsureReady(ctx, user); err != nil {
-		t.Fatalf("EnsureReady (first): %v", err)
+	// Inside the window: no spend, no error — the pass is simply skipped.
+	if err := svc.ensureAutomaticStory(ctx, user); err != nil {
+		t.Fatalf("ensureAutomaticStory (inside cooldown): %v", err)
 	}
-	id1, ready, _ := store.ReadyStoryID(ctx, user)
-	if !ready {
-		t.Fatal("the first story should be ready")
-	}
-	snap1, err := store.FocusSnapshot(ctx, user)
-	if err != nil {
-		t.Fatalf("FocusSnapshot: %v", err)
+	if provider.callCount() != 1 {
+		t.Fatalf("provider calls = %d inside the cooldown, want still 1", provider.callCount())
 	}
 
-	// A significant Focus Set change re-arms, and this sweep fails the gate.
-	focus.set.Vocab = []VocabFocus{{EntSeq: 1}, {EntSeq: 2}, {EntSeq: 3}}
-	if err := svc.EnsureReady(ctx, user); err == nil {
-		t.Fatal("want the failed sweep surfaced as an error")
+	// Past the window: the next pass generates again, and the success also
+	// clears the backoff (the newest story is no longer a failure).
+	store.advanceNow(6 * time.Hour)
+	if err := svc.ensureAutomaticStory(ctx, user); err != nil {
+		t.Fatalf("ensureAutomaticStory (after cooldown): %v", err)
 	}
-	// The old ready story stays…
-	id2, ready, _ := store.ReadyStoryID(ctx, user)
-	if !ready || id2 != id1 {
-		t.Fatalf("failed sweep disturbed the ready story: id=%v ready=%v", id2, ready)
+	if provider.callCount() != 2 {
+		t.Fatalf("provider calls = %d past the cooldown, want 2", provider.callCount())
 	}
-	// …and the snapshot must NOT have advanced to the new Focus Set.
-	snap2, err := store.FocusSnapshot(ctx, user)
-	if err != nil {
-		t.Fatalf("FocusSnapshot: %v", err)
+	if _, ok, _ := store.LatestAutomaticStory(ctx, user); !ok {
+		t.Fatal("the post-cooldown pass should produce Today's Story")
 	}
-	if !reflect.DeepEqual(snap2, snap1) {
-		t.Fatalf("snapshot advanced to %v after a failed sweep, want %v", snap2, snap1)
+	if err := svc.ensureAutomaticStory(ctx, user); err != nil {
+		t.Fatalf("ensureAutomaticStory (unread again): %v", err)
 	}
-
-	// The next sweep therefore retries the new Focus Set — and succeeds.
-	if err := svc.EnsureReady(ctx, user); err != nil {
-		t.Fatalf("EnsureReady (retry): %v", err)
-	}
-	if provider.callCount() != 3 {
-		t.Fatalf("provider calls = %d, want the failed Focus Set retried (3)", provider.callCount())
-	}
-	id3, ready, _ := store.ReadyStoryID(ctx, user)
-	if !ready || id3 == id1 {
-		t.Fatalf("the retry produced no new ready story: id=%v ready=%v", id3, ready)
+	if provider.callCount() != 2 {
+		t.Fatalf("provider calls = %d with an unread story, want still 2", provider.callCount())
 	}
 }
 
-func TestOpenReadyIsInstantAndConsumes(t *testing.T) {
+func TestEnsureAutomaticStorySingleFlightAcrossPasses(t *testing.T) {
+	// The at-most-one-generation-per-user rule lives in
+	// ensureAutomaticStory, so every route shares it (the scheduler pass
+	// and any other caller alike): while one is in flight, a later call
+	// returns without spending a second provider call.
 	ctx := context.Background()
 	user := uuid.New()
 	provider := newFakeProvider(t, string(fixture(t, "travel", cleanClause, cleanClause, cleanClause, cleanClause)))
+	provider.block = make(chan struct{}, 4) // two-phase handshake per call
 	svc, store, _, _ := newTestService(t, provider)
-	if err := svc.EnsureReady(ctx, user); err != nil {
-		t.Fatalf("EnsureReady: %v", err)
-	}
-	before := provider.callCount()
-
-	// The read path runs on a provider-less service: if opening a story
-	// needed anything but storage it would fail here — that is the
-	// instant-open rule. (The post-open regeneration kick gets its own
-	// test; with no provider it is a no-op.)
-	reader, _, _, _ := newTestServiceOn(t, nil, store)
-	st, err := reader.OpenReady(ctx, user)
-	if err != nil {
-		t.Fatalf("OpenReady: %v", err)
-	}
-	if st == nil || st.Genre != "travel" {
-		t.Fatalf("OpenReady returned %+v", st)
-	}
-	if provider.callCount() != before {
-		t.Fatal("OpenReady must serve from storage, never the provider — that is the instant-open rule")
-	}
-	if _, ready, _ := store.ReadyStoryID(ctx, user); ready {
-		t.Fatal("opening the ready story must clear the ready flag")
-	}
-	if _, err := reader.OpenReady(ctx, user); !errors.Is(err, ErrNoReadyStory) {
-		t.Fatalf("second OpenReady err = %v, want ErrNoReadyStory", err)
-	}
-}
-
-func TestOpenReadyQueuesRegeneration(t *testing.T) {
-	// Having consumed the ready story, OpenReady kicks a background
-	// regeneration: the next story becomes ready without waiting for the
-	// scheduler's next sweep.
-	ctx := context.Background()
-	user := uuid.New()
-	provider := newFakeProvider(t, string(fixture(t, "travel", cleanClause, cleanClause, cleanClause, cleanClause)))
-	svc, store, _, _ := newTestService(t, provider)
-	if err := svc.EnsureReady(ctx, user); err != nil {
-		t.Fatalf("EnsureReady: %v", err)
-	}
-	first, ready, err := store.ReadyStoryID(ctx, user)
-	if err != nil || !ready {
-		t.Fatalf("want a ready story first, ready=%v err=%v", ready, err)
-	}
-	before := provider.callCount()
-
-	if _, err := svc.OpenReady(ctx, user); err != nil {
-		t.Fatalf("OpenReady: %v", err)
+	svc.now = store.storeNow
+	if err := store.SetStoryPrefs(ctx, user, "", "", "UTC"); err != nil {
+		t.Fatalf("SetStoryPrefs: %v", err)
 	}
 
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		id, ready, err := store.ReadyStoryID(ctx, user)
-		if err != nil {
-			t.Fatalf("ReadyStoryID: %v", err)
-		}
-		if ready && id != first {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("the post-open regeneration never produced a new ready story")
-		}
-		time.Sleep(10 * time.Millisecond)
+	firstDone := make(chan error, 1)
+	go func() { firstDone <- svc.ensureAutomaticStory(ctx, user) }()
+	<-provider.block // first call recorded, still mid-flight
+
+	if err := svc.ensureAutomaticStory(ctx, user); err != nil {
+		t.Fatalf("ensureAutomaticStory (deduped): %v", err)
 	}
-	if after := provider.callCount(); after <= before {
-		t.Fatalf("provider calls = %d after opening, want a regeneration kick (was %d)", after, before)
+	if n := provider.callCount(); n != 1 {
+		provider.block <- struct{}{}
+		<-firstDone
+		t.Fatalf("provider calls = %d while one generation was in flight, want 1", n)
+	}
+
+	provider.block <- struct{}{} // let the in-flight call answer
+	if err := <-firstDone; err != nil {
+		t.Fatalf("ensureAutomaticStory (first): %v", err)
+	}
+	if _, ok, _ := store.LatestAutomaticStory(ctx, user); !ok {
+		t.Fatal("the in-flight generation should still have produced Today's Story")
+	}
+
+	// The blocked call's slot was released: the guard is not stuck, so the
+	// next day generates again rather than deadlocking.
+	st, _, _ := store.LatestAutomaticStory(ctx, user)
+	if err := store.MarkRead(ctx, st.ID, user, store.storeNow()); err != nil {
+		t.Fatalf("MarkRead: %v", err)
+	}
+	store.advanceNow(24 * time.Hour)
+	if err := svc.ensureAutomaticStory(ctx, user); err != nil {
+		t.Fatalf("ensureAutomaticStory (after): %v", err)
+	}
+	if n := provider.callCount(); n != 2 {
+		t.Fatalf("provider calls = %d after the flight ended, want 2", n)
 	}
 }
 
@@ -899,7 +1012,7 @@ func TestStorySettingsRoundTrip(t *testing.T) {
 		t.Fatalf("default prefs = %q/%q, want surprise-me (empty)", us.PreferredGenre, us.PreferredTheme)
 	}
 
-	us, err = svc.PutSettings(ctx, user, UserSettings{FuriganaThresholdSRSLevel: 7, PreferredGenre: "  mystery  ", PreferredTheme: "robots"})
+	us, err = svc.PutSettings(ctx, user, UserSettings{FuriganaThresholdSRSLevel: 7, PreferredGenre: "  mystery  ", PreferredTheme: "robots", Timezone: " Asia/Tokyo "})
 	if err != nil {
 		t.Fatalf("PutSettings: %v", err)
 	}
@@ -909,12 +1022,18 @@ func TestStorySettingsRoundTrip(t *testing.T) {
 	if us.PreferredGenre != "mystery" || us.PreferredTheme != "robots" {
 		t.Fatalf("prefs after PutSettings = %q/%q, want trimmed round-trip", us.PreferredGenre, us.PreferredTheme)
 	}
+	if us.Timezone != "Asia/Tokyo" {
+		t.Fatalf("timezone after PutSettings = %q, want the trimmed IANA name", us.Timezone)
+	}
 	us, err = svc.GetSettings(ctx, user)
 	if err != nil {
 		t.Fatalf("GetSettings (after put): %v", err)
 	}
 	if us.PreferredGenre != "mystery" || us.PreferredTheme != "robots" {
 		t.Fatalf("prefs after GetSettings = %q/%q, want the stored values", us.PreferredGenre, us.PreferredTheme)
+	}
+	if us.Timezone != "Asia/Tokyo" {
+		t.Fatalf("timezone after GetSettings = %q, want the stored value", us.Timezone)
 	}
 
 	if _, err := svc.PutSettings(ctx, user, UserSettings{FuriganaThresholdSRSLevel: 10}); err == nil {
@@ -938,22 +1057,132 @@ func TestStorySettingsRoundTrip(t *testing.T) {
 	if us.PreferredGenre != "" || us.PreferredTheme != "" {
 		t.Fatalf("prefs after clearing = %q/%q, want empty", us.PreferredGenre, us.PreferredTheme)
 	}
+	if us.Timezone != "" {
+		t.Fatalf("timezone after clearing = %q, want the unset state back", us.Timezone)
+	}
 }
 
-func TestEnsureReadyUsesPreferredGenreAndTheme(t *testing.T) {
+func TestPutSettingsTimezoneValidation(t *testing.T) {
+	// The Learner's Timezone (issue #32): "" is the unset state (the
+	// server's own timezone decides until the Learner picks), any other
+	// value must be an IANA name the embedded zone data can read — a bad
+	// name is a 400, never a silent fallback.
+	ctx := context.Background()
+	user := uuid.New()
+	svc, _, _, _ := newTestService(t, nil)
+
+	var se *Error
+	if _, err := svc.PutSettings(ctx, user, UserSettings{FuriganaThresholdSRSLevel: 3, Timezone: "Mars/Olympus_Mons"}); !errors.As(err, &se) || se.Code != "invalid_timezone" {
+		t.Fatalf("PutSettings bad timezone err = %v, want an invalid_timezone error", err)
+	}
+	long := strings.Repeat("A", maxTimezoneLen+1)
+	if _, err := svc.PutSettings(ctx, user, UserSettings{FuriganaThresholdSRSLevel: 3, Timezone: long}); !errors.As(err, &se) || se.Code != "invalid_timezone" {
+		t.Fatalf("PutSettings over-long timezone err = %v, want an invalid_timezone error", err)
+	}
+
+	us, err := svc.PutSettings(ctx, user, UserSettings{FuriganaThresholdSRSLevel: 3, Timezone: "Pacific/Kiritimati"})
+	if err != nil {
+		t.Fatalf("PutSettings (valid far-flung zone): %v", err)
+	}
+	if us.Timezone != "Pacific/Kiritimati" {
+		t.Fatalf("timezone = %q, want the stored name", us.Timezone)
+	}
+}
+
+func TestUserLocationFallsBackToTheServerTimezone(t *testing.T) {
+	// Unset — or a name the embedded zone data cannot read (the settings
+	// validation stops those, so this is the belt for old rows) — follows
+	// the server's own timezone, as the issue requires.
+	if got := userLocation(""); got != time.Local {
+		t.Fatalf("userLocation(\"\") = %v, want time.Local", got)
+	}
+	if got := userLocation("Not/AZone"); got != time.Local {
+		t.Fatalf("userLocation(Not/AZone) = %v, want time.Local", got)
+	}
+	if _, offset := time.Unix(1700000000, 0).In(userLocation("Asia/Tokyo")).Zone(); offset != 9*3600 {
+		t.Fatal("userLocation(Asia/Tokyo) did not resolve to UTC+9")
+	}
+}
+
+func TestSameLocalDay(t *testing.T) {
+	tokyo, err := time.LoadLocation("Asia/Tokyo")
+	if err != nil {
+		t.Fatalf("LoadLocation: %v", err)
+	}
+	noon := time.Date(2026, 3, 14, 12, 0, 0, 0, tokyo)
+	if !sameLocalDay(noon, noon.Add(10*time.Hour)) {
+		t.Fatal("ten hours later is still the same Tokyo calendar day")
+	}
+	if sameLocalDay(noon, noon.Add(13*time.Hour)) {
+		t.Fatal("thirteen hours later crosses into the next Tokyo day")
+	}
+	if !sameLocalDay(noon.UTC(), noon.Add(13*time.Hour).UTC()) {
+		t.Fatal("the same two instants sit on one UTC day — the day must be the Learner's")
+	}
+}
+
+func TestAutomaticGenrePreferenceShare(t *testing.T) {
+	// The issue #32 mix, at the helper's seam: the Preferred Genre wins
+	// rolls under PreferredShare; the variety branch keeps the rating-
+	// steered PickGenre; a random preset genre covers the case where the
+	// ratings have nothing to offer; and with no preference set at all the
+	// old behaviour is untouched.
+	if got := automaticGenre("mystery", nil, nil, 0.0); got != "mystery" {
+		t.Fatalf("roll 0 with a preference = %q, want the preference", got)
+	}
+	if got := automaticGenre("mystery", nil, nil, PreferredShare-0.01); got != "mystery" {
+		t.Fatalf("roll just under the share = %q, want the preference", got)
+	}
+	up := RatingUp
+	ratings := map[string]map[Rating]int{"travel": {up: 2}}
+	if got := automaticGenre("mystery", ratings, nil, PreferredShare); got != "travel" {
+		t.Fatalf("variety roll with ratings = %q, want the rating-steered pick", got)
+	}
+	for i := 0; i < 20; i++ {
+		got := automaticGenre("romance", nil, nil, 0.95)
+		if got == "romance" {
+			t.Fatalf("variety roll fell back to the preference itself (iteration %d)", i)
+		}
+		if !slices.Contains(presetGenres, got) {
+			t.Fatalf("variety roll fallback = %q, want one of the preset genres", got)
+		}
+	}
+	if got := automaticGenre("", ratings, nil, 0.0); got != "travel" {
+		t.Fatalf("no preference, roll 0 = %q, want the rating-steered pick (today's behaviour)", got)
+	}
+	if got := automaticGenre("", nil, nil, 0.0); got != "" {
+		t.Fatalf("no preference and no ratings = %q, want surprise-me", got)
+	}
+}
+
+func TestAutomaticThemePreferenceShare(t *testing.T) {
+	if got := automaticTheme("", 0.0); got != "" {
+		t.Fatalf("no preference = %q, want the model to choose", got)
+	}
+	if got := automaticTheme("robots", PreferredShare-0.01); got != "robots" {
+		t.Fatalf("roll under the share = %q, want the preference", got)
+	}
+	if got := automaticTheme("robots", PreferredShare); got != "" {
+		t.Fatalf("variety roll = %q, want the model to choose", got)
+	}
+}
+
+func TestEnsureAutomaticStoryUsesPreferredGenreAndTheme(t *testing.T) {
 	// The Learner's chosen genre beats the rating-steered pick and the
 	// theme reaches the prompt; the stored story carries the preferred
-	// genre. All of it is prompt steering only — the gate is untouched.
+	// genre and theme. All of it is prompt steering only — the gate is
+	// untouched.
 	ctx := context.Background()
 	user := uuid.New()
 	provider := newFakeProvider(t, string(fixture(t, "surprise", cleanClause, cleanClause, cleanClause, cleanClause)))
 	svc, store, _, _ := newTestService(t, provider)
-	if err := store.SetStoryPrefs(ctx, user, "mystery", "robots running a ramen shop"); err != nil {
+	svc.roll = func() float64 { return 0 } // always the preference branch
+	if err := store.SetStoryPrefs(ctx, user, "mystery", "robots running a ramen shop", ""); err != nil {
 		t.Fatalf("SetStoryPrefs: %v", err)
 	}
 
-	if err := svc.EnsureReady(ctx, user); err != nil {
-		t.Fatalf("EnsureReady: %v", err)
+	if err := svc.ensureAutomaticStory(ctx, user); err != nil {
+		t.Fatalf("ensureAutomaticStory: %v", err)
 	}
 	prompt := provider.lastUserPrompt()
 	if !strings.Contains(prompt, "- Genre/theme: mystery.") {
@@ -962,19 +1191,57 @@ func TestEnsureReadyUsesPreferredGenreAndTheme(t *testing.T) {
 	if !strings.Contains(prompt, "- Theme: robots running a ramen shop.") {
 		t.Fatalf("prompt missing the preferred theme:\n%s", prompt)
 	}
-	id, ready, _ := store.ReadyStoryID(ctx, user)
-	if !ready {
-		t.Fatal("want a ready story")
+	st, ok, _ := store.LatestAutomaticStory(ctx, user)
+	if !ok {
+		t.Fatal("want an Automatic Story")
 	}
-	if g := store.stories[id].Genre; g != "mystery" {
+	if g := st.Genre; g != "mystery" {
 		t.Fatalf("stored genre = %q, want the preferred one", g)
 	}
-	if p := store.stories[id].Prompt; p == "" || !strings.Contains(p, "ねこ") {
+	if th := st.Theme; th != "robots running a ramen shop" {
+		t.Fatalf("stored theme = %q, want the preferred one", th)
+	}
+	if p := st.Prompt; p == "" || !strings.Contains(p, "ねこ") {
 		t.Fatalf("stories.prompt not populated with the brief: %q", p)
 	}
 }
 
-func TestEnsureReadyAvoidsDislikedGenres(t *testing.T) {
+func TestEnsureAutomaticStoryVarietyRollLeavesThemeToTheModel(t *testing.T) {
+	// The other 30%: the genre keeps the rating-steered pick and the theme
+	// ask goes back to the model (today's blank-theme behaviour).
+	ctx := context.Background()
+	user := uuid.New()
+	provider := newFakeProvider(t, string(fixture(t, "surprise", cleanClause, cleanClause, cleanClause, cleanClause)))
+	svc, store, _, _ := newTestService(t, provider)
+	svc.roll = func() float64 { return 0.95 } // always the variety branch
+	up := RatingUp
+	if err := store.Save(ctx, &Story{UserID: user, Genre: "travel", Validated: true, Origin: OriginOnDemand, Rating: &up}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if err := store.SetStoryPrefs(ctx, user, "mystery", "robots running a ramen shop", ""); err != nil {
+		t.Fatalf("SetStoryPrefs: %v", err)
+	}
+
+	if err := svc.ensureAutomaticStory(ctx, user); err != nil {
+		t.Fatalf("ensureAutomaticStory: %v", err)
+	}
+	prompt := provider.lastUserPrompt()
+	if !strings.Contains(prompt, "- Genre/theme: travel.") {
+		t.Fatalf("variety roll should keep the rating-steered genre:\n%s", prompt)
+	}
+	if strings.Contains(prompt, "- Theme:") {
+		t.Fatalf("variety roll must leave the theme to the model:\n%s", prompt)
+	}
+	st, ok, _ := store.LatestAutomaticStory(ctx, user)
+	if !ok {
+		t.Fatal("want an Automatic Story")
+	}
+	if st.Genre != "travel" {
+		t.Fatalf("stored genre = %q, want the rating-steered pick", st.Genre)
+	}
+}
+
+func TestEnsureAutomaticStoryAvoidsDislikedGenres(t *testing.T) {
 	// Net-down-rated genres never get re-picked — not even from recent
 	// reading — and the prompt names them as "avoid".
 	ctx := context.Background()
@@ -982,12 +1249,12 @@ func TestEnsureReadyAvoidsDislikedGenres(t *testing.T) {
 	provider := newFakeProvider(t, string(fixture(t, "travel", cleanClause, cleanClause, cleanClause, cleanClause)))
 	svc, store, _, _ := newTestService(t, provider)
 	down := RatingDown
-	if err := store.Save(ctx, &Story{UserID: user, Genre: "mystery", Validated: true, Rating: &down}); err != nil {
+	if err := store.Save(ctx, &Story{UserID: user, Genre: "mystery", Validated: true, Origin: OriginOnDemand, Rating: &down}); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
-	if err := svc.EnsureReady(ctx, user); err != nil {
-		t.Fatalf("EnsureReady: %v", err)
+	if err := svc.ensureAutomaticStory(ctx, user); err != nil {
+		t.Fatalf("ensureAutomaticStory: %v", err)
 	}
 	prompt := provider.lastUserPrompt()
 	if !strings.Contains(prompt, "Avoid these genres, the reader did not like them: mystery") {
@@ -998,98 +1265,6 @@ func TestEnsureReadyAvoidsDislikedGenres(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "surprise the reader") {
 		t.Fatal("with only disliked genres in history the fallback is surprise-me")
-	}
-}
-
-func TestEnsureReadyFailureWaitsOutRetryCooldown(t *testing.T) {
-	// Failure backoff: while the user's newest Story is a gate failure
-	// younger than Settings.RetryCooldown, later passes are skipped — a
-	// stuck provider costs one generation per cooldown window, not one per
-	// scheduler interval.
-	ctx := context.Background()
-	user := uuid.New()
-	dirty := string(fixture(t, "travel", dirtyClause, dirtyClause, dirtyClause, dirtyClause))
-	clean := string(fixture(t, "travel", cleanClause, cleanClause, cleanClause, cleanClause))
-	provider := newFakeProvider(t, dirty, clean)
-	svc, store, _, _ := newTestService(t, provider)
-	svc.settings.RetryCooldown = 6 * time.Hour
-	svc.now = store.storeNow // one clock: the cooldown compares store stamps
-
-	if err := svc.EnsureReady(ctx, user); err == nil {
-		t.Fatal("want the gate's rejection surfaced as an error")
-	}
-	if provider.callCount() != 1 {
-		t.Fatalf("provider calls = %d, want 1", provider.callCount())
-	}
-
-	// Inside the window: no spend, no error — the pass is simply skipped.
-	if err := svc.EnsureReady(ctx, user); err != nil {
-		t.Fatalf("EnsureReady (inside cooldown): %v", err)
-	}
-	if provider.callCount() != 1 {
-		t.Fatalf("provider calls = %d inside the cooldown, want still 1", provider.callCount())
-	}
-
-	// Past the window: the next pass generates again, and the success also
-	// clears the backoff (the newest story is no longer a failure).
-	store.advanceNow(6 * time.Hour)
-	if err := svc.EnsureReady(ctx, user); err != nil {
-		t.Fatalf("EnsureReady (after cooldown): %v", err)
-	}
-	if provider.callCount() != 2 {
-		t.Fatalf("provider calls = %d past the cooldown, want 2", provider.callCount())
-	}
-	if _, ready, _ := store.ReadyStoryID(ctx, user); !ready {
-		t.Fatal("the post-cooldown pass should produce the ready story")
-	}
-	if err := svc.EnsureReady(ctx, user); err != nil {
-		t.Fatalf("EnsureReady (ready): %v", err)
-	}
-	if provider.callCount() != 2 {
-		t.Fatalf("provider calls = %d with a ready story, want still 2", provider.callCount())
-	}
-}
-
-func TestEnsureReadySingleFlightAcrossSweeps(t *testing.T) {
-	// The at-most-one-generation-per-user rule lives in EnsureReady, so
-	// every route shares it (the scheduler pass and the post-open kick
-	// alike): while one is in flight, a later call returns without spending
-	// a second provider call.
-	ctx := context.Background()
-	user := uuid.New()
-	provider := newFakeProvider(t, string(fixture(t, "travel", cleanClause, cleanClause, cleanClause, cleanClause)))
-	provider.block = make(chan struct{}, 4) // two-phase handshake per call
-	svc, store, focus, _ := newTestService(t, provider)
-
-	firstDone := make(chan error, 1)
-	go func() { firstDone <- svc.EnsureReady(ctx, user) }()
-	<-provider.block // first call recorded, still mid-flight
-
-	if err := svc.EnsureReady(ctx, user); err != nil {
-		t.Fatalf("EnsureReady (deduped): %v", err)
-	}
-	if n := provider.callCount(); n != 1 {
-		provider.block <- struct{}{}
-		<-firstDone
-		t.Fatalf("provider calls = %d while one generation was in flight, want 1", n)
-	}
-
-	provider.block <- struct{}{} // let the in-flight call answer
-	if err := <-firstDone; err != nil {
-		t.Fatalf("EnsureReady (first): %v", err)
-	}
-	if _, ready, _ := store.ReadyStoryID(ctx, user); !ready {
-		t.Fatal("the in-flight generation should still have produced the ready story")
-	}
-
-	// The blocked call's slot was released: the guard is not stuck, so a
-	// later focus change generates again rather than deadlocking.
-	focus.set.Vocab = []VocabFocus{{EntSeq: 1}, {EntSeq: 2}, {EntSeq: 3}}
-	if err := svc.EnsureReady(ctx, user); err != nil {
-		t.Fatalf("EnsureReady (after): %v", err)
-	}
-	if n := provider.callCount(); n != 2 {
-		t.Fatalf("provider calls = %d after the flight ended, want 2", n)
 	}
 }
 
@@ -1133,31 +1308,6 @@ func TestBeginGenerationGuardIsExclusiveAndReleasable(t *testing.T) {
 		t.Fatal("the slot is not reusable after release")
 	}
 	rel2()
-}
-
-func TestEnsureReadySetReadyConflictIsBenign(t *testing.T) {
-	// A concurrent generator (another instance) that took the one ready
-	// slot first surfaces as errReadyConflict; it is logged, not an error:
-	// the loser's story stays stored and validated, just not ready.
-	ctx := context.Background()
-	user := uuid.New()
-	provider := newFakeProvider(t, string(fixture(t, "travel", cleanClause, cleanClause, cleanClause, cleanClause)))
-	svc, store, _, _ := newTestService(t, provider)
-	store.setReadyConflict = true
-
-	if err := svc.EnsureReady(ctx, user); err != nil {
-		t.Fatalf("EnsureReady with a lost SetReady race = %v, want nil", err)
-	}
-	if provider.callCount() != 1 {
-		t.Fatalf("provider calls = %d, want 1", provider.callCount())
-	}
-	var stored *Story
-	for _, st := range store.stories {
-		stored = st
-	}
-	if stored == nil || !stored.Validated || stored.ReadyAt != nil {
-		t.Fatalf("story after a lost ready race: %+v, want stored, validated, unready", stored)
-	}
 }
 
 func TestAnswerRejectsFailedStory(t *testing.T) {

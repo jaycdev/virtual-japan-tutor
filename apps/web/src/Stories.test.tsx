@@ -89,7 +89,8 @@ const IKU_POINT = {
  */
 function fakeApi(
   opts: {
-    ready?: boolean;
+    /** Whether an Automatic Story exists for the Today panel (issue #32). */
+    automatic?: boolean;
     blurTranslation?: boolean;
     extraSpan?: boolean;
     /** Hold every fetch of this entSeq until releaseEntries() is called. */
@@ -100,9 +101,13 @@ function fakeApi(
     lookupHoldMs?: number;
     /** Story Origin as stored (issue #31); defaults to generator-produced. */
     origin?: "automatic" | "on_demand";
+    /** Creation stamp of the fake story (for the Today panel's day wording). */
+    createdAt?: string;
+    /** Pre-set Read mark on the fake story. */
+    readAt?: string;
   } = {},
 ) {
-  const hasReady = opts.ready ?? true;
+  const hasAutomatic = opts.automatic ?? true;
   const storyView = {
     id: "st-1",
     genre: "diary",
@@ -110,9 +115,9 @@ function fakeApi(
     titleEn: "My diary in English",
     theme: "school life",
     origin: opts.origin ?? "automatic",
-    readAt: null as string | null,
+    readAt: opts.readAt ?? (null as string | null),
     text: "がっこうでべんきょうしました。",
-    createdAt: "2026-11-01T09:00:00Z",
+    createdAt: opts.createdAt ?? "2026-11-01T09:00:00Z",
     attempts: 1,
     sentences: [
       {
@@ -183,7 +188,7 @@ function fakeApi(
 
   const requests: { method: string; path: string; body: unknown }[] = [];
   const gated: (() => void)[] = [];
-  const settings = { furiganaThresholdSrsLevel: 3, preferredGenre: "", preferredTheme: "" };
+  const settings = { furiganaThresholdSrsLevel: 3, preferredGenre: "", preferredTheme: "", timezone: "" };
   const readingSettings = { blurTranslation: opts.blurTranslation ?? true, lookupHoldMs: opts.lookupHoldMs ?? 800 };
 
   // Item Lists (issue #12): a Saved default and one plain list, with just
@@ -203,8 +208,13 @@ function fakeApi(
     const body = request.body ? await request.json() : null;
     requests.push({ method: request.method, path: pathname, body });
     if (pathname === "/stories" && request.method === "GET") return json(200, page);
-    if (pathname === "/stories/ready" && request.method === "GET") {
-      return hasReady ? json(200, storyView) : json(404, { code: "no_ready_story", message: "no story ready" });
+    // Today's Story (issue #32): the newest Automatic Story, or 404 no_story.
+    // An On-demand story is never Today's Story, even when it is the newest.
+    if (pathname === "/stories/today" && request.method === "GET") {
+      const show = hasAutomatic && storyView.origin !== "on_demand";
+      return show
+        ? json(200, { ...storyView, hasAutomatic: true })
+        : json(404, { code: "no_story", message: "no automatic story yet" });
     }
     if (pathname === "/stories/st-1" && request.method === "GET") return json(200, storyView);
     if (pathname === "/stories/st-1/rate" && request.method === "POST") return new Response(null, { status: 204 });
@@ -306,11 +316,11 @@ function fakeApi(
   };
 }
 
-/** Open the ready story (the fastest path into the reader). */
+/** Open today's story (the fastest path into the reader), via the landing
+ *  view the Stories page now opens on. */
 async function openStory(client: ApiClient) {
   render(<Stories client={client} />);
-  await screen.findByTestId("story-st-1");
-  fireEvent.click(screen.getByRole("button", { name: "Read today's story" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Read today’s story" }));
   await screen.findByRole("heading", { name: /diary/ });
 }
 
@@ -327,11 +337,15 @@ function tokenButton(surface: string): HTMLButtonElement {
 }
 
 describe("Stories screen", () => {
-  it("lists the library and opens a story, selecting a sentence on click", async () => {
-    const { client, requests } = fakeApi({ ready: false });
+  it("lands on Today’s Story, opens the library on demand, and selects a sentence on click", async () => {
+    const { client, requests } = fakeApi();
     render(<Stories client={client} />);
 
-    expect(await screen.findByTestId("story-st-1")).toBeTruthy();
+    // The landing view is Today's Story, not the Story Library table.
+    expect(await screen.findByRole("button", { name: "Read today’s story" })).toBeTruthy();
+    expect(screen.queryByTestId("story-st-1")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "View all stories" }));
+    await screen.findByTestId("story-st-1");
 
     fireEvent.click(screen.getByRole("button", { name: "My diary" }));
     // The Reading Panel only shows a sentence once one is selected —
@@ -344,12 +358,13 @@ describe("Stories screen", () => {
     // — once in the Reading Panel's copy of the selected sentence, once in the body.
     const rtTexts = Array.from(document.querySelectorAll("ruby rt")).map((rt) => rt.textContent);
     expect(rtTexts).toEqual(["勉強", "しました", "勉強", "しました", "いきました"]);
-    // One GET for the library, one for the story settings, one for the
-    // opened story, one for the reading settings and one for the Item Lists
-    // the reader's Save flow needs; nothing else — no generation call.
-    await waitFor(() => expect(requests.length).toBe(5));
+    // Mount: the library page, Today's Story and the story settings. Opening
+    // a row adds the story itself, the reading settings and the Item Lists the
+    // reader's Save flow needs; nothing else — no generation call.
+    await waitFor(() => expect(requests.length).toBe(6));
     expect(requests.map((r) => `${r.method} ${r.path}`)).toEqual([
       "GET /stories",
+      "GET /stories/today",
       "GET /story-settings",
       "GET /stories/st-1",
       "GET /reading-settings",
@@ -357,7 +372,7 @@ describe("Stories screen", () => {
     ]);
   });
 
-  it("opens the ready story instantly and answers a comprehension question once", async () => {
+  it("opens today’s story instantly and answers a comprehension question once", async () => {
     const { client, requests } = fakeApi();
     await openStory(client);
 
@@ -371,17 +386,45 @@ describe("Stories screen", () => {
 
     const answer = requests.find((r) => r.path === "/stories/st-1/answers");
     expect(answer?.body).toEqual({ questionIndex: 0, answerIndex: 0 });
-    // Opening came from storage: GET /stories/ready, not any generate endpoint.
-    expect(requests.some((r) => r.path === "/stories/ready")).toBe(true);
+    // Today came from storage: GET /stories/today, not any generate endpoint.
+    expect(requests.some((r) => r.path === "/stories/today")).toBe(true);
   });
 
-  it("says when no story is ready", async () => {
-    const { client } = fakeApi({ ready: false });
+  it("says when there is no story yet, and Check again re-asks", async () => {
+    const { client, requests } = fakeApi({ automatic: false });
     render(<Stories client={client} />);
-    await screen.findByTestId("story-st-1");
 
-    fireEvent.click(screen.getByRole("button", { name: "Read today's story" }));
-    expect(await screen.findByText(/No story is ready yet/)).toBeTruthy();
+    expect(await screen.findByText(/No story yet/)).toBeTruthy();
+    // The Story Library stays one click away even with nothing to read.
+    expect(screen.getByRole("button", { name: "View all stories" })).toBeTruthy();
+    const before = requests.filter((r) => r.path === "/stories/today").length;
+    fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+    await waitFor(() =>
+      expect(requests.filter((r) => r.path === "/stories/today").length).toBe(before + 1),
+    );
+  });
+
+  it("words the day the Automatic Story belongs to", async () => {
+    const { client } = fakeApi({ createdAt: new Date(Date.now() - 60_000).toISOString() });
+    render(<Stories client={client} />);
+    expect(await screen.findByText("Written for you today.")).toBeTruthy();
+  });
+
+  it("labels an unread story from an earlier local day by weekday", async () => {
+    const created = new Date();
+    created.setDate(created.getDate() - 2); // two local days back, so not today
+    created.setHours(9, 0, 0, 0);
+    const weekday = created.toLocaleDateString(undefined, { weekday: "long" });
+    const { client } = fakeApi({ createdAt: created.toISOString() });
+    render(<Stories client={client} />);
+    expect(await screen.findByText(new RegExp(`Still unread from ${weekday}`))).toBeTruthy();
+  });
+
+  it("shows Read again once today's story has been read", async () => {
+    const { client } = fakeApi({ readAt: new Date().toISOString() });
+    render(<Stories client={client} />);
+    expect(await screen.findByText("You read it today.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Read today’s story again" })).toBeTruthy();
   });
 
   it("rates a story from the reader and marks the button", async () => {
@@ -396,9 +439,9 @@ describe("Stories screen", () => {
   });
 
   it("shows and saves the story settings", async () => {
-    const { client, requests } = fakeApi({ ready: false });
+    const { client, requests } = fakeApi({ automatic: false });
     render(<Stories client={client} />);
-    await screen.findByTestId("story-st-1");
+    await screen.findByRole("button", { name: "Save settings" });
 
     const threshold = screen.getByLabelText(/Furigana threshold/) as HTMLInputElement;
     const genre = screen.getByLabelText(/Preferred genre/) as HTMLInputElement;
@@ -411,16 +454,58 @@ describe("Stories screen", () => {
 
     expect(await screen.findByText(/Saved — future stories will aim for these/)).toBeTruthy();
     const put = requests.find((r) => r.path === "/story-settings" && r.method === "PUT");
-    expect(put?.body).toEqual({ furiganaThresholdSrsLevel: 7, preferredGenre: "mystery", preferredTheme: "" });
+    expect(put?.body).toEqual({
+      furiganaThresholdSrsLevel: 7,
+      preferredGenre: "mystery",
+      preferredTheme: "",
+      timezone: "",
+    });
     // The fields show what the server stored, not a cleared form.
     await waitFor(() => expect(genre.value).toBe("mystery"));
     expect(threshold.value).toBe("7");
   });
 
-  it("keeps an empty furigana threshold off the wire", async () => {
-    const { client, requests } = fakeApi({ ready: false });
+  it("saves the Learner’s Timezone and shows what was stored", async () => {
+    const { client, requests } = fakeApi();
     render(<Stories client={client} />);
-    await screen.findByTestId("story-st-1");
+
+    await screen.findByRole("button", { name: "Save settings" });
+    const tz = screen.getByLabelText(/Your timezone/) as HTMLInputElement;
+    expect(tz.value).toBe("");
+    fireEvent.change(tz, { target: { value: "Asia/Tokyo" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+
+    expect(await screen.findByText(/Saved/)).toBeTruthy();
+    const put = requests.find((r) => r.path === "/story-settings" && r.method === "PUT");
+    expect(put?.body).toMatchObject({ timezone: "Asia/Tokyo" });
+    await waitFor(() => expect(tz.value).toBe("Asia/Tokyo"));
+  });
+
+  it("suggests the browser’s timezone and autocompletes from a curated list", async () => {
+    const { client } = fakeApi();
+    const spy = vi
+      .spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions")
+      .mockReturnValue({ timeZone: "America/Los_Angeles" } as ReturnType<
+        Intl.DateTimeFormat["resolvedOptions"]
+      >);
+    try {
+      render(<Stories client={client} />);
+      await screen.findByRole("button", { name: "Use my browser's timezone" });
+      fireEvent.click(screen.getByRole("button", { name: "Use my browser's timezone" }));
+      const tz = screen.getByLabelText(/Your timezone/) as HTMLInputElement;
+      expect(tz.value).toBe("America/Los_Angeles");
+      // The free text stays free (the server validates), but common zones are offered.
+      const list = document.getElementById(String(tz.getAttribute("list")));
+      expect(list?.querySelector('option[value="Asia/Tokyo"]')).toBeTruthy();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("keeps an empty furigana threshold off the wire", async () => {
+    const { client, requests } = fakeApi({ automatic: false });
+    render(<Stories client={client} />);
+    await screen.findByRole("button", { name: "Save settings" });
 
     const threshold = screen.getByLabelText(/Furigana threshold/) as HTMLInputElement;
     // An empty field passes HTML validation (min/max only bound filled
@@ -435,8 +520,9 @@ describe("Stories screen", () => {
 
 describe("Story library (issue #31)", () => {
   it("shows title, theme, origin and created in a table, without rating controls", async () => {
-    const { client } = fakeApi({ ready: false });
+    const { client } = fakeApi({ automatic: false });
     render(<Stories client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: "View all stories" }));
     const row = await screen.findByTestId("story-st-1");
 
     for (const name of ["Title", "Genre", "Theme", "Origin", "Created", "Read"])
@@ -449,16 +535,18 @@ describe("Story library (issue #31)", () => {
   });
 
   it("labels the origin of an on-demand story", async () => {
-    const { client } = fakeApi({ ready: false, origin: "on_demand" });
+    const { client } = fakeApi({ automatic: false, origin: "on_demand" });
     render(<Stories client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: "View all stories" }));
     const row = await screen.findByTestId("story-st-1");
     expect(within(row).getByText("On demand")).toBeTruthy();
     expect(within(row).queryByText("Automatic")).toBeNull();
   });
 
   it("blurs the title translation until clicked, saving nothing and signalling nothing", async () => {
-    const { client, requests } = fakeApi({ ready: false });
+    const { client, requests } = fakeApi({ automatic: false });
     render(<Stories client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: "View all stories" }));
     const row = await screen.findByTestId("story-st-1");
 
     const en = within(row).getByRole("button", { name: /My diary in English/ });
@@ -470,8 +558,9 @@ describe("Story library (issue #31)", () => {
   });
 
   it("marks a story Read from the table and clears it again", async () => {
-    const { client, requests } = fakeApi({ ready: false });
+    const { client, requests } = fakeApi({ automatic: false });
     render(<Stories client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: "View all stories" }));
     const row = await screen.findByTestId("story-st-1");
 
     const read = within(row).getByRole("button", { name: "Read" });
@@ -490,8 +579,9 @@ describe("Story library (issue #31)", () => {
   });
 
   it("deletes a story behind a confirmation and drops the row", async () => {
-    const { client, requests } = fakeApi({ ready: false });
+    const { client, requests } = fakeApi({ automatic: false });
     render(<Stories client={client} />);
+    fireEvent.click(screen.getByRole("button", { name: "View all stories" }));
     await screen.findByTestId("story-st-1");
 
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
@@ -506,6 +596,14 @@ describe("Story library (issue #31)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirm delete" }));
     await waitFor(() => expect(screen.queryByTestId("story-st-1")).toBeNull());
     expect(requests.some((r) => r.method === "DELETE" && r.path === "/stories/st-1")).toBe(true);
+  });
+
+  it("an On-demand story is never Today’s Story, though the library lists it", async () => {
+    const { client } = fakeApi({ origin: "on_demand" });
+    render(<Stories client={client} />);
+    expect(await screen.findByText(/No story yet/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "View all stories" }));
+    expect(await screen.findByTestId("story-st-1")).toBeTruthy();
   });
 
   it("shows the title with a blurred translation and a Read toggle in the reader", async () => {
@@ -524,6 +622,25 @@ describe("Story library (issue #31)", () => {
     fireEvent.click(read);
     await waitFor(() => expect(screen.getByRole("button", { name: "Read" }).getAttribute("aria-pressed")).toBe("true"));
     expect(requests.some((r) => r.method === "PUT" && r.path === "/stories/st-1/read")).toBe(true);
+  });
+
+  it("the reader’s Back returns to the Today panel when opened from there", async () => {
+    const { client } = fakeApi();
+    await openStory(client);
+    fireEvent.click(screen.getByRole("button", { name: "← Back" }));
+    expect(await screen.findByRole("button", { name: "Read today’s story" })).toBeTruthy();
+    expect(screen.queryByTestId("story-st-1")).toBeNull();
+  });
+
+  it("the reader’s Back returns to the library when opened from a row", async () => {
+    const { client } = fakeApi();
+    render(<Stories client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: "View all stories" }));
+    const row = await screen.findByTestId("story-st-1");
+    fireEvent.click(within(row).getByRole("button", { name: "My diary" }));
+    await screen.findByRole("heading", { name: /diary/ });
+    fireEvent.click(screen.getByRole("button", { name: "← Back" }));
+    expect(await screen.findByTestId("story-st-1")).toBeTruthy();
   });
 });
 

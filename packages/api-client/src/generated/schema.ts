@@ -491,7 +491,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/stories/ready": {
+    "/stories/today": {
         parameters: {
             query?: never;
             header?: never;
@@ -499,10 +499,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * The story waiting to be read, opening it instantly
-         * @description The one Story the background generator has ready for the Learner, served from storage — the request never waits on an AI provider. Opening it clears the ready marker, so the next background pass re-arms generation. `no_ready_story` when none is waiting. All `start`/`end` offsets in sentences and grammar spans are codepoint (rune) indexes into each sentence's `ja` text, counting from 0 — not UTF-16 indexes or byte offsets.
+         * Today's Story: the newest Automatic Story, opening it instantly
+         * @description Today's Story (GLOSSARY.md): the newest Automatic Story, served from storage — the request never waits on an AI provider. It is what the Stories screen opens on. On-demand Stories are never Today's Story. A Story the Learner has already read comes with its readAt, and the web UI says which day it was still unread from. `no_story` when the Learner has no Automatic Story yet; the background generator writes one per local day in the Learner's Timezone. All `start`/`end` offsets in sentences and grammar spans are codepoint (rune) indexes into each sentence's `ja` text, counting from 0 — not UTF-16 indexes or byte offsets.
          */
-        get: operations["getReadyStory"];
+        get: operations["getTodaysStory"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1251,6 +1251,8 @@ export interface components {
         StorySettings: {
             /** @description The Furigana Threshold (GLOSSARY.md): Known Items with an SRS Level at or above this value are shown without furigana; below it, and for unknown tokens with kanji in their surface, the reading is shown. mastery's 1–9 scale; the default is 3. */
             furiganaThresholdSrsLevel: number;
+            /** @description The Learner's Timezone (GLOSSARY.md): an IANA name such as "Asia/Tokyo". It decides which local day an Automatic Story belongs to. Empty or absent means unset — the server's own timezone is used until the Learner chooses one. A name the server cannot load is rejected with `invalid_timezone`. */
+            timezone?: string;
             /** @description The genre the Learner wants for their stories ("travel", "mystery", ...). Empty or absent means "surprise me" — the server then picks, steered by ratings. Prompt-only: it never relaxes the validation gate, so an unfillable preference falls back rather than forcing bad output. */
             preferredGenre?: string;
             /** @description A free-text theme for the Learner's stories ("a robot running a ramen shop"). Empty or absent means no theme. Prompt-only, like preferredGenre. */
@@ -2438,7 +2440,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
-    getReadyStory: {
+    getTodaysStory: {
         parameters: {
             query?: never;
             header?: never;
@@ -2447,7 +2449,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The ready story */
+            /** @description Today's Story */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2457,7 +2459,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            /** @description No story is ready yet (code `no_ready_story`) */
+            /** @description No Automatic Story exists yet (code `no_story`) */
             404: {
                 headers: {
                     [name: string]: unknown;
