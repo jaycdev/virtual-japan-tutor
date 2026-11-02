@@ -316,7 +316,7 @@ func (s *Service) Test(ctx context.Context, id uuid.UUID) (TestResult, error) {
 	start := time.Now()
 	_, err = res.Client.Chat(ctx, []llm.Message{
 		{Role: llm.RoleUser, Content: "Reply with the single word: ok"},
-	}, llm.Options{MaxTokens: 16})
+	}, llm.Options{MaxTokens: probeMaxTokens})
 	latency := time.Since(start)
 	if err != nil {
 		return TestResult{Latency: latency, Message: describeFailure(err, rec)}, nil
@@ -325,11 +325,15 @@ func (s *Service) Test(ctx context.Context, id uuid.UUID) (TestResult, error) {
 	mode := ModeUnavailable
 	if j, jerr := res.Client.ChatJSON(ctx, []llm.Message{
 		{Role: llm.RoleUser, Content: "Return a JSON object with the key ok set to true."},
-	}, probeSchema, llm.Options{MaxTokens: 32}); jerr == nil {
+	}, probeSchema, llm.Options{MaxTokens: probeMaxTokens}); jerr == nil {
 		mode = j.Mode
 	}
 	return TestResult{OK: true, Latency: latency, Structured: mode, Message: successMessage(latency, mode)}, nil
 }
+
+// probeMaxTokens leaves room for a reasoning model to think before it answers; the tiny
+// probe prompts stop early on ordinary models, so this costs nothing there.
+const probeMaxTokens = 512
 
 var probeSchema = llm.Schema{
 	Name:   "connection_test",
@@ -374,6 +378,9 @@ func describeFailure(err error, rec Record) string {
 		return "Timed out waiting for the endpoint; check the base URL and that the server is running."
 	case errors.Is(err, llm.ErrUnreachable):
 		return "Cannot reach the endpoint" + detail + ": check the base URL and your network."
+	case errors.Is(err, llm.ErrTruncated):
+		return "The endpoint works, but the model spent its whole token limit thinking and gave no answer" + detail +
+			". Use a non-reasoning model or lower its reasoning effort."
 	case errors.Is(err, llm.ErrBadResponse):
 		return "The endpoint answered, but not like an OpenAI-compatible chat API" + detail + ": check the base URL."
 	case errors.Is(err, llm.ErrBadRequest):

@@ -289,6 +289,48 @@ func TestConnectionTestReportsSuccessAndStructuredOutputSupport(t *testing.T) {
 	}
 }
 
+// reasoningReply mimics a reasoning model (llama.cpp / LiteLLM shape): thinking tokens count
+// against max_tokens, so a small budget ends with content:null and finish_reason:"length".
+func reasoningReply(w http.ResponseWriter, body map[string]any, needed float64, content string) {
+	if mt, _ := body["max_tokens"].(float64); mt < needed {
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{
+			"finish_reason": "length",
+			"message":       map[string]any{"role": "assistant", "content": nil, "reasoning_content": "We need to respond to user: ..."},
+		}}})
+		return
+	}
+	okReply(w, content)
+}
+
+func TestConnectionTestSucceedsWithAReasoningModel(t *testing.T) {
+	e := newEnv(t)
+	alice := as(uuid.New())
+	f := newLLM(t, func(_ int, w http.ResponseWriter, body map[string]any) {
+		if body["response_format"] != nil {
+			reasoningReply(w, body, 100, `{"ok": true}`)
+			return
+		}
+		reasoningReply(w, body, 100, "ok")
+	})
+	res, err := e.svc.Test(alice, e.providerFor(t, alice, f, "").ID)
+	if err != nil || !res.OK || res.Structured != llm.ModeJSONSchema {
+		t.Fatalf("result = %+v, %v", res, err)
+	}
+}
+
+func TestConnectionTestExplainsAModelThatNeverFinishesThinking(t *testing.T) {
+	e := newEnv(t)
+	alice := as(uuid.New())
+	f := newLLM(t, func(_ int, w http.ResponseWriter, body map[string]any) { reasoningReply(w, body, 1e9, "ok") })
+	res, err := e.svc.Test(alice, e.providerFor(t, alice, f, "").ID)
+	if err != nil || res.OK {
+		t.Fatalf("result = %+v, %v", res, err)
+	}
+	if strings.Contains(strings.ToLower(res.Message), "openai-compatible") || !strings.Contains(strings.ToLower(res.Message), "token") {
+		t.Errorf("message should blame the token budget, not the base URL: %q", res.Message)
+	}
+}
+
 func TestConnectionTestWhenEndpointHasNoStructuredOutput(t *testing.T) {
 	e := newEnv(t)
 	alice := as(uuid.New())

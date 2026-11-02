@@ -137,7 +137,7 @@ func (g *Generator) Generate(ctx context.Context, client ChatClient, req Request
 	// what it cost even when the final attempt never produced a candidate.
 	attemptsUsed := 0
 	for attempt := 1; attempt <= settings.MaxAttempts; attempt++ {
-		res, err := client.ChatJSON(ctx, msgs, Schema(), llm.Options{MaxTokens: 4000, Timeout: DefaultGenerationTimeout})
+		res, err := client.ChatJSON(ctx, msgs, Schema(), llm.Options{MaxTokens: 4000 + llm.ReasoningHeadroom, Timeout: DefaultGenerationTimeout})
 		if err != nil {
 			// Provider-level failure: gate feedback cannot fix it. Report
 			// the last candidate if a previous attempt got that far.

@@ -42,7 +42,8 @@ type Config struct {
 type Options struct {
 	// Temperature is sent only when non-nil (some models reject the parameter).
 	Temperature *float64
-	// MaxTokens caps the completion length (0 = unset).
+	// MaxTokens caps the completion length (0 = unset). Reasoning models spend it on
+	// hidden thinking too, so add ReasoningHeadroom to the size of the answer you expect.
 	MaxTokens int
 	// Timeout overrides the client's per-attempt timeout (0 = client default).
 	Timeout time.Duration
@@ -54,6 +55,10 @@ type Result struct {
 	Model        string
 	FinishReason string
 }
+
+// ReasoningHeadroom is the extra token allowance that lets a reasoning model think
+// before answering without the answer being cut off (see ErrTruncated).
+const ReasoningHeadroom = 4096
 
 // Defaults.
 const (
@@ -308,6 +313,10 @@ func (c *Client) parse(raw []byte, status int) (Result, error) {
 	}
 	m := r.Choices[0].Message
 	if m.Content == nil || strings.TrimSpace(*m.Content) == "" {
+		if r.Choices[0].FinishReason == "length" {
+			// Reasoning models spend max_tokens on hidden thinking; the endpoint is fine.
+			return Result{}, &Error{Kind: ErrTruncated, Status: status, Detail: "the model used its whole token limit before giving an answer"}
+		}
 		detail := "the response contained no message content"
 		if m.Refusal != nil && *m.Refusal != "" {
 			detail = "the model refused: " + c.clean(*m.Refusal)
@@ -396,6 +405,7 @@ var (
 	ErrUnreachable      = errors.New("cannot reach the endpoint")
 	ErrBadRequest       = errors.New("request rejected")
 	ErrBadResponse      = errors.New("unexpected response")
+	ErrTruncated        = errors.New("answer cut off by the token limit")
 	ErrServer           = errors.New("provider error")
 )
 

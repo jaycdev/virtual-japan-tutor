@@ -189,7 +189,7 @@ Cover: how the pattern is formed, what it means, when it is used. Keep it under 
 			Name:   "grammar_explanation",
 			Schema: json.RawMessage(`{"type":"object","properties":{"explanation":{"type":"string"}},"required":["explanation"],"additionalProperties":false}`),
 		},
-		llm.Options{MaxTokens: 800},
+		llm.Options{MaxTokens: 800 + llm.ReasoningHeadroom},
 	)
 	if err != nil {
 		return "", fmt.Errorf("grammar: generate explanation: %w", err)
@@ -288,7 +288,7 @@ func (gen *Generator) generateExamples(ctx context.Context, pointID int64, userI
 				{Role: llm.RoleUser, Content: examplesPrompt(point, count)},
 			},
 			llm.Schema{Name: "grammar_examples", Schema: examplesSchema},
-			llm.Options{MaxTokens: 1200},
+			llm.Options{MaxTokens: 1200 + llm.ReasoningHeadroom},
 		)
 		if err != nil {
 			return Generation{}, fmt.Errorf("grammar: generate examples: %w", err)
