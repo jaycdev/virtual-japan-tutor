@@ -166,6 +166,7 @@ type fakeStore struct {
 	blur         map[uuid.UUID]bool      // missing = default true, like the users column
 	lookupHoldMs map[uuid.UUID]int       // missing = default 800, like the users column
 	prefs        map[uuid.UUID][3]string // genre, theme ("" = surprise-me / no theme), timezone ("" = unset)
+	durations    map[uuid.UUID][]time.Duration
 	now          time.Time
 }
 
@@ -177,6 +178,7 @@ func newFakeStore() *fakeStore {
 		blur:         map[uuid.UUID]bool{},
 		lookupHoldMs: map[uuid.UUID]int{},
 		prefs:        map[uuid.UUID][3]string{},
+		durations:    map[uuid.UUID][]time.Duration{},
 		now:          time.Unix(1700000000, 0).UTC(),
 	}
 }
@@ -343,6 +345,54 @@ func (s *fakeStore) GenresByLastActivity(_ context.Context, userID uuid.UUID, li
 		out = append(out, st.Genre)
 	}
 	return out, nil
+}
+
+// RecordGenerationDuration mirrors the Postgres store: an append-only
+// sample list per user, read back newest first.
+func (s *fakeStore) RecordGenerationDuration(_ context.Context, userID uuid.UUID, finishedAt time.Time, ms int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_ = finishedAt
+	s.durations[userID] = append(s.durations[userID], time.Duration(ms)*time.Millisecond)
+	return nil
+}
+
+func (s *fakeStore) RecentGenerationDurations(_ context.Context, userID uuid.UUID, limit int) ([]time.Duration, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ds := s.durations[userID]
+	var out []time.Duration
+	for i := len(ds) - 1; i >= 0 && len(out) < limit; i-- {
+		out = append(out, ds[i])
+	}
+	return out, nil
+}
+
+// StoryGenreThemeSuggestions mirrors the Postgres store: distinct genres and
+// themes over the user's validated Stories only, newest first.
+func (s *fakeStore) StoryGenreThemeSuggestions(_ context.Context, userID uuid.UUID) ([]string, []string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var mine []*Story
+	for _, st := range s.stories {
+		if st.UserID == userID && st.Validated {
+			mine = append(mine, st)
+		}
+	}
+	sortByCreatedDesc(mine)
+	var genres, themes []string
+	seenG, seenT := map[string]bool{}, map[string]bool{}
+	for _, st := range mine {
+		if st.Genre != "" && !seenG[st.Genre] {
+			seenG[st.Genre] = true
+			genres = append(genres, st.Genre)
+		}
+		if st.Theme != "" && !seenT[st.Theme] {
+			seenT[st.Theme] = true
+			themes = append(themes, st.Theme)
+		}
+	}
+	return genres, themes, nil
 }
 
 func (s *fakeStore) FuriganaThreshold(_ context.Context, userID uuid.UUID) (int, error) {

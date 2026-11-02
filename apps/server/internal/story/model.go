@@ -106,6 +106,18 @@ type Store interface {
 	// newest first; it seeds genre choice when there are no ratings.
 	GenresByLastActivity(ctx context.Context, userID uuid.UUID, limit int) ([]string, error)
 
+	// RecordGenerationDuration samples the wall time of one successful
+	// generation (issue #33); RecentGenerationDurations reads the most
+	// recent samples, newest first, so the On-demand progress bar fills its
+	// writing stage at the Learner's own pace.
+	RecordGenerationDuration(ctx context.Context, userID uuid.UUID, finishedAt time.Time, ms int64) error
+	RecentGenerationDurations(ctx context.Context, userID uuid.UUID, limit int) ([]time.Duration, error)
+
+	// StoryGenreThemeSuggestions returns the distinct genres and themes of
+	// the user's VALIDATED Stories, newest first — the autocomplete options
+	// for the Generate box and the settings form (issue #33).
+	StoryGenreThemeSuggestions(ctx context.Context, userID uuid.UUID) (genres, themes []string, err error)
+
 	// FuriganaThreshold reads and SetFuriganaThreshold writes the user's
 	// Furigana Threshold SRS Level (0–9).
 	FuriganaThreshold(ctx context.Context, userID uuid.UUID) (int, error)

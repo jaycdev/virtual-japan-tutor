@@ -740,3 +740,67 @@ func TestPostgresStoryLibraryFields(t *testing.T) {
 		t.Errorf("practice_records after delete = %d, want 1: deleting a Story never rewrites mastery's log", records)
 	}
 }
+
+// The issue #33 reads against the real schema: duration samples newest
+// first and per-user, and the genre/theme suggestions over validated
+// Stories only (the migration 00014 table is exercised here).
+func TestPostgresGenerationDurationsAndSuggestions(t *testing.T) {
+	pool := dbtest.New(t)
+	ctx := context.Background()
+	st := NewPostgresStore(pool)
+
+	user := uuid.New()
+	other := uuid.New()
+	for _, u := range []uuid.UUID{user, other} {
+		if _, err := pool.Exec(ctx, `INSERT INTO users (id, username, password_hash) VALUES ($1, $2, 'x')`, u, u.String()); err != nil {
+			t.Fatalf("seed user: %v", err)
+		}
+	}
+
+	// Durations: inserted oldest-first so the read must do the ordering,
+	// and out of the other user's way for scoping.
+	base := time.Now().UTC().Truncate(time.Microsecond)
+	if err := st.RecordGenerationDuration(ctx, user, base, int64(30*time.Second/time.Millisecond)); err != nil {
+		t.Fatalf("RecordGenerationDuration: %v", err)
+	}
+	if err := st.RecordGenerationDuration(ctx, user, base.Add(time.Second), int64(60*time.Second/time.Millisecond)); err != nil {
+		t.Fatalf("RecordGenerationDuration: %v", err)
+	}
+	if err := st.RecordGenerationDuration(ctx, other, base, int64(90*time.Second/time.Millisecond)); err != nil {
+		t.Fatalf("RecordGenerationDuration (other): %v", err)
+	}
+	ds, err := st.RecentGenerationDurations(ctx, user, 10)
+	if err != nil || len(ds) != 2 || ds[0] != 60*time.Second || ds[1] != 30*time.Second {
+		t.Fatalf("RecentGenerationDurations = %v, %v; want [60s 30s] newest first", ds, err)
+	}
+	if ds, err := st.RecentGenerationDurations(ctx, user, 1); err != nil || len(ds) != 1 || ds[0] != 60*time.Second {
+		t.Fatalf("RecentGenerationDurations (limit 1) = %v, %v; want [60s]", ds, err)
+	}
+	if ds, err := st.RecentGenerationDurations(ctx, other, 10); err != nil || len(ds) != 1 || ds[0] != 90*time.Second {
+		t.Fatalf("other user's durations = %v, %v; want only their own sample", ds, err)
+	}
+
+	// Suggestions: validated Stories only, newest first, per user. The
+	// themed Story saves last so it must sort first in both lists.
+	saveStory(t, ctx, st, user, "travel", true)
+	saveStory(t, ctx, st, user, "secret", false)
+	themed := saveStory(t, ctx, st, user, "cyberpunk", true)
+	if _, err := pool.Exec(ctx, `UPDATE stories SET theme = $2 WHERE id = $1`, themed.ID, "a robot running a ramen shop"); err != nil {
+		t.Fatalf("set theme: %v", err)
+	}
+	otherStory := saveStory(t, ctx, st, other, "elsewhere", true)
+	if _, err := pool.Exec(ctx, `UPDATE stories SET theme = $2 WHERE id = $1`, otherStory.ID, "not yours"); err != nil {
+		t.Fatalf("set other theme: %v", err)
+	}
+
+	genres, themes, err := st.StoryGenreThemeSuggestions(ctx, user)
+	if err != nil {
+		t.Fatalf("StoryGenreThemeSuggestions: %v", err)
+	}
+	if len(genres) != 2 || genres[0] != "cyberpunk" || genres[1] != "travel" {
+		t.Errorf("genres = %v, want [cyberpunk travel]: validated only, newest first", genres)
+	}
+	if len(themes) != 1 || themes[0] != "a robot running a ramen shop" {
+		t.Errorf("themes = %v, want only the Learner's validated themes", themes)
+	}
+}

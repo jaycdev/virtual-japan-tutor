@@ -109,6 +109,17 @@ type Request struct {
 	// names them as "avoid", and PickGenre already dropped them from its
 	// fallback.
 	DislikedGenres []string
+	// AvoidRecentGenres names the genres of the Learner's most recent
+	// Stories as "avoid too" in the prompt. Issue #33's Surprise mode sets
+	// it — with the preferences off, the recent genres are the only variety
+	// signal left. Automatic keeps its variety through PickGenre instead.
+	AvoidRecentGenres []string
+	// ReportStage, when set, receives the generation's stage transitions —
+	// writing before each model call, checking once the answer is in hand
+	// and the gate is judging it — for the On-demand progress bar
+	// (issue #33). It is called on the generating goroutine and must not
+	// block meaningfully.
+	ReportStage func(stage GenerationStage, attempt int)
 }
 
 // Generate produces one Story for the request. It returns the final candidate
@@ -140,7 +151,13 @@ func (g *Generator) Generate(ctx context.Context, client ChatClient, req Request
 	// materialise failures included, so the stored candidate's Attempts says
 	// what it cost even when the final attempt never produced a candidate.
 	attemptsUsed := 0
+	report := func(stage GenerationStage, attempt int) {
+		if req.ReportStage != nil {
+			req.ReportStage(stage, attempt)
+		}
+	}
 	for attempt := 1; attempt <= settings.MaxAttempts; attempt++ {
+		report(StageWriting, attempt)
 		res, err := client.ChatJSON(ctx, msgs, Schema(), llm.Options{MaxTokens: 4000 + llm.ReasoningHeadroom, Timeout: DefaultGenerationTimeout})
 		if err != nil {
 			// Provider-level failure: gate feedback cannot fix it. Report
@@ -150,6 +167,7 @@ func (g *Generator) Generate(ctx context.Context, client ChatClient, req Request
 			}
 			return nil, fmt.Errorf("story generation: %w", err)
 		}
+		report(StageChecking, attempt)
 		attemptsUsed++
 		var raw storyJSON
 		if err := json.Unmarshal(res.JSON, &raw); err != nil {
@@ -554,6 +572,9 @@ Passage rules:
 	}
 	if len(req.DislikedGenres) > 0 {
 		fmt.Fprintf(&b, "- Avoid these genres, the reader did not like them: %s.\n", strings.Join(req.DislikedGenres, ", "))
+	}
+	if len(req.AvoidRecentGenres) > 0 {
+		fmt.Fprintf(&b, "- Avoid these genres too, the reader has just read them: %s.\n", strings.Join(req.AvoidRecentGenres, ", "))
 	}
 
 	if len(req.Focus.Vocab) > 0 {

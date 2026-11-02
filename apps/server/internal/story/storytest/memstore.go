@@ -25,6 +25,7 @@ type MemStore struct {
 	blur      map[uuid.UUID]bool      // missing = default true, like the users column
 	lookupMs  map[uuid.UUID]int       // missing = default 800, like the users column
 	prefs     map[uuid.UUID][3]string // genre, theme ("" = surprise-me / no theme), timezone ("" = unset)
+	durations map[uuid.UUID][]time.Duration
 	now       time.Time
 }
 
@@ -36,6 +37,7 @@ func New() *MemStore {
 		blur:      map[uuid.UUID]bool{},
 		lookupMs:  map[uuid.UUID]int{},
 		prefs:     map[uuid.UUID][3]string{},
+		durations: map[uuid.UUID][]time.Duration{},
 		now:       time.Unix(1700000000, 0).UTC(),
 	}
 }
@@ -179,6 +181,54 @@ func (s *MemStore) GenresByLastActivity(_ context.Context, userID uuid.UUID, lim
 		out = append(out, st.Genre)
 	}
 	return out, nil
+}
+
+// RecordGenerationDuration mirrors the Postgres store: one sample per
+// finished generation, read back newest first.
+func (s *MemStore) RecordGenerationDuration(_ context.Context, userID uuid.UUID, finishedAt time.Time, ms int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_ = finishedAt
+	s.durations[userID] = append(s.durations[userID], time.Duration(ms)*time.Millisecond)
+	return nil
+}
+
+func (s *MemStore) RecentGenerationDurations(_ context.Context, userID uuid.UUID, limit int) ([]time.Duration, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ds := s.durations[userID]
+	var out []time.Duration
+	for i := len(ds) - 1; i >= 0 && len(out) < limit; i-- {
+		out = append(out, ds[i])
+	}
+	return out, nil
+}
+
+// StoryGenreThemeSuggestions mirrors the Postgres store: distinct genres and
+// themes over validated Stories only, newest first.
+func (s *MemStore) StoryGenreThemeSuggestions(_ context.Context, userID uuid.UUID) ([]string, []string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var mine []*story.Story
+	for _, st := range s.stories {
+		if st.UserID == userID && st.Validated {
+			mine = append(mine, st)
+		}
+	}
+	sort.Slice(mine, func(i, j int) bool { return mine[i].CreatedAt.After(mine[j].CreatedAt) })
+	var genres, themes []string
+	seenG, seenT := map[string]bool{}, map[string]bool{}
+	for _, st := range mine {
+		if st.Genre != "" && !seenG[st.Genre] {
+			seenG[st.Genre] = true
+			genres = append(genres, st.Genre)
+		}
+		if st.Theme != "" && !seenT[st.Theme] {
+			seenT[st.Theme] = true
+			themes = append(themes, st.Theme)
+		}
+	}
+	return genres, themes, nil
 }
 
 func (s *MemStore) FuriganaThreshold(_ context.Context, userID uuid.UUID) (int, error) {
