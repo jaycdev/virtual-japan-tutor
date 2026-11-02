@@ -29,6 +29,9 @@ type Config struct {
 	IdleTimeout time.Duration
 	// MaxBodyBytes caps every request body (env HTTP_MAX_BODY_BYTES, default 1 MiB).
 	MaxBodyBytes int64
+	// WebDir is the directory of the built web app to serve from the same origin as the API
+	// (env WEB_DIR). Empty (the default) serves the API only; the server image sets it.
+	WebDir string
 	// SecretsKey is the 32-byte key for encrypting stored secrets (env SECRETS_KEY, base64, required).
 	SecretsKey []byte
 	// SessionTTL is how long a login session lasts (env SESSION_TTL, default 720h = 30 days).
@@ -81,6 +84,7 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg := Config{
 		HTTPAddr:    getenv("HTTP_ADDR"),
 		DatabaseURL: getenv("DATABASE_URL"),
+		WebDir:      getenv("WEB_DIR"),
 
 		BootstrapUsername: getenv("VJT_BOOTSTRAP_USERNAME"),
 		BootstrapPassword: getenv("VJT_BOOTSTRAP_PASSWORD"),

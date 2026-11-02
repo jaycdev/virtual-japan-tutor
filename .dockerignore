@@ -2,8 +2,20 @@
 *
 !apps/server
 !data/grammar
+# The web app is built into the server image (see the web stage in apps/server/Dockerfile).
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!.npmrc
+!tsconfig.base.json
+!apps/web
+!apps/mobile/package.json
+!packages/api-client
+!packages/core
+
+**/node_modules
+**/dist
+**/.turbo
 apps/server/bin
-apps/server/node_modules
-apps/server/package.json
 apps/server/scripts
 apps/server/Dockerfile

@@ -48,6 +48,23 @@ func TestLoadDefaultsHTTPAddr(t *testing.T) {
 	}
 }
 
+func TestLoadWebDir(t *testing.T) {
+	cfg, err := config.Load(env(map[string]string{"DATABASE_URL": "postgres://x"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.WebDir != "" {
+		t.Fatalf("WebDir = %q, want empty (API only) by default", cfg.WebDir)
+	}
+	cfg, err = config.Load(env(map[string]string{"DATABASE_URL": "postgres://x", "WEB_DIR": "/srv/web"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.WebDir != "/srv/web" {
+		t.Fatalf("WebDir = %q, want /srv/web", cfg.WebDir)
+	}
+}
+
 func TestLoadHTTPTimeoutDefaults(t *testing.T) {
 	cfg, err := config.Load(env(map[string]string{"DATABASE_URL": "postgres://x"}))
 	if err != nil {

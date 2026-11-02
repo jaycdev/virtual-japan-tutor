@@ -5,8 +5,8 @@ a Vite + React web app and an Expo (Android) app. Terminology lives in [GLOSSARY
 
 ## Install (self-hosting)
 
-You run one server (the API plus a Postgres database) on a machine you control. The web and Android apps
-connect to it. Everything is yours: there is no hosted service and no signup.
+You run one server (the API and the web app, plus a Postgres database) on a machine you control. The Android
+app connects to it too. Everything is yours: there is no hosted service and no signup.
 
 ### Requirements
 
@@ -16,7 +16,7 @@ connect to it. Everything is yours: there is no hosted service and no signup.
 
 ### 1. Download the config
 
-You do not need the source. The server and import tool are published as container images
+You do not need the source. The server (API and web app) and the import tool are published as container images
 (`ghcr.io/jaycdev/virtual-japan-tutor-server` and `-import`, for `amd64` and `arm64`); you only need the
 Compose file and an env file:
 
@@ -69,23 +69,21 @@ docker compose run --rm import
 
 See [Importing reference data](#importing-reference-data) for what it loads and its licences.
 
-### 4. Sign in and set up
+### 4. Open the web app
 
-Sign in with the account from step 1, then open **Settings** to add your MaruMori key (and run **Sync now**),
+Open `http://localhost:8080` (or your server's address and `SERVER_PORT`) in a browser and sign in with the
+account from step 1. The web app is built into the server image and served by the server itself, so there is
+nothing else to deploy and no CORS or proxy setup. `http://localhost:8080/health` is the API health check.
+
+**Android**: there is no prebuilt APK yet. Build and install it from source
+(`pnpm --filter @vjt/mobile android` with a device or emulator attached; see [Development](#development)).
+The app asks for your server address on first launch and can change it in Settings. Release builds block plain
+`http://` addresses, so put the server behind HTTPS if you use the app away from a debug build.
+### 5. Set up your account
+
+Once signed in, open **Settings** to add your MaruMori key (and run **Sync now**),
 add or confirm an AI Provider, and choose your starting level. To add accounts later, see
 [Creating the first account](#creating-the-first-account) (the `create-user` command).
-
-### 5. Connect a client
-
-The server only exposes the API; the Compose stack does **not** serve the web or Android app yet.
-
-- **Web**: build it from the repo, pointing at your server, `VITE_API_URL=https://your-server pnpm --filter @vjt/web build`
-  (needs the repo's Node/pnpm toolchain, see [Prerequisites](#prerequisites)), and serve `apps/web/dist`. The
-  server sends no CORS headers, so serve the web build and the API from the **same origin**, for example
-  behind one reverse proxy that routes the API paths to the server and everything else to the static files.
-- **Android**: there is no prebuilt APK. Build and install it from source (`pnpm --filter @vjt/mobile android`
-  with a device or emulator attached). The app asks for your server address on first launch and can change it
-  in Settings. Release builds block plain `http://` addresses, so put the server behind HTTPS.
 
 ### Keeping it safe and up to date
 
@@ -266,8 +264,20 @@ cd apps/server
 DATABASE_URL=postgres://user:pass@host:5432/db go run ./cmd/server
 ```
 
-Web: `pnpm --filter @vjt/web dev` (set `VITE_API_URL`). Mobile: `pnpm --filter @vjt/mobile android`
-(set `EXPO_PUBLIC_API_URL`; defaults to `http://10.0.2.2:8080`, the host as seen from the Android emulator).
+Web: the server serves the built web app from `WEB_DIR` (the image sets it; unset means API only), so build it and
+point the server at it, then open <http://localhost:8080>:
+
+```sh
+pnpm --filter @vjt/web build
+cd apps/server && WEB_DIR=../web/dist DATABASE_URL=... SECRETS_KEY=... go run ./cmd/server
+```
+
+`pnpm --filter @vjt/web dev` (hot reload) calls the API on `VITE_API_URL` (default `http://localhost:8080`), a
+different origin, and the server sends no CORS headers, so a browser blocks those calls. Use the build above
+until CORS is added.
+
+Mobile: `pnpm --filter @vjt/mobile android` (set `EXPO_PUBLIC_API_URL`; defaults to `http://10.0.2.2:8080`, the
+host as seen from the Android emulator).
 
 Packages `@vjt/api-client` and `@vjt/core` are consumed from their built `dist/`, so run `pnpm build`
 (or the package's `build`) after changing them.

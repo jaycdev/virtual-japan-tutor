@@ -2,7 +2,8 @@
 # carries data/grammar/jlpt-grammar.csv. Generated code is committed, so the image build
 # needs neither the OpenAPI spec nor any code generation.
 #
-# Targets: `server` (default, the last stage) and `import` (one-off reference data import).
+# Targets: `server` (default, the last stage: the API plus the built web app) and `import` (one-off
+# reference data import).
 FROM --platform=$BUILDPLATFORM golang:1.27.1-alpine AS build
 ARG TARGETOS
 ARG TARGETARCH
@@ -11,6 +12,23 @@ COPY apps/server/go.mod apps/server/go.sum ./
 RUN go mod download
 COPY apps/server/ ./
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/ ./cmd/server ./cmd/import
+
+# The web app. The output is plain static files, so this stage always runs on the build platform.
+# Production builds call the API on their own origin, which is where the server serves them from.
+FROM --platform=$BUILDPLATFORM node:24-alpine AS web
+RUN corepack enable
+WORKDIR /src
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc tsconfig.base.json ./
+COPY apps/web/package.json apps/web/
+COPY apps/mobile/package.json apps/mobile/
+COPY apps/server/package.json apps/server/
+COPY packages/api-client/package.json packages/api-client/
+COPY packages/core/package.json packages/core/
+RUN pnpm install --frozen-lockfile --filter "@vjt/web..."
+COPY apps/web apps/web
+COPY packages/api-client packages/api-client
+COPY packages/core packages/core
+RUN pnpm --filter "@vjt/web..." build
 
 # Reference data import: JMdict, KANJIDIC2, JLPT lists, Kanjium and the Grammar Catalogue.
 # Downloads land in a cache directory meant to be a named volume (no bind mounts).
@@ -31,6 +49,9 @@ FROM alpine:3.22 AS server
 RUN adduser -D -u 10001 app
 USER app
 COPY --from=build /out/server /usr/local/bin/server
+COPY --from=web /src/apps/web/dist /usr/share/vjt/web
+# Serve the web app at / next to the API. Unset WEB_DIR to run the API only.
+ENV WEB_DIR=/usr/share/vjt/web
 EXPOSE 8080
 # Migrations are embedded in the binary and applied on start.
 ENTRYPOINT ["server"]
