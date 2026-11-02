@@ -20,6 +20,8 @@ function fakeClient() {
 function story(overrides: Partial<Story> = {}): Story {
   return {
     id: "st-1",
+    title: "学校での勉強",
+    origin: "automatic",
     genre: "diary",
     text: "がっこうでべんきょうしました。",
     createdAt: "2026-11-01T09:00:00Z",
@@ -243,6 +245,83 @@ describe("useStory", () => {
     const rateCall = fetchImpl.mock.calls[4]?.[0] as Request;
     expect(rateCall.url).toContain("/stories/st-1/rate");
     expect(await rateCall.json()).toBe("up");
+  });
+
+  it("marks a library story Read and shows the mark on the story and the page", async () => {
+    const { client, fetchImpl, json, noContent } = fakeClient();
+    fetchImpl
+      .mockImplementationOnce(async () => json(200, page([story()])))
+      .mockImplementationOnce(async () => json(200, settingsBody()))
+      .mockImplementationOnce(async () => json(200, story()))
+      .mockImplementationOnce(async () => noContent());
+    const { result } = renderHook(() => useStory(client));
+    await waitFor(() => expect(result.current.library.status).toBe("ready"));
+    await act(async () => {
+      await result.current.openStory("st-1");
+    });
+    expect(result.current.story?.readAt).toBeUndefined();
+
+    await act(async () => {
+      await result.current.setRead("st-1");
+    });
+
+    expect(result.current.error).toBeNull();
+    expect(result.current.story?.readAt).toBeTruthy();
+    const lib = result.current.library;
+    expect(lib.status === "ready" && lib.page.items[0]?.readAt).toBeTruthy();
+    const readCall = fetchImpl.mock.calls[3]?.[0] as Request;
+    expect(readCall.method).toBe("PUT");
+    expect(readCall.url).toContain("/stories/st-1/read");
+  });
+
+  it("unmarks a Read story so the library shows it unread again", async () => {
+    const { client, fetchImpl, json, noContent } = fakeClient();
+    fetchImpl
+      .mockImplementationOnce(async () => json(200, page([story({ readAt: "2026-11-01T10:00:00Z" })])))
+      .mockImplementationOnce(async () => json(200, settingsBody()))
+      .mockImplementationOnce(async () => noContent());
+    const { result } = renderHook(() => useStory(client));
+    await waitFor(() => expect(result.current.library.status).toBe("ready"));
+    const before = result.current.library;
+    expect(before.status === "ready" && before.page.items[0]?.readAt).toBeTruthy();
+
+    await act(async () => {
+      await result.current.clearRead("st-1");
+    });
+
+    expect(result.current.error).toBeNull();
+    const lib = result.current.library;
+    expect(lib.status === "ready" && lib.page.items[0]?.readAt).toBeUndefined();
+    const clearCall = fetchImpl.mock.calls[2]?.[0] as Request;
+    expect(clearCall.method).toBe("DELETE");
+    expect(clearCall.url).toContain("/stories/st-1/read");
+  });
+
+  it("deletes a story: the row leaves the page, the total drops, and an open story closes", async () => {
+    const { client, fetchImpl, json, noContent } = fakeClient();
+    fetchImpl
+      .mockImplementationOnce(async () => json(200, page([story(), story({ id: "st-2" })], 2)))
+      .mockImplementationOnce(async () => json(200, settingsBody()))
+      .mockImplementationOnce(async () => json(200, story()))
+      .mockImplementationOnce(async () => noContent());
+    const { result } = renderHook(() => useStory(client));
+    await waitFor(() => expect(result.current.library.status).toBe("ready"));
+    await act(async () => {
+      await result.current.openStory("st-1");
+    });
+
+    await act(async () => {
+      await result.current.removeStory("st-1");
+    });
+
+    expect(result.current.error).toBeNull();
+    const lib = result.current.library;
+    expect(lib.status === "ready" && lib.page.items.map((s) => s.id)).toEqual(["st-2"]);
+    expect(lib.status === "ready" && lib.page.total).toBe(1);
+    expect(result.current.story).toBeNull();
+    const delCall = fetchImpl.mock.calls[3]?.[0] as Request;
+    expect(delCall.method).toBe("DELETE");
+    expect(delCall.url).toContain("/stories/st-1");
   });
 
   it("pages the library by offset", async () => {

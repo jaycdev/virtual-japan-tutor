@@ -668,3 +668,111 @@ func TestPostgresMasteryFocusIgnoresItemLists(t *testing.T) {
 		t.Errorf("KnownWords = %+v, want empty — the prompt's Known Items must not grow from lists", words)
 	}
 }
+
+// TestPostgresStoryLibraryFields is the issue #31 schema-drift guard: the
+// Title/TitleEN/Theme/Origin columns round-trip through Save/Get,
+// MarkRead/ClearRead toggle read_at, and Delete removes the Story and its
+// rating while the Practice Records it wrote stay (mastery keeps its log).
+func TestPostgresStoryLibraryFields(t *testing.T) {
+	pool := dbtest.New(t)
+	ctx := context.Background()
+	st := NewPostgresStore(pool)
+
+	user := uuid.New()
+	other := uuid.New()
+	for _, u := range []uuid.UUID{user, other} {
+		if _, err := pool.Exec(ctx, `INSERT INTO users (id, username, password_hash) VALUES ($1, $2, 'x')`, u, u.String()); err != nil {
+			t.Fatalf("seed user: %v", err)
+		}
+	}
+
+	s := &Story{
+		UserID: user,
+		Genre:  "diary",
+		Prompt: "p",
+		Text:   "ました。",
+		Sentences: []Sentence{{
+			Pos: 0, JA: "ました。", EN: "past.",
+			Tokens: []Token{{Pos: 0, Surface: "しました", Start: 0, End: 4, Tag: TagUnknown}},
+		}},
+		Questions: []Question{
+			{Pos: 0, PromptJA: "q", OptionsJA: []string{"a", "b"}, AnswerIndex: 0},
+			{Pos: 1, PromptJA: "q", OptionsJA: []string{"a", "b"}, AnswerIndex: 0},
+			{Pos: 2, PromptJA: "q", OptionsJA: []string{"a", "b"}, AnswerIndex: 0},
+		},
+		Title:     "ねこの一日",
+		TitleEN:   "A Day of Cats",
+		Theme:     "A Stray Cat",
+		Origin:    OriginOnDemand,
+		Validated: true,
+		Attempts:  1,
+	}
+	if err := st.Save(ctx, s); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	got, err := st.Get(ctx, s.ID, user)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Title != s.Title || got.TitleEN != s.TitleEN || got.Theme != s.Theme || got.Origin != s.Origin {
+		t.Errorf("library fields round-trip: %q / %q / %q / %q", got.Title, got.TitleEN, got.Theme, got.Origin)
+	}
+	if got.Read() {
+		t.Error("a fresh story is unread")
+	}
+
+	// Postgres timestamptz keeps microsecond precision, so the instant must
+	// be truncated to it before the round-trip comparison below.
+	at := time.Now().UTC().Truncate(time.Microsecond)
+	if err := st.MarkRead(ctx, s.ID, user, at); err != nil {
+		t.Fatalf("MarkRead: %v", err)
+	}
+	if got, err := st.Get(ctx, s.ID, user); err != nil || !got.Read() || got.ReadAt == nil || !got.ReadAt.Equal(at) {
+		t.Errorf("MarkRead: read=%v read_at=%v err=%v", got.Read(), got.ReadAt, err)
+	}
+	if err := st.MarkRead(ctx, s.ID, other, at); err != ErrNotFound {
+		t.Errorf("MarkRead for another user: %v, want ErrNotFound", err)
+	}
+	if err := st.ClearRead(ctx, s.ID, other); err != ErrNotFound {
+		t.Errorf("ClearRead for another user: %v, want ErrNotFound", err)
+	}
+	if err := st.ClearRead(ctx, s.ID, user); err != nil {
+		t.Fatalf("ClearRead: %v", err)
+	}
+	if got, err := st.Get(ctx, s.ID, user); err != nil || got.Read() {
+		t.Errorf("ClearRead: read=%v err=%v", got.Read(), err)
+	}
+
+	// A rating and a Practice Record exist; deleting the Story takes the
+	// rating with it (story_ratings cascades) and leaves the record alone.
+	if err := st.Rate(ctx, s.ID, user, RatingDown); err != nil {
+		t.Fatalf("rate: %v", err)
+	}
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO practice_records (user_id, item_kind, item_ref, correct, answered_at) VALUES ($1, 'vocabulary', '4000', true, $2)`,
+		user, at); err != nil {
+		t.Fatalf("seed practice record: %v", err)
+	}
+	if err := st.Delete(ctx, s.ID, other); err != ErrNotFound {
+		t.Errorf("Delete for another user: %v, want ErrNotFound", err)
+	}
+	if err := st.Delete(ctx, s.ID, user); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if _, err := st.Get(ctx, s.ID, user); err != ErrNotFound {
+		t.Errorf("Get after Delete: %v, want ErrNotFound", err)
+	}
+	var ratings, records int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM story_ratings WHERE story_id = $1`, s.ID).Scan(&ratings); err != nil {
+		t.Fatal(err)
+	}
+	if ratings != 0 {
+		t.Errorf("story_ratings after delete = %d, want 0", ratings)
+	}
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM practice_records WHERE user_id = $1 AND item_ref = '4000'`, user).Scan(&records); err != nil {
+		t.Fatal(err)
+	}
+	if records != 1 {
+		t.Errorf("practice_records after delete = %d, want 1: deleting a Story never rewrites mastery's log", records)
+	}
+}

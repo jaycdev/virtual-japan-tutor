@@ -480,7 +480,7 @@ export interface paths {
         };
         /**
          * A page of the Learner's Story Library, newest first
-         * @description Stories the Learner has generated (issue #10), validated ones only: a Story that failed the kagome validation gate is kept for analysis, never offered. Each carries its rating when the Learner gave one. Generation is driven by the background scheduler — this list never triggers one.
+         * @description Stories the Learner has generated (issue #10), validated ones only: a Story that failed the kagome validation gate is kept for analysis, never offered. Each carries its title, its theme, its Story Origin and its Read mark, plus its rating when the Learner gave one. Generation is driven by the background scheduler — this list never triggers one.
          */
         get: operations["listStories"];
         put?: never;
@@ -528,7 +528,35 @@ export interface paths {
         get: operations["getStory"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete one story from the Learner's library
+         * @description Removes the story, its comprehension questions, vocabulary items and the Learner's rating of it. Practice records about the reading session stay: deleting a story never rewrites what the Learner has already practised. The Story Library keeps stories newest first, so deleting one can make room for the next story the generator produces.
+         */
+        delete: operations["deleteStory"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stories/{storyId}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A Story's UUID. Declared as a plain string for the same reason as ProviderId: the generated router binds path parameters before auth, so the handler parses it itself (404 if malformed). */
+                storyId: components["parameters"]["StoryId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Mark one story in the Learner's library Read
+         * @description Setting the Read mark by hand does not count as practising and never records a Weak Signal; the Learner's rating and last-practised time are untouched. Answering the last comprehension question of a story sets the same mark.
+         */
+        put: operations["setStoryRead"];
+        post?: never;
+        /** Unmark one story so it is unread again */
+        delete: operations["clearStoryRead"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1247,11 +1275,27 @@ export interface components {
         };
         Story: {
             id: string;
+            /** @description Story title in Japanese: the generator names every story, falling back to a shortened piece of the text when the model does not. */
+            title: string;
+            /** @description English translation of the title. The web UI shows it blurred until the learner clicks it. */
+            titleEn?: string;
+            /** @description What the story is about, chosen by the generator. */
+            theme?: string;
+            /**
+             * @description Whether the story came from the automatic generator or a learner asked for it with an on-demand request.
+             * @enum {string}
+             */
+            origin: "automatic" | "on_demand";
             genre: string;
             /** @description The sentences' ja text joined, for plain display. */
             text: string;
             /** Format: date-time */
             createdAt: string;
+            /**
+             * Format: date-time
+             * @description When the Learner marked this story Read: answering the last comprehension question sets it, and the learner can set or unset it from the library. Null means the story is still unread. This is separate from when they last practised.
+             */
+            readAt?: string;
             /** @description The Learner's own rating, when they gave one. */
             rating?: components["schemas"]["StoryRating"];
             /** @description Generation attempts used (1 = validated on the first try). */
@@ -2444,6 +2488,75 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Story"];
                 };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteStory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A Story's UUID. Declared as a plain string for the same reason as ProviderId: the generated router binds path parameters before auth, so the handler parses it itself (404 if malformed). */
+                storyId: components["parameters"]["StoryId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The story is deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    setStoryRead: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A Story's UUID. Declared as a plain string for the same reason as ProviderId: the generated router binds path parameters before auth, so the handler parses it itself (404 if malformed). */
+                storyId: components["parameters"]["StoryId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The story is marked Read */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    clearStoryRead: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A Story's UUID. Declared as a plain string for the same reason as ProviderId: the generated router binds path parameters before auth, so the handler parses it itself (404 if malformed). */
+                storyId: components["parameters"]["StoryId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The story is unread again */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];

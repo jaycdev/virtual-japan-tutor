@@ -73,13 +73,19 @@ export interface StoryView {
   close(): void;
   /** Thumbs up/down on any of the Learner's stories; replaceable. */
   rate(storyId: string, rating: StoryRating): Promise<void>;
+  /** Mark a Library story Read by hand; not practice, and reversible. */
+  setRead(storyId: string): Promise<void>;
+  /** Unmark a Library story so it reads as unread again. */
+  clearRead(storyId: string): Promise<void>;
+  /** Delete a story from the Library; its rating goes, its Practice Records stay. */
+  removeStory(storyId: string): Promise<void>;
   /** Answer question `position` once; later calls for the same question are ignored. */
   answer(position: number, optionIndex: number): Promise<void>;
 }
 
 const UNREACHABLE = "Cannot reach the server";
 const FAILED = "Request failed";
-const DEFAULT_LIMIT = 10;
+const DEFAULT_LIMIT = 20;
 
 function message(error: { message?: string } | undefined, status: number): string {
   return error?.message ?? `${FAILED} (${status})`;
@@ -286,6 +292,106 @@ export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
     [client],
   );
 
+  // Paint one library item in place, leaving the page and its total alone.
+  // The Read mark only needs a truthy readAt locally; the next fetch carries
+  // the server's exact stamp.
+  const patchItem = useCallback((storyId: string, patch: Partial<Story>) => {
+    setLibrary((prev) =>
+      prev.status === "ready"
+        ? {
+            status: "ready",
+            page: {
+              ...prev.page,
+              items: prev.page.items.map((s) => (s.id === storyId ? { ...s, ...patch } : s)),
+            },
+          }
+        : prev,
+    );
+    setStory((prev) => (prev && prev.id === storyId ? { ...prev, ...patch } : prev));
+  }, []);
+
+  const setRead = useCallback(
+    async (storyId: string) => {
+      setPending(true);
+      setError(null);
+      try {
+        const { error: err, response } = await client.PUT("/stories/{storyId}/read", {
+          params: { path: { storyId } },
+        });
+        if (response.status !== 204) {
+          setError(message(err, response.status));
+          return;
+        }
+        patchItem(storyId, { readAt: new Date().toISOString() });
+      } catch {
+        setError(UNREACHABLE);
+      } finally {
+        setPending(false);
+      }
+    },
+    [client, patchItem],
+  );
+
+  const clearRead = useCallback(
+    async (storyId: string) => {
+      setPending(true);
+      setError(null);
+      try {
+        const { error: err, response } = await client.DELETE("/stories/{storyId}/read", {
+          params: { path: { storyId } },
+        });
+        if (response.status !== 204) {
+          setError(message(err, response.status));
+          return;
+        }
+        // The Go server omits a null readAt rather than sending null, so
+        // clearing locally means dropping the key too.
+        patchItem(storyId, { readAt: undefined });
+      } catch {
+        setError(UNREACHABLE);
+      } finally {
+        setPending(false);
+      }
+    },
+    [client, patchItem],
+  );
+
+  // Deleting drops the row from the page right away; the reader closes too
+  // if that story happens to be open. Practice Records are not touched.
+  const removeStory = useCallback(
+    async (storyId: string) => {
+      setPending(true);
+      setError(null);
+      try {
+        const { error: err, response } = await client.DELETE("/stories/{storyId}", {
+          params: { path: { storyId } },
+        });
+        if (response.status !== 204) {
+          setError(message(err, response.status));
+          return;
+        }
+        setLibrary((prev) =>
+          prev.status === "ready"
+            ? {
+                status: "ready",
+                page: {
+                  ...prev.page,
+                  items: prev.page.items.filter((s) => s.id !== storyId),
+                  total: Math.max(0, prev.page.total - 1),
+                },
+              }
+            : prev,
+        );
+        if (openIdRef.current === storyId) close();
+      } catch {
+        setError(UNREACHABLE);
+      } finally {
+        setPending(false);
+      }
+    },
+    [client, close],
+  );
+
   const answer = useCallback(
     async (position: number, optionIndex: number) => {
       if (!story || pending || answers.has(position)) return;
@@ -333,6 +439,9 @@ export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
     openStory,
     close,
     rate,
+    setRead,
+    clearRead,
+    removeStory,
     answer,
   };
 }

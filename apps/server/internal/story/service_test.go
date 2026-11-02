@@ -486,6 +486,39 @@ func (s *fakeStore) ResetPracticed(_ context.Context, id uuid.UUID, at time.Time
 	return nil
 }
 
+func (s *fakeStore) MarkRead(_ context.Context, id, userID uuid.UUID, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st, ok := s.stories[id]
+	if !ok || st.UserID != userID {
+		return ErrNotFound
+	}
+	st.ReadAt = &at
+	return nil
+}
+
+func (s *fakeStore) ClearRead(_ context.Context, id, userID uuid.UUID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st, ok := s.stories[id]
+	if !ok || st.UserID != userID {
+		return ErrNotFound
+	}
+	st.ReadAt = nil
+	return nil
+}
+
+func (s *fakeStore) Delete(_ context.Context, id, userID uuid.UUID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st, ok := s.stories[id]
+	if !ok || st.UserID != userID {
+		return ErrNotFound
+	}
+	delete(s.stories, id)
+	return nil
+}
+
 func (s *fakeStore) UserIDs(_ context.Context) ([]uuid.UUID, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -56,6 +56,9 @@ func (s *MemStore) Save(_ context.Context, st *story.Story) error {
 	if st.ID == uuid.Nil {
 		st.ID = uuid.New()
 	}
+	if st.Origin == "" {
+		st.Origin = story.OriginAutomatic // the stories.origin column default
+	}
 	s.now = s.now.Add(time.Second)
 	st.CreatedAt = s.now
 	s.stories[st.ID] = st
@@ -298,6 +301,38 @@ func (s *MemStore) ResetPracticed(_ context.Context, id uuid.UUID, at time.Time)
 	if st.PracticedAt != nil && st.PracticedAt.Equal(at) {
 		st.PracticedAt = nil
 	}
+	return nil
+}
+
+func (s *MemStore) MarkRead(_ context.Context, id, userID uuid.UUID, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st, err := s.get(id, userID)
+	if err != nil {
+		return err
+	}
+	st.ReadAt = &at
+	return nil
+}
+
+func (s *MemStore) ClearRead(_ context.Context, id, userID uuid.UUID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st, err := s.get(id, userID)
+	if err != nil {
+		return err
+	}
+	st.ReadAt = nil
+	return nil
+}
+
+func (s *MemStore) Delete(_ context.Context, id, userID uuid.UUID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.get(id, userID); err != nil {
+		return err
+	}
+	delete(s.stories, id)
 	return nil
 }
 

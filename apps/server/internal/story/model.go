@@ -147,6 +147,15 @@ type Store interface {
 	// Practice Record append that failed after the claim).
 	ResetPracticed(ctx context.Context, storyID uuid.UUID, at time.Time) error
 
+	// MarkRead sets a Story's Read mark (issue #31) and ClearRead unsets it;
+	// both are the library's Read toggle. Delete removes the Story and its
+	// rating; the Practice Records it wrote stay (the mastery log is append-
+	// only). All three are owner-scoped: a foreign or missing id is
+	// ErrNotFound.
+	MarkRead(ctx context.Context, storyID, userID uuid.UUID, at time.Time) error
+	ClearRead(ctx context.Context, storyID, userID uuid.UUID) error
+	Delete(ctx context.Context, storyID, userID uuid.UUID) error
+
 	// UserIDs lists the users the background generator considers.
 	UserIDs(ctx context.Context) ([]uuid.UUID, error)
 }
