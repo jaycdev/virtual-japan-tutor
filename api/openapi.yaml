@@ -941,6 +941,83 @@ paths:
           $ref: "#/components/responses/NotFound"
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /stories/generate:
+    post:
+      operationId: generateStory
+      summary: Start writing an On-demand Story now
+      description: >
+        The Learner presses Generate (issue #33): one Story written immediately through the
+        same pipeline as an Automatic Story — the Focus Set, the validation gate, Practice
+        Records on the first answer — with Origin On-demand, so it never becomes Today's
+        Story. The genre and theme boxes are optional: blank means the Automatic rules
+        (the preference roll), and Surprise means the model chooses both, ignoring the
+        Learner's preferences while still avoiding disliked and recently-read genres. The
+        request answers as soon as the run starts and the writing continues even if the
+        client disconnects; GET /stories/generation tracks it. One generation per Learner
+        runs at a time, shared with the Automatic flow: while one runs this answers 409.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateStoryRequest"
+      responses:
+        "202":
+          description: The run started (or the tracked state of the run this call joined)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoryGenerationProgress"
+        "400":
+          description: Genre or theme over the length cap (`invalid_input`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: A generation is already running for this Learner (`generation_running`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /stories/generation:
+    get:
+      operationId: getStoryGeneration
+      summary: The progress of the Learner's current or last Story generation
+      description: >
+        What the progress bar polls (issue #33): the stage, attempt count, and a
+        server-computed percentage that fills the writing stage at the Learner's own pace
+        (from their recent generation durations). `idle` when nothing has been tracked;
+        the terminal `ready`/`failed` state of the last run stays readable until the next
+        start, so a reload mid-run finds the same picture.
+      responses:
+        "200":
+          description: The current progress snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoryGenerationProgress"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /stories/suggestions:
+    get:
+      operationId: getStorySuggestions
+      summary: Autocomplete options for the genre and theme boxes
+      description: >
+        The Generate box and the Preferred Genre/Theme settings fields offer the preset
+        genres plus the genres and themes of the Learner's own validated Stories, newest
+        first (issue #33). Both boxes stay free-text: anything can be typed.
+      responses:
+        "200":
+          description: The suggestion lists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorySuggestions"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
   /story-settings:
     get:
       operationId: getStorySettings
@@ -2209,6 +2286,76 @@ components:
       type: string
       enum: [up, down]
       description: A Learner's verdict on a story; upvoted genres steer future generation.
+    GenerateStoryRequest:
+      type: object
+      description: >
+        What the Learner typed into the Generate box (issue #33). Both fields are optional:
+        blank follows the Automatic rules (the preference roll, PreferredShare), and Surprise
+        ignores the Learner's preferences entirely — the model names its own genre and theme,
+        still avoiding disliked and recently-read genres. Surprise with typed text keeps the
+        typed values; only the preference roll switches off.
+      properties:
+        genre:
+          type: string
+          maxLength: 60
+          description: The genre for this one Story (free text; blank means Automatic).
+        theme:
+          type: string
+          maxLength: 200
+          description: The theme for this one Story (free text; blank means Automatic).
+        surprise:
+          type: boolean
+          description: Let the model choose genre and theme for this Story.
+    StoryGenerationProgress:
+      type: object
+      required: [status, percent]
+      description: >
+        One snapshot of the Learner's generation run (issue #33), computed by the server:
+        a client reload mid-run finds the same picture. The terminal ready/failed state of
+        the last run is kept until the next start.
+      properties:
+        status:
+          type: string
+          enum: [idle, running, ready, failed]
+        stage:
+          type: string
+          enum: [preparing, writing, checking, saving]
+          description: What the run is doing right now; only while running.
+        attempt:
+          type: integer
+          minimum: 1
+          description: The current writing attempt (the bar's "attempt 2 of 3").
+        maxAttempts:
+          type: integer
+          minimum: 1
+        percent:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Server-computed progress; the writing stage fills from the Learner's recent durations.
+        startedAt:
+          type: string
+          format: date-time
+        message:
+          type: string
+          description: The failure line when status is failed ("Couldn't write a Story that fits your vocabulary. Try again?").
+        storyId:
+          type: string
+          format: uuid
+          description: The finished Story, when status is ready. Open it from the library; it is never auto-opened.
+    StorySuggestions:
+      type: object
+      required: [genres, themes]
+      description: Autocomplete options for the genre and theme boxes (issue #33).
+      properties:
+        genres:
+          type: array
+          items:
+            type: string
+        themes:
+          type: array
+          items:
+            type: string
     StorySettings:
       type: object
       required: [furiganaThresholdSrsLevel]

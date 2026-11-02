@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/api"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/auth"
@@ -403,6 +406,129 @@ func (s *server) PutReadingSettings(ctx context.Context, request api.PutReadingS
 // here, against the Learner's current Furigana Threshold (GLOSSARY.md):
 // unknown tokens always show their reading; Known Items show it only below
 // the threshold. Question answer indexes stay server-side.
+func (s *server) GetStorySuggestions(ctx context.Context, _ api.GetStorySuggestionsRequestObject) (api.GetStorySuggestionsResponseObject, error) {
+	svc, err := s.storyService()
+	if err != nil {
+		return nil, err
+	}
+	id, ok := auth.IdentityFrom(ctx)
+	if !ok {
+		return nil, auth.ErrUnauthenticated
+	}
+	genres, themes, err := svc.GenreThemeSuggestions(ctx, id.ID)
+	if err != nil {
+		return nil, err
+	}
+	if genres == nil {
+		genres = []string{}
+	}
+	if themes == nil {
+		themes = []string{}
+	}
+	return api.GetStorySuggestions200JSONResponse{Genres: genres, Themes: themes}, nil
+}
+
+// GetStoryGeneration is the progress bar's poll (issue #33): the current or
+// last generation run for the Learner, idle when none was ever tracked. The
+// run itself lives in the story Service, so a reload finds the same picture.
+func (s *server) GetStoryGeneration(ctx context.Context, _ api.GetStoryGenerationRequestObject) (api.GetStoryGenerationResponseObject, error) {
+	svc, err := s.storyService()
+	if err != nil {
+		return nil, err
+	}
+	id, ok := auth.IdentityFrom(ctx)
+	if !ok {
+		return nil, auth.ErrUnauthenticated
+	}
+	return api.GetStoryGeneration200JSONResponse(storyGenerationView(svc.GenerationProgress(ctx, id.ID))), nil
+}
+
+// GenerateStory starts one On-demand Story (issue #33). The write continues
+// past this request's context — the story Service detaches it — so 202
+// simply means "the run is tracked"; clients follow it through
+// GetStoryGeneration. A generation already running (on either path) answers
+// 409, the MaruMori sync_running shape.
+func (s *server) GenerateStory(ctx context.Context, request api.GenerateStoryRequestObject) (api.GenerateStoryResponseObject, error) {
+	svc, err := s.storyService()
+	if err != nil {
+		return nil, err
+	}
+	id, ok := auth.IdentityFrom(ctx)
+	if !ok {
+		return nil, auth.ErrUnauthenticated
+	}
+	var opts story.OnDemandOptions
+	if request.Body != nil {
+		b := *request.Body
+		if b.Genre != nil {
+			g := strings.TrimSpace(*b.Genre)
+			if utf8.RuneCountInString(g) > maxStoryGenreRunes {
+				return api.GenerateStory400JSONResponse(apiErr("invalid_input", "genre is too long")), nil
+			}
+			opts.Genre = g
+		}
+		if b.Theme != nil {
+			t := strings.TrimSpace(*b.Theme)
+			if utf8.RuneCountInString(t) > maxStoryThemeRunes {
+				return api.GenerateStory400JSONResponse(apiErr("invalid_input", "theme is too long")), nil
+			}
+			opts.Theme = t
+		}
+		if b.Surprise != nil {
+			opts.Surprise = *b.Surprise
+		}
+	}
+	p, err := svc.GenerateOnDemand(ctx, id.ID, opts)
+	if err != nil {
+		if se, isErr := asStoryError(err); isErr && se.Status == 409 {
+			return api.GenerateStory409JSONResponse(apiErr(se.Code, se.Message)), nil
+		}
+		return nil, err
+	}
+	return api.GenerateStory202JSONResponse(storyGenerationView(p)), nil
+}
+
+// maxStoryGenreRunes and maxStoryThemeRunes mirror the spec's caps on the
+// Generate box's free-text inputs.
+const (
+	maxStoryGenreRunes = 60
+	maxStoryThemeRunes = 200
+)
+
+// storyGenerationView maps a Progress snapshot to its API shape, omitting
+// the fields that only one status carries.
+func storyGenerationView(p story.Progress) api.StoryGenerationProgress {
+	v := api.StoryGenerationProgress{
+		Status:  api.StoryGenerationProgressStatus(p.Status),
+		Percent: p.Percent,
+	}
+	if p.Stage != "" {
+		st := api.StoryGenerationProgressStage(p.Stage)
+		v.Stage = &st
+	}
+	if p.Attempt > 0 {
+		a := p.Attempt
+		v.Attempt = &a
+	}
+	if p.MaxAttempts > 0 {
+		m := p.MaxAttempts
+		v.MaxAttempts = &m
+	}
+	if !p.StartedAt.IsZero() {
+		at := p.StartedAt
+		v.StartedAt = &at
+	}
+	if p.Message != "" {
+		m := p.Message
+		v.Message = &m
+	}
+	if p.StoryID != uuid.Nil {
+		sid := openapi_types.UUID(p.StoryID)
+		v.StoryId = &sid
+	}
+	return v
+}
+
 func storyView(st *story.Story, threshold int) api.Story {
 	sentences := make([]api.StorySentence, 0, len(st.Sentences))
 	for _, sen := range st.Sentences {
