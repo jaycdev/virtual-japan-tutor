@@ -76,7 +76,15 @@ const MISE_ENTRY = {
  * hosts prove the same behaviour. `requests` records method, path and body.
  */
 function fakeApi(
-  opts: { blurTranslation?: boolean; failReadingPut?: boolean; noToday?: boolean } = {},
+  opts: {
+    blurTranslation?: boolean;
+    failReadingPut?: boolean;
+    noToday?: boolean;
+    /** How POST /stories/generate answers; GET /stories/generation follows it. */
+    genOutcome?: "ready" | "running" | "failed";
+    /** GET /stories/generation answers 404 (no run has ever happened). */
+    noGeneration?: boolean;
+  } = {},
 ) {
   const storyView = {
     id: "st-1",
@@ -145,6 +153,11 @@ function fakeApi(
   const settings = { furiganaThresholdSrsLevel: 3, preferredGenre: "", preferredTheme: "" };
   const readingSettings = { blurTranslation: opts.blurTranslation ?? true, lookupHoldMs: HOLD_MS };
 
+  // On-demand generation (#33/#34): the run lives "on the server"; GET hands out
+  // snapshots, and "running" turns ready after two polls so the bar can move.
+  let generation: Record<string, unknown> = { status: "idle", stage: null, percent: 0 };
+  let genPolls = 0;
+
   const itemLists = [
     { id: "l1", name: "Saved", boosting: true, isDefault: true, itemCount: 1 },
     { id: "l2", name: "Travel", boosting: false, isDefault: false, itemCount: 3 },
@@ -166,6 +179,34 @@ function fakeApi(
     if (pathname === "/stories/st-1/rate" && request.method === "POST") return new Response(null, { status: 204 });
     if (pathname === "/stories/st-1/answers" && request.method === "POST")
       return json(200, { correct: true, practiceRecorded: true });
+    if (pathname === "/stories/generation" && request.method === "GET") {
+      if (opts.noGeneration) return json(404, { code: "not_found", message: "no run yet" });
+      if (generation.status === "running" && ++genPolls >= 2) {
+        generation = { status: "ready", stage: "saving", attempt: 1, maxAttempts: 2, percent: 100, storyId: "st-1" };
+      }
+      return json(200, generation);
+    }
+    if (pathname === "/stories/suggestions" && request.method === "GET") {
+      return json(200, { genres: ["diary", "travel", "mystery"], themes: ["school life", "cooking"] });
+    }
+    if (pathname === "/stories/generate" && request.method === "POST") {
+      if (opts.genOutcome === "failed") {
+        generation = {
+          status: "failed",
+          stage: "writing",
+          attempt: 2,
+          maxAttempts: 2,
+          percent: 100,
+          message: "Couldn’t write a Story that fits your vocabulary. Try again?",
+        };
+      } else if (opts.genOutcome === "running") {
+        genPolls = 0;
+        generation = { status: "running", stage: "writing", attempt: 1, maxAttempts: 2, percent: 40 };
+      } else {
+        generation = { status: "ready", stage: "saving", attempt: 1, maxAttempts: 1, percent: 100, storyId: "st-1" };
+      }
+      return json(202, generation);
+    }
     if (pathname === "/story-settings" && request.method === "GET") return json(200, settings);
     if (pathname === "/reading-settings" && request.method === "GET") return json(200, readingSettings);
     if (pathname === "/reading-settings" && request.method === "PUT") {
@@ -214,12 +255,13 @@ const RECTS: Record<string, Rect> = {
   "menu-option-saveTo": { x: 220, y: 462, width: 160, height: 50 },
 };
 
-function renderStories(client: ApiClient) {
+function renderStories(client: ApiClient, generationPollMs?: number) {
   return render(
     <Stories
       client={client}
       measure={(testID) => RECTS[testID] ?? null}
       screenSize={SCREEN}
+      generationPollMs={generationPollMs}
     />,
   );
 }
@@ -407,6 +449,54 @@ describe("Today's Story and the Story Library (mobile)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Unmark read" }));
     await waitFor(() =>
       expect(requests.some((r) => r.method === "DELETE" && r.path === "/stories/st-1/read")).toBe(true),
+    );
+  });
+});
+
+describe("On-demand Generate (mobile)", () => {
+  it("shows the Generate box with autocomplete suggestions for genre and theme", async () => {
+    const api = fakeApi();
+    renderStories(api.client);
+    fireEvent.change(await screen.findByLabelText("Genre for this story"), { target: { value: "tra" } });
+    fireEvent.click(screen.getByRole("button", { name: "travel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    await waitFor(() =>
+      expect(
+        api.requests.find((r) => r.method === "POST" && r.path === "/stories/generate")?.body,
+      ).toEqual({ genre: "travel" }),
+    );
+  });
+
+  it("surprise me starts a bare run and the bar follows the server's snapshots", async () => {
+    const api = fakeApi({ genOutcome: "running" });
+    renderStories(api.client, 30);
+    fireEvent.click(await screen.findByRole("button", { name: "Surprise me" }));
+    await waitFor(() =>
+      expect(
+        api.requests.find((r) => r.method === "POST" && r.path === "/stories/generate")?.body,
+      ).toEqual({ surprise: true }),
+    );
+    // The run is live: its stage line shows, and a second start is gated off.
+    expect(await screen.findByText("Writing… attempt 1 of 2 40%")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Generate" }).getAttribute("aria-disabled")).toBe("true");
+    // Later polls bring the finished Story: the ready line offers "Ready, read now".
+    expect(await screen.findByText("A new Story is ready for you.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Ready, read now" }));
+    await screen.findByTestId("back-to-library");
+  });
+
+  it("a failed run keeps the retry line on screen and leaves the form ready", async () => {
+    const api = fakeApi({ genOutcome: "failed" });
+    renderStories(api.client);
+    fireEvent.click(await screen.findByRole("button", { name: "Generate" }));
+    expect(
+      await screen.findByText("Couldn’t write a Story that fits your vocabulary. Try again?"),
+    ).toBeTruthy();
+    // Another try is open right away: the failure cooldown never gates this button.
+    expect(screen.getByRole("button", { name: "Generate" }).getAttribute("aria-disabled")).not.toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    await waitFor(() =>
+      expect(api.requests.filter((r) => r.method === "POST" && r.path === "/stories/generate").length).toBe(2),
     );
   });
 });

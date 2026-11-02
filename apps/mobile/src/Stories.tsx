@@ -1,10 +1,19 @@
-import type { ApiClient, Story } from "@vjt/api-client";
-import { type StoryView, useStory } from "@vjt/core";
-import { useState } from "react";
+import type { ApiClient, GenerateStoryRequest, Story, StoryGenerationProgress } from "@vjt/api-client";
+import { type StoryGeneration, type StoryView, useStory, useStoryGeneration } from "@vjt/core";
+import { useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { useColors } from "./theme.ts";
-import { Card, ErrorText, LinkButton, Muted, PrimaryButton, StatusText, Title } from "./ui.tsx";
+import {
+  AutocompleteField,
+  Card,
+  ErrorText,
+  LinkButton,
+  Muted,
+  PrimaryButton,
+  StatusText,
+  Title,
+} from "./ui.tsx";
 import { pageSummary, RatingButtons } from "./reader/parts.tsx";
 import { StoryReader } from "./reader/StoryReader.tsx";
 import type { MeasurableNode, Rect } from "./reader/holdMenu.ts";
@@ -22,16 +31,33 @@ export function Stories({
   client,
   measure,
   screenSize,
+  generationPollMs,
 }: {
   client: ApiClient;
   /** Passed to the reader: test hosts inject menu geometry the DOM cannot measure. */
   measure?: (testID: string, node: MeasurableNode | null) => Rect | null;
   screenSize?: { width: number; height: number };
+  /** Poll interval for the generation progress bar (tests shorten it). */
+  generationPollMs?: number;
 }) {
   const view = useStory(client);
+  // One generation view for the whole screen: it stays mounted while the
+  // reader is open, so switching views never restarts (or cancels) the run.
+  const gen = useStoryGeneration(client, generationPollMs);
   // Today's Story is the landing view; "View all stories" opens the Story
   // Library, and the reader covers whichever one opened it.
   const [showLibrary, setShowLibrary] = useState(false);
+
+  // A run finishing while the Learner is anywhere on the tab: the Library
+  // quietly picks the new Story up (seenReady keeps the reload once per run).
+  const readyId = gen.generation.status === "ready" ? (gen.generation.progress.storyId ?? null) : null;
+  const seenReady = useRef<string | null>(null);
+  useEffect(() => {
+    if (readyId && seenReady.current !== readyId) {
+      seenReady.current = readyId;
+      view.reload();
+    }
+  }, [readyId, view]);
 
   if (view.story) {
     return (
@@ -50,6 +76,7 @@ export function Stories({
     <ScrollView accessibilityLabel={showLibrary ? "Story Library" : "Stories"}>
       <Title text="Stories" />
       {view.error ? <ErrorText text={view.error} /> : null}
+      <GeneratePanel gen={gen} view={view} />
       {showLibrary ? (
         <StoryLibrary view={view} onBack={() => setShowLibrary(false)} />
       ) : (
@@ -110,6 +137,108 @@ function TodaysStoryPanel({ view, onViewAll }: { view: StoryView; onViewAll: () 
       <LinkButton label="View all stories" onPress={onViewAll} />
     </>
   );
+}
+
+/**
+ * The Generate box (issue #33, brought to mobile by #34): genre and theme are
+ * optional free text with autocomplete; blank follows the Automatic rules, and
+ * "Surprise me" lets the model pick both. The run lives on the server, so the
+ * bar shows the server's snapshot and switching views never cancels it. A
+ * finished run offers "Ready, read now" (never auto-opened); a rejected one
+ * shows the retry line and leaves the form ready for another try.
+ */
+function GeneratePanel({ gen, view }: { gen: StoryGeneration; view: StoryView }) {
+  const colors = useColors();
+  const g = gen.generation;
+  const [genre, setGenre] = useState("");
+  const [theme, setTheme] = useState("");
+  const running = g.status === "running";
+
+  const start = (surprise: boolean) => {
+    const req: GenerateStoryRequest = {};
+    if (genre.trim() !== "") req.genre = genre.trim();
+    if (theme.trim() !== "") req.theme = theme.trim();
+    if (surprise) req.surprise = true;
+    void gen.startGeneration(req);
+  };
+
+  return (
+    <Card>
+      <View style={styles.generateBody}>
+        {running && (
+          <View testID="generation-progress" accessibilityLabel="Story generation progress">
+            <View style={[styles.progressTrack, { backgroundColor: colors.separator }]}>
+              <View
+                style={[
+                  styles.progressFill,
+                  {
+                    width: `${Math.min(100, Math.max(0, g.progress.percent))}%`,
+                    backgroundColor: colors.accent,
+                  },
+                ]}
+              />
+            </View>
+            <Muted text={`${stageLabel(g.progress)} ${g.progress.percent}%`} />
+          </View>
+        )}
+        {g.status === "ready" && (
+          <>
+            <StatusText text="A new Story is ready for you." />
+            <PrimaryButton
+              label="Ready, read now"
+              onPress={() => {
+                if (g.status === "ready" && g.progress.storyId) void view.openStory(g.progress.storyId);
+              }}
+            />
+          </>
+        )}
+        {g.status === "failed" && <ErrorText text={g.progress.message ?? "Couldn’t write your Story."} />}
+        {gen.error ? <ErrorText text={gen.error} /> : null}
+        <Muted text="Pick a genre and a theme for one new Story, leave them empty for your usual mix, or let the tutor choose." />
+        <AutocompleteField
+          label="Genre for this story"
+          placeholder="travel, mystery… empty = automatic"
+          maxLength={60}
+          value={genre}
+          disabled={running}
+          options={gen.suggestions.genres}
+          onChangeText={setGenre}
+          onSubmit={() => start(false)}
+        />
+        <AutocompleteField
+          label="Theme for this story"
+          placeholder="a robot running a ramen shop — empty = automatic"
+          maxLength={200}
+          value={theme}
+          disabled={running}
+          options={gen.suggestions.themes}
+          onChangeText={setTheme}
+          onSubmit={() => start(false)}
+        />
+        <View style={styles.generateActions}>
+          <PrimaryButton label="Generate" disabled={running} onPress={() => start(false)} />
+          <LinkButton label="Surprise me" disabled={running} onPress={() => start(true)} />
+        </View>
+      </View>
+    </Card>
+  );
+}
+
+function stageLabel(p: StoryGenerationProgress): string {
+  switch (p.stage) {
+    case "preparing":
+      return "Preparing…";
+    case "writing":
+      return p.attempt != null && p.maxAttempts != null
+        ? `Writing… attempt ${p.attempt} of ${p.maxAttempts}`
+        : "Writing…";
+    case "checking":
+      return "Checking it fits your vocabulary…";
+    case "saving":
+      return "Saving…";
+    default:
+      return "Writing…";
+  }
 }
 
 const originLabel = (s: Story) => (s.origin === "on_demand" ? "On demand" : "Automatic");
@@ -255,6 +384,10 @@ function StoryLibrary({ view, onBack }: { view: StoryView; onBack: () => void })
 }
 
 const styles = StyleSheet.create({
+  generateBody: { padding: 14, gap: 12 },
+  progressTrack: { height: 8, borderRadius: 4, overflow: "hidden", marginBottom: 6 },
+  progressFill: { height: "100%", borderRadius: 4 },
+  generateActions: { flexDirection: "row", alignItems: "center", gap: 16, flexWrap: "wrap" },
   rowHead: { marginBottom: 4 },
   translation: { marginBottom: 4 },
   actions: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 8, flexWrap: "wrap" },
