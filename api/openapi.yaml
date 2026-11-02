@@ -759,7 +759,8 @@ paths:
       summary: A page of the Learner's Story Library, newest first
       description: >
         Stories the Learner has generated (issue #10), validated ones only: a Story that failed
-        the kagome validation gate is kept for analysis, never offered. Each carries its rating
+        the kagome validation gate is kept for analysis, never offered. Each carries its title,
+        its theme, its Story Origin and its Read mark, plus its rating
         when the Learner gave one. Generation is driven by the background scheduler — this list
         never triggers one.
       parameters:
@@ -785,25 +786,28 @@ paths:
                 $ref: "#/components/schemas/StoryPage"
         "401":
           $ref: "#/components/responses/Unauthorized"
-  /stories/ready:
+  /stories/today:
     get:
-      operationId: getReadyStory
-      summary: The story waiting to be read, opening it instantly
+      operationId: getTodaysStory
+      summary: "Today's Story: the newest Automatic Story, opening it instantly"
       description: >
-        The one Story the background generator has ready for the Learner, served from storage —
-        the request never waits on an AI provider. Opening it clears the ready marker, so the
-        next background pass re-arms generation. `no_ready_story` when none is waiting. All
-        `start`/`end` offsets in sentences and grammar spans are codepoint (rune) indexes into
-        each sentence's `ja` text, counting from 0 — not UTF-16 indexes or byte offsets.
+        Today's Story (GLOSSARY.md): the newest Automatic Story, served from storage — the
+        request never waits on an AI provider. It is what the Stories screen opens on.
+        On-demand Stories are never Today's Story. A Story the Learner has already read comes
+        with its readAt, and the web UI says which day it was still unread from. `no_story`
+        when the Learner has no Automatic Story yet; the background generator writes one
+        per local day in the Learner's Timezone. All `start`/`end` offsets in sentences and
+        grammar spans are codepoint (rune) indexes into each sentence's `ja` text, counting
+        from 0 — not UTF-16 indexes or byte offsets.
       responses:
         "200":
-          description: The ready story
+          description: Today's Story
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Story"
         "404":
-          description: No story is ready yet (code `no_ready_story`)
+          description: No Automatic Story exists yet (code `no_story`)
           content:
             application/json:
               schema:
@@ -829,6 +833,48 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Story"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      operationId: deleteStory
+      summary: Delete one story from the Learner's library
+      description: >
+        Removes the story, its comprehension questions, vocabulary items and the Learner's
+        rating of it. Practice records about the reading session stay: deleting a story never
+        rewrites what the Learner has already practised. The Story Library keeps stories newest
+        first, so deleting one can make room for the next story the generator produces.
+      responses:
+        "204":
+          description: The story is deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /stories/{storyId}/read:
+    parameters:
+      - $ref: "#/components/parameters/StoryId"
+    put:
+      operationId: setStoryRead
+      summary: Mark one story in the Learner's library Read
+      description: >
+        Setting the Read mark by hand does not count as practising and never records a Weak
+        Signal; the Learner's rating and last-practised time are untouched. Answering the last
+        comprehension question of a story sets the same mark.
+      responses:
+        "204":
+          description: The story is marked Read
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      operationId: clearStoryRead
+      summary: Unmark one story so it is unread again
+      responses:
+        "204":
+          description: The story is unread again
         "404":
           $ref: "#/components/responses/NotFound"
         "401":
@@ -893,6 +939,83 @@ paths:
                 $ref: "#/components/schemas/Error"
         "404":
           $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /stories/generate:
+    post:
+      operationId: generateStory
+      summary: Start writing an On-demand Story now
+      description: >
+        The Learner presses Generate (issue #33): one Story written immediately through the
+        same pipeline as an Automatic Story — the Focus Set, the validation gate, Practice
+        Records on the first answer — with Origin On-demand, so it never becomes Today's
+        Story. The genre and theme boxes are optional: blank means the Automatic rules
+        (the preference roll), and Surprise means the model chooses both, ignoring the
+        Learner's preferences while still avoiding disliked and recently-read genres. The
+        request answers as soon as the run starts and the writing continues even if the
+        client disconnects; GET /stories/generation tracks it. One generation per Learner
+        runs at a time, shared with the Automatic flow: while one runs this answers 409.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateStoryRequest"
+      responses:
+        "202":
+          description: The run started (or the tracked state of the run this call joined)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoryGenerationProgress"
+        "400":
+          description: Genre or theme over the length cap (`invalid_input`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: A generation is already running for this Learner (`generation_running`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /stories/generation:
+    get:
+      operationId: getStoryGeneration
+      summary: The progress of the Learner's current or last Story generation
+      description: >
+        What the progress bar polls (issue #33): the stage, attempt count, and a
+        server-computed percentage that fills the writing stage at the Learner's own pace
+        (from their recent generation durations). `idle` when nothing has been tracked;
+        the terminal `ready`/`failed` state of the last run stays readable until the next
+        start, so a reload mid-run finds the same picture.
+      responses:
+        "200":
+          description: The current progress snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoryGenerationProgress"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /stories/suggestions:
+    get:
+      operationId: getStorySuggestions
+      summary: Autocomplete options for the genre and theme boxes
+      description: >
+        The Generate box and the Preferred Genre/Theme settings fields offer the preset
+        genres plus the genres and themes of the Learner's own validated Stories, newest
+        first (issue #33). Both boxes stay free-text: anything can be typed.
+      responses:
+        "200":
+          description: The suggestion lists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorySuggestions"
         "401":
           $ref: "#/components/responses/Unauthorized"
   /story-settings:
@@ -2163,6 +2286,76 @@ components:
       type: string
       enum: [up, down]
       description: A Learner's verdict on a story; upvoted genres steer future generation.
+    GenerateStoryRequest:
+      type: object
+      description: >
+        What the Learner typed into the Generate box (issue #33). Both fields are optional:
+        blank follows the Automatic rules (the preference roll, PreferredShare), and Surprise
+        ignores the Learner's preferences entirely — the model names its own genre and theme,
+        still avoiding disliked and recently-read genres. Surprise with typed text keeps the
+        typed values; only the preference roll switches off.
+      properties:
+        genre:
+          type: string
+          maxLength: 60
+          description: The genre for this one Story (free text; blank means Automatic).
+        theme:
+          type: string
+          maxLength: 200
+          description: The theme for this one Story (free text; blank means Automatic).
+        surprise:
+          type: boolean
+          description: Let the model choose genre and theme for this Story.
+    StoryGenerationProgress:
+      type: object
+      required: [status, percent]
+      description: >
+        One snapshot of the Learner's generation run (issue #33), computed by the server:
+        a client reload mid-run finds the same picture. The terminal ready/failed state of
+        the last run is kept until the next start.
+      properties:
+        status:
+          type: string
+          enum: [idle, running, ready, failed]
+        stage:
+          type: string
+          enum: [preparing, writing, checking, saving]
+          description: What the run is doing right now; only while running.
+        attempt:
+          type: integer
+          minimum: 1
+          description: The current writing attempt (the bar's "attempt 2 of 3").
+        maxAttempts:
+          type: integer
+          minimum: 1
+        percent:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Server-computed progress; the writing stage fills from the Learner's recent durations.
+        startedAt:
+          type: string
+          format: date-time
+        message:
+          type: string
+          description: The failure line when status is failed ("Couldn't write a Story that fits your vocabulary. Try again?").
+        storyId:
+          type: string
+          format: uuid
+          description: The finished Story, when status is ready. Open it from the library; it is never auto-opened.
+    StorySuggestions:
+      type: object
+      required: [genres, themes]
+      description: "Autocomplete options for the genre and theme boxes (issue #33)."
+      properties:
+        genres:
+          type: array
+          items:
+            type: string
+        themes:
+          type: array
+          items:
+            type: string
     StorySettings:
       type: object
       required: [furiganaThresholdSrsLevel]
@@ -2175,6 +2368,14 @@ components:
             The Furigana Threshold (GLOSSARY.md): Known Items with an SRS Level at or above this
             value are shown without furigana; below it, and for unknown tokens with kanji in
             their surface, the reading is shown. mastery's 1–9 scale; the default is 3.
+        timezone:
+          type: string
+          maxLength: 64
+          description: >
+            The Learner's Timezone (GLOSSARY.md): an IANA name such as "Asia/Tokyo". It decides
+            which local day an Automatic Story belongs to. Empty or absent means unset — the
+            server's own timezone is used until the Learner chooses one. A name the server
+            cannot load is rejected with `invalid_timezone`.
         preferredGenre:
           type: string
           maxLength: 60
@@ -2228,10 +2429,29 @@ components:
           type: integer
     Story:
       type: object
-      required: [id, genre, text, sentences, questions, vocabItems, createdAt]
+      required: [id, title, genre, text, sentences, questions, vocabItems, createdAt, origin]
       properties:
         id:
           type: string
+        title:
+          type: string
+          description: >-
+            Story title in Japanese: the generator names every story, falling
+            back to a shortened piece of the text when the model does not.
+        titleEn:
+          type: string
+          description: >-
+            English translation of the title. The web UI shows it blurred
+            until the learner clicks it.
+        theme:
+          type: string
+          description: What the story is about, chosen by the generator.
+        origin:
+          type: string
+          description: >-
+            Whether the story came from the automatic generator or a learner
+            asked for it with an on-demand request.
+          enum: [automatic, on_demand]
         genre:
           type: string
         text:
@@ -2240,6 +2460,14 @@ components:
         createdAt:
           type: string
           format: date-time
+        readAt:
+          type: string
+          format: date-time
+          description: >-
+            When the Learner marked this story Read: answering the last
+            comprehension question sets it, and the learner can set or unset
+            it from the library. Null means the story is still unread. This
+            is separate from when they last practised.
         rating:
           $ref: "#/components/schemas/StoryRating"
           description: The Learner's own rating, when they gave one.

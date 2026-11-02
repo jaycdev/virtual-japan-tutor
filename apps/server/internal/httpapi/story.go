@@ -4,8 +4,12 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"strings"
+	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/api"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/auth"
@@ -13,8 +17,8 @@ import (
 )
 
 // WithStory enables the /stories routes (issue #10: story generation behind
-// the kagome validation gate, the ready-story background flow, the library,
-// ratings, comprehension answers, and story settings).
+// the kagome validation gate, the Automatic Story background flow, the
+// library, ratings, comprehension answers, and story settings).
 func WithStory(svc *story.Service) Option { return func(s *server) { s.story = svc } }
 
 func (s *server) storyService() (*story.Service, error) {
@@ -89,10 +93,11 @@ func (s *server) ListStories(ctx context.Context, request api.ListStoriesRequest
 	return api.ListStories200JSONResponse{Items: views, Total: total, Limit: cLim, Offset: cOff}, nil
 }
 
-// GetReadyStory serves the story the background generator prepared, from
-// storage only — the request never waits on an AI provider. Reading it
-// clears the ready marker so the next scheduler pass re-arms generation.
-func (s *server) GetReadyStory(ctx context.Context, request api.GetReadyStoryRequestObject) (api.GetReadyStoryResponseObject, error) {
+// GetTodaysStory serves Today's Story — the newest Automatic Story — from
+// storage only; the request never waits on an AI provider. Opening it changes
+// nothing: the daily rule, not the opening, decides when the next Automatic
+// Story is written.
+func (s *server) GetTodaysStory(ctx context.Context, request api.GetTodaysStoryRequestObject) (api.GetTodaysStoryResponseObject, error) {
 	svc, err := s.storyService()
 	if err != nil {
 		return nil, err
@@ -101,10 +106,10 @@ func (s *server) GetReadyStory(ctx context.Context, request api.GetReadyStoryReq
 	if !ok {
 		return nil, auth.ErrUnauthenticated
 	}
-	st, err := svc.OpenReady(ctx, id.ID)
+	st, err := svc.TodaysStory(ctx, id.ID)
 	if err != nil {
-		if errors.Is(err, story.ErrNoReadyStory) {
-			return api.GetReadyStory404JSONResponse{Code: "no_ready_story", Message: "No story is ready yet; the background generator is on it."}, nil
+		if errors.Is(err, story.ErrNoStory) {
+			return api.GetTodaysStory404JSONResponse{Code: "no_story", Message: "No Automatic Story yet; the background generator writes one every day."}, nil
 		}
 		return nil, err
 	}
@@ -112,7 +117,7 @@ func (s *server) GetReadyStory(ctx context.Context, request api.GetReadyStoryReq
 	if err != nil {
 		return nil, err
 	}
-	return api.GetReadyStory200JSONResponse(storyView(st, us.FuriganaThresholdSRSLevel)), nil
+	return api.GetTodaysStory200JSONResponse(storyView(st, us.FuriganaThresholdSRSLevel)), nil
 }
 
 func (s *server) GetStory(ctx context.Context, request api.GetStoryRequestObject) (api.GetStoryResponseObject, error) {
@@ -170,6 +175,79 @@ func (s *server) RateStory(ctx context.Context, request api.RateStoryRequestObje
 	return api.RateStory204Response{}, nil
 }
 
+// SetStoryRead marks a story Read by hand. Unlike answering, this is not
+// practice: it must not touch the rating, the Practiced At stamp, or record
+// a Weak Signal (GLOSSARY.md: "Read" is avoided as a synonym for "practised"
+// precisely because they are different things).
+func (s *server) SetStoryRead(ctx context.Context, request api.SetStoryReadRequestObject) (api.SetStoryReadResponseObject, error) {
+	svc, err := s.storyService()
+	if err != nil {
+		return nil, err
+	}
+	id, ok := auth.IdentityFrom(ctx)
+	if !ok {
+		return nil, auth.ErrUnauthenticated
+	}
+	sid, ok := storyID(request.StoryId)
+	if !ok {
+		return api.SetStoryRead404JSONResponse{NotFoundJSONResponse: notFound("no such story")}, nil
+	}
+	if err := svc.MarkRead(ctx, sid, id.ID, time.Now().UTC()); err != nil {
+		if errors.Is(err, story.ErrNotFound) {
+			return api.SetStoryRead404JSONResponse{NotFoundJSONResponse: notFound("no such story")}, nil
+		}
+		return nil, err
+	}
+	return api.SetStoryRead204Response{}, nil
+}
+
+// ClearStoryRead unmarks a story so the Learner can take it up again.
+func (s *server) ClearStoryRead(ctx context.Context, request api.ClearStoryReadRequestObject) (api.ClearStoryReadResponseObject, error) {
+	svc, err := s.storyService()
+	if err != nil {
+		return nil, err
+	}
+	id, ok := auth.IdentityFrom(ctx)
+	if !ok {
+		return nil, auth.ErrUnauthenticated
+	}
+	sid, ok := storyID(request.StoryId)
+	if !ok {
+		return api.ClearStoryRead404JSONResponse{NotFoundJSONResponse: notFound("no such story")}, nil
+	}
+	if err := svc.ClearRead(ctx, sid, id.ID); err != nil {
+		if errors.Is(err, story.ErrNotFound) {
+			return api.ClearStoryRead404JSONResponse{NotFoundJSONResponse: notFound("no such story")}, nil
+		}
+		return nil, err
+	}
+	return api.ClearStoryRead204Response{}, nil
+}
+
+// DeleteStory removes a story from the Library. Its rating goes with it;
+// the Practice Records it wrote stay (the mastery log is append-only).
+func (s *server) DeleteStory(ctx context.Context, request api.DeleteStoryRequestObject) (api.DeleteStoryResponseObject, error) {
+	svc, err := s.storyService()
+	if err != nil {
+		return nil, err
+	}
+	id, ok := auth.IdentityFrom(ctx)
+	if !ok {
+		return nil, auth.ErrUnauthenticated
+	}
+	sid, ok := storyID(request.StoryId)
+	if !ok {
+		return api.DeleteStory404JSONResponse{NotFoundJSONResponse: notFound("no such story")}, nil
+	}
+	if err := svc.Delete(ctx, sid, id.ID); err != nil {
+		if errors.Is(err, story.ErrNotFound) {
+			return api.DeleteStory404JSONResponse{NotFoundJSONResponse: notFound("no such story")}, nil
+		}
+		return nil, err
+	}
+	return api.DeleteStory204Response{}, nil
+}
+
 // AnswerStoryQuestion grades one comprehension question. The first answer
 // for a story also appends the Practice Records for its Focus Set items —
 // vocabulary and Grammar Points alike (see internal/story and the write-side
@@ -223,8 +301,11 @@ func (s *server) GetStorySettings(ctx context.Context, request api.GetStorySetti
 	}
 	// Echo the preferences always (empty string = "surprise me") so the
 	// settings form round-trips without guessing what an absent field means.
+	// An empty timezone means unset: the server's own timezone decides which
+	// local day an Automatic Story belongs to until the Learner picks one.
 	return api.GetStorySettings200JSONResponse{
 		FuriganaThresholdSrsLevel: us.FuriganaThresholdSRSLevel,
+		Timezone:                  &us.Timezone,
 		PreferredGenre:            &us.PreferredGenre,
 		PreferredTheme:            &us.PreferredTheme,
 	}, nil
@@ -243,6 +324,9 @@ func (s *server) PutStorySettings(ctx context.Context, request api.PutStorySetti
 		return api.PutStorySettings400JSONResponse{Code: "bad_request", Message: "furiganaThresholdSrsLevel is required"}, nil
 	}
 	in := story.UserSettings{FuriganaThresholdSRSLevel: request.Body.FuriganaThresholdSrsLevel}
+	if request.Body.Timezone != nil {
+		in.Timezone = *request.Body.Timezone
+	}
 	if request.Body.PreferredGenre != nil {
 		in.PreferredGenre = *request.Body.PreferredGenre
 	}
@@ -258,6 +342,7 @@ func (s *server) PutStorySettings(ctx context.Context, request api.PutStorySetti
 	}
 	return api.PutStorySettings200JSONResponse{
 		FuriganaThresholdSrsLevel: us.FuriganaThresholdSRSLevel,
+		Timezone:                  &us.Timezone,
 		PreferredGenre:            &us.PreferredGenre,
 		PreferredTheme:            &us.PreferredTheme,
 	}, nil
@@ -321,6 +406,129 @@ func (s *server) PutReadingSettings(ctx context.Context, request api.PutReadingS
 // here, against the Learner's current Furigana Threshold (GLOSSARY.md):
 // unknown tokens always show their reading; Known Items show it only below
 // the threshold. Question answer indexes stay server-side.
+func (s *server) GetStorySuggestions(ctx context.Context, _ api.GetStorySuggestionsRequestObject) (api.GetStorySuggestionsResponseObject, error) {
+	svc, err := s.storyService()
+	if err != nil {
+		return nil, err
+	}
+	id, ok := auth.IdentityFrom(ctx)
+	if !ok {
+		return nil, auth.ErrUnauthenticated
+	}
+	genres, themes, err := svc.GenreThemeSuggestions(ctx, id.ID)
+	if err != nil {
+		return nil, err
+	}
+	if genres == nil {
+		genres = []string{}
+	}
+	if themes == nil {
+		themes = []string{}
+	}
+	return api.GetStorySuggestions200JSONResponse{Genres: genres, Themes: themes}, nil
+}
+
+// GetStoryGeneration is the progress bar's poll (issue #33): the current or
+// last generation run for the Learner, idle when none was ever tracked. The
+// run itself lives in the story Service, so a reload finds the same picture.
+func (s *server) GetStoryGeneration(ctx context.Context, _ api.GetStoryGenerationRequestObject) (api.GetStoryGenerationResponseObject, error) {
+	svc, err := s.storyService()
+	if err != nil {
+		return nil, err
+	}
+	id, ok := auth.IdentityFrom(ctx)
+	if !ok {
+		return nil, auth.ErrUnauthenticated
+	}
+	return api.GetStoryGeneration200JSONResponse(storyGenerationView(svc.GenerationProgress(ctx, id.ID))), nil
+}
+
+// GenerateStory starts one On-demand Story (issue #33). It answers 202 with
+// the initial running snapshot as soon as the run is opened: the write
+// itself continues in the story Service, detached from this request, and
+// clients follow it through GetStoryGeneration. A generation already
+// running (on either path) answers 409, the MaruMori sync_running shape.
+func (s *server) GenerateStory(ctx context.Context, request api.GenerateStoryRequestObject) (api.GenerateStoryResponseObject, error) {
+	svc, err := s.storyService()
+	if err != nil {
+		return nil, err
+	}
+	id, ok := auth.IdentityFrom(ctx)
+	if !ok {
+		return nil, auth.ErrUnauthenticated
+	}
+	var opts story.OnDemandOptions
+	if request.Body != nil {
+		b := *request.Body
+		if b.Genre != nil {
+			g := strings.TrimSpace(*b.Genre)
+			if utf8.RuneCountInString(g) > maxStoryGenreRunes {
+				return api.GenerateStory400JSONResponse(apiErr("invalid_input", "genre is too long")), nil
+			}
+			opts.Genre = g
+		}
+		if b.Theme != nil {
+			t := strings.TrimSpace(*b.Theme)
+			if utf8.RuneCountInString(t) > maxStoryThemeRunes {
+				return api.GenerateStory400JSONResponse(apiErr("invalid_input", "theme is too long")), nil
+			}
+			opts.Theme = t
+		}
+		if b.Surprise != nil {
+			opts.Surprise = *b.Surprise
+		}
+	}
+	p, err := svc.GenerateOnDemand(ctx, id.ID, opts)
+	if err != nil {
+		if se, isErr := asStoryError(err); isErr && se.Status == 409 {
+			return api.GenerateStory409JSONResponse(apiErr(se.Code, se.Message)), nil
+		}
+		return nil, err
+	}
+	return api.GenerateStory202JSONResponse(storyGenerationView(p)), nil
+}
+
+// maxStoryGenreRunes and maxStoryThemeRunes mirror the spec's caps on the
+// Generate box's free-text inputs.
+const (
+	maxStoryGenreRunes = 60
+	maxStoryThemeRunes = 200
+)
+
+// storyGenerationView maps a Progress snapshot to its API shape, omitting
+// the fields that only one status carries.
+func storyGenerationView(p story.Progress) api.StoryGenerationProgress {
+	v := api.StoryGenerationProgress{
+		Status:  api.StoryGenerationProgressStatus(p.Status),
+		Percent: p.Percent,
+	}
+	if p.Stage != "" {
+		st := api.StoryGenerationProgressStage(p.Stage)
+		v.Stage = &st
+	}
+	if p.Attempt > 0 {
+		a := p.Attempt
+		v.Attempt = &a
+	}
+	if p.MaxAttempts > 0 {
+		m := p.MaxAttempts
+		v.MaxAttempts = &m
+	}
+	if !p.StartedAt.IsZero() {
+		at := p.StartedAt
+		v.StartedAt = &at
+	}
+	if p.Message != "" {
+		m := p.Message
+		v.Message = &m
+	}
+	if p.StoryID != uuid.Nil {
+		sid := openapi_types.UUID(p.StoryID)
+		v.StoryId = &sid
+	}
+	return v
+}
+
 func storyView(st *story.Story, threshold int) api.Story {
 	sentences := make([]api.StorySentence, 0, len(st.Sentences))
 	for _, sen := range st.Sentences {
@@ -387,6 +595,7 @@ func storyView(st *story.Story, threshold int) api.Story {
 	}
 	view := api.Story{
 		Id:         st.ID.String(),
+		Title:      st.Title,
 		Genre:      st.Genre,
 		Text:       st.Text,
 		Sentences:  sentences,
@@ -394,6 +603,21 @@ func storyView(st *story.Story, threshold int) api.Story {
 		VocabItems: vocab,
 		CreatedAt:  st.CreatedAt,
 		Attempts:   &st.Attempts,
+		Origin:     api.StoryOrigin(st.Origin),
+	}
+	if view.Origin == "" {
+		view.Origin = api.Automatic // a stored story predating the column still reads as generator-made
+	}
+	if st.TitleEN != "" {
+		te := st.TitleEN
+		view.TitleEn = &te
+	}
+	if st.Theme != "" {
+		th := st.Theme
+		view.Theme = &th
+	}
+	if st.ReadAt != nil {
+		view.ReadAt = st.ReadAt
 	}
 	if st.Rating != nil {
 		r := api.StoryRating(*st.Rating)

@@ -1,15 +1,27 @@
 import type {
   ApiClient,
   DictionaryEntry,
+  GenerateStoryRequest,
   GrammarPointDetail,
   PitchPattern,
   Story as StoryData,
+  StoryGenerationProgress,
   StoryGrammarSpan,
   StorySettings,
   StoryToken,
+  StorySuggestions,
   WeakSignalRequest,
 } from "@vjt/api-client";
-import { useItemLists, useReadingSettings, useStory, type ItemListsView, type StoryView } from "@vjt/core";
+import {
+  useItemLists,
+  useReadingSettings,
+  useStory,
+  useStoryGeneration,
+  type ItemListsView,
+  type StoryGeneration,
+  type StoryView,
+} from "@vjt/core";
+import { TimezoneAutocomplete } from "./TimezoneAutocomplete.tsx";
 import {
   useCallback,
   useEffect,
@@ -22,12 +34,20 @@ import {
 import "./reader.css";
 
 /**
- * Stories (issue #10): read the Story the background generator has ready,
- * browse the Story Library, rate stories (thumbs up/down steer future
- * genres), answer the comprehension questions — the first answer writes
- * Practice Records for the story's Focus Set items — and choose the story
- * settings (Furigana Threshold, preferred genre/theme). Generation is never
- * triggered from this screen, so opening a story is instant.
+ * Stories (issues #10, #31, #32, #33): the page opens on Today’s Story — the
+ * newest Automatic Story, which the background generator writes once per day in
+ * the Learner’s Timezone — with the Story Library one click away ("View all
+ * stories"). Read stories (rate thumbs up/down to steer future genres),
+ * answer the comprehension questions — the first answer writes Practice
+ * Records for the story’s Focus Set items — and choose the story settings
+ * (Furigana Threshold, preferred genre/theme, and the Learner’s Timezone).
+ * Opening a story is always a plain storage read. The Generate box (issue #33)
+ * starts an On-demand Story — optional genre/theme autocomplete, blank means
+ * the Automatic rules, "Surprise me" lets the model pick — and its progress
+ * bar shows the server’s snapshots ("Writing… attempt 2 of 3"), surviving
+ * reloads and view changes; a finished run offers "Ready, read now" and is
+ * never auto-opened. On-demand Stories live in the Library but are never
+ * Today’s Story.
  *
  * The reader itself (issue #11) puts a fixed-size Reading Panel above the
  * story: tapping any word or punctuation selects its sentence (shown with
@@ -44,6 +64,12 @@ import "./reader.css";
  * Signals: holding a Known word's lookup past the configured threshold,
  * opening its Lookup Menu, opening a Grammar Span window, or unblurring a
  * Sentence Translation (one signal per Focus Set item in the sentence).
+ * The Story Library (issue #31) is a table — Story Title (its English
+ * translation blurred until clicked, a reveal that is never saved or
+ * signalled), genre, stored theme, generation origin, created date, a Read
+ * toggle, and a Delete that asks first (the Learner's rating goes with the
+ * Story; Practice Records stay). A row click opens the reader, which shows
+ * the Title, its blurred translation, and the same Read toggle.
  * Dictionary opens a Dictionary Entry window
  * with the full JMdict entry, the Learner's MaruMori state for the word and
  * each of its kanji, and the Kanjium pitch pattern when we have one.
@@ -52,8 +78,33 @@ import "./reader.css";
  * menu — then the windows one at a time. Whichever way a menu or window
  * closes, focus goes back to the token button it came from.
  */
-export function Stories({ client }: { client: ApiClient }) {
+export function Stories({
+  client,
+  generationPollMs,
+}: {
+  client: ApiClient;
+  /** Poll interval for the generation progress bar (tests shorten it). */
+  generationPollMs?: number;
+}) {
   const view = useStory(client);
+  // One generation view for the whole screen: the Today panel and the Story
+  // Library share it, so switching views never restarts (or cancels) the run.
+  const gen = useStoryGeneration(client, generationPollMs);
+  // Today's Story is the landing view; "View all stories" opens the Story
+  // Library, and the reader's Back returns to whichever one it opened from.
+  const [showLibrary, setShowLibrary] = useState(false);
+
+  // A run finishing while the Learner is anywhere on the page: the Library
+  // quietly picks the new Story up (seenReady keeps the reload once per run).
+  const readyId = gen.generation.status === "ready" ? (gen.generation.progress.storyId ?? null) : null;
+  const seenReady = useRef<string | null>(null);
+  useEffect(() => {
+    if (readyId && seenReady.current !== readyId) {
+      seenReady.current = readyId;
+      view.reload();
+    }
+  }, [readyId, view]);
+
   return (
     <section>
       <h2>Stories</h2>
@@ -62,19 +113,259 @@ export function Stories({ client }: { client: ApiClient }) {
           {view.error}
         </p>
       )}
-      {view.open && view.story ? <StoryReader view={view} client={client} /> : <StoryLibrary view={view} />}
-      <StorySettingsForm view={view} />
+      {view.open && view.story ? (
+        <StoryReader key={view.story.id} view={view} client={client} />
+      ) : (
+        <>
+          <GeneratePanel gen={gen} view={view} />
+          {showLibrary ? <StoryLibrary view={view} onBack={() => setShowLibrary(false)} /> : <TodaysStoryPanel view={view} onViewAll={() => setShowLibrary(true)} />}
+        </>
+      )}
+      <StorySettingsForm view={view} suggestions={gen.suggestions} />
     </section>
   );
 }
 
-function StoryLibrary({ view }: { view: StoryView }) {
+const sameLocalDay = (a: Date, b: Date) =>
+  a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
+/** "today", "yesterday", or the weekday name — the Learner's local calendar. */
+function localDayLabel(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  if (sameLocalDay(d, now)) return "today";
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (sameLocalDay(d, yesterday)) return "yesterday";
+  return d.toLocaleDateString(undefined, { weekday: "long" });
+}
+
+/** Which day today's slot is on: the ticket's "Still unread from Monday". */
+function todayLine(s: StoryData): string {
+  if (s.readAt) return `You read it ${localDayLabel(s.readAt)}.`;
+  if (!sameLocalDay(new Date(s.createdAt), new Date())) return `Still unread from ${localDayLabel(s.createdAt)}.`;
+  return "Written for you today.";
+}
+
+function TodaysStoryPanel({ view, onViewAll }: { view: StoryView; onViewAll: () => void }) {
+  const t = view.today;
+  return (
+    <>
+      {t.status === "loading" && <p className="muted">Writing today&apos;s story…</p>}
+      {t.status === "story" && (
+        <p>
+          <button type="button" disabled={view.pending} onClick={() => void view.openStory(t.story.id)}>
+            {t.story.readAt ? "Read today’s story again" : "Read today’s story"}
+          </button>{" "}
+          <span className="muted">{todayLine(t.story)}</span>
+        </p>
+      )}
+      {t.status === "none" && (
+        <p className="muted">
+          No story yet — the tutor writes one for you every day.{" "}
+          <button type="button" onClick={view.reloadToday}>
+            Check again
+          </button>
+        </p>
+      )}
+      {t.status === "error" && (
+        <p>
+          Cannot load today&apos;s story: {t.message}{" "}
+          <button type="button" onClick={view.reloadToday}>
+            Retry
+          </button>
+        </p>
+      )}
+      <p>
+        <button type="button" onClick={onViewAll}>
+          View all stories
+        </button>
+      </p>
+    </>
+  );
+}
+
+/**
+ * The Generate box (issue #33): genre and theme are optional free text with
+ * autocomplete (presets merged with the Learner's past Story genres/themes);
+ * blank follows the Automatic rules, and "Surprise me" tells the model to pick
+ * both itself. While a run is live the bar shows the server's snapshot — it
+ * survives reloads and view switches because the run is the server's, not
+ * this form's. A finished run offers "Ready, read now" (never auto-opened);
+ * a rejected one shows the retry line and leaves the form ready for another
+ * try. The failure cooldown never gates the learner-initiated start: only
+ * another live run does, with the 409 refusal shown here.
+ */
+function GeneratePanel({ gen, view }: { gen: StoryGeneration; view: StoryView }) {
+  const g = gen.generation;
+  const [genre, setGenre] = useState("");
+  const [theme, setTheme] = useState("");
+  const running = g.status === "running";
+
+  const start = (surprise: boolean) => {
+    const req: GenerateStoryRequest = {};
+    if (genre.trim() !== "") req.genre = genre.trim();
+    if (theme.trim() !== "") req.theme = theme.trim();
+    if (surprise) req.surprise = true;
+    void gen.startGeneration(req);
+  };
+
+  return (
+    <div className="generate-box">
+      {running && <GenerationProgress progress={g.progress} />}
+      {g.status === "ready" && (
+        <p className="saved" role="status">
+          A new Story is ready for you.{" "}
+          <button type="button" onClick={() => g.status === "ready" && g.progress.storyId && void view.openStory(g.progress.storyId)}>
+            Ready, read now
+          </button>
+        </p>
+      )}
+      {g.status === "failed" && (
+        <p className="error" role="status">
+          {g.progress.message ?? "Couldn’t write your Story."}
+        </p>
+      )}
+      {gen.error && (
+        <p className="error" role="alert">
+          {gen.error}
+        </p>
+      )}
+      <form onSubmit={(e) => { e.preventDefault(); start(false); }}>
+        <label>
+          Genre for this story
+          <AutocompleteInput
+            id="generate-genre"
+            name="genre"
+            maxLength={60}
+            placeholder="travel, mystery… empty = automatic"
+            value={genre}
+            disabled={running}
+            options={gen.suggestions.genres}
+            onChange={setGenre}
+          />
+        </label>{" "}
+        <label>
+          Theme for this story
+          <AutocompleteInput
+            id="generate-theme"
+            name="theme"
+            maxLength={200}
+            placeholder="a robot running a ramen shop — empty = automatic"
+            value={theme}
+            disabled={running}
+            options={gen.suggestions.themes}
+            onChange={setTheme}
+          />
+        </label>{" "}
+        <button type="submit" disabled={running}>
+          Generate
+        </button>{" "}
+        <button type="button" disabled={running} onClick={() => start(true)}>
+          Surprise me
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function stageLabel(p: StoryGenerationProgress): string {
+  switch (p.stage) {
+    case "preparing":
+      return "Preparing…";
+    case "writing":
+      return p.attempt != null && p.maxAttempts != null
+        ? `Writing… attempt ${p.attempt} of ${p.maxAttempts}`
+        : "Writing…";
+    case "checking":
+      return "Checking it fits your vocabulary…";
+    case "saving":
+      return "Saving…";
+    default:
+      return "Writing…";
+  }
+}
+
+/** The progress bar: server-computed percent, server-named stage. */
+function GenerationProgress({ progress }: { progress: StoryGenerationProgress }) {
+  return (
+    <p className="generation-progress" role="status">
+      <progress value={progress.percent} max={100} aria-label="Story generation progress" />{" "}
+      <span className="generation-stage">{stageLabel(progress)}</span>{" "}
+      <span className="generation-percent">{progress.percent}%</span>
+    </p>
+  );
+}
+
+/**
+ * A free-text input with a datalist of suggestions — used for the Generate
+ * box and, from the same list, for the Preferred Genre/Theme settings. The
+ * list is a convenience, not a whitelist: any text the Learner types is sent
+ * as-is (the server's bounds are the only limits).
+ */
+function AutocompleteInput({
+  id,
+  name,
+  maxLength,
+  placeholder,
+  value,
+  disabled,
+  options,
+  onChange,
+}: {
+  id: string;
+  name: string;
+  maxLength: number;
+  placeholder: string;
+  value: string;
+  disabled?: boolean;
+  options: string[];
+  onChange: (next: string) => void;
+}) {
+  const listId = `${id}-choices`;
+  return (
+    <>
+      <input
+        id={id}
+        name={name}
+        type="text"
+        maxLength={maxLength}
+        list={listId}
+        autoComplete="off"
+        placeholder={placeholder}
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <datalist id={listId}>
+        {options.map((opt) => (
+          <option key={opt} value={opt} />
+        ))}
+      </datalist>
+    </>
+  );
+}
+
+function StoryLibrary({ view, onBack }: { view: StoryView; onBack: () => void }) {
   const lib = view.library;
+  // Story Library (issue #31): the English title sits behind the same blur as
+  // the Reading Panel's Sentence Translation, but revealing it is transient —
+  // nothing is saved and no Weak Signal is recorded. Delete asks in-place
+  // (like Settings' lists); a row click opens the reader.
+  const [revealed, setRevealed] = useState<Set<string>>(new Set());
+  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
+  const toggleReveal = (id: string) =>
+    setRevealed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   return (
     <>
       <p>
-        <button type="button" disabled={view.pending} onClick={() => void view.openReady()}>
-          Read today&apos;s story
+        <button type="button" onClick={onBack}>
+          Back to today’s story
         </button>
       </p>
       {lib.status === "loading" && <p className="muted">Loading your stories…</p>}
@@ -90,17 +381,81 @@ function StoryLibrary({ view }: { view: StoryView }) {
         <p className="muted">No stories yet. One will be waiting after the next generation pass.</p>
       )}
       {lib.status === "ready" && lib.page.items.length > 0 && (
-        <ul className="story-list">
-          {lib.page.items.map((s) => (
-            <li key={s.id}>
-              <button type="button" onClick={() => void view.openStory(s.id)}>
-                {s.genre}
-              </button>{" "}
-              <span className="muted">{new Date(s.createdAt).toDateString()}</span>{" "}
-              <RatingButtons view={view} story={s} />
-            </li>
-          ))}
-        </ul>
+        <table className="story-table">
+          <thead>
+            <tr>
+              <th>Title</th>
+              <th>Genre</th>
+              <th>Theme</th>
+              <th>Origin</th>
+              <th>Created</th>
+              <th>Read</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {lib.page.items.map((s) => (
+              <tr key={s.id} data-testid={`story-${s.id}`} onClick={() => void view.openStory(s.id)}>
+                <td>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void view.openStory(s.id);
+                    }}
+                  >
+                    {s.title}
+                  </button>
+                  {s.titleEn && (
+                    <TitleTranslation
+                      text={s.titleEn}
+                      revealed={revealed.has(s.id)}
+                      onToggle={() => toggleReveal(s.id)}
+                    />
+                  )}
+                </td>
+                <td>{s.genre}</td>
+                <td>{s.theme || "—"}</td>
+                <td>{s.origin === "on_demand" ? "On demand" : "Automatic"}</td>
+                <td>{new Date(s.createdAt).toDateString()}</td>
+                <td
+                  onClick={(e) => {
+                    e.stopPropagation();
+                  }}
+                >
+                  <button
+                    type="button"
+                    aria-pressed={s.readAt != null}
+                    disabled={view.pending}
+                    onClick={() => void (s.readAt != null ? view.clearRead(s.id) : view.setRead(s.id))}
+                  >
+                    Read
+                  </button>
+                </td>
+                <td
+                  onClick={(e) => {
+                    e.stopPropagation();
+                  }}
+                >
+                  {confirmingDelete === s.id ? (
+                    <>
+                      <button type="button" disabled={view.pending} onClick={() => void view.removeStory(s.id)}>
+                        Confirm delete
+                      </button>{" "}
+                      <button type="button" onClick={() => setConfirmingDelete(null)}>
+                        Keep
+                      </button>
+                    </>
+                  ) : (
+                    <button type="button" onClick={() => setConfirmingDelete(s.id)}>
+                      Delete
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
       {lib.status === "ready" && (
         <p className="muted">
@@ -119,6 +474,36 @@ function StoryLibrary({ view }: { view: StoryView }) {
         </p>
       )}
     </>
+  );
+}
+
+/**
+ * The Story Title's English translation, blurred until clicked. Unlike the
+ * Reading Panel's Sentence Translation the reveal is transient: it is never
+ * saved as a setting and never reported as a Weak Signal (issue #31).
+ */
+function TitleTranslation({ text, revealed, onToggle }: { text: string; revealed: boolean; onToggle: () => void }) {
+  return (
+    <span
+      className={`translation title-translation ${revealed ? "revealed" : "blurred"}`}
+      role="button"
+      tabIndex={0}
+      title={revealed ? "Click to blur the translation" : "Translation is blurred — click to show it"}
+      aria-pressed={revealed}
+      onClick={(e) => {
+        // Inside a library row the click must not bubble up and open the reader.
+        e.stopPropagation();
+        onToggle();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onToggle();
+        }
+      }}
+    >
+      {text}
+    </span>
   );
 }
 
@@ -150,6 +535,10 @@ function StoryReader({ view, client }: { view: StoryView; client: ApiClient }) {
   const [menu, setMenu] = useState<OpenMenu | null>(null);
   const [windows, setWindows] = useState<OpenWindow[]>([]);
   const [saveNote, setSaveNote] = useState<string | null>(null);
+  // The Story Title's translation is blurred in the reader too (issue #31),
+  // and this reveal is transient as well — keying the reader per Story resets
+  // it when the Learner moves on to another one.
+  const [titleEnRevealed, setTitleEnRevealed] = useState(false);
 
   const openWindow = useCallback((w: OpenWindow) => {
     setWindows((prev) => (prev.some((x) => x.key === w.key) ? prev : [...prev, w]));
@@ -297,13 +686,32 @@ function StoryReader({ view, client }: { view: StoryView; client: ApiClient }) {
     <section onKeyDown={escape}>
       <p>
         <button type="button" onClick={view.close}>
-          ← Library
+          ← Back
         </button>
       </p>
       <h3>
-        {story.genre} <span className="muted">{new Date(story.createdAt).toDateString()}</span>
+        {story.title}{" "}
+        {story.titleEn && (
+          <TitleTranslation
+            text={story.titleEn}
+            revealed={titleEnRevealed}
+            onToggle={() => setTitleEnRevealed((v) => !v)}
+          />
+        )}{" "}
+        <span className="muted">
+          {story.genre} · {new Date(story.createdAt).toDateString()}
+        </span>
       </h3>
-      <RatingButtons view={view} story={story} />
+      <p>
+        <button
+          type="button"
+          aria-pressed={story.readAt != null}
+          onClick={() => void (story.readAt != null ? view.clearRead(story.id) : view.setRead(story.id))}
+        >
+          Read
+        </button>{" "}
+        <RatingButtons view={view} story={story} />
+      </p>
 
       <ReadingPanel
         story={story}
@@ -1190,8 +1598,8 @@ function RatingButtons({ view, story }: { view: StoryView; story: StoryData }) {
   );
 }
 
-/** The Furigana Threshold and preferred genre/theme, steering future stories. */
-function StorySettingsForm({ view }: { view: StoryView }) {
+/** The Furigana Threshold, preferred genre/theme, and the Learner's Timezone. */
+function StorySettingsForm({ view, suggestions }: { view: StoryView; suggestions: StorySuggestions }) {
   const s = view.settings;
   return (
     <section>
@@ -1205,7 +1613,7 @@ function StorySettingsForm({ view }: { view: StoryView }) {
           </button>
         </p>
       )}
-      {s.status === "ready" && <StorySettingsFields view={view} stored={s.settings} />}
+      {s.status === "ready" && <StorySettingsFields view={view} stored={s.settings} suggestions={suggestions} />}
     </section>
   );
 }
@@ -1214,9 +1622,18 @@ function StorySettingsForm({ view }: { view: StoryView }) {
  * The form itself. Local edits overlay the stored settings; a successful
  * save clears the overlay, so the fields then show the server's answer.
  */
-function StorySettingsFields({ view, stored }: { view: StoryView; stored: StorySettings }) {
+function StorySettingsFields({
+  view,
+  stored,
+  suggestions,
+}: {
+  view: StoryView;
+  stored: StorySettings;
+  suggestions: StorySuggestions;
+}) {
   const [genre, setGenre] = useState<string | null>(null);
   const [theme, setTheme] = useState<string | null>(null);
+  const [timezone, setTimezone] = useState<string | null>(null);
   const [threshold, setThreshold] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
@@ -1224,6 +1641,7 @@ function StorySettingsFields({ view, stored }: { view: StoryView; stored: StoryS
 
   const genreValue = genre ?? stored.preferredGenre ?? "";
   const themeValue = theme ?? stored.preferredTheme ?? "";
+  const timezoneValue = timezone ?? stored.timezone ?? "";
   const thresholdValue = threshold ?? String(stored.furiganaThresholdSrsLevel);
 
   const save = async (e: FormEvent) => {
@@ -1241,10 +1659,12 @@ function StorySettingsFields({ view, stored }: { view: StoryView; stored: StoryS
         furiganaThresholdSrsLevel: level,
         preferredGenre: genreValue,
         preferredTheme: themeValue,
+        timezone: timezoneValue,
       });
       if (res.ok) {
         setGenre(null);
         setTheme(null);
+        setTimezone(null);
         setThreshold(null);
         setSaved(true);
       } else setError(res.message);
@@ -1274,28 +1694,43 @@ function StorySettingsFields({ view, stored }: { view: StoryView; stored: StoryS
         <p>
           <label>
             Preferred genre
-            <input
+            <AutocompleteInput
+              id="preferred-genre"
               name="preferredGenre"
               maxLength={60}
               placeholder="travel, mystery… empty = surprise me"
               value={genreValue}
               disabled={busy}
-              onChange={(e) => setGenre(e.target.value)}
+              options={suggestions.genres}
+              onChange={setGenre}
             />
           </label>
         </p>
         <p>
           <label>
             Preferred theme
-            <input
+            <AutocompleteInput
+              id="preferred-theme"
               name="preferredTheme"
               maxLength={200}
               placeholder="a robot running a ramen shop — empty = none"
               value={themeValue}
               disabled={busy}
-              onChange={(e) => setTheme(e.target.value)}
+              options={suggestions.themes}
+              onChange={setTheme}
             />
           </label>
+        </p>
+        <p>
+          <label htmlFor="story-timezone">
+            Your timezone (decides which day your Automatic Story belongs to)
+          </label>
+          <TimezoneAutocomplete
+            id="story-timezone"
+            value={timezoneValue}
+            disabled={busy}
+            onChange={setTimezone}
+          />
         </p>
         <button type="submit" disabled={busy}>
           Save settings
@@ -1314,7 +1749,8 @@ function StorySettingsFields({ view, stored }: { view: StoryView; stored: StoryS
       <p className="muted">
         Genre and theme steer what the generator is asked for; the validation gate still has the last
         word, so a preference it cannot fill falls back rather than forcing a bad story. The furigana
-        threshold applies when stories are read.
+        threshold applies when stories are read. Your timezone decides which local day each
+        Automatic Story belongs to — until you choose one, the server’s own day is used.
       </p>
     </>
   );

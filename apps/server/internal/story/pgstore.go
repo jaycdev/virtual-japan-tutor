@@ -9,7 +9,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -43,11 +42,15 @@ func (st *PostgresStore) Save(ctx context.Context, s *Story) error {
 	if err != nil {
 		return fmt.Errorf("story save: vocab items: %w", err)
 	}
+	origin := s.Origin
+	if origin == "" {
+		origin = OriginAutomatic
+	}
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO stories (id, user_id, genre, prompt, text, vocab_items,
+		INSERT INTO stories (id, user_id, genre, title, title_en, theme, origin, prompt, text, vocab_items,
 			content_words, known_words, focus_items, focus_hit, validated, attempts)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-		s.ID, s.UserID, s.Genre, s.Prompt, s.Text, vocab,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+		s.ID, s.UserID, s.Genre, s.Title, s.TitleEN, s.Theme, string(origin), s.Prompt, s.Text, vocab,
 		s.ContentWords, s.KnownWords, s.FocusItems, s.FocusHit, s.Validated, max(s.Attempts, 1)); err != nil {
 		return fmt.Errorf("story save: %w", err)
 	}
@@ -122,9 +125,9 @@ const maxStoredFailures = 5
 
 func (st *PostgresStore) Get(ctx context.Context, id, userID uuid.UUID) (*Story, error) {
 	q := `
-	SELECT s.id, s.user_id, s.genre, s.prompt, s.text, s.vocab_items,
+	SELECT s.id, s.user_id, s.genre, s.title, s.title_en, s.theme, s.origin, s.prompt, s.text, s.vocab_items,
 	       s.content_words, s.known_words, s.focus_items, s.focus_hit,
-	       s.validated, s.attempts, s.created_at, s.ready_at, s.practiced_at, r.rating
+	       s.validated, s.attempts, s.created_at, s.practiced_at, s.read_at, r.rating
 	FROM stories s
 	LEFT JOIN story_ratings r ON r.story_id = s.id AND r.user_id = s.user_id
 	WHERE s.id = $1 AND s.user_id = $2`
@@ -146,14 +149,29 @@ func (st *PostgresStore) load(ctx context.Context, row pgx.Row) (*Story, error) 
 func rowToStory(row pgx.Row) (*Story, error) {
 	var s Story
 	var rating *string
-	err := row.Scan(&s.ID, &s.UserID, &s.Genre, &s.Prompt, &s.Text, &s.VocabItems,
+	var title, titleEN, theme *string
+	var origin string
+	err := row.Scan(&s.ID, &s.UserID, &s.Genre, &title, &titleEN, &theme, &origin, &s.Prompt, &s.Text, &s.VocabItems,
 		&s.ContentWords, &s.KnownWords, &s.FocusItems, &s.FocusHit,
-		&s.Validated, &s.Attempts, &s.CreatedAt, &s.ReadyAt, &s.PracticedAt, &rating)
+		&s.Validated, &s.Attempts, &s.CreatedAt, &s.PracticedAt, &s.ReadAt, &rating)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("story get: %w", err)
+	}
+	if title != nil {
+		s.Title = *title
+	}
+	if titleEN != nil {
+		s.TitleEN = *titleEN
+	}
+	if theme != nil {
+		s.Theme = *theme
+	}
+	s.Origin = StoryOrigin(origin)
+	if s.Origin == "" {
+		s.Origin = OriginAutomatic
 	}
 	if rating != nil {
 		r := Rating(*rating)
@@ -264,9 +282,9 @@ func (st *PostgresStore) List(ctx context.Context, userID uuid.UUID, limit, offs
 		return nil, 0, fmt.Errorf("story list count: %w", err)
 	}
 	rows, err := st.pool.Query(ctx, `
-		SELECT s.id, s.user_id, s.genre, s.prompt, s.text, s.vocab_items,
+		SELECT s.id, s.user_id, s.genre, s.title, s.title_en, s.theme, s.origin, s.prompt, s.text, s.vocab_items,
 		       s.content_words, s.known_words, s.focus_items, s.focus_hit,
-		       s.validated, s.attempts, s.created_at, s.ready_at, s.practiced_at, r.rating
+		       s.validated, s.attempts, s.created_at, s.practiced_at, s.read_at, r.rating
 		FROM stories s
 		LEFT JOIN story_ratings r ON r.story_id = s.id AND r.user_id = s.user_id
 		WHERE s.user_id = $1 AND s.validated
@@ -338,68 +356,43 @@ func (st *PostgresStore) RatingCounts(ctx context.Context, userID uuid.UUID) (ma
 	return out, rows.Err()
 }
 
-func (st *PostgresStore) ReadyStoryID(ctx context.Context, userID uuid.UUID) (uuid.UUID, bool, error) {
-	var id uuid.UUID
-	err := st.pool.QueryRow(ctx, `SELECT id FROM stories WHERE user_id = $1 AND ready_at IS NOT NULL`, userID).Scan(&id)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return uuid.Nil, false, nil
+// LatestAutomaticStory returns the user's newest VALIDATED Automatic Story —
+// Today's Story (GLOSSARY.md) — whatever its Read mark; On-demand Stories
+// never qualify. Its children load too, so the today endpoint serves the full
+// reader payload in one round. (false, nil) when the user has none yet.
+func (st *PostgresStore) LatestAutomaticStory(ctx context.Context, userID uuid.UUID) (*Story, bool, error) {
+	s, err := st.load(ctx, st.pool.QueryRow(ctx, `
+		SELECT s.id, s.user_id, s.genre, s.title, s.title_en, s.theme, s.origin, s.prompt, s.text, s.vocab_items,
+		       s.content_words, s.known_words, s.focus_items, s.focus_hit,
+		       s.validated, s.attempts, s.created_at, s.practiced_at, s.read_at, r.rating
+		FROM stories s
+		LEFT JOIN story_ratings r ON r.story_id = s.id AND r.user_id = s.user_id
+		WHERE s.user_id = $1 AND s.origin = $2 AND s.validated
+		ORDER BY s.created_at DESC, s.id DESC
+		LIMIT 1`, userID, string(OriginAutomatic)))
+	if errors.Is(err, ErrNotFound) {
+		return nil, false, nil
 	}
 	if err != nil {
-		return uuid.Nil, false, fmt.Errorf("story ready: %w", err)
+		return nil, false, err
 	}
-	return id, true, nil
+	return s, true, nil
 }
 
-// errReadyConflict marks a lost SetReady race: another concurrent SetReady
-// took the user's one ready slot first, which the partial unique index turns
-// into a 23505 unique violation. The service treats it as benign — the
-// loser's story stays stored and validated, just not ready.
-var errReadyConflict = errors.New("story: another story is already ready for this user")
-
-// SetReady clears any other ready story first: the partial unique index
-// (one ready row per user) makes a race fail loudly rather than fork, and
-// the 23505 is wrapped in errReadyConflict so callers can tell the race
-// apart from a genuine fault.
-func (st *PostgresStore) SetReady(ctx context.Context, storyID, userID uuid.UUID) error {
-	tx, err := st.pool.Begin(ctx)
+// HasUnreadAutomaticStory reports any VALIDATED Automatic Story of the
+// user's with no Read mark — the unread rule of issue #32, which holds the
+// Automatic slot for ANY unread one, not just the newest.
+func (st *PostgresStore) HasUnreadAutomaticStory(ctx context.Context, userID uuid.UUID) (bool, error) {
+	var found bool
+	err := st.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM stories
+			WHERE user_id = $1 AND origin = $2 AND validated AND read_at IS NULL
+		)`, userID, string(OriginAutomatic)).Scan(&found)
 	if err != nil {
-		return fmt.Errorf("story set ready: %w", err)
+		return false, fmt.Errorf("story unread automatic: %w", err)
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck
-	if _, err := tx.Exec(ctx, `UPDATE stories SET ready_at = NULL WHERE user_id = $1 AND ready_at IS NOT NULL`, userID); err != nil {
-		return fmt.Errorf("story set ready: %w", err)
-	}
-	tag, err := tx.Exec(ctx, `UPDATE stories SET ready_at = now() WHERE id = $1 AND user_id = $2`, storyID, userID)
-	if err != nil {
-		return wrapReadyConflict(err)
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	if err := tx.Commit(ctx); err != nil {
-		// The index is checked at commit too: a concurrent winner commits
-		// between our UPDATE and ours.
-		return wrapReadyConflict(err)
-	}
-	return nil
-}
-
-// wrapReadyConflict turns Postgres' unique violation (23505, the one-ready-
-// per-user partial index rejecting a second ready row) into the package's
-// errReadyConflict sentinel; anything else passes through unchanged.
-func wrapReadyConflict(err error) error {
-	var pe *pgconn.PgError
-	if errors.As(err, &pe) && pe.Code == "23505" {
-		return fmt.Errorf("story set ready: %w", errReadyConflict)
-	}
-	return fmt.Errorf("story set ready: %w", err)
-}
-
-func (st *PostgresStore) ClearReady(ctx context.Context, storyID uuid.UUID) error {
-	if _, err := st.pool.Exec(ctx, `UPDATE stories SET ready_at = NULL WHERE id = $1`, storyID); err != nil {
-		return fmt.Errorf("story clear ready: %w", err)
-	}
-	return nil
+	return found, nil
 }
 
 // LastFailedAt is the failure backoff's clock: it reports the newest story's
@@ -439,6 +432,69 @@ func (st *PostgresStore) GenresByLastActivity(ctx context.Context, userID uuid.U
 		out = append(out, g)
 	}
 	return out, rows.Err()
+}
+
+// RecordGenerationDuration appends one duration sample (issue #33).
+func (st *PostgresStore) RecordGenerationDuration(ctx context.Context, userID uuid.UUID, finishedAt time.Time, ms int64) error {
+	if _, err := st.pool.Exec(ctx, `
+		INSERT INTO story_generation_durations (user_id, finished_at, duration_ms)
+		VALUES ($1, $2, $3)`, userID, finishedAt, ms); err != nil {
+		return fmt.Errorf("story generation duration: %w", err)
+	}
+	return nil
+}
+
+func (st *PostgresStore) RecentGenerationDurations(ctx context.Context, userID uuid.UUID, limit int) ([]time.Duration, error) {
+	rows, err := st.pool.Query(ctx, `
+		SELECT duration_ms FROM story_generation_durations
+		WHERE user_id = $1 ORDER BY finished_at DESC, id DESC LIMIT $2`, userID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("story generation durations: %w", err)
+	}
+	defer rows.Close()
+	var out []time.Duration
+	for rows.Next() {
+		var ms int64
+		if err := rows.Scan(&ms); err != nil {
+			return nil, fmt.Errorf("story generation durations: %w", err)
+		}
+		out = append(out, time.Duration(ms)*time.Millisecond)
+	}
+	return out, rows.Err()
+}
+
+// StoryGenreThemeSuggestions reads the distinct genres and themes of the
+// user's validated Stories, each list newest-first (the most recent Story
+// mentioning it sorts first).
+func (st *PostgresStore) StoryGenreThemeSuggestions(ctx context.Context, userID uuid.UUID) ([]string, []string, error) {
+	distinct := func(col string) ([]string, error) {
+		rows, err := st.pool.Query(ctx, fmt.Sprintf(`
+			SELECT %s FROM stories
+			WHERE user_id = $1 AND validated AND COALESCE(%s, '') <> ''
+			GROUP BY %s ORDER BY MAX(created_at) DESC`, col, col, col), userID)
+		if err != nil {
+			return nil, fmt.Errorf("story %s suggestions: %w", col, err)
+		}
+		defer rows.Close()
+		var out []string
+		for rows.Next() {
+			var v string
+			if err := rows.Scan(&v); err != nil {
+				return nil, fmt.Errorf("story %s suggestions: %w", col, err)
+			}
+			out = append(out, v)
+		}
+		return out, rows.Err()
+	}
+	genres, err := distinct("genre")
+	if err != nil {
+		return nil, nil, err
+	}
+	themes, err := distinct("theme")
+	if err != nil {
+		return nil, nil, err
+	}
+	return genres, themes, nil
 }
 
 func (st *PostgresStore) FuriganaThreshold(ctx context.Context, userID uuid.UUID) (int, error) {
@@ -512,59 +568,33 @@ func (st *PostgresStore) SetLookupHoldMs(ctx context.Context, userID uuid.UUID, 
 	return nil
 }
 
-// StoryPrefs reads the user's preferred genre/theme, creating the state row
-// with empty ("surprise me") defaults when there is none yet.
-func (st *PostgresStore) StoryPrefs(ctx context.Context, userID uuid.UUID) (string, string, error) {
-	var genre, theme string
-	err := st.pool.QueryRow(ctx, `
-		SELECT preferred_genre, preferred_theme
+// StoryPrefs reads the user's preferred genre/theme and Learner's Timezone,
+// with empty ("surprise me" / no theme / unset) defaults when there is no
+// state row yet.
+func (st *PostgresStore) StoryPrefs(ctx context.Context, userID uuid.UUID) (genre, theme, timezone string, err error) {
+	err = st.pool.QueryRow(ctx, `
+		SELECT preferred_genre, preferred_theme, timezone
 		FROM story_user_state
-		WHERE user_id = $1`, userID).Scan(&genre, &theme)
+		WHERE user_id = $1`, userID).Scan(&genre, &theme, &timezone)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", "", nil
+		return "", "", "", nil
 	}
 	if err != nil {
-		return "", "", fmt.Errorf("story prefs: %w", err)
+		return "", "", "", fmt.Errorf("story prefs: %w", err)
 	}
-	return genre, theme, nil
+	return genre, theme, timezone, nil
 }
 
-func (st *PostgresStore) SetStoryPrefs(ctx context.Context, userID uuid.UUID, genre, theme string) error {
+func (st *PostgresStore) SetStoryPrefs(ctx context.Context, userID uuid.UUID, genre, theme, timezone string) error {
 	_, err := st.pool.Exec(ctx, `
-		INSERT INTO story_user_state (user_id, preferred_genre, preferred_theme)
-		VALUES ($1, $2, $3)
+		INSERT INTO story_user_state (user_id, preferred_genre, preferred_theme, timezone)
+		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (user_id) DO UPDATE
-		SET preferred_genre = EXCLUDED.preferred_genre, preferred_theme = EXCLUDED.preferred_theme, updated_at = now()`,
-		userID, genre, theme)
+		SET preferred_genre = EXCLUDED.preferred_genre, preferred_theme = EXCLUDED.preferred_theme,
+		    timezone = EXCLUDED.timezone, updated_at = now()`,
+		userID, genre, theme, timezone)
 	if err != nil {
 		return fmt.Errorf("story prefs: %w", err)
-	}
-	return nil
-}
-
-func (st *PostgresStore) FocusSnapshot(ctx context.Context, userID uuid.UUID) ([]string, error) {
-	var keys []string
-	err := st.pool.QueryRow(ctx, `SELECT focus_snapshot FROM story_user_state WHERE user_id = $1`, userID).Scan(&keys)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("story focus snapshot: %w", err)
-	}
-	return keys, nil
-}
-
-func (st *PostgresStore) SetFocusSnapshot(ctx context.Context, userID uuid.UUID, keys []string) error {
-	if keys == nil {
-		keys = []string{}
-	}
-	_, err := st.pool.Exec(ctx, `
-		INSERT INTO story_user_state (user_id, focus_snapshot)
-		VALUES ($1, $2)
-		ON CONFLICT (user_id) DO UPDATE SET focus_snapshot = EXCLUDED.focus_snapshot, updated_at = now()`,
-		userID, keys)
-	if err != nil {
-		return fmt.Errorf("story focus snapshot: %w", err)
 	}
 	return nil
 }
@@ -598,6 +628,45 @@ func (st *PostgresStore) MarkPracticed(ctx context.Context, storyID uuid.UUID, a
 func (st *PostgresStore) ResetPracticed(ctx context.Context, storyID uuid.UUID, at time.Time) error {
 	if _, err := st.pool.Exec(ctx, `UPDATE stories SET practiced_at = NULL WHERE id = $1 AND practiced_at = $2`, storyID, at); err != nil {
 		return fmt.Errorf("story unpracticed: %w", err)
+	}
+	return nil
+}
+
+// MarkRead sets the Read mark (issue #31); it is idempotent — re-marking a
+// read Story just restamps it. Owner-scoped like every other method.
+func (st *PostgresStore) MarkRead(ctx context.Context, storyID, userID uuid.UUID, at time.Time) error {
+	tag, err := st.pool.Exec(ctx, `UPDATE stories SET read_at = $3 WHERE id = $1 AND user_id = $2`, storyID, userID, at)
+	if err != nil {
+		return fmt.Errorf("story mark read: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// ClearRead unsets the Read mark.
+func (st *PostgresStore) ClearRead(ctx context.Context, storyID, userID uuid.UUID) error {
+	tag, err := st.pool.Exec(ctx, `UPDATE stories SET read_at = NULL WHERE id = $1 AND user_id = $2`, storyID, userID)
+	if err != nil {
+		return fmt.Errorf("story clear read: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// Delete removes the Story row; its sentences, tokens, spans, questions,
+// vocab lists and rating all ride ON DELETE CASCADE, while practice_records
+// have no foreign key to stories, so the Practice Records it wrote stay.
+func (st *PostgresStore) Delete(ctx context.Context, storyID, userID uuid.UUID) error {
+	tag, err := st.pool.Exec(ctx, `DELETE FROM stories WHERE id = $1 AND user_id = $2`, storyID, userID)
+	if err != nil {
+		return fmt.Errorf("story delete: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
 	}
 	return nil
 }

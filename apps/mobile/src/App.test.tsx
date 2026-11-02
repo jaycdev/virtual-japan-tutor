@@ -70,6 +70,9 @@ function makeFetch(log: LoggedRequest[]): typeof fetch {
     if (request.method === 'GET' && path === '/stories') {
       return jsonResponse({ items: [], total: 0, limit: 10, offset: 0 });
     }
+    if (request.method === 'GET' && path === '/stories/today') {
+      return jsonResponse({ code: 'no_today_story', message: 'no automatic story yet' }, 404);
+    }
     if (request.method === 'GET' && path === '/story-settings') {
       return jsonResponse({ furiganaThresholdSrsLevel: 3, preferredGenre: '', preferredTheme: '' });
     }
@@ -133,6 +136,11 @@ describe('mobile App', () => {
     });
     fireEvent.click(screen.getByRole('tab', { name: 'Stories' }));
 
+    // The tab opens on Today's Story; the Library is one button away.
+    await waitFor(() => {
+      expect(screen.getByText(/No story yet/)).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'View all stories' }));
     await waitFor(() => {
       expect(screen.getByLabelText('Story Library')).toBeTruthy();
     });

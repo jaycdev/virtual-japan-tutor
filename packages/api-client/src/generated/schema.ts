@@ -480,7 +480,7 @@ export interface paths {
         };
         /**
          * A page of the Learner's Story Library, newest first
-         * @description Stories the Learner has generated (issue #10), validated ones only: a Story that failed the kagome validation gate is kept for analysis, never offered. Each carries its rating when the Learner gave one. Generation is driven by the background scheduler — this list never triggers one.
+         * @description Stories the Learner has generated (issue #10), validated ones only: a Story that failed the kagome validation gate is kept for analysis, never offered. Each carries its title, its theme, its Story Origin and its Read mark, plus its rating when the Learner gave one. Generation is driven by the background scheduler — this list never triggers one.
          */
         get: operations["listStories"];
         put?: never;
@@ -491,7 +491,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/stories/ready": {
+    "/stories/today": {
         parameters: {
             query?: never;
             header?: never;
@@ -499,10 +499,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * The story waiting to be read, opening it instantly
-         * @description The one Story the background generator has ready for the Learner, served from storage — the request never waits on an AI provider. Opening it clears the ready marker, so the next background pass re-arms generation. `no_ready_story` when none is waiting. All `start`/`end` offsets in sentences and grammar spans are codepoint (rune) indexes into each sentence's `ja` text, counting from 0 — not UTF-16 indexes or byte offsets.
+         * Today's Story: the newest Automatic Story, opening it instantly
+         * @description Today's Story (GLOSSARY.md): the newest Automatic Story, served from storage — the request never waits on an AI provider. It is what the Stories screen opens on. On-demand Stories are never Today's Story. A Story the Learner has already read comes with its readAt, and the web UI says which day it was still unread from. `no_story` when the Learner has no Automatic Story yet; the background generator writes one per local day in the Learner's Timezone. All `start`/`end` offsets in sentences and grammar spans are codepoint (rune) indexes into each sentence's `ja` text, counting from 0 — not UTF-16 indexes or byte offsets.
          */
-        get: operations["getReadyStory"];
+        get: operations["getTodaysStory"];
         put?: never;
         post?: never;
         delete?: never;
@@ -528,7 +528,35 @@ export interface paths {
         get: operations["getStory"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete one story from the Learner's library
+         * @description Removes the story, its comprehension questions, vocabulary items and the Learner's rating of it. Practice records about the reading session stay: deleting a story never rewrites what the Learner has already practised. The Story Library keeps stories newest first, so deleting one can make room for the next story the generator produces.
+         */
+        delete: operations["deleteStory"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stories/{storyId}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A Story's UUID. Declared as a plain string for the same reason as ProviderId: the generated router binds path parameters before auth, so the handler parses it itself (404 if malformed). */
+                storyId: components["parameters"]["StoryId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Mark one story in the Learner's library Read
+         * @description Setting the Read mark by hand does not count as practising and never records a Weak Signal; the Learner's rating and last-practised time are untouched. Answering the last comprehension question of a story sets the same mark.
+         */
+        put: operations["setStoryRead"];
+        post?: never;
+        /** Unmark one story so it is unread again */
+        delete: operations["clearStoryRead"];
         options?: never;
         head?: never;
         patch?: never;
@@ -574,6 +602,66 @@ export interface paths {
          * @description Grades the chosen option for the question. The first answer for a story also appends one Practice Record per Focus Set vocabulary item the story covers (correct as this answer's verdict), marking the story practiced — later answers only grade.
          */
         post: operations["answerStoryQuestion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stories/generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start writing an On-demand Story now
+         * @description The Learner presses Generate (issue #33): one Story written immediately through the same pipeline as an Automatic Story — the Focus Set, the validation gate, Practice Records on the first answer — with Origin On-demand, so it never becomes Today's Story. The genre and theme boxes are optional: blank means the Automatic rules (the preference roll), and Surprise means the model chooses both, ignoring the Learner's preferences while still avoiding disliked and recently-read genres. The request answers as soon as the run starts and the writing continues even if the client disconnects; GET /stories/generation tracks it. One generation per Learner runs at a time, shared with the Automatic flow: while one runs this answers 409.
+         */
+        post: operations["generateStory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stories/generation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The progress of the Learner's current or last Story generation
+         * @description What the progress bar polls (issue #33): the stage, attempt count, and a server-computed percentage that fills the writing stage at the Learner's own pace (from their recent generation durations). `idle` when nothing has been tracked; the terminal `ready`/`failed` state of the last run stays readable until the next start, so a reload mid-run finds the same picture.
+         */
+        get: operations["getStoryGeneration"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stories/suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Autocomplete options for the genre and theme boxes
+         * @description The Generate box and the Preferred Genre/Theme settings fields offer the preset genres plus the genres and themes of the Learner's own validated Stories, newest first (issue #33). Both boxes stay free-text: anything can be typed.
+         */
+        get: operations["getStorySuggestions"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1220,9 +1308,49 @@ export interface components {
          * @enum {string}
          */
         StoryRating: "up" | "down";
+        /** @description What the Learner typed into the Generate box (issue #33). Both fields are optional: blank follows the Automatic rules (the preference roll, PreferredShare), and Surprise ignores the Learner's preferences entirely — the model names its own genre and theme, still avoiding disliked and recently-read genres. Surprise with typed text keeps the typed values; only the preference roll switches off. */
+        GenerateStoryRequest: {
+            /** @description The genre for this one Story (free text; blank means Automatic). */
+            genre?: string;
+            /** @description The theme for this one Story (free text; blank means Automatic). */
+            theme?: string;
+            /** @description Let the model choose genre and theme for this Story. */
+            surprise?: boolean;
+        };
+        /** @description One snapshot of the Learner's generation run (issue #33), computed by the server: a client reload mid-run finds the same picture. The terminal ready/failed state of the last run is kept until the next start. */
+        StoryGenerationProgress: {
+            /** @enum {string} */
+            status: "idle" | "running" | "ready" | "failed";
+            /**
+             * @description What the run is doing right now; only while running.
+             * @enum {string}
+             */
+            stage?: "preparing" | "writing" | "checking" | "saving";
+            /** @description The current writing attempt (the bar's "attempt 2 of 3"). */
+            attempt?: number;
+            maxAttempts?: number;
+            /** @description Server-computed progress; the writing stage fills from the Learner's recent durations. */
+            percent: number;
+            /** Format: date-time */
+            startedAt?: string;
+            /** @description The failure line when status is failed ("Couldn't write a Story that fits your vocabulary. Try again?"). */
+            message?: string;
+            /**
+             * Format: uuid
+             * @description The finished Story, when status is ready. Open it from the library; it is never auto-opened.
+             */
+            storyId?: string;
+        };
+        /** @description Autocomplete options for the genre and theme boxes (issue #33). */
+        StorySuggestions: {
+            genres: string[];
+            themes: string[];
+        };
         StorySettings: {
             /** @description The Furigana Threshold (GLOSSARY.md): Known Items with an SRS Level at or above this value are shown without furigana; below it, and for unknown tokens with kanji in their surface, the reading is shown. mastery's 1–9 scale; the default is 3. */
             furiganaThresholdSrsLevel: number;
+            /** @description The Learner's Timezone (GLOSSARY.md): an IANA name such as "Asia/Tokyo". It decides which local day an Automatic Story belongs to. Empty or absent means unset — the server's own timezone is used until the Learner chooses one. A name the server cannot load is rejected with `invalid_timezone`. */
+            timezone?: string;
             /** @description The genre the Learner wants for their stories ("travel", "mystery", ...). Empty or absent means "surprise me" — the server then picks, steered by ratings. Prompt-only: it never relaxes the validation gate, so an unfillable preference falls back rather than forcing bad output. */
             preferredGenre?: string;
             /** @description A free-text theme for the Learner's stories ("a robot running a ramen shop"). Empty or absent means no theme. Prompt-only, like preferredGenre. */
@@ -1247,11 +1375,27 @@ export interface components {
         };
         Story: {
             id: string;
+            /** @description Story title in Japanese: the generator names every story, falling back to a shortened piece of the text when the model does not. */
+            title: string;
+            /** @description English translation of the title. The web UI shows it blurred until the learner clicks it. */
+            titleEn?: string;
+            /** @description What the story is about, chosen by the generator. */
+            theme?: string;
+            /**
+             * @description Whether the story came from the automatic generator or a learner asked for it with an on-demand request.
+             * @enum {string}
+             */
+            origin: "automatic" | "on_demand";
             genre: string;
             /** @description The sentences' ja text joined, for plain display. */
             text: string;
             /** Format: date-time */
             createdAt: string;
+            /**
+             * Format: date-time
+             * @description When the Learner marked this story Read: answering the last comprehension question sets it, and the learner can set or unset it from the library. Null means the story is still unread. This is separate from when they last practised.
+             */
+            readAt?: string;
             /** @description The Learner's own rating, when they gave one. */
             rating?: components["schemas"]["StoryRating"];
             /** @description Generation attempts used (1 = validated on the first try). */
@@ -2394,7 +2538,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
-    getReadyStory: {
+    getTodaysStory: {
         parameters: {
             query?: never;
             header?: never;
@@ -2403,7 +2547,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The ready story */
+            /** @description Today's Story */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2413,7 +2557,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            /** @description No story is ready yet (code `no_ready_story`) */
+            /** @description No Automatic Story exists yet (code `no_story`) */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -2444,6 +2588,75 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Story"];
                 };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteStory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A Story's UUID. Declared as a plain string for the same reason as ProviderId: the generated router binds path parameters before auth, so the handler parses it itself (404 if malformed). */
+                storyId: components["parameters"]["StoryId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The story is deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    setStoryRead: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A Story's UUID. Declared as a plain string for the same reason as ProviderId: the generated router binds path parameters before auth, so the handler parses it itself (404 if malformed). */
+                storyId: components["parameters"]["StoryId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The story is marked Read */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    clearStoryRead: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A Story's UUID. Declared as a plain string for the same reason as ProviderId: the generated router binds path parameters before auth, so the handler parses it itself (404 if malformed). */
+                storyId: components["parameters"]["StoryId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The story is unread again */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
@@ -2521,6 +2734,91 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    generateStory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["GenerateStoryRequest"];
+            };
+        };
+        responses: {
+            /** @description The run started (or the tracked state of the run this call joined) */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoryGenerationProgress"];
+                };
+            };
+            /** @description Genre or theme over the length cap (`invalid_input`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description A generation is already running for this Learner (`generation_running`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getStoryGeneration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The current progress snapshot */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoryGenerationProgress"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    getStorySuggestions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The suggestion lists */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorySuggestions"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
         };
     };
     getStorySettings: {

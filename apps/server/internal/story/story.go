@@ -4,12 +4,12 @@
 // Library. It follows ADR 0002: the model's output is treated as untrusted
 // data, the gate decides what is trustworthy, and the gate's outcome is kept
 // either way — a Story that failed validation is stored with Validated false
-// and never becomes the ready Story.
+// and never becomes Today's Story.
 //
 // Failed-Story policy: after all attempts fail the gate, the last candidate
 // is still stored (its coverage numbers and attempt count included, so the
-// failure is analysable) but is not marked ready; the previous ready Story,
-// if any, stays. The library shows only validated Stories.
+// failure is analysable) but stays unvalidated; the library and Today's
+// Story show only validated Stories.
 //
 // Comprehension answers write Practice Records lightly: the first answer for
 // a Story appends one practice_records row per Focus Set item the Story
@@ -59,10 +59,6 @@ const (
 	// DefaultMaxAttempts is total generation attempts, including the first:
 	// the gate's feedback drives at most two retries.
 	DefaultMaxAttempts = 3
-	// DefaultSignificanceFraction: a Focus Set whose membership differs from
-	// the last generation's snapshot by at least this share re-arms the
-	// background generator.
-	DefaultSignificanceFraction = 1.0 / 3.0
 	// DefaultPromptKnownLimit caps how many Known Items the prompt lists;
 	// truncation is safe because every listed word is genuinely Known.
 	DefaultPromptKnownLimit = 600
@@ -115,6 +111,17 @@ const (
 
 func (r Rating) Valid() bool { return r == RatingUp || r == RatingDown }
 
+// StoryOrigin records how a Story came to exist: the background generator
+// wrote it (Automatic) or the Learner asked for it (On-demand). Generator
+// production is always Automatic, whatever genre or theme steering was in
+// play (issue #31).
+type StoryOrigin string
+
+const (
+	OriginAutomatic StoryOrigin = "automatic"
+	OriginOnDemand  StoryOrigin = "on_demand"
+)
+
 // Tag marks a token known or unknown to the Learner at generation time.
 const (
 	TagKnown   = "known"
@@ -129,6 +136,15 @@ type Story struct {
 	ID     uuid.UUID
 	UserID uuid.UUID
 	Genre  string
+	// Library fields (issue #31): the Story's own Title with its English
+	// translation TitleEN (both model-written, Title falling back to a
+	// shortened first sentence), the Theme it was written on, and the Origin
+	// of its existence. Every stored Story carries them; pre-#31 rows get
+	// backfilled placeholders from migration 00012.
+	Title   string
+	TitleEN string
+	Theme   string
+	Origin  StoryOrigin
 	// Prompt is the generation brief sent to the model (the base user prompt,
 	// not the retry feedback). Stored for debugging a story's outcome.
 	Prompt string
@@ -149,11 +165,18 @@ type Story struct {
 	// PracticedAt records when the first comprehension answer wrote Practice
 	// Records for this Story; nil until then, at most once ever.
 	PracticedAt *time.Time
-	CreatedAt   time.Time
-	ReadyAt     *time.Time
+	// ReadAt records that the Learner finished the Story: set when they
+	// answer its last comprehension question, and settable directly through
+	// the library's Read mark. It is separate from PracticedAt, which is
+	// about Practice Records, not about finishing (issue #31).
+	ReadAt    *time.Time
+	CreatedAt time.Time
 	// Rating is the Learner's own rating, when they gave one.
 	Rating *Rating
 }
+
+// Read reports whether the Learner has marked this Story read.
+func (s *Story) Read() bool { return s.ReadAt != nil }
 
 type Sentence struct {
 	ID     uuid.UUID

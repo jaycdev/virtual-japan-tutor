@@ -56,7 +56,8 @@ import {
  * on a real Android device.)
  *
  * Android Back unwinds one layer at a time: sheet, then window, then menu,
- * then back to the library.
+ * then back out to whichever view opened the Story (Today's Story or the
+ * Library).
  */
 
 const sameRef = (a: TokenRef, b: TokenRef) => a.sentence === b.sentence && a.index === b.index;
@@ -84,6 +85,9 @@ export function StoryReader({
   const lookup = useEntryLookup(client);
 
   const [selected, setSelected] = useState<number | null>(null);
+  // The title's English translation reveals transiently in the header too
+  // (issue #34 parity): never saved, never a Weak Signal.
+  const [titleEnRevealed, setTitleEnRevealed] = useState(false);
   // The whole press → hold → menu gesture is one reducer (holdMenu.reduceHold):
   // phase, token, finger point and press anchor. menu / looked (panel
   // word-mode) / the scroll freeze all DERIVE from it, and the timer's
@@ -447,24 +451,62 @@ export function StoryReader({
       accessibilityLabel="Story reader"
     >
       <View style={[styles.header, { borderBottomColor: colors.separator }]}>
-        <Pressable
-          testID="back-to-library"
-          accessibilityRole="button"
-          accessibilityLabel="Back to library"
-          onPress={onBack}
-          style={styles.backButton}
-        >
-          <Text style={{ color: colors.accent, fontSize: 16 }}>‹ Library</Text>
-        </Pressable>
-        <Text style={[styles.headerTitle, { color: colors.label }]} numberOfLines={1}>
-          {story.genre}
-        </Text>
-        {saveNote ? (
-          <Text testID="save-note" style={{ color: colors.subtle, fontSize: 13 }} numberOfLines={1}>
-            {saveNote}
+        <View style={styles.headerRow}>
+          <Pressable
+            testID="back-to-stories"
+            accessibilityRole="button"
+            accessibilityLabel="Back to stories"
+            onPress={onBack}
+            style={styles.backButton}
+          >
+            <Text style={{ color: colors.accent, fontSize: 16 }}>‹ Back</Text>
+          </Pressable>
+          <Text style={[styles.headerTitle, { color: colors.label }]} numberOfLines={1}>
+            {story.title}
           </Text>
-        ) : null}
-        <RatingButtons view={view} storyId={story.id} rating={story.rating} />
+          <Pressable
+            testID="reader-read-toggle"
+            accessibilityRole="button"
+            accessibilityLabel={story.readAt != null ? "Unmark read" : "Mark read"}
+            accessibilityState={{ disabled: view.pending }}
+            disabled={view.pending}
+            onPress={() => void (story.readAt != null ? view.clearRead(story.id) : view.setRead(story.id))}
+            style={styles.readToggle}
+          >
+            <Text style={{ color: story.readAt != null ? colors.accent : colors.subtle, fontSize: 15 }}>
+              {story.readAt != null ? "✓ Read" : "Read"}
+            </Text>
+          </Pressable>
+          <RatingButtons view={view} storyId={story.id} rating={story.rating} />
+        </View>
+        <View style={styles.headerMeta}>
+          {story.titleEn ? (
+            <Pressable
+              testID="reader-title-translation"
+              accessibilityRole="button"
+              accessibilityLabel="Title translation"
+              accessibilityHint={titleEnRevealed ? "Tap to hide the translation" : "Tap to show the translation"}
+              onPress={() => setTitleEnRevealed((v) => !v)}
+              style={styles.titleTranslation}
+            >
+              {/* Same Android-safe trick as the Reading Panel: transparent text, no CSS blur. */}
+              <Text style={{ color: titleEnRevealed ? colors.subtle : "transparent", fontSize: 13 }} numberOfLines={1}>
+                {story.titleEn}
+              </Text>
+              {titleEnRevealed ? null : (
+                <Text style={{ color: colors.subtle, fontSize: 11 }}>Title translation hidden — tap to show</Text>
+              )}
+            </Pressable>
+          ) : null}
+          <Text style={{ color: colors.subtle, fontSize: 12 }} numberOfLines={1}>
+            {`${story.genre} · ${story.origin === "on_demand" ? "On demand" : "Automatic"} · ${new Date(story.createdAt).toDateString()}`}
+          </Text>
+          {saveNote ? (
+            <Text testID="save-note" style={{ color: colors.subtle, fontSize: 13 }} numberOfLines={1}>
+              {saveNote}
+            </Text>
+          ) : null}
+        </View>
       </View>
 
       {/* The Reading Panel is the fixed area ABOVE the story (mirrors the web
@@ -601,15 +643,23 @@ export function StoryReader({
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   header: {
+    flexDirection: "column",
+    gap: 2,
+    borderBottomWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
+  headerRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    borderBottomWidth: 1,
-    paddingHorizontal: 12,
     minHeight: MIN_TOUCH,
   },
+  headerMeta: { flexDirection: "row", alignItems: "center", gap: 12, flexWrap: "wrap" },
   backButton: { paddingVertical: 10, paddingRight: 8 },
   headerTitle: { flex: 1, fontSize: 16, fontWeight: "600" },
+  readToggle: { paddingVertical: 8, paddingHorizontal: 4 },
+  titleTranslation: { paddingVertical: 2 },
   questions: { marginTop: 20, paddingTop: 12, borderTopWidth: 1, borderTopColor: "transparent" },
   question: { marginBottom: 16, gap: 6 },
   options: { flexDirection: "row", flexWrap: "wrap", gap: 8 },

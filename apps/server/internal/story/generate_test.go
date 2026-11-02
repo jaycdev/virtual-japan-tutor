@@ -89,10 +89,13 @@ func fixture(t *testing.T, genre string, clauses ...string) []byte {
 func fixtureSpans(t *testing.T, genre string, spans []fSpan, clauses ...string) []byte {
 	t.Helper()
 	out := struct {
+		Title     string  `json:"title"`
+		TitleEN   string  `json:"title_en"`
+		Theme     string  `json:"theme"`
 		Genre     string  `json:"genre"`
 		Sentences []fSent `json:"sentences"`
 		Questions []fQ    `json:"questions"`
-	}{Genre: genre}
+	}{Title: "ねこの一日", TitleEN: "A Day of Cats", Theme: "Cats", Genre: genre}
 	for _, c := range clauses {
 		out.Sentences = append(out.Sentences, fSent{JA: sentence(12, c), EN: "The cat found it.", GrammarSpans: spans})
 	}
@@ -684,23 +687,5 @@ func TestFuriganaThreshold(t *testing.T) {
 	}
 	if Furigana(Token{Surface: "ねこ", Tag: TagUnknown}, 3) {
 		t.Fatal("kana-only unknown surface must not get ruby either")
-	}
-}
-
-func TestFocusChangedSignificance(t *testing.T) {
-	if FocusChanged([]string{"a", "b", "c"}, []string{"a", "b", "c"}) {
-		t.Fatal("unchanged focus set must not re-arm generation")
-	}
-	if FocusChanged([]string{"a", "b", "c"}, []string{"a", "b", "c", "d"}) {
-		t.Fatal("one new member of four (25%) is below the one-third rule")
-	}
-	if !FocusChanged([]string{"a"}, []string{"a", "b", "c"}) {
-		t.Fatal("two new members of three (67%) is a significant change")
-	}
-	if !FocusChanged(nil, []string{"a"}) {
-		t.Fatal("no snapshot means generation has never run: always changed")
-	}
-	if FocusChanged([]string{"a"}, nil) {
-		t.Fatal("an empty current set is not a change")
 	}
 }

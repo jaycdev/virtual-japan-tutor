@@ -93,14 +93,14 @@ type Store interface {
 	// RatingCounts totals the user's ratings by genre and rating.
 	RatingCounts(ctx context.Context, userID uuid.UUID) (map[string]map[Rating]int, error)
 
-	// ReadyStoryID returns the user's ready (not yet opened) Story, if any.
-	ReadyStoryID(ctx context.Context, userID uuid.UUID) (uuid.UUID, bool, error)
-	// SetReady marks s.ID ready and clears any other ready flag for the same
-	// user in one transaction (one ready Story per user, always). A racing
-	// concurrent SetReady surfaces as an error wrapping errReadyConflict.
-	SetReady(ctx context.Context, storyID, userID uuid.UUID) error
-	// ClearReady drops a Story's ready flag (opening it).
-	ClearReady(ctx context.Context, storyID uuid.UUID) error
+	// LatestAutomaticStory returns the user's newest VALIDATED Automatic
+	// Story — Today's Story (GLOSSARY.md) — whatever its Read mark. On-demand
+	// Stories never qualify. (false) when they have none yet.
+	LatestAutomaticStory(ctx context.Context, userID uuid.UUID) (*Story, bool, error)
+	// HasUnreadAutomaticStory reports whether the user has any VALIDATED
+	// Automatic Story they have not opened — the unread rule of issue #32
+	// holds the Automatic slot for ANY unread one, not just the newest.
+	HasUnreadAutomaticStory(ctx context.Context, userID uuid.UUID) (bool, error)
 	// LastFailedAt reports the newest Story's creation time when that newest
 	// Story failed the gate — the failure backoff's clock (false when the
 	// user has no stories or their newest one validated).
@@ -109,6 +109,18 @@ type Store interface {
 	// GenresByLastActivity returns the genres of the user's recent Stories,
 	// newest first; it seeds genre choice when there are no ratings.
 	GenresByLastActivity(ctx context.Context, userID uuid.UUID, limit int) ([]string, error)
+
+	// RecordGenerationDuration samples the wall time of one successful
+	// generation (issue #33); RecentGenerationDurations reads the most
+	// recent samples, newest first, so the On-demand progress bar fills its
+	// writing stage at the Learner's own pace.
+	RecordGenerationDuration(ctx context.Context, userID uuid.UUID, finishedAt time.Time, ms int64) error
+	RecentGenerationDurations(ctx context.Context, userID uuid.UUID, limit int) ([]time.Duration, error)
+
+	// StoryGenreThemeSuggestions returns the distinct genres and themes of
+	// the user's VALIDATED Stories, newest first — the autocomplete options
+	// for the Generate box and the settings form (issue #33).
+	StoryGenreThemeSuggestions(ctx context.Context, userID uuid.UUID) (genres, themes []string, err error)
 
 	// FuriganaThreshold reads and SetFuriganaThreshold writes the user's
 	// Furigana Threshold SRS Level (0–9).
@@ -120,7 +132,6 @@ type Store interface {
 	// when true. Default true, stored on the user row.
 	BlurTranslation(ctx context.Context, userID uuid.UUID) (bool, error)
 	SetBlurTranslation(ctx context.Context, userID uuid.UUID, blur bool) error
-
 	// LookupHoldMs reads and SetLookupHoldMs write the lookup-hold threshold
 	// for reader Weak Signals (issue #12): milliseconds a Lookup Menu must
 	// stay open before the reader reports a signal. Default 800, stored on
@@ -129,14 +140,11 @@ type Store interface {
 	SetLookupHoldMs(ctx context.Context, userID uuid.UUID, holdMs int) error
 
 	// StoryPrefs reads and SetStoryPrefs write the Learner's preferred
-	// genre/theme for future stories ("" = "surprise me" / no theme).
-	StoryPrefs(ctx context.Context, userID uuid.UUID) (genre, theme string, err error)
-	SetStoryPrefs(ctx context.Context, userID uuid.UUID, genre, theme string) error
-
-	// FocusSnapshot reads and SetFocusSnapshot write the membership of the
-	// Focus Set captured at the last generation (mastery ItemKey refs).
-	FocusSnapshot(ctx context.Context, userID uuid.UUID) ([]string, error)
-	SetFocusSnapshot(ctx context.Context, userID uuid.UUID, keys []string) error
+	// genre/theme for future stories ("" = "surprise me" / no theme) and the
+	// Learner's Timezone (IANA name; "" = unset, the server's own timezone
+	// decides which local day an Automatic Story belongs to).
+	StoryPrefs(ctx context.Context, userID uuid.UUID) (genre, theme, timezone string, err error)
+	SetStoryPrefs(ctx context.Context, userID uuid.UUID, genre, theme, timezone string) error
 
 	// MarkPracticed flips a Story's practiced flag; it reports true only for
 	// the first call ever for that Story (the at-most-once guard for writing
@@ -146,6 +154,15 @@ type Store interface {
 	// flag still holds exactly the value that call set (the rollback for a
 	// Practice Record append that failed after the claim).
 	ResetPracticed(ctx context.Context, storyID uuid.UUID, at time.Time) error
+
+	// MarkRead sets a Story's Read mark (issue #31) and ClearRead unsets it;
+	// both are the library's Read toggle. Delete removes the Story and its
+	// rating; the Practice Records it wrote stay (the mastery log is append-
+	// only). All three are owner-scoped: a foreign or missing id is
+	// ErrNotFound.
+	MarkRead(ctx context.Context, storyID, userID uuid.UUID, at time.Time) error
+	ClearRead(ctx context.Context, storyID, userID uuid.UUID) error
+	Delete(ctx context.Context, storyID, userID uuid.UUID) error
 
 	// UserIDs lists the users the background generator considers.
 	UserIDs(ctx context.Context) ([]uuid.UUID, error)
@@ -163,8 +180,6 @@ type Focus interface {
 	// KnownWords returns up to limit of the user's Known vocabulary items,
 	// most solid first, for the prompt's Known Items list.
 	KnownWords(ctx context.Context, userID uuid.UUID, limit int) ([]VocabFocus, error)
-	// SnapshotKeys names the Focus Set membership for the significance rule.
-	SnapshotKeys(f FocusSet) []string
 }
 
 // KnownSource is the Focus membership query generation runs per candidate;
