@@ -170,7 +170,7 @@ function StoryLibrary({ view, onBack }: { view: StoryView; onBack: () => void })
                       the text stays in place, transparent until revealed. */}
                   <Text style={{ color: isRevealed ? colors.subtle : "transparent", fontSize: 14 }}>{story.titleEn}</Text>
                   {isRevealed ? null : (
-                    <Text style={{ color: colors.subtle, fontSize: 12 }}>Translation hidden — tap to show</Text>
+                    <Text style={{ color: colors.subtle, fontSize: 12 }}>Title translation hidden — tap to show</Text>
                   )}
                 </Pressable>
               ) : null}

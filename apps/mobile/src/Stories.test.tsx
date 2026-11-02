@@ -340,12 +340,12 @@ describe("Today's Story and the Story Library (mobile)", () => {
     await openLibrary(client);
 
     const reveal = screen.getByTestId("title-translation-st-1");
-    expect(screen.getByText("Translation hidden — tap to show")).toBeTruthy();
+    expect(screen.getByText("Title translation hidden — tap to show")).toBeTruthy();
     fireEvent.click(reveal);
-    await waitFor(() => expect(screen.queryByText("Translation hidden — tap to show")).toBeNull());
+    await waitFor(() => expect(screen.queryByText("Title translation hidden — tap to show")).toBeNull());
     expect(screen.getByText("A Day at School")).toBeTruthy();
     fireEvent.click(screen.getByTestId("title-translation-st-1"));
-    expect(await screen.findByText("Translation hidden — tap to show")).toBeTruthy();
+    expect(await screen.findByText("Title translation hidden — tap to show")).toBeTruthy();
     expect(requests.some((r) => r.path === "/weak-signals")).toBe(false);
   });
 
@@ -386,6 +386,28 @@ describe("Today's Story and the Story Library (mobile)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Rate up" }));
     await waitFor(() => expect(requests.some((r) => r.method === "POST" && r.path === "/stories/st-1/rate")).toBe(true));
     expect(requests.find((r) => r.path === "/stories/st-1/rate")?.body).toBe("up");
+  });
+
+  it("the reader header shows the title, reveals its translation, and toggles Read", async () => {
+    const { client, requests } = fakeApi();
+    await openStory(client);
+
+    expect(screen.getByText("がっこうの 一日")).toBeTruthy();
+    expect(screen.getByText(/diary · Automatic ·/)).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("reader-title-translation"));
+    await waitFor(() => expect(screen.queryByText("Title translation hidden — tap to show")).toBeNull());
+    expect(screen.getByText("A Day at School")).toBeTruthy();
+    expect(requests.some((r) => r.path === "/weak-signals")).toBe(false);
+
+    fireEvent.click(screen.getByTestId("reader-read-toggle"));
+    await waitFor(() => expect(requests.some((r) => r.method === "PUT" && r.path === "/stories/st-1/read")).toBe(true));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Unmark read" })).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "Unmark read" }));
+    await waitFor(() =>
+      expect(requests.some((r) => r.method === "DELETE" && r.path === "/stories/st-1/read")).toBe(true),
+    );
   });
 });
 
