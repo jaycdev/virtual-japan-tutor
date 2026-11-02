@@ -682,7 +682,9 @@ func TestPostgresStoryLibraryFields(t *testing.T) {
 		t.Error("a fresh story is unread")
 	}
 
-	at := time.Now().UTC()
+	// Postgres timestamptz keeps microsecond precision, so the instant must
+	// be truncated to it before the round-trip comparison below.
+	at := time.Now().UTC().Truncate(time.Microsecond)
 	if err := st.MarkRead(ctx, s.ID, user, at); err != nil {
 		t.Fatalf("MarkRead: %v", err)
 	}
