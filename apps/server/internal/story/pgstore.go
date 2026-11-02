@@ -418,6 +418,69 @@ func (st *PostgresStore) GenresByLastActivity(ctx context.Context, userID uuid.U
 	return out, rows.Err()
 }
 
+// RecordGenerationDuration appends one duration sample (issue #33).
+func (st *PostgresStore) RecordGenerationDuration(ctx context.Context, userID uuid.UUID, finishedAt time.Time, ms int64) error {
+	if _, err := st.pool.Exec(ctx, `
+		INSERT INTO story_generation_durations (user_id, finished_at, duration_ms)
+		VALUES ($1, $2, $3)`, userID, finishedAt, ms); err != nil {
+		return fmt.Errorf("story generation duration: %w", err)
+	}
+	return nil
+}
+
+func (st *PostgresStore) RecentGenerationDurations(ctx context.Context, userID uuid.UUID, limit int) ([]time.Duration, error) {
+	rows, err := st.pool.Query(ctx, `
+		SELECT duration_ms FROM story_generation_durations
+		WHERE user_id = $1 ORDER BY finished_at DESC, id DESC LIMIT $2`, userID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("story generation durations: %w", err)
+	}
+	defer rows.Close()
+	var out []time.Duration
+	for rows.Next() {
+		var ms int64
+		if err := rows.Scan(&ms); err != nil {
+			return nil, fmt.Errorf("story generation durations: %w", err)
+		}
+		out = append(out, time.Duration(ms)*time.Millisecond)
+	}
+	return out, rows.Err()
+}
+
+// StoryGenreThemeSuggestions reads the distinct genres and themes of the
+// user's validated Stories, each list newest-first (the most recent Story
+// mentioning it sorts first).
+func (st *PostgresStore) StoryGenreThemeSuggestions(ctx context.Context, userID uuid.UUID) ([]string, []string, error) {
+	distinct := func(col string) ([]string, error) {
+		rows, err := st.pool.Query(ctx, fmt.Sprintf(`
+			SELECT %s FROM stories
+			WHERE user_id = $1 AND validated AND COALESCE(%s, '') <> ''
+			GROUP BY %s ORDER BY MAX(created_at) DESC`, col, col, col), userID)
+		if err != nil {
+			return nil, fmt.Errorf("story %s suggestions: %w", col, err)
+		}
+		defer rows.Close()
+		var out []string
+		for rows.Next() {
+			var v string
+			if err := rows.Scan(&v); err != nil {
+				return nil, fmt.Errorf("story %s suggestions: %w", col, err)
+			}
+			out = append(out, v)
+		}
+		return out, rows.Err()
+	}
+	genres, err := distinct("genre")
+	if err != nil {
+		return nil, nil, err
+	}
+	themes, err := distinct("theme")
+	if err != nil {
+		return nil, nil, err
+	}
+	return genres, themes, nil
+}
+
 func (st *PostgresStore) FuriganaThreshold(ctx context.Context, userID uuid.UUID) (int, error) {
 	var n int
 	err := st.pool.QueryRow(ctx, `SELECT furigana_threshold_srs_level FROM users WHERE id = $1`, userID).Scan(&n)

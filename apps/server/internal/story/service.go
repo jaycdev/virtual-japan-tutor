@@ -54,9 +54,12 @@ type Service struct {
 	roll func() float64
 
 	// genMu guards genInFlight: the user ids whose story generation is
-	// currently running (at most one per user at a time).
+	// currently running (at most one per user at a time), and genProgress:
+	// each user's latest generation run for the On-demand progress bar
+	// (issue #33).
 	genMu       sync.Mutex
 	genInFlight map[uuid.UUID]bool
+	genProgress map[uuid.UUID]*genRun
 }
 
 // NewService wires a Service. settings carries the gate bounds (STORY_* env
@@ -89,6 +92,271 @@ func (s *Service) beginGeneration(userID uuid.UUID) (release func(), ok bool) {
 			s.genMu.Unlock()
 		})
 	}, true
+}
+
+// startRun opens a tracked generation run for the user (the slot is already
+// held), expectedPer being the writing slice of one attempt, and returns its
+// snapshot for the caller's progress reporting.
+func (s *Service) startRun(userID uuid.UUID, maxAttempts int, expectedPer time.Duration) {
+	s.genMu.Lock()
+	defer s.genMu.Unlock()
+	if s.genProgress == nil {
+		s.genProgress = map[uuid.UUID]*genRun{}
+	}
+	now := s.now()
+	s.genProgress[userID] = &genRun{
+		status:      GenerationRunning,
+		stage:       StagePreparing,
+		maxAttempts: maxAttempts,
+		startedAt:   now,
+		stageAt:     now,
+		expected:    expectedPer,
+		percent:     5,
+	}
+}
+
+// setStage moves the user's run to a new stage (and attempt, for the
+// writing/checking pair); preparing and saving carry fixed floors, while the
+// attempt windows fill by time (genRun.percentNow).
+func (s *Service) setStage(userID uuid.UUID, stage GenerationStage, attempt int) {
+	s.genMu.Lock()
+	defer s.genMu.Unlock()
+	r := s.genProgress[userID]
+	if r == nil || r.status != GenerationRunning {
+		return
+	}
+	r.stage = stage
+	if attempt > 0 {
+		r.attempt = attempt
+	}
+	switch stage {
+	case StageWriting:
+		r.stageAt = s.now()
+	case StagePreparing:
+		r.percent = 5
+	case StageSaving:
+		r.percent = 90
+	}
+}
+
+// finishRun closes the user's run with its terminal state, kept readable
+// until the next start (a poller that arrived late, or a client that
+// reloaded, still learns how it ended). It returns the terminal snapshot.
+func (s *Service) finishRun(userID uuid.UUID, status GenerationStatus, message string, storyID uuid.UUID) Progress {
+	s.genMu.Lock()
+	defer s.genMu.Unlock()
+	r := s.genProgress[userID]
+	if r == nil {
+		return Progress{Status: status, Message: message, StoryID: storyID}
+	}
+	r.status = status
+	r.stage = ""
+	r.message = message
+	r.storyID = storyID
+	if status == GenerationReady {
+		r.percent = 100
+	} else {
+		r.percent = r.percentNow(s.now())
+	}
+	return r.snapshot(s.now())
+}
+
+// GenerationProgress is what the progress polling reads: the current run's
+// snapshot, or idle when nothing has been tracked for the user. The writing
+// stage's percentage is recomputed from the clock, so the bar moves without
+// the server touching it.
+func (s *Service) GenerationProgress(_ context.Context, userID uuid.UUID) Progress {
+	s.genMu.Lock()
+	defer s.genMu.Unlock()
+	r := s.genProgress[userID]
+	if r == nil {
+		return Progress{Status: GenerationIdle}
+	}
+	return r.snapshot(s.now())
+}
+
+func (r *genRun) snapshot(now time.Time) Progress {
+	return Progress{
+		Status:      r.status,
+		Stage:       r.stage,
+		Attempt:     r.attempt,
+		MaxAttempts: r.maxAttempts,
+		Percent:     r.percentNow(now),
+		StartedAt:   r.startedAt,
+		Message:     r.message,
+		StoryID:     r.storyID,
+	}
+}
+
+// expectedPerAttempt reads the Learner's recent generation durations (both
+// the Automatic flow and On-demand runs record them) to decide how fast the
+// writing bar should fill. No samples yet: a default whole-run budget.
+func (s *Service) expectedPerAttempt(ctx context.Context, userID uuid.UUID, maxAttempts int) time.Duration {
+	ds, err := s.store.RecentGenerationDurations(ctx, userID, durationSampleLimit)
+	total := defaultGenerationTotal
+	if err == nil && len(ds) > 0 {
+		var sum time.Duration
+		for _, d := range ds {
+			sum += d
+		}
+		total = sum / time.Duration(len(ds))
+	}
+	if maxAttempts < 1 {
+		maxAttempts = 1
+	}
+	return total / time.Duration(maxAttempts)
+}
+
+// recordGenerationDuration samples a successful run's wall time for the
+// next bar. Losing the sample is never worth failing a finished generation.
+func (s *Service) recordGenerationDuration(ctx context.Context, userID uuid.UUID, startedAt time.Time) {
+	at := s.now()
+	if err := s.store.RecordGenerationDuration(ctx, userID, at, int64(at.Sub(startedAt)/time.Millisecond)); err != nil {
+		s.log.Warn("story: could not record generation duration", "user_id", userID, "err", err)
+	}
+}
+
+// GenerateOnDemand writes one Story now, because the Learner asked
+// (issue #33). It follows the Automatic pipeline — same Focus Set, same
+// validation gate, same Practice Records on the first answer — with three
+// differences: the Learner's typed genre/theme (or Surprise's model's
+// choice) replaces the preference roll, the Automatic gating rules (one per
+// local day, unread holds the slot, failure cooldown) do not apply, and the
+// run reports stage progress the client can poll through GenerationProgress.
+//
+// The run belongs to the Learner's generation slot, not to this request: it
+// continues when the request's context dies (a reload, a navigation), the
+// same shape as the MaruMori Sync. It returns the terminal Progress; a
+// second start while one runs answers a 409 generation_running.
+func (s *Service) GenerateOnDemand(ctx context.Context, userID uuid.UUID, opts OnDemandOptions) (Progress, error) {
+	release, ok := s.beginGeneration(userID)
+	if !ok {
+		return Progress{}, &Error{Status: 409, Code: "generation_running", Message: "A Story is already being written for you."}
+	}
+	defer release()
+	// The budget covers every attempt plus the reads around them; going on
+	// past the client's patience is the point (the Sync precedent).
+	runCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx),
+		time.Duration(s.settings.MaxAttempts+1)*DefaultGenerationTimeout)
+	defer cancel()
+	return s.runGeneration(runCtx, userID, opts)
+}
+
+func (s *Service) runGeneration(ctx context.Context, userID uuid.UUID, opts OnDemandOptions) (Progress, error) {
+	maxAttempts := s.settings.MaxAttempts
+	s.startRun(userID, maxAttempts, s.expectedPerAttempt(ctx, userID, maxAttempts))
+	started := s.now()
+
+	fset, err := s.focus.FocusFor(ctx, userID)
+	if err != nil {
+		s.finishRun(userID, GenerationFailed, FitFailureMessage, uuid.Nil)
+		return Progress{}, fmt.Errorf("focus set: %w", err)
+	}
+	if fset.Empty() {
+		return s.finishRun(userID, GenerationFailed, FitFailureMessage, uuid.Nil), nil
+	}
+	knownWords, err := s.focus.KnownWords(ctx, userID, s.settings.PromptKnownLimit)
+	if err != nil {
+		s.finishRun(userID, GenerationFailed, FitFailureMessage, uuid.Nil)
+		return Progress{}, fmt.Errorf("known words: %w", err)
+	}
+	prefGenre, prefTheme, _, err := s.store.StoryPrefs(ctx, userID)
+	if err != nil {
+		s.finishRun(userID, GenerationFailed, FitFailureMessage, uuid.Nil)
+		return Progress{}, err
+	}
+	ratings, err := s.store.RatingCounts(ctx, userID)
+	if err != nil {
+		s.finishRun(userID, GenerationFailed, FitFailureMessage, uuid.Nil)
+		return Progress{}, err
+	}
+	recent, err := s.store.GenresByLastActivity(ctx, userID, 5)
+	if err != nil {
+		s.finishRun(userID, GenerationFailed, FitFailureMessage, uuid.Nil)
+		return Progress{}, err
+	}
+	resolved, err := s.resolve.ResolveProvider(ctx, userID, aiprovider.TaskStory)
+	if err != nil {
+		s.finishRun(userID, GenerationFailed, FitFailureMessage, uuid.Nil)
+		return Progress{}, err
+	}
+	if resolved.Client == nil {
+		return s.finishRun(userID, GenerationFailed, FitFailureMessage, uuid.Nil), nil
+	}
+
+	req := Request{
+		UserID:         userID,
+		Settings:       s.settings,
+		Focus:          fset,
+		Known:          s.focus,
+		KnownWords:     knownWords,
+		Origin:         OriginOnDemand,
+		DislikedGenres: dislikedGenres(ratings),
+		ReportStage:    func(stage GenerationStage, attempt int) { s.setStage(userID, stage, attempt) },
+	}
+	switch {
+	case opts.Surprise:
+		// The model names its own genre and theme; the Learner's
+		// preferences are off, so recent genres keep the variety honest.
+		req.AvoidRecentGenres = recent
+	case opts.Genre != "":
+		req.Genre = opts.Genre
+	default:
+		req.Genre = automaticGenre(prefGenre, ratings, recent, s.roll())
+	}
+	if !opts.Surprise {
+		if opts.Theme != "" {
+			req.Theme = opts.Theme
+		} else {
+			req.Theme = automaticTheme(prefTheme, s.roll())
+		}
+	}
+
+	st, genErr := s.gen.Generate(ctx, resolved.Client, req)
+	if st == nil {
+		// No candidate at all: a provider that never answered. The failure
+		// is data — the Learner sees the retry line, not a 500.
+		s.log.Warn("story: on-demand generation never produced a candidate", "user_id", userID, "err", genErr)
+		return s.finishRun(userID, GenerationFailed, FitFailureMessage, uuid.Nil), nil
+	}
+	s.setStage(userID, StageSaving, st.Attempts)
+	if err := s.store.Save(ctx, st); err != nil {
+		s.finishRun(userID, GenerationFailed, FitFailureMessage, uuid.Nil)
+		return Progress{}, err
+	}
+	if !st.Validated {
+		// Failed-story policy: stored for analysis, never offered.
+		s.log.Warn("story: on-demand attempt failed the validation gate",
+			"user_id", userID, "story_id", st.ID, "attempts", st.Attempts)
+		return s.finishRun(userID, GenerationFailed, FitFailureMessage, uuid.Nil), nil
+	}
+	s.recordGenerationDuration(ctx, userID, started)
+	return s.finishRun(userID, GenerationReady, "", st.ID), nil
+}
+
+// GenreThemeSuggestions feeds the Generate box's (and the settings form's)
+// autocomplete: the preset genres plus the genres and themes of the
+// Learner's own validated Stories, newest first.
+func (s *Service) GenreThemeSuggestions(ctx context.Context, userID uuid.UUID) (genres, themes []string, err error) {
+	histGenres, histThemes, err := s.store.StoryGenreThemeSuggestions(ctx, userID)
+	if err != nil {
+		return nil, nil, err
+	}
+	seen := map[string]bool{}
+	genres = make([]string, 0, len(presetGenres)+len(histGenres))
+	for _, g := range presetGenres {
+		if !seen[g] {
+			seen[g] = true
+			genres = append(genres, g)
+		}
+	}
+	for _, g := range histGenres {
+		if !seen[g] {
+			seen[g] = true
+			genres = append(genres, g)
+		}
+	}
+	return genres, histThemes, nil
 }
 
 // ensureAutomaticStory applies the Automatic Story rule (issue #32): at most
@@ -171,6 +439,13 @@ func (s *Service) ensureAutomaticStory(ctx context.Context, userID uuid.UUID) er
 		return aiprovider.ErrNotAssigned
 	}
 
+	// Issue #33: the Automatic pass writes its run into the same progress
+	// slot an On-demand start would use — one generation per Learner, one
+	// picture of it — and samples its duration for the next bar.
+	maxAttempts := s.settings.MaxAttempts
+	s.startRun(userID, maxAttempts, s.expectedPerAttempt(ctx, userID, maxAttempts))
+	started := s.now()
+
 	// Genre and theme are decided separately (issue #32): the Learner's
 	// preference steers about 70% of Automatic Stories, the rest keeps the
 	// rating-steered variety — see automaticGenre and automaticTheme.
@@ -186,18 +461,25 @@ func (s *Service) ensureAutomaticStory(ctx context.Context, userID uuid.UUID) er
 		Theme:          automaticTheme(prefTheme, s.roll()),
 		Origin:         OriginAutomatic,
 		DislikedGenres: dislikedGenres(ratings),
+		ReportStage:    func(stage GenerationStage, attempt int) { s.setStage(userID, stage, attempt) },
 	}
 	st, genErr := s.gen.Generate(ctx, resolved.Client, req)
 	if st == nil {
+		s.finishRun(userID, GenerationFailed, FitFailureMessage, uuid.Nil)
 		return genErr
 	}
+	s.setStage(userID, StageSaving, st.Attempts)
 	if err := s.store.Save(ctx, st); err != nil {
+		s.finishRun(userID, GenerationFailed, FitFailureMessage, uuid.Nil)
 		return err
 	}
 	if st.Validated {
+		s.recordGenerationDuration(ctx, userID, started)
+		s.finishRun(userID, GenerationReady, "", st.ID)
 		s.log.Info("story: wrote today's Automatic Story",
 			"user_id", userID, "story_id", st.ID, "genre", st.Genre, "theme", st.Theme)
 	} else {
+		s.finishRun(userID, GenerationFailed, FitFailureMessage, uuid.Nil)
 		// Failed-story policy: stored for analysis, never offered; the
 		// day stays open, but the cooldown keeps the retries affordable.
 		s.log.Warn("story failed the validation gate; stored but not offered",

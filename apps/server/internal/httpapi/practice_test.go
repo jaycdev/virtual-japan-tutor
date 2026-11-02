@@ -81,7 +81,10 @@ func newPracticeEnvWith(t *testing.T, mopts func(*mastery.Options), popts func(*
 	if popts != nil {
 		popts(&po)
 	}
-	svc := practice.NewService(focusSvc, content, practice.NewMemStore(time.Hour), practiceWriter{mem}, po)
+	// The session store shares the frozen focusClock: with the real wall
+	// clock its lazy sweep would expire sessions the instant they are
+	// created once the fixed fixtures' date has passed (a date-bomb).
+	svc := practice.NewService(focusSvc, content, practice.NewMemStore(time.Hour).WithClock(func() time.Time { return focusClock }), practiceWriter{mem}, po)
 
 	h := httpapi.New(fakeDB{}, authSvc, httpapi.WithFocusSet(focusSvc), httpapi.WithPractice(svc))
 	e := env{h: h, svc: authSvc, clock: clock}

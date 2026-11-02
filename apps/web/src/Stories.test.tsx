@@ -105,6 +105,8 @@ function fakeApi(
     createdAt?: string;
     /** Pre-set Read mark on the fake story. */
     readAt?: string;
+    /** Seed a generation run already going (issue #33). */
+    running?: boolean;
   } = {},
 ) {
   const hasAutomatic = opts.automatic ?? true;
@@ -186,6 +188,24 @@ function fakeApi(
   };
   const page = { items: [storyView], total: 1, limit: 10, offset: 0 };
 
+  // On-demand generation (issue #33): the run is the server's, so the fake
+  // keeps its snapshot; tests move it with finishGeneration/failGeneration
+  // and the screen only ever sees it through GET /stories/generation polls.
+  const suggestions = { genres: ["mystery", "cyberpunk"], themes: ["a night train"] };
+  let generation: Record<string, unknown> = opts.running
+    ? { status: "running", stage: "writing", attempt: 2, maxAttempts: 3, percent: 45, startedAt: "2026-11-02T09:00:00Z" }
+    : { status: "idle", percent: 0 };
+  const onDemandStory = {
+    ...storyView,
+    id: "st-new",
+    title: "A night on the train",
+    titleEn: "",
+    theme: "a night train",
+    origin: "on_demand" as const,
+    readAt: null,
+    createdAt: "2026-11-02T09:30:00Z",
+  };
+
   const requests: { method: string; path: string; body: unknown }[] = [];
   const gated: (() => void)[] = [];
   const settings = { furiganaThresholdSrsLevel: 3, preferredGenre: "", preferredTheme: "", timezone: "" };
@@ -236,6 +256,24 @@ function fakeApi(
     }
     if (pathname === "/stories/st-1/answers" && request.method === "POST")
       return json(200, { correct: true, practiceRecorded: true });
+    // On-demand generation (issue #33): one run per Learner, tracked by the
+    // server; POST starts it (409 while one runs) and polls read snapshots.
+    if (pathname === "/stories/suggestions" && request.method === "GET") return json(200, suggestions);
+    if (pathname === "/stories/generation" && request.method === "GET") return json(200, generation);
+    if (pathname === "/stories/generate" && request.method === "POST") {
+      if (generation.status === "running")
+        return json(409, { code: "generation_running", message: "A Story is already being written for you." });
+      generation = {
+        status: "running",
+        stage: "writing",
+        attempt: 1,
+        maxAttempts: 3,
+        percent: 30,
+        startedAt: "2026-11-02T09:30:00Z",
+      };
+      return json(202, generation);
+    }
+    if (pathname === "/stories/st-new" && request.method === "GET") return json(200, onDemandStory);
     if (pathname === "/story-settings" && request.method === "GET") return json(200, settings);
     if (pathname === "/story-settings" && request.method === "PUT") {
       Object.assign(settings, body as Partial<typeof settings>);
@@ -313,6 +351,20 @@ function fakeApi(
     /** Answer the oldest held dictionary fetch; later ones can arrive after
      *  the UI has already moved on — which is exactly the race. */
     releaseEntry: () => gated.shift()?.(),
+    /** The run finishes: the On-demand Story joins the library, ready. */
+    finishGeneration: () => {
+      page.items = [onDemandStory, ...page.items];
+      page.total = page.items.length;
+      generation = { status: "ready", percent: 100, storyId: "st-new" };
+    },
+    /** The run fails the gate: only the retry line is left to show. */
+    failGeneration: () => {
+      generation = {
+        status: "failed",
+        percent: 82,
+        message: "Couldn't write a Story that fits your vocabulary. Try again?",
+      };
+    },
   };
 }
 
@@ -358,14 +410,17 @@ describe("Stories screen", () => {
     // — once in the Reading Panel's copy of the selected sentence, once in the body.
     const rtTexts = Array.from(document.querySelectorAll("ruby rt")).map((rt) => rt.textContent);
     expect(rtTexts).toEqual(["勉強", "しました", "勉強", "しました", "いきました"]);
-    // Mount: the library page, Today's Story and the story settings. Opening
-    // a row adds the story itself, the reading settings and the Item Lists the
-    // reader's Save flow needs; nothing else — no generation call.
-    await waitFor(() => expect(requests.length).toBe(6));
+    // Mount: the library page, Today's Story, the story settings, and the
+    // generation read + suggestions behind the Generate box (issue #33) —
+    // reads only, no POST; opening a row adds the story itself, the reading
+    // settings and the Item Lists the reader's Save flow needs.
+    await waitFor(() => expect(requests.length).toBe(8));
     expect(requests.map((r) => `${r.method} ${r.path}`)).toEqual([
       "GET /stories",
       "GET /stories/today",
       "GET /story-settings",
+      "GET /stories/suggestions",
+      "GET /stories/generation",
       "GET /stories/st-1",
       "GET /reading-settings",
       "GET /item-lists",
@@ -1305,5 +1360,113 @@ describe("Saving and Weak Signals (issue #12)", () => {
         { itemKind: "grammar", itemRef: "12", reason: "translation_unblur" },
       ]);
     });
+  });
+});
+
+/**
+ * On-demand Stories (issue #33): Generate (with optional genre/theme
+ * autocomplete) and Surprise me start a run whose progress the server tracks;
+ * the screen polls for snapshots, shows "Ready, read now" without ever
+ * auto-opening, and shows the retry line verbatim when the gate rejects.
+ */
+describe("On-demand generation", () => {
+  it("Generate with genre and theme tracks the run, offers the finished Story, and opens it on click", async () => {
+    const o = fakeApi();
+    render(<Stories client={o.client} generationPollMs={20} />);
+    fireEvent.click(await screen.findByRole("button", { name: "View all stories" }));
+    await screen.findByTestId("story-st-1");
+
+    fireEvent.change(screen.getByLabelText("Genre for this story"), { target: { value: "mystery" } });
+    fireEvent.change(screen.getByLabelText("Theme for this story"), { target: { value: "a night train" } });
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+
+    await waitFor(() => {
+      const post = o.requests.find((r) => r.method === "POST" && r.path === "/stories/generate");
+      expect(post?.body).toEqual({ genre: "mystery", theme: "a night train" });
+    });
+    // The bar follows the server's snapshot, attempts and all.
+    expect(await screen.findByText("Writing… attempt 1 of 3")).toBeTruthy();
+    expect(document.querySelector("progress")).toBeTruthy();
+
+    o.finishGeneration();
+    expect(await screen.findByRole("button", { name: "Ready, read now" })).toBeTruthy();
+    // Never auto-opened: still the library, and the reload pulled the new
+    // On-demand Story into it.
+    expect(screen.queryByText("I studied at school.")).toBeNull();
+    await screen.findByTestId("story-st-new");
+
+    fireEvent.click(screen.getByRole("button", { name: "Ready, read now" }));
+    await screen.findByRole("heading", { name: /A night on the train/ });
+  });
+
+  it("Surprise me with empty boxes names nothing: the model picks genre and theme", async () => {
+    const o = fakeApi();
+    render(<Stories client={o.client} generationPollMs={20} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Surprise me" }));
+    await waitFor(() => {
+      const post = o.requests.find((r) => r.method === "POST" && r.path === "/stories/generate");
+      expect(post?.body).toEqual({ surprise: true });
+    });
+  });
+
+  it("an empty Generate follows the Automatic rules: no genre or theme is sent", async () => {
+    const o = fakeApi();
+    render(<Stories client={o.client} generationPollMs={20} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Generate" }));
+    await waitFor(() => {
+      const post = o.requests.find((r) => r.method === "POST" && r.path === "/stories/generate");
+      expect(post?.body).toEqual({});
+    });
+  });
+
+  it("a run that cannot fit shows the retry line and offers the form again", async () => {
+    const o = fakeApi();
+    render(<Stories client={o.client} generationPollMs={20} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Generate" }));
+    expect(await screen.findByText("Writing… attempt 1 of 3")).toBeTruthy();
+
+    o.failGeneration();
+    expect(
+      await screen.findByText("Couldn't write a Story that fits your vocabulary. Try again?"),
+    ).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Generate" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("a run already going shows its bar; the buttons wait and views keep it", async () => {
+    const o = fakeApi({ running: true });
+    render(<Stories client={o.client} generationPollMs={20} />);
+
+    expect(await screen.findByText("Writing… attempt 2 of 3")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Generate" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Surprise me" }) as HTMLButtonElement).disabled).toBe(true);
+
+    // Navigating between the Today view and the Library does not cancel the
+    // run or lose the bar — the server still owns it.
+    fireEvent.click(screen.getByRole("button", { name: "View all stories" }));
+    await screen.findByTestId("story-st-1");
+    expect(screen.getByText("Writing… attempt 2 of 3")).toBeTruthy();
+  });
+
+  it("genre and theme boxes autocomplete — the Generate form and the settings share it", async () => {
+    const o = fakeApi();
+    render(<Stories client={o.client} generationPollMs={20} />);
+
+    const genre = (await screen.findByLabelText("Genre for this story")) as HTMLInputElement;
+    const readOptions = (input: HTMLInputElement) =>
+      Array.from(document.querySelectorAll(`datalist#${input.getAttribute("list")} option`)).map(
+        (el) => el.getAttribute("value"),
+      );
+    await waitFor(() => expect(readOptions(genre)).toEqual(["mystery", "cyberpunk"]));
+    const theme = screen.getByLabelText("Theme for this story") as HTMLInputElement;
+    expect(readOptions(theme)).toEqual(["a night train"]);
+
+    // Same suggestions feed the Preferred Genre/Theme boxes in Story settings.
+    const preferredGenre = screen.getByLabelText(/Preferred genre/) as HTMLInputElement;
+    expect(readOptions(preferredGenre)).toEqual(["mystery", "cyberpunk"]);
+    const preferredTheme = screen.getByLabelText(/Preferred theme/) as HTMLInputElement;
+    expect(readOptions(preferredTheme)).toEqual(["a night train"]);
   });
 });

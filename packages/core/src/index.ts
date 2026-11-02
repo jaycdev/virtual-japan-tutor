@@ -12,6 +12,8 @@ export { usePractice } from "./usePractice.ts";
 export type { AnswerFeedback, ExerciseView, PracticeView } from "./usePractice.ts";
 export { useStory, useStorySettings } from "./useStory.ts";
 export type { TodaysStoryState } from "./useStory.ts";
+export { useStoryGeneration } from "./useStoryGeneration.ts";
+export type { StoryGeneration, StoryGenerationState } from "./useStoryGeneration.ts";
 export { useReadingSettings } from "./useReadingSettings.ts";
 export type { ReadingSettingsState, ReadingSettingsView } from "./useReadingSettings.ts";
 export type {

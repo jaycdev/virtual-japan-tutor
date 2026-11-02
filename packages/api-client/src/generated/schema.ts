@@ -608,6 +608,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/stories/generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start writing an On-demand Story now
+         * @description The Learner presses Generate (issue #33): one Story written immediately through the same pipeline as an Automatic Story — the Focus Set, the validation gate, Practice Records on the first answer — with Origin On-demand, so it never becomes Today's Story. The genre and theme boxes are optional: blank means the Automatic rules (the preference roll), and Surprise means the model chooses both, ignoring the Learner's preferences while still avoiding disliked and recently-read genres. The request answers as soon as the run starts and the writing continues even if the client disconnects; GET /stories/generation tracks it. One generation per Learner runs at a time, shared with the Automatic flow: while one runs this answers 409.
+         */
+        post: operations["generateStory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stories/generation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The progress of the Learner's current or last Story generation
+         * @description What the progress bar polls (issue #33): the stage, attempt count, and a server-computed percentage that fills the writing stage at the Learner's own pace (from their recent generation durations). `idle` when nothing has been tracked; the terminal `ready`/`failed` state of the last run stays readable until the next start, so a reload mid-run finds the same picture.
+         */
+        get: operations["getStoryGeneration"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stories/suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Autocomplete options for the genre and theme boxes
+         * @description The Generate box and the Preferred Genre/Theme settings fields offer the preset genres plus the genres and themes of the Learner's own validated Stories, newest first (issue #33). Both boxes stay free-text: anything can be typed.
+         */
+        get: operations["getStorySuggestions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/story-settings": {
         parameters: {
             query?: never;
@@ -1248,6 +1308,44 @@ export interface components {
          * @enum {string}
          */
         StoryRating: "up" | "down";
+        /** @description What the Learner typed into the Generate box (issue #33). Both fields are optional: blank follows the Automatic rules (the preference roll, PreferredShare), and Surprise ignores the Learner's preferences entirely — the model names its own genre and theme, still avoiding disliked and recently-read genres. Surprise with typed text keeps the typed values; only the preference roll switches off. */
+        GenerateStoryRequest: {
+            /** @description The genre for this one Story (free text; blank means Automatic). */
+            genre?: string;
+            /** @description The theme for this one Story (free text; blank means Automatic). */
+            theme?: string;
+            /** @description Let the model choose genre and theme for this Story. */
+            surprise?: boolean;
+        };
+        /** @description One snapshot of the Learner's generation run (issue #33), computed by the server: a client reload mid-run finds the same picture. The terminal ready/failed state of the last run is kept until the next start. */
+        StoryGenerationProgress: {
+            /** @enum {string} */
+            status: "idle" | "running" | "ready" | "failed";
+            /**
+             * @description What the run is doing right now; only while running.
+             * @enum {string}
+             */
+            stage?: "preparing" | "writing" | "checking" | "saving";
+            /** @description The current writing attempt (the bar's "attempt 2 of 3"). */
+            attempt?: number;
+            maxAttempts?: number;
+            /** @description Server-computed progress; the writing stage fills from the Learner's recent durations. */
+            percent: number;
+            /** Format: date-time */
+            startedAt?: string;
+            /** @description The failure line when status is failed ("Couldn't write a Story that fits your vocabulary. Try again?"). */
+            message?: string;
+            /**
+             * Format: uuid
+             * @description The finished Story, when status is ready. Open it from the library; it is never auto-opened.
+             */
+            storyId?: string;
+        };
+        /** @description Autocomplete options for the genre and theme boxes (issue #33). */
+        StorySuggestions: {
+            genres: string[];
+            themes: string[];
+        };
         StorySettings: {
             /** @description The Furigana Threshold (GLOSSARY.md): Known Items with an SRS Level at or above this value are shown without furigana; below it, and for unknown tokens with kanji in their surface, the reading is shown. mastery's 1–9 scale; the default is 3. */
             furiganaThresholdSrsLevel: number;
@@ -2636,6 +2734,91 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    generateStory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["GenerateStoryRequest"];
+            };
+        };
+        responses: {
+            /** @description The run started (or the tracked state of the run this call joined) */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoryGenerationProgress"];
+                };
+            };
+            /** @description Genre or theme over the length cap (`invalid_input`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description A generation is already running for this Learner (`generation_running`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getStoryGeneration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The current progress snapshot */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoryGenerationProgress"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    getStorySuggestions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The suggestion lists */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorySuggestions"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
         };
     };
     getStorySettings: {

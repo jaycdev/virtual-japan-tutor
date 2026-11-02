@@ -206,3 +206,29 @@
 .kanji-table td {
   padding: 1px 6px;
 }
+
+
+/* On-demand generation (issue #33): the Generate box and its server-tracked bar. */
+.generate-box {
+  margin-bottom: 0.75rem;
+}
+
+.generation-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.generation-progress progress {
+  width: 12rem;
+  height: 0.75rem;
+}
+
+.generation-stage {
+  font-style: italic;
+}
+
+.generation-percent {
+  color: #555;
+  font-variant-numeric: tabular-nums;
+}
