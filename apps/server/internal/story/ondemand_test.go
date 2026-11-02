@@ -16,23 +16,92 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/aiprovider"
 )
 
-type onDemandResult struct {
-	p Progress
-	e error
+// startOnDemand starts an On-demand run the way the HTTP start does: it
+// answers while the run is still going, carrying the initial snapshot.
+func startOnDemand(t *testing.T, svc *Service, userID uuid.UUID, opts OnDemandOptions) (Progress, error) {
+	t.Helper()
+	return svc.GenerateOnDemand(context.Background(), userID, opts)
 }
 
-// startOnDemand runs GenerateOnDemand in the background so a test can watch
-// (or hold) the run through the provider's block handshake; it returns the
-// done channel carrying the terminal Progress and error.
-func startOnDemand(svc *Service, userID uuid.UUID, opts OnDemandOptions) <-chan onDemandResult {
-	done := make(chan onDemandResult, 1)
-	go func() {
+// awaitRun watches the server-tracked progress until the run terminates —
+// the client's shape of the flow — and returns that terminal snapshot.
+func awaitRun(t *testing.T, svc *Service, userID uuid.UUID) Progress {
+	t.Helper()
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		p := svc.GenerationProgress(context.Background(), userID)
+		if p.Status == GenerationReady || p.Status == GenerationFailed {
+			return p
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("generation stuck at %+v, want it to reach a terminal state", p)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// startAfterRun starts a run after a previous one went terminal; the slot
+// frees a moment after the terminal snapshot lands, so retry until it does.
+func startAfterRun(t *testing.T, svc *Service, userID uuid.UUID, opts OnDemandOptions) (Progress, error) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
 		p, err := svc.GenerateOnDemand(context.Background(), userID, opts)
-		done <- onDemandResult{p, err}
-	}()
-	return done
+		if err == nil {
+			return p, nil
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the slot never freed after a terminal run: %v", err)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func TestGenerateOnDemandAnswersWhileTheRunIsStillGoing(t *testing.T) {
+	// The progress bar's whole point (#33): the start answers mid-flight,
+	// the tracked progress moves, and the run terminates — saving its
+	// Story — with nobody waiting on the request.
+	ctx := context.Background()
+	user := uuid.New()
+	provider := newFakeProvider(t, string(fixture(t, "travel", cleanClause, cleanClause, cleanClause, cleanClause)))
+	provider.block = make(chan struct{}) // hold every model call open
+	svc, store, _, _ := newTestService(t, provider)
+
+	start, err := startOnDemand(t, svc, user, OnDemandOptions{})
+	if err != nil {
+		t.Fatalf("GenerateOnDemand: %v", err)
+	}
+	if start.Status != GenerationRunning || start.Stage != StagePreparing || start.Percent < 5 {
+		t.Fatalf("start snapshot = %+v, want a running preparing bar", start)
+	}
+	// The slot is taken before the start answers, even mid-flight:
+	// a second start is refused while the run has nobody watching.
+	if _, err := svc.GenerateOnDemand(ctx, user, OnDemandOptions{}); err == nil {
+		t.Fatal("second start while one runs must not start")
+	}
+
+	<-provider.block // the model call is open, held by the handshake
+	mid := svc.GenerationProgress(ctx, user)
+	if mid.Status != GenerationRunning || mid.Stage != StageWriting || mid.Attempt != 1 {
+		t.Fatalf("mid-run progress = %+v, want writing attempt 1", mid)
+	}
+	if mid.Percent <= start.Percent {
+		t.Fatalf("percent went from %d to %d, want the bar to move while the run works", start.Percent, mid.Percent)
+	}
+
+	provider.block <- struct{}{} // let the model answer
+	p := awaitRun(t, svc, user)
+	if p.Status != GenerationReady || p.StoryID == uuid.Nil {
+		t.Fatalf("terminal progress = %+v, want ready with a story id", p)
+	}
+	if _, err := store.Get(ctx, p.StoryID, user); err != nil {
+		t.Fatalf("the unwatched run must still save its Story: %v", err)
+	}
+	provider.block = nil
 }
 
 func TestGenerateOnDemandWritesAnOnDemandStoryAndGoesReady(t *testing.T) {
@@ -44,23 +113,25 @@ func TestGenerateOnDemandWritesAnOnDemandStoryAndGoesReady(t *testing.T) {
 	if err := store.SetStoryPrefs(ctx, user, "travel", "", ""); err != nil {
 		t.Fatalf("SetStoryPrefs: %v", err)
 	}
-	res := <-startOnDemand(svc, user, OnDemandOptions{Genre: "travel", Theme: "a robot running a ramen shop"})
-	if res.e != nil {
-		t.Fatalf("GenerateOnDemand: %v", res.e)
+	if start, err := startOnDemand(t, svc, user, OnDemandOptions{Genre: "travel", Theme: "a robot running a ramen shop"}); err != nil {
+		t.Fatalf("GenerateOnDemand: %v", err)
+	} else if start.Status != GenerationRunning {
+		t.Fatalf("start snapshot = %+v, want a running run", start)
 	}
-	if res.p.Status != GenerationReady || res.p.StoryID == uuid.Nil {
-		t.Fatalf("progress = %+v, want ready with a story id", res.p)
+	res := awaitRun(t, svc, user)
+	if res.Status != GenerationReady || res.StoryID == uuid.Nil {
+		t.Fatalf("progress = %+v, want ready with a story id", res)
 	}
 	// The terminal state stays readable, so a client that polls instead of
 	// using the POST response sees the same thing (and survives a reload).
 	p := svc.GenerationProgress(ctx, user)
-	if p.Status != GenerationReady || p.StoryID != res.p.StoryID || p.Percent != 100 {
+	if p.Status != GenerationReady || p.StoryID != res.StoryID || p.Percent != 100 {
 		t.Fatalf("GenerationProgress after ready = %+v", p)
 	}
 
 	// The Story is stored as On-demand, validated, and its genre and theme
 	// are what the Learner asked for.
-	st, err := store.Get(ctx, res.p.StoryID, user)
+	st, err := store.Get(ctx, res.StoryID, user)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -97,16 +168,22 @@ func TestGenerateOnDemandBusyRejectsWhileAGenerationRuns(t *testing.T) {
 	svc, _, _, _ := newTestService(t, provider)
 	ctx := context.Background()
 
-	done := startOnDemand(svc, user, OnDemandOptions{})
+	start, err := startOnDemand(t, svc, user, OnDemandOptions{})
+	if err != nil {
+		t.Fatalf("first start: %v", err)
+	}
+	if start.Status != GenerationRunning {
+		t.Fatalf("first start snapshot = %+v, want running", start)
+	}
 	<-provider.block // the run is now mid-completion
 
-	_, err := svc.GenerateOnDemand(ctx, user, OnDemandOptions{Genre: "history"})
-	if err == nil {
+	if _, err := svc.GenerateOnDemand(ctx, user, OnDemandOptions{Genre: "history"}); err == nil {
 		t.Fatal("second start while one runs must not start")
-	}
-	var se *Error
-	if !errors.As(err, &se) || se.Status != 409 || se.Code != "generation_running" {
-		t.Fatalf("second start = %+v, want 409 generation_running", err)
+	} else {
+		var se *Error
+		if !errors.As(err, &se) || se.Status != 409 || se.Code != "generation_running" {
+			t.Fatalf("second start = %+v, want 409 generation_running", err)
+		}
 	}
 
 	// The Automatic path shares the slot: its pass skips while the
@@ -119,15 +196,17 @@ func TestGenerateOnDemandBusyRejectsWhileAGenerationRuns(t *testing.T) {
 	}
 
 	provider.block <- struct{}{} // let the run finish
-	r := <-done
-	if r.e != nil || r.p.Status != GenerationReady {
-		t.Fatalf("first run ended %+v, %v", r.p, r.e)
+	if r := awaitRun(t, svc, user); r.Status != GenerationReady {
+		t.Fatalf("first run ended at %+v, want ready", r)
 	}
 	provider.block = nil // the slot test is over; later calls answer freely
 	// The slot is free again after the run.
-	p2, err := svc.GenerateOnDemand(ctx, user, OnDemandOptions{})
-	if err != nil || p2.Status != GenerationReady {
+	p2, err := startAfterRun(t, svc, user, OnDemandOptions{})
+	if err != nil || p2.Status != GenerationRunning {
 		t.Fatalf("start after the run finished = %+v, %v; want a fresh run to start", p2, err)
+	}
+	if r := awaitRun(t, svc, user); err == nil && r.Status != GenerationReady {
+		t.Fatalf("second run ended at %+v, want ready", r)
 	}
 }
 
@@ -147,9 +226,11 @@ func TestGenerateOnDemandIgnoresTheFailureCooldownAndDailyRules(t *testing.T) {
 		t.Fatalf("Save automatic story: %v", err)
 	}
 
-	res := <-startOnDemand(svc, user, OnDemandOptions{})
-	if res.e != nil || res.p.Status != GenerationReady {
-		t.Fatalf("GenerateOnDemand = %+v, %v; cooldown and unread must not gate it", res.p, res.e)
+	if _, err := startOnDemand(t, svc, user, OnDemandOptions{}); err != nil {
+		t.Fatalf("GenerateOnDemand: %v", err)
+	}
+	if res := awaitRun(t, svc, user); res.Status != GenerationReady {
+		t.Fatalf("GenerateOnDemand = %+v; cooldown and unread must not gate it", res)
 	}
 	if provider.callCount() != 1 {
 		t.Fatalf("provider calls = %d, want 1", provider.callCount())
@@ -165,7 +246,7 @@ func TestGenerateOnDemandIgnoresTheFailureCooldownAndDailyRules(t *testing.T) {
 
 func TestGenerateOnDemandBlankInputsFollowTheAutomaticRules(t *testing.T) {
 	// A blank Generate box means "whatever Automatic would do": the
-	// preference-steered roll, same as the daily story.
+	// preference-steered roll, same as the Automatic Story.
 	ctx := context.Background()
 	user := uuid.New()
 	provider := newFakeProvider(t, string(fixture(t, "travel", cleanClause, cleanClause, cleanClause, cleanClause)))
@@ -175,9 +256,11 @@ func TestGenerateOnDemandBlankInputsFollowTheAutomaticRules(t *testing.T) {
 		t.Fatalf("SetStoryPrefs: %v", err)
 	}
 
-	res := <-startOnDemand(svc, user, OnDemandOptions{})
-	if res.e != nil {
-		t.Fatalf("GenerateOnDemand: %v", res.e)
+	if _, err := startOnDemand(t, svc, user, OnDemandOptions{}); err != nil {
+		t.Fatalf("GenerateOnDemand: %v", err)
+	}
+	if res := awaitRun(t, svc, user); res.Status != GenerationReady {
+		t.Fatalf("run ended at %+v, want ready", res)
 	}
 	prompt := provider.lastUserPrompt()
 	if !strings.Contains(prompt, "Genre/theme: travel") {
@@ -207,9 +290,11 @@ func TestGenerateOnDemandSurpriseIgnoresPreferencesButKeepsTheAvoidRules(t *test
 		t.Fatalf("Save recent story: %v", err)
 	}
 
-	res := <-startOnDemand(svc, user, OnDemandOptions{Surprise: true})
-	if res.e != nil {
-		t.Fatalf("GenerateOnDemand: %v", res.e)
+	if _, err := startOnDemand(t, svc, user, OnDemandOptions{Surprise: true}); err != nil {
+		t.Fatalf("GenerateOnDemand: %v", err)
+	}
+	if res := awaitRun(t, svc, user); res.Status != GenerationReady {
+		t.Fatalf("run ended at %+v, want ready", res)
 	}
 	prompt := provider.lastUserPrompt()
 	if strings.Contains(prompt, "Genre/theme: travel") {
@@ -238,12 +323,12 @@ func TestGenerateOnDemandGateFailureReportsTheFitFailureMessage(t *testing.T) {
 	provider := newFakeProvider(t, string(fixture(t, "travel", dirtyClause, cleanClause, cleanClause, cleanClause)))
 	svc, store, _, _ := newTestService(t, provider) // MaxAttempts: 1
 
-	res := <-startOnDemand(svc, user, OnDemandOptions{})
-	if res.e != nil {
-		t.Fatalf("GenerateOnDemand must report failure as data, got error: %v", res.e)
+	if _, err := startOnDemand(t, svc, user, OnDemandOptions{}); err != nil {
+		t.Fatal("GenerateOnDemand must report failure as data, got error:", err)
 	}
-	if res.p.Status != GenerationFailed || res.p.Message != FitFailureMessage {
-		t.Fatalf("progress = %+v, want failed with %q", res.p, FitFailureMessage)
+	res := awaitRun(t, svc, user)
+	if res.Status != GenerationFailed || res.Message != FitFailureMessage {
+		t.Fatalf("progress = %+v, want failed with %q", res, FitFailureMessage)
 	}
 	if svc.GenerationProgress(ctx, user).Status != GenerationFailed {
 		t.Fatal("the failed state must stay readable after the run")
@@ -255,26 +340,67 @@ func TestGenerateOnDemandGateFailureReportsTheFitFailureMessage(t *testing.T) {
 	}
 }
 
-func TestGenerateOnDemandEmptyFocusSetFailsWithTheFitFailureMessage(t *testing.T) {
-	// Nothing to build from: no provider call, the same retry message.
+func TestGenerateOnDemandEmptyFocusSetFailsWithItsOwnMessage(t *testing.T) {
+	// Nothing to build from: no provider call, and an honest line about
+	// the Learner's vocabulary — #33 reserves the fit message for runs
+	// whose attempts all failed the checks.
 	ctx := context.Background()
 	user := uuid.New()
 	provider := newFakeProvider(t, string(fixture(t, "travel", cleanClause, cleanClause, cleanClause, cleanClause)))
 	svc, store, focus, _ := newTestService(t, provider)
 	focus.set = FocusSet{}
 
-	res := <-startOnDemand(svc, user, OnDemandOptions{})
-	if res.e != nil {
-		t.Fatalf("GenerateOnDemand: %v", res.e)
+	if _, err := startOnDemand(t, svc, user, OnDemandOptions{}); err != nil {
+		t.Fatalf("GenerateOnDemand: %v", err)
 	}
-	if res.p.Status != GenerationFailed || res.p.Message != FitFailureMessage {
-		t.Fatalf("progress = %+v, want failed with %q", res.p, FitFailureMessage)
+	res := awaitRun(t, svc, user)
+	if res.Status != GenerationFailed || res.Message != EmptyFocusFailureMessage {
+		t.Fatalf("progress = %+v, want failed with %q", res, EmptyFocusFailureMessage)
 	}
 	if provider.callCount() != 0 {
 		t.Fatalf("provider calls = %d with an empty Focus Set, want 0", provider.callCount())
 	}
 	if _, total, _ := store.List(ctx, user, 10, 0); total != 0 {
 		t.Fatalf("library holds %d stories, want none", total)
+	}
+}
+
+// nilClientResolver is the shape the real resolver cannot quite take but
+// the pipeline guards for: an answer with no Client in it.
+type nilClientResolver struct{}
+
+func (nilClientResolver) ResolveProvider(_ context.Context, _ uuid.UUID, _ aiprovider.Task) (aiprovider.Resolved, error) {
+	return aiprovider.Resolved{}, nil
+}
+
+func TestGenerateOnDemandNoProviderFailsWithItsOwnMessage(t *testing.T) {
+	// "No AI provider for Stories" is Learner-fixable, not a fit failure:
+	// the stopped bar names the Settings fix — both for an answer with no
+	// Client and for an unassigned resolve error (ErrNotAssigned).
+	provider := newFakeProvider(t, string(fixture(t, "travel", cleanClause, cleanClause, cleanClause, cleanClause)))
+	svc, _, _, _ := newTestService(t, provider)
+
+	user := uuid.New()
+	svc.resolve = nilClientResolver{}
+	if _, err := startOnDemand(t, svc, user, OnDemandOptions{}); err != nil {
+		t.Fatalf("GenerateOnDemand: %v", err)
+	}
+	res := awaitRun(t, svc, user)
+	if res.Status != GenerationFailed || res.Message != NoProviderFailureMessage {
+		t.Fatalf("progress = %+v, want failed with %q", res, NoProviderFailureMessage)
+	}
+
+	user2 := uuid.New()
+	svc.resolve = fakeResolver{} // answers aiprovider.ErrNotAssigned
+	if _, err := startOnDemand(t, svc, user2, OnDemandOptions{}); err != nil {
+		t.Fatalf("GenerateOnDemand (unassigned): %v", err)
+	}
+	res2 := awaitRun(t, svc, user2)
+	if res2.Status != GenerationFailed || res2.Message != NoProviderFailureMessage {
+		t.Fatalf("progress = %+v, want failed with %q", res2, NoProviderFailureMessage)
+	}
+	if provider.callCount() != 0 {
+		t.Fatalf("provider calls = %d without a client, want 0", provider.callCount())
 	}
 }
 
@@ -297,7 +423,9 @@ func TestGenerationProgressTracksStagesAndFillsTheWritingWindow(t *testing.T) {
 		t.Fatalf("RecordGenerationDuration: %v", err)
 	}
 
-	done := startOnDemand(svc, user, OnDemandOptions{})
+	if _, err := startOnDemand(t, svc, user, OnDemandOptions{}); err != nil {
+		t.Fatalf("GenerateOnDemand: %v", err)
+	}
 	<-provider.block // attempt 1 is in flight
 
 	p := svc.GenerationProgress(ctx, user)
@@ -330,9 +458,8 @@ func TestGenerationProgressTracksStagesAndFillsTheWritingWindow(t *testing.T) {
 	}
 	provider.block <- struct{}{} // attempt 2 answers clean
 
-	r := <-done
-	if r.e != nil || r.p.Status != GenerationReady {
-		t.Fatalf("run ended %+v, %v; want ready", r.p, r.e)
+	if r := awaitRun(t, svc, user); r.Status != GenerationReady {
+		t.Fatalf("run ended at %+v; want ready", r)
 	}
 }
 

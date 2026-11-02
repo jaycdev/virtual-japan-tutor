@@ -443,11 +443,11 @@ func (s *server) GetStoryGeneration(ctx context.Context, _ api.GetStoryGeneratio
 	return api.GetStoryGeneration200JSONResponse(storyGenerationView(svc.GenerationProgress(ctx, id.ID))), nil
 }
 
-// GenerateStory starts one On-demand Story (issue #33). The write continues
-// past this request's context — the story Service detaches it — so 202
-// simply means "the run is tracked"; clients follow it through
-// GetStoryGeneration. A generation already running (on either path) answers
-// 409, the MaruMori sync_running shape.
+// GenerateStory starts one On-demand Story (issue #33). It answers 202 with
+// the initial running snapshot as soon as the run is opened: the write
+// itself continues in the story Service, detached from this request, and
+// clients follow it through GetStoryGeneration. A generation already
+// running (on either path) answers 409, the MaruMori sync_running shape.
 func (s *server) GenerateStory(ctx context.Context, request api.GenerateStoryRequestObject) (api.GenerateStoryResponseObject, error) {
 	svc, err := s.storyService()
 	if err != nil {

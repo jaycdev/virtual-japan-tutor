@@ -216,7 +216,7 @@ func (s *Service) recordGenerationDuration(ctx context.Context, userID uuid.UUID
 	}
 }
 
-// GenerateOnDemand writes one Story now, because the Learner asked
+// GenerateOnDemand starts one Story write now, because the Learner asked
 // (issue #33). It follows the Automatic pipeline — same Focus Set, same
 // validation gate, same Practice Records on the first answer — with three
 // differences: the Learner's typed genre/theme (or Surprise's model's
@@ -224,27 +224,45 @@ func (s *Service) recordGenerationDuration(ctx context.Context, userID uuid.UUID
 // local day, unread holds the slot, failure cooldown) do not apply, and the
 // run reports stage progress the client can poll through GenerationProgress.
 //
-// The run belongs to the Learner's generation slot, not to this request: it
-// continues when the request's context dies (a reload, a navigation), the
-// same shape as the MaruMori Sync. It returns the terminal Progress; a
-// second start while one runs answers a 409 generation_running.
+// The call is a start, not a wait: it takes the Learner's generation slot
+// and records the initial running Progress synchronously — so a second
+// start is answered 409 generation_running even before the first response
+// is off the wire — and then the pipeline runs in its own goroutine, on a
+// context detached from this request (a reload or navigation never cancels
+// it) but inside the same timeout budget. It returns that first snapshot
+// while the run is still going; the caller follows it through
+// GenerationProgress.
 func (s *Service) GenerateOnDemand(ctx context.Context, userID uuid.UUID, opts OnDemandOptions) (Progress, error) {
 	release, ok := s.beginGeneration(userID)
 	if !ok {
 		return Progress{}, &Error{Status: 409, Code: "generation_running", Message: "A Story is already being written for you."}
 	}
-	defer release()
 	// The budget covers every attempt plus the reads around them; going on
 	// past the client's patience is the point (the Sync precedent).
 	runCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx),
 		time.Duration(s.settings.MaxAttempts+1)*DefaultGenerationTimeout)
-	defer cancel()
-	return s.runGeneration(runCtx, userID, opts)
+	// The run is opened before this returns, so a poll that lands the
+	// moment the 202 does always reads a running Progress, never idle.
+	maxAttempts := s.settings.MaxAttempts
+	s.startRun(userID, maxAttempts, s.expectedPerAttempt(runCtx, userID, maxAttempts))
+	initial := s.GenerationProgress(runCtx, userID)
+	go func() {
+		defer release()
+		defer cancel()
+		if _, err := s.runGeneration(runCtx, userID, opts); err != nil {
+			// The Learner's side is covered: runGeneration already stopped
+			// the bar with its failure line. The error is for the log.
+			s.log.Error("story: on-demand run ended with an internal error", "user_id", userID, "err", err)
+		}
+	}()
+	return initial, nil
 }
 
+// runGeneration is the On-demand pipeline itself, started by a goroutine
+// GenerateOnDemand launched: the slot is already held and the progress run
+// already open (startRun). Its terminal state is written into that run,
+// whether the write succeeds, fails the Learner-facing way, or errors.
 func (s *Service) runGeneration(ctx context.Context, userID uuid.UUID, opts OnDemandOptions) (Progress, error) {
-	maxAttempts := s.settings.MaxAttempts
-	s.startRun(userID, maxAttempts, s.expectedPerAttempt(ctx, userID, maxAttempts))
 	started := s.now()
 
 	fset, err := s.focus.FocusFor(ctx, userID)
@@ -253,7 +271,7 @@ func (s *Service) runGeneration(ctx context.Context, userID uuid.UUID, opts OnDe
 		return Progress{}, fmt.Errorf("focus set: %w", err)
 	}
 	if fset.Empty() {
-		return s.finishRun(userID, GenerationFailed, FitFailureMessage, uuid.Nil), nil
+		return s.finishRun(userID, GenerationFailed, EmptyFocusFailureMessage, uuid.Nil), nil
 	}
 	knownWords, err := s.focus.KnownWords(ctx, userID, s.settings.PromptKnownLimit)
 	if err != nil {
@@ -277,11 +295,17 @@ func (s *Service) runGeneration(ctx context.Context, userID uuid.UUID, opts OnDe
 	}
 	resolved, err := s.resolve.ResolveProvider(ctx, userID, aiprovider.TaskStory)
 	if err != nil {
-		s.finishRun(userID, GenerationFailed, FitFailureMessage, uuid.Nil)
+		// No provider assigned is a Learner-fixable failure with its own
+		// line; any other resolve error stays the generic retry line.
+		msg := FitFailureMessage
+		if errors.Is(err, aiprovider.ErrNotAssigned) {
+			msg = NoProviderFailureMessage
+		}
+		s.finishRun(userID, GenerationFailed, msg, uuid.Nil)
 		return Progress{}, err
 	}
 	if resolved.Client == nil {
-		return s.finishRun(userID, GenerationFailed, FitFailureMessage, uuid.Nil), nil
+		return s.finishRun(userID, GenerationFailed, NoProviderFailureMessage, uuid.Nil), nil
 	}
 
 	req := Request{
