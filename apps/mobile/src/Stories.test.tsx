@@ -76,10 +76,14 @@ const MISE_ENTRY = {
  * hosts prove the same behaviour. `requests` records method, path and body.
  */
 function fakeApi(
-  opts: { blurTranslation?: boolean; failReadingPut?: boolean } = {},
+  opts: { blurTranslation?: boolean; failReadingPut?: boolean; noToday?: boolean } = {},
 ) {
   const storyView = {
     id: "st-1",
+    title: "がっこうの 一日",
+    titleEn: "A Day at School",
+    theme: "school life",
+    origin: "automatic",
     genre: "diary",
     text: "がっこうでべんきょうしました。",
     createdAt: "2026-11-01T09:00:00Z",
@@ -151,7 +155,14 @@ function fakeApi(
     const body = request.body ? await request.json() : null;
     requests.push({ method: request.method, path: pathname, body });
     if (pathname === "/stories" && request.method === "GET") return json(200, page);
+    if (pathname === "/stories/today" && request.method === "GET") {
+      if (opts.noToday) return json(404, { code: "no_today_story", message: "no automatic story yet" });
+      return json(200, storyView);
+    }
     if (pathname === "/stories/st-1" && request.method === "GET") return json(200, storyView);
+    if (pathname === "/stories/st-1" && request.method === "DELETE") return new Response(null, { status: 204 });
+    if (pathname === "/stories/st-1/read" && (request.method === "PUT" || request.method === "DELETE"))
+      return new Response(null, { status: 204 });
     if (pathname === "/stories/st-1/rate" && request.method === "POST") return new Response(null, { status: 204 });
     if (pathname === "/stories/st-1/answers" && request.method === "POST")
       return json(200, { correct: true, practiceRecorded: true });
@@ -213,16 +224,23 @@ function renderStories(client: ApiClient) {
   );
 }
 
-/** Library → open story → the reader's fetches (reading settings, lists) settled. */
+/** Today's Story landing → open story → the reader's fetches (reading settings, lists) settled. */
 async function openStory(client: ApiClient) {
   renderStories(client);
-  fireEvent.click(await screen.findByTestId("story-row-st-1"));
+  fireEvent.click(await screen.findByRole("button", { name: "Read today’s story" }));
   await screen.findByTestId("back-to-library");
   // The reader fetches reading settings + Item Lists on mount; give their
   // mocked responses time to land before any gesture reads them.
   await act(async () => {
     await new Promise((r) => setTimeout(r, 30));
   });
+}
+
+/** Today's Story landing → "View all stories" → the Library's first row. */
+async function openLibrary(client: ApiClient) {
+  renderStories(client);
+  fireEvent.click(await screen.findByRole("button", { name: "View all stories" }));
+  return screen.findByTestId("story-row-st-1");
 }
 
 const token = (sentence: number, index: number) => screen.getByTestId(`token-${sentence}-${index}`);
@@ -285,14 +303,19 @@ afterEach(() => {
   setBackHandlerForTests(undefined);
 });
 
-describe("Stories library (mobile)", () => {
-  it("lists story rows with pager summary and both page buttons disabled on a single page", async () => {
+describe("Today's Story and the Story Library (mobile)", () => {
+  it("opens on Today's Story and hands the Library to View all stories", async () => {
     const { client, requests } = fakeApi();
     renderStories(client);
 
+    // Today's Story is the landing view: its button plus the day line.
+    expect(await screen.findByRole("button", { name: "Read today’s story" })).toBeTruthy();
+    expect(requests.some((r) => r.method === "GET" && r.path === "/stories/today")).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "View all stories" }));
     const row = await screen.findByTestId("story-row-st-1");
-    expect(within(row).getByText("diary")).toBeTruthy();
-    expect(within(row).getByText("がっこうでべんきょうしました。…")).toBeTruthy();
+    expect(within(row).getByText(/がっこうの 一日/)).toBeTruthy();
+    expect(screen.getByText(/diary · school life · Automatic ·/)).toBeTruthy();
     expect(screen.getByText("1–1 of 1")).toBeTruthy();
     const newer = screen.getByRole("button", { name: "Newer stories" });
     const older = screen.getByRole("button", { name: "Older stories" });
@@ -301,10 +324,64 @@ describe("Stories library (mobile)", () => {
     expect(requests.some((r) => r.method === "GET" && r.path === "/stories")).toBe(true);
   });
 
+  it("offers a check again when there is no Automatic Story yet", async () => {
+    const { client } = fakeApi({ noToday: true });
+    renderStories(client);
+
+    expect(await screen.findByText(/No story yet/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+    await waitFor(() =>
+      expect(screen.getAllByText(/No story yet/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("reveals and re-blurs a row's title translation without any request", async () => {
+    const { client, requests } = fakeApi();
+    await openLibrary(client);
+
+    const reveal = screen.getByTestId("title-translation-st-1");
+    expect(screen.getByText("Translation hidden — tap to show")).toBeTruthy();
+    fireEvent.click(reveal);
+    await waitFor(() => expect(screen.queryByText("Translation hidden — tap to show")).toBeNull());
+    expect(screen.getByText("A Day at School")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("title-translation-st-1"));
+    expect(await screen.findByText("Translation hidden — tap to show")).toBeTruthy();
+    expect(requests.some((r) => r.path === "/weak-signals")).toBe(false);
+  });
+
+  it("toggles Read from a library row, marking then unmarking", async () => {
+    const { client, requests } = fakeApi();
+    await openLibrary(client);
+
+    fireEvent.click(screen.getByRole("button", { name: "Mark read" }));
+    await waitFor(() => expect(requests.some((r) => r.method === "PUT" && r.path === "/stories/st-1/read")).toBe(true));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Unmark read" })).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "Unmark read" }));
+    await waitFor(() =>
+      expect(requests.some((r) => r.method === "DELETE" && r.path === "/stories/st-1/read")).toBe(true),
+    );
+    await waitFor(() => expect(screen.getByRole("button", { name: "Mark read" })).toBeTruthy());
+  });
+
+  it("deletes only after an in-row confirmation, and Keep cancels it", async () => {
+    const { client, requests } = fakeApi();
+    await openLibrary(client);
+
+    fireEvent.click(screen.getByTestId("delete-st-1"));
+    fireEvent.click(screen.getByRole("button", { name: "Keep" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Confirm delete" })).toBeNull());
+    expect(requests.some((r) => r.method === "DELETE" && r.path === "/stories/st-1")).toBe(false);
+
+    fireEvent.click(screen.getByTestId("delete-st-1"));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm delete" }));
+    await waitFor(() => expect(requests.some((r) => r.method === "DELETE" && r.path === "/stories/st-1")).toBe(true));
+    await waitFor(() => expect(screen.queryByTestId("story-row-st-1")).toBeNull());
+  });
+
   it("rates a story from its library row", async () => {
     const { client, requests } = fakeApi();
-    renderStories(client);
-    await screen.findByTestId("story-row-st-1");
+    await openLibrary(client);
 
     fireEvent.click(screen.getByRole("button", { name: "Rate up" }));
     await waitFor(() => expect(requests.some((r) => r.method === "POST" && r.path === "/stories/st-1/rate")).toBe(true));
@@ -820,15 +897,27 @@ describe("hardware Back in the reader (mobile)", () => {
     await waitFor(() => expect(screen.queryByLabelText("Lookup menu")).toBeNull());
     expect(screen.getByTestId("back-to-library")).toBeTruthy();
 
-    // Nothing open: Back leaves the reader to the library.
+    // Nothing open: Back leaves the reader back to Today's Story, where it
+    // was opened from.
     back.press();
     await waitFor(() => expect(screen.queryByTestId("back-to-library")).toBeNull());
-    expect(await screen.findByTestId("story-row-st-1")).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "View all stories" })).toBeTruthy();
   });
 
-  it("the header Back returns to the library", async () => {
+  it("the header Back returns to Today's Story when the Story opened from there", async () => {
     const { client } = fakeApi();
     await openStory(client);
+
+    fireEvent.click(screen.getByTestId("back-to-library"));
+    await waitFor(() => expect(screen.queryByTestId("back-to-library")).toBeNull());
+    expect(await screen.findByRole("button", { name: "Read today’s story" })).toBeTruthy();
+  });
+
+  it("the header Back returns to the Library when the Story opened from there", async () => {
+    const { client } = fakeApi();
+    await openLibrary(client);
+    fireEvent.click(screen.getByTestId("story-row-st-1"));
+    await screen.findByTestId("back-to-library");
 
     fireEvent.click(screen.getByTestId("back-to-library"));
     await waitFor(() => expect(screen.queryByTestId("back-to-library")).toBeNull());
