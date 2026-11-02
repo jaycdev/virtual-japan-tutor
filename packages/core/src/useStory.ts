@@ -241,11 +241,6 @@ export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
     setToday(await fetchToday());
   }, [fetchToday]);
 
-  const refreshList = useCallback(async () => {
-    const next = await fetchPage();
-    if (next.status === "ready") setLibrary(next);
-  }, [fetchPage]);
-
   const showStory = useCallback((s: Story) => {
     openIdRef.current = s.id;
     setStory(s);
