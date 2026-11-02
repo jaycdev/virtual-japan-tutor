@@ -44,6 +44,12 @@ import "./reader.css";
  * Signals: holding a Known word's lookup past the configured threshold,
  * opening its Lookup Menu, opening a Grammar Span window, or unblurring a
  * Sentence Translation (one signal per Focus Set item in the sentence).
+ * The Story Library (issue #31) is a table — Story Title (its English
+ * translation blurred until clicked, a reveal that is never saved or
+ * signalled), genre, stored theme, generation origin, created date, a Read
+ * toggle, and a Delete that asks first (the Learner's rating goes with the
+ * Story; Practice Records stay). A row click opens the reader, which shows
+ * the Title, its blurred translation, and the same Read toggle.
  * Dictionary opens a Dictionary Entry window
  * with the full JMdict entry, the Learner's MaruMori state for the word and
  * each of its kanji, and the Kanjium pitch pattern when we have one.
@@ -62,7 +68,7 @@ export function Stories({ client }: { client: ApiClient }) {
           {view.error}
         </p>
       )}
-      {view.open && view.story ? <StoryReader view={view} client={client} /> : <StoryLibrary view={view} />}
+      {view.open && view.story ? <StoryReader key={view.story.id} view={view} client={client} /> : <StoryLibrary view={view} />}
       <StorySettingsForm view={view} />
     </section>
   );
@@ -70,6 +76,19 @@ export function Stories({ client }: { client: ApiClient }) {
 
 function StoryLibrary({ view }: { view: StoryView }) {
   const lib = view.library;
+  // Story Library (issue #31): the English title sits behind the same blur as
+  // the Reading Panel's Sentence Translation, but revealing it is transient —
+  // nothing is saved and no Weak Signal is recorded. Delete asks in-place
+  // (like Settings' lists); a row click opens the reader.
+  const [revealed, setRevealed] = useState<Set<string>>(new Set());
+  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
+  const toggleReveal = (id: string) =>
+    setRevealed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   return (
     <>
       <p>
@@ -90,17 +109,81 @@ function StoryLibrary({ view }: { view: StoryView }) {
         <p className="muted">No stories yet. One will be waiting after the next generation pass.</p>
       )}
       {lib.status === "ready" && lib.page.items.length > 0 && (
-        <ul className="story-list">
-          {lib.page.items.map((s) => (
-            <li key={s.id}>
-              <button type="button" onClick={() => void view.openStory(s.id)}>
-                {s.genre}
-              </button>{" "}
-              <span className="muted">{new Date(s.createdAt).toDateString()}</span>{" "}
-              <RatingButtons view={view} story={s} />
-            </li>
-          ))}
-        </ul>
+        <table className="story-table">
+          <thead>
+            <tr>
+              <th>Title</th>
+              <th>Genre</th>
+              <th>Theme</th>
+              <th>Origin</th>
+              <th>Created</th>
+              <th>Read</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {lib.page.items.map((s) => (
+              <tr key={s.id} data-testid={`story-${s.id}`} onClick={() => void view.openStory(s.id)}>
+                <td>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void view.openStory(s.id);
+                    }}
+                  >
+                    {s.title}
+                  </button>
+                  {s.titleEn && (
+                    <TitleTranslation
+                      text={s.titleEn}
+                      revealed={revealed.has(s.id)}
+                      onToggle={() => toggleReveal(s.id)}
+                    />
+                  )}
+                </td>
+                <td>{s.genre}</td>
+                <td>{s.theme || "—"}</td>
+                <td>{s.origin === "on_demand" ? "On demand" : "Automatic"}</td>
+                <td>{new Date(s.createdAt).toDateString()}</td>
+                <td
+                  onClick={(e) => {
+                    e.stopPropagation();
+                  }}
+                >
+                  <button
+                    type="button"
+                    aria-pressed={s.readAt != null}
+                    disabled={view.pending}
+                    onClick={() => void (s.readAt != null ? view.clearRead(s.id) : view.setRead(s.id))}
+                  >
+                    Read
+                  </button>
+                </td>
+                <td
+                  onClick={(e) => {
+                    e.stopPropagation();
+                  }}
+                >
+                  {confirmingDelete === s.id ? (
+                    <>
+                      <button type="button" disabled={view.pending} onClick={() => void view.removeStory(s.id)}>
+                        Confirm delete
+                      </button>{" "}
+                      <button type="button" onClick={() => setConfirmingDelete(null)}>
+                        Keep
+                      </button>
+                    </>
+                  ) : (
+                    <button type="button" onClick={() => setConfirmingDelete(s.id)}>
+                      Delete
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
       {lib.status === "ready" && (
         <p className="muted">
@@ -119,6 +202,36 @@ function StoryLibrary({ view }: { view: StoryView }) {
         </p>
       )}
     </>
+  );
+}
+
+/**
+ * The Story Title's English translation, blurred until clicked. Unlike the
+ * Reading Panel's Sentence Translation the reveal is transient: it is never
+ * saved as a setting and never reported as a Weak Signal (issue #31).
+ */
+function TitleTranslation({ text, revealed, onToggle }: { text: string; revealed: boolean; onToggle: () => void }) {
+  return (
+    <span
+      className={`translation title-translation ${revealed ? "revealed" : "blurred"}`}
+      role="button"
+      tabIndex={0}
+      title={revealed ? "Click to blur the translation" : "Translation is blurred — click to show it"}
+      aria-pressed={revealed}
+      onClick={(e) => {
+        // Inside a library row the click must not bubble up and open the reader.
+        e.stopPropagation();
+        onToggle();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onToggle();
+        }
+      }}
+    >
+      {text}
+    </span>
   );
 }
 
@@ -150,6 +263,10 @@ function StoryReader({ view, client }: { view: StoryView; client: ApiClient }) {
   const [menu, setMenu] = useState<OpenMenu | null>(null);
   const [windows, setWindows] = useState<OpenWindow[]>([]);
   const [saveNote, setSaveNote] = useState<string | null>(null);
+  // The Story Title's translation is blurred in the reader too (issue #31),
+  // and this reveal is transient as well — keying the reader per Story resets
+  // it when the Learner moves on to another one.
+  const [titleEnRevealed, setTitleEnRevealed] = useState(false);
 
   const openWindow = useCallback((w: OpenWindow) => {
     setWindows((prev) => (prev.some((x) => x.key === w.key) ? prev : [...prev, w]));
@@ -301,9 +418,28 @@ function StoryReader({ view, client }: { view: StoryView; client: ApiClient }) {
         </button>
       </p>
       <h3>
-        {story.genre} <span className="muted">{new Date(story.createdAt).toDateString()}</span>
+        {story.title}{" "}
+        {story.titleEn && (
+          <TitleTranslation
+            text={story.titleEn}
+            revealed={titleEnRevealed}
+            onToggle={() => setTitleEnRevealed((v) => !v)}
+          />
+        )}{" "}
+        <span className="muted">
+          {story.genre} · {new Date(story.createdAt).toDateString()}
+        </span>
       </h3>
-      <RatingButtons view={view} story={story} />
+      <p>
+        <button
+          type="button"
+          aria-pressed={story.readAt != null}
+          onClick={() => void (story.readAt != null ? view.clearRead(story.id) : view.setRead(story.id))}
+        >
+          Read
+        </button>{" "}
+        <RatingButtons view={view} story={story} />
+      </p>
 
       <ReadingPanel
         story={story}
