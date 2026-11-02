@@ -2346,7 +2346,7 @@ components:
     StorySuggestions:
       type: object
       required: [genres, themes]
-      description: Autocomplete options for the genre and theme boxes (issue #33).
+      description: "Autocomplete options for the genre and theme boxes (issue #33)."
       properties:
         genres:
           type: array

@@ -1341,7 +1341,7 @@ export interface components {
              */
             storyId?: string;
         };
-        /** @description Autocomplete options for the genre and theme boxes (issue */
+        /** @description Autocomplete options for the genre and theme boxes (issue #33). */
         StorySuggestions: {
             genres: string[];
             themes: string[];
