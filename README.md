@@ -3,7 +3,100 @@
 Monorepo: a Go server that owns all domain logic ([ADR-0001](docs/adr/0001-go-server-owns-domain-logic.md)),
 a Vite + React web app and an Expo (Android) app. Terminology lives in [GLOSSARY.md](GLOSSARY.md).
 
-## Layout
+## Install (self-hosting)
+
+You run one server (the API plus a Postgres database) on a machine you control. The web and Android apps
+connect to it. Everything is yours: there is no hosted service and no signup.
+
+### Requirements
+
+- Docker with the Compose v2 plugin (`docker compose version`).
+- Optional: a [MaruMori](https://marumori.io) API key (for your known words and kanji) and an
+  OpenAI-compatible AI endpoint (OpenAI, OpenRouter, Ollama, ...) for generated stories and grammar content.
+
+### 1. Download the config
+
+You do not need the source. The server and import tool are published as container images
+(`ghcr.io/jaycdev/virtual-japan-tutor-server` and `-import`, for `amd64` and `arm64`); you only need the
+Compose file and an env file:
+
+```sh
+mkdir virtual-japan-tutor && cd virtual-japan-tutor
+curl -fsSLO https://raw.githubusercontent.com/jaycdev/virtual-japan-tutor/main/deploy/docker-compose.yml
+curl -fsSL  https://raw.githubusercontent.com/jaycdev/virtual-japan-tutor/main/deploy/.env.example -o .env
+```
+
+Choose a version with `VJT_VERSION` in `.env`:
+
+| Tag      | You get                                                          |
+| -------- | ---------------------------------------------------------------- |
+| `latest` | The newest tagged release (the default). Recommended.            |
+| `dev`    | The newest commit on `main`. May be unstable.                    |
+| `1.2.3`  | That exact release. `1.2` follows the newest patch of that line. |
+
+If you pin a release, download the Compose file from that tag too (replace `main` in the URLs with `v1.2.3`).
+If the packages are private, run `docker login ghcr.io` first with a GitHub token that has `read:packages`.
+
+Edit `.env` (every variable is explained in the file) and set at least:
+
+| Variable                                         | What                                                                                  |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| `SECRETS_KEY`                                    | Required. Encrypts the API keys you store. `openssl rand -base64 32`, or `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`. Back it up: losing it makes stored keys unreadable. |
+| `VJT_BOOTSTRAP_USERNAME` / `VJT_BOOTSTRAP_PASSWORD` | Your first account (password at least 10 characters). Created on first boot only while no users exist. Remove the password from `.env` afterwards. |
+| `POSTGRES_PASSWORD`                              | Change it from the default. The database is not published outside the Compose network. |
+| `SERVER_PORT`                                    | Host port for the API (default `8080`).                                               |
+
+Optional: `AI_DEFAULT_BASE_URL`, `AI_DEFAULT_MODEL` and `AI_DEFAULT_API_KEY` pre-create a default AI Provider
+for your account. You can also add providers later in the app's Settings.
+
+### 2. Start the server
+
+```sh
+docker compose up -d
+curl http://localhost:8080/health      # {"database":"connected","status":"ok"}
+```
+
+Migrations run automatically on start.
+
+### 3. Load the reference data (once)
+
+Dictionary, kanji, JLPT lists, pitch accents and the grammar catalogue are loaded by a one-off job. It
+downloads open datasets (a minute or so) and is safe to re-run:
+
+```sh
+docker compose run --rm import
+```
+
+See [Importing reference data](#importing-reference-data) for what it loads and its licences.
+
+### 4. Sign in and set up
+
+Sign in with the account from step 1, then open **Settings** to add your MaruMori key (and run **Sync now**),
+add or confirm an AI Provider, and choose your starting level. To add accounts later, see
+[Creating the first account](#creating-the-first-account) (the `create-user` command).
+
+### 5. Connect a client
+
+The server only exposes the API; the Compose stack does **not** serve the web or Android app yet.
+
+- **Web**: build it from the repo, pointing at your server, `VITE_API_URL=https://your-server pnpm --filter @vjt/web build`
+  (needs the repo's Node/pnpm toolchain, see [Prerequisites](#prerequisites)), and serve `apps/web/dist`. The
+  server sends no CORS headers, so serve the web build and the API from the **same origin**, for example
+  behind one reverse proxy that routes the API paths to the server and everything else to the static files.
+- **Android**: there is no prebuilt APK. Build and install it from source (`pnpm --filter @vjt/mobile android`
+  with a device or emulator attached). The app asks for your server address on first launch and can change it
+  in Settings. Release builds block plain `http://` addresses, so put the server behind HTTPS.
+
+### Keeping it safe and up to date
+
+- The server speaks plain HTTP. Put it behind a reverse proxy with HTTPS before exposing it beyond your LAN.
+- Back up the `pgdata` volume and your `.env` (especially `SECRETS_KEY`).
+- Update: `docker compose pull && docker compose up -d` (with `VJT_VERSION=latest` this moves you to the newest release). Migrations apply on start.
+- Stop: `docker compose down` (keeps data). `docker compose down -v` deletes the database.
+
+## Development
+
+### Layout
 
 | Path                  | What                                                                    |
 | --------------------- | ----------------------------------------------------------------------- |
@@ -14,12 +107,12 @@ a Vite + React web app and an Expo (Android) app. Terminology lives in [GLOSSARY
 | `packages/api-client` | `@vjt/api-client`: TS types + client generated from the spec            |
 | `packages/core`       | `@vjt/core`: UI-agnostic hooks/state shared by web and mobile           |
 
-## Prerequisites
+### Prerequisites
 
 Install [mise](https://mise.jdx.dev) and run `mise install` in the repo root. It provides the pinned
 Go, Node and pnpm versions from `mise.toml`.
 
-## Common commands (from the repo root)
+### Common commands (from the repo root)
 
 ```sh
 pnpm install
@@ -34,7 +127,7 @@ All of these run through Turborepo; the Go commands are wrapped by `apps/server/
 
 Postgres-backed Go tests are skipped unless `TEST_DATABASE_URL` is set (CI sets it). Each such test gets its own throwaway schema (`internal/dbtest`), so packages can share one database.
 
-## Regenerating from the OpenAPI spec
+### Regenerating from the OpenAPI spec
 
 1. Edit `api/openapi.yaml`.
 2. Run `pnpm generate`. This updates `apps/server/internal/api/api.gen.go` (oapi-codegen, strict server)
@@ -42,26 +135,40 @@ Postgres-backed Go tests are skipped unless `TEST_DATABASE_URL` is set (CI sets 
 3. Implement any new methods on the Go `StrictServerInterface` (`apps/server/internal/httpapi`).
 4. Commit the generated files. CI re-runs generation and `pnpm check:generated` fails on any modified or untracked generated file.
 
-## Running with Docker Compose
+### Running with Docker Compose
 
-Docker runs on a remote VM, so compose uses no bind mounts: images are built from the repo root
-(`apps/server/Dockerfile`, targets `server` and `import`) and Postgres data lives in a named volume. Migrations are embedded in the server binary and applied on start.
+`deploy/docker-compose.yml` runs the published images. For development, `docker-compose.dev.yml` overrides them to
+build from this checkout (`apps/server/Dockerfile`, targets `server` and `import`). Postgres data lives in a
+named volume, migrations are embedded in the server binary and applied on start, and there are no bind mounts.
 
 ```sh
-cp .env.example .env                          # then set SECRETS_KEY (see Secrets) and the bootstrap account
-docker --context docker-dev compose up --build
-curl http://docker-dev.internal:8080/health   # {"database":"connected","status":"ok"}
-docker --context docker-dev compose down -v   # tear down, including the database volume
+cp .env.example .env     # developer settings; then set SECRETS_KEY (see Secrets) and the bootstrap account
+docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml up --build
+curl http://localhost:8080/health   # {"database":"connected","status":"ok"}
+docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml down -v   # tear down, including the database volume
 ```
 
 Compose refuses to start without `SECRETS_KEY`. Set `VJT_BOOTSTRAP_USERNAME` / `VJT_BOOTSTRAP_PASSWORD`
-to get a first account on first boot (see [Authentication](#authentication)).
+to get a first account on first boot (see [Authentication](#authentication)). Ports are published on the
+machine running the Docker daemon. Optional overrides (credentials, `SERVER_PORT`) go in `.env`.
 
-Ports are published on the Docker host (`docker-dev.internal`), not on `localhost`. Optional overrides
-(credentials, `SERVER_PORT`) go in a `.env` copied from `.env.example`. If your Docker CLI has no
-`compose` plugin, install Docker Compose v2 (standalone `docker-compose` works too).
+### Publishing images
 
-## Importing reference data
+`.github/workflows/publish.yml` builds the `server` and `import` targets of `apps/server/Dockerfile` for
+`linux/amd64` and `linux/arm64` and pushes them to GitHub Container Registry
+(`ghcr.io/jaycdev/virtual-japan-tutor-server` and `-import`):
+
+| Trigger                    | Tags pushed                                          |
+| -------------------------- | ---------------------------------------------------- |
+| push to `main`             | `dev`, `sha-<commit>`                                |
+| push of tag `vX.Y.Z`       | `X.Y.Z`, `X.Y`, `latest`                             |
+| push of tag `vX.Y.Z-rc.1`  | `X.Y.Z-rc.1` only (a pre-release never moves `latest`) |
+
+Cut a release with `git tag v0.1.0 && git push origin v0.1.0`. The workflow does not wait for CI, so tag a
+commit whose CI run is green. New GHCR packages start **private**: after the first publish, open each package's
+settings on GitHub and make it public (and link it to the repository) so anyone can pull without logging in.
+
+### Importing reference data
 
 Global reference data (no user data) is loaded from open datasets by `apps/server/cmd/import`. Licences
 and attribution are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md); nothing is committed except the
@@ -83,22 +190,22 @@ records one row per distinct source checksum of a dataset (source URL, licence, 
 row counts): re-importing identical data updates that dataset's existing row, while a changed source (new
 checksum) adds a new row.
 
-### Run it on the remote Docker host
+#### Run it with Docker Compose
 
-Downloads happen inside the container into the `refdata-cache` named volume, so there are no bind mounts
-and a second run does not download again:
+Downloads happen inside the container into the `refdata-cache` named volume, so a second run does not
+download again:
 
 ```sh
-docker --context docker-dev compose up -d db                  # Postgres (the server is not needed)
-docker --context docker-dev compose run --rm --build import   # everything
-docker --context docker-dev compose run --rm import --only grammar,kanjium
-docker --context docker-dev compose run --rm import --refresh # download again
-docker --context docker-dev compose down                      # keeps the volumes; add -v to drop the cache and database
+docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml up -d db                  # Postgres (the server is not needed)
+docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml run --rm --build import   # everything, built from source
+docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml run --rm import --only grammar,kanjium
+docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml run --rm import --refresh # download again
+docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml down                      # keeps the volumes; add -v to drop the cache and database
 ```
 
 The `import` service applies pending migrations itself, so it also works against a fresh database.
 
-### Run it locally
+#### Run it locally
 
 ```sh
 cd apps/server
@@ -123,7 +230,7 @@ At the end the command prints a summary and the **match quality**: how many Wall
 KANJIDIC2 and how many did not (with examples), and how many JMdict entries have pitch data. Unmatched list
 rows are kept in `jlpt_vocab_entries` with an empty `match_method`, never dropped.
 
-### How the data is interpreted
+#### How the data is interpreted
 
 - **JLPT Level** of a word or kanji comes only from Waller's lists, matched to JMdict by (written form,
   reading), trying in order: `exact` (a written form and reading both belong to an entry; slash alternatives
@@ -144,13 +251,13 @@ rows are kept in `jlpt_vocab_entries` with an empty `match_method`, never droppe
   is two points, and so is a pattern the spreadsheet lists twice at one level (のに and そうだ at N4), told apart by
   `ordinal`. `explanation` is a nullable column for the later AI-generated text.
 
-### Looking things up from Go
+#### Looking things up from Go
 
 `internal/refdata` has `NewStore(pool)` with `FindVocabulary(written, reading)`, `VocabularyJLPTLevel(entSeq)`,
 `FindKanji(literal)`, `KanjiJLPTLevel(literal)`, `PitchAccents(word, reading)` and `FindGrammar(pattern)`
 (every level, easiest first; the query is normalised the same way as the catalogue).
 
-## Running locally
+### Running locally
 
 Server (needs a reachable Postgres):
 
@@ -165,7 +272,7 @@ Web: `pnpm --filter @vjt/web dev` (set `VITE_API_URL`). Mobile: `pnpm --filter @
 Packages `@vjt/api-client` and `@vjt/core` are consumed from their built `dist/`, so run `pnpm build`
 (or the package's `build`) after changing them.
 
-## Authentication
+### Authentication
 
 Login is username + password; there is no public signup. The server hashes passwords with argon2id
 (parameters are encoded in each hash) and hands out opaque random session tokens (256-bit). Only the
@@ -186,7 +293,7 @@ the routes in `publicRoutes` through) and a test walks the spec to fail if the t
 always `{"code": "...", "message": "..."}`. Every request body, including `/auth/login`, is capped at
 `HTTP_MAX_BODY_BYTES` (default 1 MiB); larger bodies get `413` with code `payload_too_large`.
 
-### Creating the first account
+#### Creating the first account
 
 No account exists on a fresh database. Either:
 
@@ -198,11 +305,11 @@ No account exists on a fresh database. Either:
 
   ```sh
   cd apps/server && DATABASE_URL=... SECRETS_KEY=... go run ./cmd/server create-user --username me
-  # in compose (remote Docker): pipe the password in, do not put it on the command line
-  printf "%s\n" "$PASSWORD" | docker --context docker-dev compose exec -T server server create-user --username me
+  # in compose (run next to docker-compose.yml): pipe the password in, do not put it on the command line
+  printf "%s\n" "$PASSWORD" | docker compose exec -T server server create-user --username me
   ```
 
-## Secrets
+### Secrets
 
 Third-party keys (the MaruMori key, AI Provider keys) are encrypted at rest with `internal/secrets`:
 AES-256-GCM, stored as `v1:` + base64(nonce || ciphertext). The version prefix lets keys or the algorithm
@@ -218,7 +325,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 Treat it like a password: losing or changing it makes stored secrets unreadable. Stored secrets today are
 [AI Provider](#ai-providers) API keys and the [MaruMori](#marumori-connection-and-sync) API key (both write-only).
 
-## AI Providers
+### AI Providers
 
 An **AI Provider** ([GLOSSARY](GLOSSARY.md)) is a saved OpenAI-compatible endpoint: name, base URL, API key
 and model. The Learner manages them in the web app's **Settings** page and picks which one serves each
@@ -254,7 +361,7 @@ and model. The Learner manages them in the web app's **Settings** page and picks
   structured output and falls back to `json_object`, then to prompt-only JSON extraction, per call (nothing is
   remembered per provider). Its tests use `httptest` fakes; it has not been exercised against a real provider.
 
-### Grammar content is shared
+#### Grammar content is shared
 
 The **Grammar Catalogue** ([GLOSSARY](GLOSSARY.md)) is one shared table, and so is the content generated for it:
 an **Explanation** or an **Example Sentence** belongs to the Grammar Point, not to the Learner who asked for it.
@@ -267,7 +374,7 @@ assigned `grammar_content` provider, API key and quota are used (the in-flight g
 that Learner and point), and a Learner with no provider assigned is served whatever content the point already has
 instead of being run on someone else's provider. See `internal/grammar`.
 
-## MaruMori connection and Sync
+### MaruMori connection and Sync
 
 **MaruMori** ([GLOSSARY](GLOSSARY.md)) is a third-party study app. The Learner connects it in the web app's
 **Settings** page: the API key is write-only (`v1:` ciphertext in `marumori_settings.api_key_encrypted`, never
@@ -291,7 +398,7 @@ returned, never logged), and a **Sync** reads the Learner's **knowledge state** 
   endpoints. Its tests run against fixtures in `internal/marumori/testdata` — nothing in this repo contacts the
   real MaruMori. `MARUMORI_API_BASE_URL` points the client elsewhere (a local stand-in, for instance).
 
-## Data conventions
+### Data conventions
 
 - Every domain table carries `user_id uuid NOT NULL REFERENCES users(id)` (`users`/`user_id` is the technical
   identity behind a Learner in the [GLOSSARY](GLOSSARY.md)). Index it with the queries you expect.
@@ -301,6 +408,6 @@ returned, never logged), and a **Sync** reads the Learner's **knowledge state** 
   reference pattern, with a test that one user cannot read another's rows.
 - Auth is checked in middleware before handlers run, so handlers can rely on the identity being present.
 
-## Environment
+### Environment
 
-See `.env.example` for every variable. Never commit a real `.env`.
+See `.env.example` (developers) and `deploy/.env.example` (self-hosters) for every variable. Never commit a real `.env`.

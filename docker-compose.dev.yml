@@ -1,0 +1,17 @@
+# Development override: build the images from this checkout instead of pulling the published ones.
+# Run from the repo root; --project-directory . makes paths and .env resolve against the root:
+#   docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml up --build
+#   docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml run --rm --build import
+services:
+  server:
+    image: vjt-server:dev
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+      target: server
+  import:
+    image: vjt-import:dev
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+      target: import

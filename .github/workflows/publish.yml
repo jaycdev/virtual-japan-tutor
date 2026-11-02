@@ -1,0 +1,58 @@
+name: Publish images
+
+# Publishes the server and the reference-data import image to GitHub Container Registry.
+#   push to main   -> :dev (and :sha-<commit>)
+#   push of vX.Y.Z -> :X.Y.Z, :X.Y and :latest   (pre-release tags such as v1.0.0-rc.1 never move :latest)
+on:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  images:
+    name: ${{ matrix.target }} image
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [server, import]
+    steps:
+      - uses: actions/checkout@v7.0.1
+      # Go is cross-compiled natively; QEMU is only needed for the tiny `RUN adduser` in the arm64 final stage.
+      - uses: docker/setup-qemu-action@v4.4.0
+      - uses: docker/setup-buildx-action@v4.4.1
+      - uses: docker/login-action@v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v6.2.0
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/virtual-japan-tutor-${{ matrix.target }}
+          flavor: latest=false
+          tags: |
+            type=raw,value=dev,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha,prefix=sha-,enable=${{ github.ref == 'refs/heads/main' }}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-') }}
+      - uses: docker/build-push-action@v7.4.0
+        with:
+          context: .
+          file: apps/server/Dockerfile
+          target: ${{ matrix.target }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.target }}
+          cache-to: type=gha,scope=${{ matrix.target }},mode=max
