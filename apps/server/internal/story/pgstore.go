@@ -43,11 +43,15 @@ func (st *PostgresStore) Save(ctx context.Context, s *Story) error {
 	if err != nil {
 		return fmt.Errorf("story save: vocab items: %w", err)
 	}
+	origin := s.Origin
+	if origin == "" {
+		origin = OriginAutomatic
+	}
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO stories (id, user_id, genre, prompt, text, vocab_items,
+		INSERT INTO stories (id, user_id, genre, title, title_en, theme, origin, prompt, text, vocab_items,
 			content_words, known_words, focus_items, focus_hit, validated, attempts)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-		s.ID, s.UserID, s.Genre, s.Prompt, s.Text, vocab,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+		s.ID, s.UserID, s.Genre, s.Title, s.TitleEN, s.Theme, string(origin), s.Prompt, s.Text, vocab,
 		s.ContentWords, s.KnownWords, s.FocusItems, s.FocusHit, s.Validated, max(s.Attempts, 1)); err != nil {
 		return fmt.Errorf("story save: %w", err)
 	}
@@ -122,9 +126,9 @@ const maxStoredFailures = 5
 
 func (st *PostgresStore) Get(ctx context.Context, id, userID uuid.UUID) (*Story, error) {
 	q := `
-	SELECT s.id, s.user_id, s.genre, s.prompt, s.text, s.vocab_items,
+	SELECT s.id, s.user_id, s.genre, s.title, s.title_en, s.theme, s.origin, s.prompt, s.text, s.vocab_items,
 	       s.content_words, s.known_words, s.focus_items, s.focus_hit,
-	       s.validated, s.attempts, s.created_at, s.ready_at, s.practiced_at, r.rating
+	       s.validated, s.attempts, s.created_at, s.ready_at, s.practiced_at, s.read_at, r.rating
 	FROM stories s
 	LEFT JOIN story_ratings r ON r.story_id = s.id AND r.user_id = s.user_id
 	WHERE s.id = $1 AND s.user_id = $2`
@@ -146,14 +150,29 @@ func (st *PostgresStore) load(ctx context.Context, row pgx.Row) (*Story, error) 
 func rowToStory(row pgx.Row) (*Story, error) {
 	var s Story
 	var rating *string
-	err := row.Scan(&s.ID, &s.UserID, &s.Genre, &s.Prompt, &s.Text, &s.VocabItems,
+	var title, titleEN, theme *string
+	var origin string
+	err := row.Scan(&s.ID, &s.UserID, &s.Genre, &title, &titleEN, &theme, &origin, &s.Prompt, &s.Text, &s.VocabItems,
 		&s.ContentWords, &s.KnownWords, &s.FocusItems, &s.FocusHit,
-		&s.Validated, &s.Attempts, &s.CreatedAt, &s.ReadyAt, &s.PracticedAt, &rating)
+		&s.Validated, &s.Attempts, &s.CreatedAt, &s.ReadyAt, &s.PracticedAt, &s.ReadAt, &rating)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("story get: %w", err)
+	}
+	if title != nil {
+		s.Title = *title
+	}
+	if titleEN != nil {
+		s.TitleEN = *titleEN
+	}
+	if theme != nil {
+		s.Theme = *theme
+	}
+	s.Origin = StoryOrigin(origin)
+	if s.Origin == "" {
+		s.Origin = OriginAutomatic
 	}
 	if rating != nil {
 		r := Rating(*rating)
@@ -264,9 +283,9 @@ func (st *PostgresStore) List(ctx context.Context, userID uuid.UUID, limit, offs
 		return nil, 0, fmt.Errorf("story list count: %w", err)
 	}
 	rows, err := st.pool.Query(ctx, `
-		SELECT s.id, s.user_id, s.genre, s.prompt, s.text, s.vocab_items,
+		SELECT s.id, s.user_id, s.genre, s.title, s.title_en, s.theme, s.origin, s.prompt, s.text, s.vocab_items,
 		       s.content_words, s.known_words, s.focus_items, s.focus_hit,
-		       s.validated, s.attempts, s.created_at, s.ready_at, s.practiced_at, r.rating
+		       s.validated, s.attempts, s.created_at, s.ready_at, s.practiced_at, s.read_at, r.rating
 		FROM stories s
 		LEFT JOIN story_ratings r ON r.story_id = s.id AND r.user_id = s.user_id
 		WHERE s.user_id = $1 AND s.validated
@@ -598,6 +617,45 @@ func (st *PostgresStore) MarkPracticed(ctx context.Context, storyID uuid.UUID, a
 func (st *PostgresStore) ResetPracticed(ctx context.Context, storyID uuid.UUID, at time.Time) error {
 	if _, err := st.pool.Exec(ctx, `UPDATE stories SET practiced_at = NULL WHERE id = $1 AND practiced_at = $2`, storyID, at); err != nil {
 		return fmt.Errorf("story unpracticed: %w", err)
+	}
+	return nil
+}
+
+// MarkRead sets the Read mark (issue #31); it is idempotent — re-marking a
+// read Story just restamps it. Owner-scoped like every other method.
+func (st *PostgresStore) MarkRead(ctx context.Context, storyID, userID uuid.UUID, at time.Time) error {
+	tag, err := st.pool.Exec(ctx, `UPDATE stories SET read_at = $3 WHERE id = $1 AND user_id = $2`, storyID, userID, at)
+	if err != nil {
+		return fmt.Errorf("story mark read: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// ClearRead unsets the Read mark.
+func (st *PostgresStore) ClearRead(ctx context.Context, storyID, userID uuid.UUID) error {
+	tag, err := st.pool.Exec(ctx, `UPDATE stories SET read_at = NULL WHERE id = $1 AND user_id = $2`, storyID, userID)
+	if err != nil {
+		return fmt.Errorf("story clear read: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// Delete removes the Story row; its sentences, tokens, spans, questions,
+// vocab lists and rating all ride ON DELETE CASCADE, while practice_records
+// have no foreign key to stories, so the Practice Records it wrote stay.
+func (st *PostgresStore) Delete(ctx context.Context, storyID, userID uuid.UUID) error {
+	tag, err := st.pool.Exec(ctx, `DELETE FROM stories WHERE id = $1 AND user_id = $2`, storyID, userID)
+	if err != nil {
+		return fmt.Errorf("story delete: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
 	}
 	return nil
 }

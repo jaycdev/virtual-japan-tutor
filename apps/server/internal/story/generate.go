@@ -101,6 +101,10 @@ type Request struct {
 	Genre      string
 	// Theme is the Learner's free-text preference (prompt-only, like Genre).
 	Theme string
+	// Origin says how this generation came about — background Automatic or
+	// an On-demand request — and is stamped onto the stored Story. A Story
+	// the generator produced is always Automatic (issue #31).
+	Origin StoryOrigin
 	// DislikedGenres are the genres the Learner rated net down: the prompt
 	// names them as "avoid", and PickGenre already dropped them from its
 	// fallback.
@@ -156,7 +160,7 @@ func (g *Generator) Generate(ctx context.Context, client ChatClient, req Request
 			)
 			continue
 		}
-		story, err := g.materialise(ctx, &raw, req.UserID, req.Focus, req.Genre)
+		story, err := g.materialise(ctx, &raw, req)
 		if err != nil {
 			lastErr = err
 			msgs = append(msgs,
@@ -198,9 +202,13 @@ func (g *Generator) Generate(ctx context.Context, client ChatClient, req Request
 // sentence with kagome and linking content tokens to jmdict entries through
 // the lookup. Known/unknown tagging happens afterwards in tagKnown, once the
 // linked entries are known. Spans arriving here are copied verbatim; the
-// gate judges them.
-func (g *Generator) materialise(ctx context.Context, raw *storyJSON, userID uuid.UUID, focus FocusSet, genre string) (*Story, error) {
-	s := &Story{UserID: userID, Genre: genre}
+// gate judges them. The request's Title/Theme/Origin stamping happens here
+// too, so every candidate — validated or not — carries its library fields.
+func (g *Generator) materialise(ctx context.Context, raw *storyJSON, req Request) (*Story, error) {
+	s := &Story{UserID: req.UserID, Genre: req.Genre, Origin: req.Origin}
+	if s.Origin == "" {
+		s.Origin = OriginAutomatic
+	}
 	if s.Genre == "" {
 		// The model names its own genre: a free-text label it can fill with
 		// anything, so it goes through the same sanitizer the user's stored
@@ -252,7 +260,7 @@ func (g *Generator) materialise(ctx context.Context, raw *storyJSON, userID uuid
 				Start:          sp.Start,
 				End:            sp.End,
 				GrammarPointID: sp.GrammarPointID,
-				IsFocus:        focus.hasGrammar(sp.GrammarPointID),
+				IsFocus:        req.Focus.hasGrammar(sp.GrammarPointID),
 			})
 		}
 		s.Sentences = append(s.Sentences, sen)
@@ -266,6 +274,20 @@ func (g *Generator) materialise(ctx context.Context, raw *storyJSON, userID uuid
 		s.Questions = append(s.Questions, Question{Pos: i, PromptJA: stripNulls(q.PromptJA), OptionsJA: opts, AnswerIndex: q.AnswerIdx})
 	}
 	s.Text = strings.Join(texts, "")
+
+	// Library fields (issue #31): the title the model wrote — a shortened
+	// first sentence when it wrote none — its translation, and the theme
+	// the story was actually written on (the request's stored preference
+	// beats the model's self-named theme).
+	s.Title = sanitizeLabel(raw.Title, maxLabelRunes)
+	if s.Title == "" {
+		s.Title = fallbackTitle(s.Text)
+	}
+	s.TitleEN = sanitizeLabel(raw.TitleEN, maxLabelRunes)
+	s.Theme = sanitizeLabel(req.Theme, maxPreferredThemeLen)
+	if s.Theme == "" {
+		s.Theme = sanitizeLabel(raw.Theme, maxPreferredThemeLen)
+	}
 
 	// Vocabulary the Story covers: every linked content token, deduplicated
 	// by ent_seq keeping the first hit.
@@ -440,6 +462,21 @@ func (f FocusSet) hasGrammar(pointID int64) bool {
 	return false
 }
 
+// fallbackTitle is the no-title-from-the-model fallback (issue #31): the
+// first sentence — everything up to the first 。？！ — or, when no
+// terminator lands inside the first 40 runes, a shortened 40-rune cut.
+func fallbackTitle(text string) string {
+	const maxRunes = 40
+	rs := []rune(text)
+	limit := min(len(rs), maxRunes)
+	for i, r := range rs[:limit] {
+		if r == '。' || r == '？' || r == '！' {
+			return string(rs[:i])
+		}
+	}
+	return string(rs[:limit])
+}
+
 // stripNulls removes NUL characters: Postgres rejects \u0000 in text, and a
 // model that emits one should produce a storable story, not a save failure.
 func stripNulls(s string) string {
@@ -541,11 +578,13 @@ Known words (the only words you may use; focus words are included):
 	}
 
 	fmt.Fprintf(&b, `
+Title: give the passage a short Japanese title (title) and translate that title into English (title_en). Also name, in English, the theme you wrote on (theme) — the theme you were given if you were given one.
+
 Comprehension questions: write %d to %d multiple-choice questions in Japanese about the passage. Each has 2 to 4 options and the index (from 0) of the correct option.
 
 Character positions: for each grammar span, start is the position of its first character (counting from 0 across the sentence) and end is the position just after its last character. Spans must cover whole words, and they cover the pattern's characters only — never the stem of the verb or adjective. Example: for 食べてしまった with the pattern てしまった, the span starts at the て, not at 食べ. A span that opens at the first character of a content word is rejected.
 
-Return JSON: {"genre": string, "sentences": [{"ja": string, "en": string, "grammar_spans": [{"start": int, "end": int, "grammar_point_id": int}]}], "questions": [{"prompt_ja": string, "options_ja": [string], "answer_index": int}]}`,
+Return JSON: {"title": string, "title_en": string, "theme": string, "genre": string, "sentences": [{"ja": string, "en": string, "grammar_spans": [{"start": int, "end": int, "grammar_point_id": int}]}], "questions": [{"prompt_ja": string, "options_ja": [string], "answer_index": int}]}`,
 		MinQuestions, MaxQuestions)
 	return b.String()
 }
@@ -577,6 +616,9 @@ func Schema() llm.Schema {
 }
 
 const storySchemaJSON = `{"type":"object","properties":{
+	"title":{"type":"string"},
+	"title_en":{"type":"string"},
+	"theme":{"type":"string"},
 	"genre":{"type":"string"},
 	"sentences":{"type":"array","minItems":3,"maxItems":8,"items":{
 		"type":"object",
@@ -607,12 +649,15 @@ const storySchemaJSON = `{"type":"object","properties":{
 		"required":["prompt_ja","options_ja","answer_index"],
 		"additionalProperties":false
 	}}
-},"required":["genre","sentences","questions"],"additionalProperties":false}`
+},"required":["title","title_en","theme","genre","sentences","questions"],"additionalProperties":false}`
 
 // storyJSON is the model's reply shape; indexes are characters, as the
 // schema and system prompt both say.
 type storyJSON struct {
 	Genre     string `json:"genre"`
+	Title     string `json:"title"`
+	TitleEN   string `json:"title_en"`
+	Theme     string `json:"theme"`
 	Sentences []struct {
 		JA           string `json:"ja"`
 		EN           string `json:"en"`

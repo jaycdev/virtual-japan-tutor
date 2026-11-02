@@ -282,6 +282,25 @@ func (s *Service) Rate(ctx context.Context, storyID, userID uuid.UUID, r Rating)
 	return s.store.Rate(ctx, storyID, userID, r)
 }
 
+// MarkRead and ClearRead set and unset the library's Read mark (issue #31).
+// Answering the last comprehension question sets it too; unreading is a
+// plain library edit and touches nothing else.
+func (s *Service) MarkRead(ctx context.Context, storyID, userID uuid.UUID, at time.Time) error {
+	return s.store.MarkRead(ctx, storyID, userID, at)
+}
+
+func (s *Service) ClearRead(ctx context.Context, storyID, userID uuid.UUID) error {
+	return s.store.ClearRead(ctx, storyID, userID)
+}
+
+// Delete removes a Story from the Library. Its rating goes with it; the
+// Practice Records it wrote stay (the mastery log is append-only), and
+// deleting the ready Story leaves nothing ready — the next EnsureReady pass
+// generates a new one.
+func (s *Service) Delete(ctx context.Context, storyID, userID uuid.UUID) error {
+	return s.store.Delete(ctx, storyID, userID)
+}
+
 // AnswerResult is one graded comprehension answer.
 type AnswerResult struct {
 	Correct bool
@@ -323,6 +342,15 @@ func (s *Service) Answer(ctx context.Context, storyID, userID uuid.UUID, questio
 	first, err := s.store.MarkPracticed(ctx, storyID, at)
 	if err != nil {
 		return AnswerResult{}, err
+	}
+	// The last comprehension question answered means the Learner finished
+	// the Story: set its Read mark at the same moment (issue #31). The Read
+	// mark is the reader's, separate from the Practiced At above, which
+	// guards the Practice Records.
+	if questionIndex == len(st.Questions)-1 {
+		if err := s.store.MarkRead(ctx, storyID, userID, at); err != nil {
+			return AnswerResult{}, err
+		}
 	}
 	if first && s.results != nil {
 		if err := s.appendPractice(ctx, st, userID, correct, at); err != nil {
