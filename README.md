@@ -22,8 +22,8 @@ Compose file and an env file:
 
 ```sh
 mkdir virtual-japan-tutor && cd virtual-japan-tutor
-curl -fsSLO https://raw.githubusercontent.com/jaycdev/virtual-japan-tutor/main/docker-compose.yml
-curl -fsSL  https://raw.githubusercontent.com/jaycdev/virtual-japan-tutor/main/.env.example -o .env
+curl -fsSLO https://raw.githubusercontent.com/jaycdev/virtual-japan-tutor/main/deploy/docker-compose.yml
+curl -fsSL  https://raw.githubusercontent.com/jaycdev/virtual-japan-tutor/main/deploy/.env.example -o .env
 ```
 
 Choose a version with `VJT_VERSION` in `.env`:
@@ -37,7 +37,7 @@ Choose a version with `VJT_VERSION` in `.env`:
 If you pin a release, download the Compose file from that tag too (replace `main` in the URLs with `v1.2.3`).
 If the packages are private, run `docker login ghcr.io` first with a GitHub token that has `read:packages`.
 
-Edit `.env` and set at least:
+Edit `.env` (every variable is explained in the file) and set at least:
 
 | Variable                                         | What                                                                                  |
 | ------------------------------------------------ | ------------------------------------------------------------------------------------- |
@@ -47,8 +47,7 @@ Edit `.env` and set at least:
 | `SERVER_PORT`                                    | Host port for the API (default `8080`).                                               |
 
 Optional: `AI_DEFAULT_BASE_URL`, `AI_DEFAULT_MODEL` and `AI_DEFAULT_API_KEY` pre-create a default AI Provider
-for your account. You can also add providers later in the app's Settings. Every variable is documented in
-`.env.example`.
+for your account. You can also add providers later in the app's Settings.
 
 ### 2. Start the server
 
@@ -138,15 +137,15 @@ Postgres-backed Go tests are skipped unless `TEST_DATABASE_URL` is set (CI sets 
 
 ### Running with Docker Compose
 
-`docker-compose.yml` runs the published images. For development, `docker-compose.dev.yml` overrides them to
+`deploy/docker-compose.yml` runs the published images. For development, `docker-compose.dev.yml` overrides them to
 build from this checkout (`apps/server/Dockerfile`, targets `server` and `import`). Postgres data lives in a
 named volume, migrations are embedded in the server binary and applied on start, and there are no bind mounts.
 
 ```sh
-cp .env.example .env     # then set SECRETS_KEY (see Secrets) and the bootstrap account
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+cp .env.example .env     # developer settings; then set SECRETS_KEY (see Secrets) and the bootstrap account
+docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml up --build
 curl http://localhost:8080/health   # {"database":"connected","status":"ok"}
-docker compose down -v   # tear down, including the database volume
+docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml down -v   # tear down, including the database volume
 ```
 
 Compose refuses to start without `SECRETS_KEY`. Set `VJT_BOOTSTRAP_USERNAME` / `VJT_BOOTSTRAP_PASSWORD`
@@ -197,11 +196,11 @@ Downloads happen inside the container into the `refdata-cache` named volume, so 
 download again:
 
 ```sh
-docker compose up -d db                  # Postgres (the server is not needed)
-docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm --build import   # everything, built from source
-docker compose run --rm import --only grammar,kanjium
-docker compose run --rm import --refresh # download again
-docker compose down                      # keeps the volumes; add -v to drop the cache and database
+docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml up -d db                  # Postgres (the server is not needed)
+docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml run --rm --build import   # everything, built from source
+docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml run --rm import --only grammar,kanjium
+docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml run --rm import --refresh # download again
+docker compose --project-directory . -f deploy/docker-compose.yml -f docker-compose.dev.yml down                      # keeps the volumes; add -v to drop the cache and database
 ```
 
 The `import` service applies pending migrations itself, so it also works against a fresh database.
@@ -306,7 +305,7 @@ No account exists on a fresh database. Either:
 
   ```sh
   cd apps/server && DATABASE_URL=... SECRETS_KEY=... go run ./cmd/server create-user --username me
-  # in compose: pipe the password in, do not put it on the command line
+  # in compose (run next to docker-compose.yml): pipe the password in, do not put it on the command line
   printf "%s\n" "$PASSWORD" | docker compose exec -T server server create-user --username me
   ```
 
@@ -411,4 +410,4 @@ returned, never logged), and a **Sync** reads the Learner's **knowledge state** 
 
 ### Environment
 
-See `.env.example` for every variable. Never commit a real `.env`.
+See `.env.example` (developers) and `deploy/.env.example` (self-hosters) for every variable. Never commit a real `.env`.

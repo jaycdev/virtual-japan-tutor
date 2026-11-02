@@ -1,7 +1,6 @@
 # Runs the published images (ghcr.io/jaycdev). Pick a version with VJT_VERSION in .env:
 #   latest (default) = newest release, dev = newest commit on main, or a number like 1.2.3.
-# To build from source instead (development), add docker-compose.dev.yml:
-#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+# Development (build from source) uses this file plus ../docker-compose.dev.yml; see the README.
 services:
   db:
     image: postgres:18-alpine

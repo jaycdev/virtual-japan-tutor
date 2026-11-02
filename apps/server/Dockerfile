@@ -1,4 +1,4 @@
-# Build context is the repository root (see docker-compose.yml), because the import image
+# Build context is the repository root (see deploy/docker-compose.yml), because the import image
 # carries data/grammar/jlpt-grammar.csv. Generated code is committed, so the image build
 # needs neither the OpenAPI spec nor any code generation.
 #
