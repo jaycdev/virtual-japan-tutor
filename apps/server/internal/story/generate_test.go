@@ -89,10 +89,13 @@ func fixture(t *testing.T, genre string, clauses ...string) []byte {
 func fixtureSpans(t *testing.T, genre string, spans []fSpan, clauses ...string) []byte {
 	t.Helper()
 	out := struct {
+		Title     string  `json:"title"`
+		TitleEN   string  `json:"title_en"`
+		Theme     string  `json:"theme"`
 		Genre     string  `json:"genre"`
 		Sentences []fSent `json:"sentences"`
 		Questions []fQ    `json:"questions"`
-	}{Genre: genre}
+	}{Title: "ねこの一日", TitleEN: "A Day of Cats", Theme: "Cats", Genre: genre}
 	for _, c := range clauses {
 		out.Sentences = append(out.Sentences, fSent{JA: sentence(12, c), EN: "The cat found it.", GrammarSpans: spans})
 	}

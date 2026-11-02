@@ -115,6 +115,17 @@ const (
 
 func (r Rating) Valid() bool { return r == RatingUp || r == RatingDown }
 
+// StoryOrigin records how a Story came to exist: the background generator
+// wrote it (Automatic) or the Learner asked for it (On-demand). Generator
+// production is always Automatic, whatever genre or theme steering was in
+// play (issue #31).
+type StoryOrigin string
+
+const (
+	OriginAutomatic StoryOrigin = "automatic"
+	OriginOnDemand  StoryOrigin = "on_demand"
+)
+
 // Tag marks a token known or unknown to the Learner at generation time.
 const (
 	TagKnown   = "known"
@@ -129,6 +140,15 @@ type Story struct {
 	ID     uuid.UUID
 	UserID uuid.UUID
 	Genre  string
+	// Library fields (issue #31): the Story's own Title with its English
+	// translation TitleEN (both model-written, Title falling back to a
+	// shortened first sentence), the Theme it was written on, and the Origin
+	// of its existence. Every stored Story carries them; pre-#31 rows get
+	// backfilled placeholders from migration 00012.
+	Title   string
+	TitleEN string
+	Theme   string
+	Origin  StoryOrigin
 	// Prompt is the generation brief sent to the model (the base user prompt,
 	// not the retry feedback). Stored for debugging a story's outcome.
 	Prompt string
@@ -149,11 +169,19 @@ type Story struct {
 	// PracticedAt records when the first comprehension answer wrote Practice
 	// Records for this Story; nil until then, at most once ever.
 	PracticedAt *time.Time
-	CreatedAt   time.Time
-	ReadyAt     *time.Time
+	// ReadAt records that the Learner finished the Story: set when they
+	// answer its last comprehension question, and settable directly through
+	// the library's Read mark. It is separate from PracticedAt, which is
+	// about Practice Records, not about finishing (issue #31).
+	ReadAt    *time.Time
+	CreatedAt time.Time
+	ReadyAt   *time.Time
 	// Rating is the Learner's own rating, when they gave one.
 	Rating *Rating
 }
+
+// Read reports whether the Learner has marked this Story read.
+func (s *Story) Read() bool { return s.ReadAt != nil }
 
 type Sentence struct {
 	ID     uuid.UUID

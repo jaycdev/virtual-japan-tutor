@@ -80,6 +80,14 @@
   filter: blur(5px);
 }
 
+/* Story Library table (issue #31): the blurred English title sits under the
+   title button in its cell. */
+.story-table .title-translation {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.9em;
+}
+
 .story-sentence {
   line-height: 2;
 }
