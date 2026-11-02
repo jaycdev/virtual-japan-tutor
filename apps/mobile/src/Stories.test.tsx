@@ -76,10 +76,22 @@ const MISE_ENTRY = {
  * hosts prove the same behaviour. `requests` records method, path and body.
  */
 function fakeApi(
-  opts: { blurTranslation?: boolean; failReadingPut?: boolean } = {},
+  opts: {
+    blurTranslation?: boolean;
+    failReadingPut?: boolean;
+    noToday?: boolean;
+    /** How POST /stories/generate answers; GET /stories/generation follows it. */
+    genOutcome?: "ready" | "running" | "failed";
+    /** GET /stories/generation answers 404 (no run has ever happened). */
+    noGeneration?: boolean;
+  } = {},
 ) {
   const storyView = {
     id: "st-1",
+    title: "がっこうの 一日",
+    titleEn: "A Day at School",
+    theme: "school life",
+    origin: "automatic",
     genre: "diary",
     text: "がっこうでべんきょうしました。",
     createdAt: "2026-11-01T09:00:00Z",
@@ -141,6 +153,11 @@ function fakeApi(
   const settings = { furiganaThresholdSrsLevel: 3, preferredGenre: "", preferredTheme: "" };
   const readingSettings = { blurTranslation: opts.blurTranslation ?? true, lookupHoldMs: HOLD_MS };
 
+  // On-demand generation (#33/#34): the run lives "on the server"; GET hands out
+  // snapshots, and "running" turns ready after two polls so the bar can move.
+  let generation: Record<string, unknown> = { status: "idle", stage: null, percent: 0 };
+  let genPolls = 0;
+
   const itemLists = [
     { id: "l1", name: "Saved", boosting: true, isDefault: true, itemCount: 1 },
     { id: "l2", name: "Travel", boosting: false, isDefault: false, itemCount: 3 },
@@ -151,10 +168,45 @@ function fakeApi(
     const body = request.body ? await request.json() : null;
     requests.push({ method: request.method, path: pathname, body });
     if (pathname === "/stories" && request.method === "GET") return json(200, page);
+    if (pathname === "/stories/today" && request.method === "GET") {
+      if (opts.noToday) return json(404, { code: "no_today_story", message: "no automatic story yet" });
+      return json(200, storyView);
+    }
     if (pathname === "/stories/st-1" && request.method === "GET") return json(200, storyView);
+    if (pathname === "/stories/st-1" && request.method === "DELETE") return new Response(null, { status: 204 });
+    if (pathname === "/stories/st-1/read" && (request.method === "PUT" || request.method === "DELETE"))
+      return new Response(null, { status: 204 });
     if (pathname === "/stories/st-1/rate" && request.method === "POST") return new Response(null, { status: 204 });
     if (pathname === "/stories/st-1/answers" && request.method === "POST")
       return json(200, { correct: true, practiceRecorded: true });
+    if (pathname === "/stories/generation" && request.method === "GET") {
+      if (opts.noGeneration) return json(404, { code: "not_found", message: "no run yet" });
+      if (generation.status === "running" && ++genPolls >= 2) {
+        generation = { status: "ready", stage: "saving", attempt: 1, maxAttempts: 2, percent: 100, storyId: "st-1" };
+      }
+      return json(200, generation);
+    }
+    if (pathname === "/stories/suggestions" && request.method === "GET") {
+      return json(200, { genres: ["diary", "travel", "mystery"], themes: ["school life", "cooking"] });
+    }
+    if (pathname === "/stories/generate" && request.method === "POST") {
+      if (opts.genOutcome === "failed") {
+        generation = {
+          status: "failed",
+          stage: "writing",
+          attempt: 2,
+          maxAttempts: 2,
+          percent: 100,
+          message: "Couldn’t write a Story that fits your vocabulary. Try again?",
+        };
+      } else if (opts.genOutcome === "running") {
+        genPolls = 0;
+        generation = { status: "running", stage: "writing", attempt: 1, maxAttempts: 2, percent: 40 };
+      } else {
+        generation = { status: "ready", stage: "saving", attempt: 1, maxAttempts: 1, percent: 100, storyId: "st-1" };
+      }
+      return json(202, generation);
+    }
     if (pathname === "/story-settings" && request.method === "GET") return json(200, settings);
     if (pathname === "/reading-settings" && request.method === "GET") return json(200, readingSettings);
     if (pathname === "/reading-settings" && request.method === "PUT") {
@@ -203,26 +255,34 @@ const RECTS: Record<string, Rect> = {
   "menu-option-saveTo": { x: 220, y: 462, width: 160, height: 50 },
 };
 
-function renderStories(client: ApiClient) {
+function renderStories(client: ApiClient, generationPollMs?: number) {
   return render(
     <Stories
       client={client}
       measure={(testID) => RECTS[testID] ?? null}
       screenSize={SCREEN}
+      generationPollMs={generationPollMs}
     />,
   );
 }
 
-/** Library → open story → the reader's fetches (reading settings, lists) settled. */
+/** Today's Story landing → open story → the reader's fetches (reading settings, lists) settled. */
 async function openStory(client: ApiClient) {
   renderStories(client);
-  fireEvent.click(await screen.findByTestId("story-row-st-1"));
+  fireEvent.click(await screen.findByRole("button", { name: "Read today’s story" }));
   await screen.findByTestId("back-to-library");
   // The reader fetches reading settings + Item Lists on mount; give their
   // mocked responses time to land before any gesture reads them.
   await act(async () => {
     await new Promise((r) => setTimeout(r, 30));
   });
+}
+
+/** Today's Story landing → "View all stories" → the Library's first row. */
+async function openLibrary(client: ApiClient) {
+  renderStories(client);
+  fireEvent.click(await screen.findByRole("button", { name: "View all stories" }));
+  return screen.findByTestId("story-row-st-1");
 }
 
 const token = (sentence: number, index: number) => screen.getByTestId(`token-${sentence}-${index}`);
@@ -285,14 +345,19 @@ afterEach(() => {
   setBackHandlerForTests(undefined);
 });
 
-describe("Stories library (mobile)", () => {
-  it("lists story rows with pager summary and both page buttons disabled on a single page", async () => {
+describe("Today's Story and the Story Library (mobile)", () => {
+  it("opens on Today's Story and hands the Library to View all stories", async () => {
     const { client, requests } = fakeApi();
     renderStories(client);
 
+    // Today's Story is the landing view: its button plus the day line.
+    expect(await screen.findByRole("button", { name: "Read today’s story" })).toBeTruthy();
+    expect(requests.some((r) => r.method === "GET" && r.path === "/stories/today")).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "View all stories" }));
     const row = await screen.findByTestId("story-row-st-1");
-    expect(within(row).getByText("diary")).toBeTruthy();
-    expect(within(row).getByText("がっこうでべんきょうしました。…")).toBeTruthy();
+    expect(within(row).getByText(/がっこうの 一日/)).toBeTruthy();
+    expect(screen.getByText(/diary · school life · Automatic ·/)).toBeTruthy();
     expect(screen.getByText("1–1 of 1")).toBeTruthy();
     const newer = screen.getByRole("button", { name: "Newer stories" });
     const older = screen.getByRole("button", { name: "Older stories" });
@@ -301,14 +366,138 @@ describe("Stories library (mobile)", () => {
     expect(requests.some((r) => r.method === "GET" && r.path === "/stories")).toBe(true);
   });
 
+  it("offers a check again when there is no Automatic Story yet", async () => {
+    const { client } = fakeApi({ noToday: true });
+    renderStories(client);
+
+    expect(await screen.findByText(/No story yet/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+    await waitFor(() =>
+      expect(screen.getAllByText(/No story yet/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("reveals and re-blurs a row's title translation without any request", async () => {
+    const { client, requests } = fakeApi();
+    await openLibrary(client);
+
+    const reveal = screen.getByTestId("title-translation-st-1");
+    expect(screen.getByText("Title translation hidden — tap to show")).toBeTruthy();
+    fireEvent.click(reveal);
+    await waitFor(() => expect(screen.queryByText("Title translation hidden — tap to show")).toBeNull());
+    expect(screen.getByText("A Day at School")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("title-translation-st-1"));
+    expect(await screen.findByText("Title translation hidden — tap to show")).toBeTruthy();
+    expect(requests.some((r) => r.path === "/weak-signals")).toBe(false);
+  });
+
+  it("toggles Read from a library row, marking then unmarking", async () => {
+    const { client, requests } = fakeApi();
+    await openLibrary(client);
+
+    fireEvent.click(screen.getByRole("button", { name: "Mark read" }));
+    await waitFor(() => expect(requests.some((r) => r.method === "PUT" && r.path === "/stories/st-1/read")).toBe(true));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Unmark read" })).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "Unmark read" }));
+    await waitFor(() =>
+      expect(requests.some((r) => r.method === "DELETE" && r.path === "/stories/st-1/read")).toBe(true),
+    );
+    await waitFor(() => expect(screen.getByRole("button", { name: "Mark read" })).toBeTruthy());
+  });
+
+  it("deletes only after an in-row confirmation, and Keep cancels it", async () => {
+    const { client, requests } = fakeApi();
+    await openLibrary(client);
+
+    fireEvent.click(screen.getByTestId("delete-st-1"));
+    fireEvent.click(screen.getByRole("button", { name: "Keep" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Confirm delete" })).toBeNull());
+    expect(requests.some((r) => r.method === "DELETE" && r.path === "/stories/st-1")).toBe(false);
+
+    fireEvent.click(screen.getByTestId("delete-st-1"));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm delete" }));
+    await waitFor(() => expect(requests.some((r) => r.method === "DELETE" && r.path === "/stories/st-1")).toBe(true));
+    await waitFor(() => expect(screen.queryByTestId("story-row-st-1")).toBeNull());
+  });
+
   it("rates a story from its library row", async () => {
     const { client, requests } = fakeApi();
-    renderStories(client);
-    await screen.findByTestId("story-row-st-1");
+    await openLibrary(client);
 
     fireEvent.click(screen.getByRole("button", { name: "Rate up" }));
     await waitFor(() => expect(requests.some((r) => r.method === "POST" && r.path === "/stories/st-1/rate")).toBe(true));
     expect(requests.find((r) => r.path === "/stories/st-1/rate")?.body).toBe("up");
+  });
+
+  it("the reader header shows the title, reveals its translation, and toggles Read", async () => {
+    const { client, requests } = fakeApi();
+    await openStory(client);
+
+    expect(screen.getByText("がっこうの 一日")).toBeTruthy();
+    expect(screen.getByText(/diary · Automatic ·/)).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("reader-title-translation"));
+    await waitFor(() => expect(screen.queryByText("Title translation hidden — tap to show")).toBeNull());
+    expect(screen.getByText("A Day at School")).toBeTruthy();
+    expect(requests.some((r) => r.path === "/weak-signals")).toBe(false);
+
+    fireEvent.click(screen.getByTestId("reader-read-toggle"));
+    await waitFor(() => expect(requests.some((r) => r.method === "PUT" && r.path === "/stories/st-1/read")).toBe(true));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Unmark read" })).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "Unmark read" }));
+    await waitFor(() =>
+      expect(requests.some((r) => r.method === "DELETE" && r.path === "/stories/st-1/read")).toBe(true),
+    );
+  });
+});
+
+describe("On-demand Generate (mobile)", () => {
+  it("shows the Generate box with autocomplete suggestions for genre and theme", async () => {
+    const api = fakeApi();
+    renderStories(api.client);
+    fireEvent.change(await screen.findByLabelText("Genre for this story"), { target: { value: "tra" } });
+    fireEvent.click(screen.getByRole("button", { name: "travel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    await waitFor(() =>
+      expect(
+        api.requests.find((r) => r.method === "POST" && r.path === "/stories/generate")?.body,
+      ).toEqual({ genre: "travel" }),
+    );
+  });
+
+  it("surprise me starts a bare run and the bar follows the server's snapshots", async () => {
+    const api = fakeApi({ genOutcome: "running" });
+    renderStories(api.client, 30);
+    fireEvent.click(await screen.findByRole("button", { name: "Surprise me" }));
+    await waitFor(() =>
+      expect(
+        api.requests.find((r) => r.method === "POST" && r.path === "/stories/generate")?.body,
+      ).toEqual({ surprise: true }),
+    );
+    // The run is live: its stage line shows, and a second start is gated off.
+    expect(await screen.findByText("Writing… attempt 1 of 2 40%")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Generate" }).getAttribute("aria-disabled")).toBe("true");
+    // Later polls bring the finished Story: the ready line offers "Ready, read now".
+    expect(await screen.findByText("A new Story is ready for you.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Ready, read now" }));
+    await screen.findByTestId("back-to-library");
+  });
+
+  it("a failed run keeps the retry line on screen and leaves the form ready", async () => {
+    const api = fakeApi({ genOutcome: "failed" });
+    renderStories(api.client);
+    fireEvent.click(await screen.findByRole("button", { name: "Generate" }));
+    expect(
+      await screen.findByText("Couldn’t write a Story that fits your vocabulary. Try again?"),
+    ).toBeTruthy();
+    // Another try is open right away: the failure cooldown never gates this button.
+    expect(screen.getByRole("button", { name: "Generate" }).getAttribute("aria-disabled")).not.toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    await waitFor(() =>
+      expect(api.requests.filter((r) => r.method === "POST" && r.path === "/stories/generate").length).toBe(2),
+    );
   });
 });
 
@@ -820,15 +1009,27 @@ describe("hardware Back in the reader (mobile)", () => {
     await waitFor(() => expect(screen.queryByLabelText("Lookup menu")).toBeNull());
     expect(screen.getByTestId("back-to-library")).toBeTruthy();
 
-    // Nothing open: Back leaves the reader to the library.
+    // Nothing open: Back leaves the reader back to Today's Story, where it
+    // was opened from.
     back.press();
     await waitFor(() => expect(screen.queryByTestId("back-to-library")).toBeNull());
-    expect(await screen.findByTestId("story-row-st-1")).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "View all stories" })).toBeTruthy();
   });
 
-  it("the header Back returns to the library", async () => {
+  it("the header Back returns to Today's Story when the Story opened from there", async () => {
     const { client } = fakeApi();
     await openStory(client);
+
+    fireEvent.click(screen.getByTestId("back-to-library"));
+    await waitFor(() => expect(screen.queryByTestId("back-to-library")).toBeNull());
+    expect(await screen.findByRole("button", { name: "Read today’s story" })).toBeTruthy();
+  });
+
+  it("the header Back returns to the Library when the Story opened from there", async () => {
+    const { client } = fakeApi();
+    await openLibrary(client);
+    fireEvent.click(screen.getByTestId("story-row-st-1"));
+    await screen.findByTestId("back-to-library");
 
     fireEvent.click(screen.getByTestId("back-to-library"));
     await waitFor(() => expect(screen.queryByTestId("back-to-library")).toBeNull());

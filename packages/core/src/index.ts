@@ -43,3 +43,4 @@ export type {
 } from "./useOnboarding.ts";
 export { memoryTokenStorage } from "./tokenStorage.ts";
 export type { TokenStorage } from "./tokenStorage.ts";
+export { deviceTimezone, TIMEZONE_OPTIONS } from "./timezones.ts";

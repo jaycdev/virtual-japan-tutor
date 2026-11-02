@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -179,6 +179,9 @@ export function Field({
   maxLength,
   disabled = false,
   autoFocus = false,
+  testID,
+  onFocus,
+  onBlur,
 }: {
   label: string;
   value: string;
@@ -190,6 +193,9 @@ export function Field({
   maxLength?: number;
   disabled?: boolean;
   autoFocus?: boolean;
+  testID?: string;
+  onFocus?: () => void;
+  onBlur?: () => void;
 }) {
   const colors = useColors();
   return (
@@ -197,6 +203,7 @@ export function Field({
       <Text style={[styles.fieldLabel, { color: colors.subtle }]}>{label}</Text>
       <TextInput
         accessibilityLabel={label}
+        testID={testID}
         style={[
           styles.input,
           { backgroundColor: colors.field, borderColor: colors.separator, color: colors.label },
@@ -205,6 +212,8 @@ export function Field({
         value={value}
         onChangeText={onChangeText}
         onSubmitEditing={onSubmit}
+        onFocus={onFocus}
+        onBlur={onBlur}
         secureTextEntry={secure}
         placeholder={placeholder}
         placeholderTextColor={colors.subtle}
@@ -338,6 +347,66 @@ export function Chip({
 /** Row of wrapping chips (kept simple: one flex row per group). */
 export function ChipRow({ children }: { children: ReactNode }) {
   return <View style={styles.chipRow}>{children}</View>;
+}
+
+/**
+ * A free-text box with a list of suggestions (issue #34) — the mobile shape of
+ * the web's input+datalist: typed text filters the suggestions, and tapping
+ * one fills the box. Like the web's, the list is a convenience, not a
+ * whitelist: whatever is typed is what gets sent.
+ */
+export function AutocompleteField({
+  label,
+  value,
+  onChangeText,
+  options,
+  placeholder,
+  maxLength,
+  disabled = false,
+  onSubmit,
+  testID,
+}: {
+  label: string;
+  value: string;
+  onChangeText: (text: string) => void;
+  options: string[];
+  placeholder?: string;
+  maxLength?: number;
+  disabled?: boolean;
+  onSubmit?: () => void;
+  testID?: string;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const q = value.trim().toLowerCase();
+  const matches = options.filter((o) => q === "" || o.toLowerCase().includes(q));
+  const visible = matches.slice(0, 8);
+  return (
+    <View style={styles.field}>
+      <Field
+        label={label}
+        value={value}
+        onChangeText={onChangeText}
+        onSubmit={onSubmit}
+        placeholder={placeholder}
+        maxLength={maxLength}
+        disabled={disabled}
+        testID={testID}
+        onFocus={() => setShowAll(true)}
+      />
+      {!disabled && (q !== "" || showAll) && visible.length > 0 ? (
+        <ChipRow>
+          {visible.map((o) => (
+            <Chip
+              key={o}
+              label={o}
+              selected={o.toLowerCase() === value.trim().toLowerCase()}
+              onPress={() => onChangeText(o)}
+            />
+          ))}
+        </ChipRow>
+      ) : null}
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
