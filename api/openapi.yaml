@@ -759,7 +759,8 @@ paths:
       summary: A page of the Learner's Story Library, newest first
       description: >
         Stories the Learner has generated (issue #10), validated ones only: a Story that failed
-        the kagome validation gate is kept for analysis, never offered. Each carries its rating
+        the kagome validation gate is kept for analysis, never offered. Each carries its title,
+        its theme, its Story Origin and its Read mark, plus its rating
         when the Learner gave one. Generation is driven by the background scheduler — this list
         never triggers one.
       parameters:
@@ -829,6 +830,48 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Story"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      operationId: deleteStory
+      summary: Delete one story from the Learner's library
+      description: >
+        Removes the story, its comprehension questions, vocabulary items and the Learner's
+        rating of it. Practice records about the reading session stay: deleting a story never
+        rewrites what the Learner has already practised. The Story Library keeps stories newest
+        first, so deleting one can make room for the next story the generator produces.
+      responses:
+        "204":
+          description: The story is deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /stories/{storyId}/read:
+    parameters:
+      - $ref: "#/components/parameters/StoryId"
+    put:
+      operationId: setStoryRead
+      summary: Mark one story in the Learner's library Read
+      description: >
+        Setting the Read mark by hand does not count as practising and never records a Weak
+        Signal; the Learner's rating and last-practised time are untouched. Answering the last
+        comprehension question of a story sets the same mark.
+      responses:
+        "204":
+          description: The story is marked Read
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      operationId: clearStoryRead
+      summary: Unmark one story so it is unread again
+      responses:
+        "204":
+          description: The story is unread again
         "404":
           $ref: "#/components/responses/NotFound"
         "401":
@@ -2228,10 +2271,29 @@ components:
           type: integer
     Story:
       type: object
-      required: [id, genre, text, sentences, questions, vocabItems, createdAt]
+      required: [id, title, genre, text, sentences, questions, vocabItems, createdAt, origin]
       properties:
         id:
           type: string
+        title:
+          type: string
+          description: >-
+            Story title in Japanese: the generator names every story, falling
+            back to a shortened piece of the text when the model does not.
+        titleEn:
+          type: string
+          description: >-
+            English translation of the title. The web UI shows it blurred
+            until the learner clicks it.
+        theme:
+          type: string
+          description: What the story is about, chosen by the generator.
+        origin:
+          type: string
+          description: >-
+            Whether the story came from the automatic generator or a learner
+            asked for it with an on-demand request.
+          enum: [automatic, on_demand]
         genre:
           type: string
         text:
@@ -2240,6 +2302,14 @@ components:
         createdAt:
           type: string
           format: date-time
+        readAt:
+          type: string
+          format: date-time
+          description: >-
+            When the Learner marked this story Read: answering the last
+            comprehension question sets it, and the learner can set or unset
+            it from the library. Null means the story is still unread. This
+            is separate from when they last practised.
         rating:
           $ref: "#/components/schemas/StoryRating"
           description: The Learner's own rating, when they gave one.

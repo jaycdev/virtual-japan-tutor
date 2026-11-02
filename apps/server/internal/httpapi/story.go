@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -168,6 +169,79 @@ func (s *server) RateStory(ctx context.Context, request api.RateStoryRequestObje
 		return nil, err
 	}
 	return api.RateStory204Response{}, nil
+}
+
+// SetStoryRead marks a story Read by hand. Unlike answering, this is not
+// practice: it must not touch the rating, the Practiced At stamp, or record
+// a Weak Signal (GLOSSARY.md: "Read" is avoided as a synonym for "practised"
+// precisely because they are different things).
+func (s *server) SetStoryRead(ctx context.Context, request api.SetStoryReadRequestObject) (api.SetStoryReadResponseObject, error) {
+	svc, err := s.storyService()
+	if err != nil {
+		return nil, err
+	}
+	id, ok := auth.IdentityFrom(ctx)
+	if !ok {
+		return nil, auth.ErrUnauthenticated
+	}
+	sid, ok := storyID(request.StoryId)
+	if !ok {
+		return api.SetStoryRead404JSONResponse{NotFoundJSONResponse: notFound("no such story")}, nil
+	}
+	if err := svc.MarkRead(ctx, sid, id.ID, time.Now().UTC()); err != nil {
+		if errors.Is(err, story.ErrNotFound) {
+			return api.SetStoryRead404JSONResponse{NotFoundJSONResponse: notFound("no such story")}, nil
+		}
+		return nil, err
+	}
+	return api.SetStoryRead204Response{}, nil
+}
+
+// ClearStoryRead unmarks a story so the Learner can take it up again.
+func (s *server) ClearStoryRead(ctx context.Context, request api.ClearStoryReadRequestObject) (api.ClearStoryReadResponseObject, error) {
+	svc, err := s.storyService()
+	if err != nil {
+		return nil, err
+	}
+	id, ok := auth.IdentityFrom(ctx)
+	if !ok {
+		return nil, auth.ErrUnauthenticated
+	}
+	sid, ok := storyID(request.StoryId)
+	if !ok {
+		return api.ClearStoryRead404JSONResponse{NotFoundJSONResponse: notFound("no such story")}, nil
+	}
+	if err := svc.ClearRead(ctx, sid, id.ID); err != nil {
+		if errors.Is(err, story.ErrNotFound) {
+			return api.ClearStoryRead404JSONResponse{NotFoundJSONResponse: notFound("no such story")}, nil
+		}
+		return nil, err
+	}
+	return api.ClearStoryRead204Response{}, nil
+}
+
+// DeleteStory removes a story from the Library. Its rating goes with it;
+// the Practice Records it wrote stay (the mastery log is append-only).
+func (s *server) DeleteStory(ctx context.Context, request api.DeleteStoryRequestObject) (api.DeleteStoryResponseObject, error) {
+	svc, err := s.storyService()
+	if err != nil {
+		return nil, err
+	}
+	id, ok := auth.IdentityFrom(ctx)
+	if !ok {
+		return nil, auth.ErrUnauthenticated
+	}
+	sid, ok := storyID(request.StoryId)
+	if !ok {
+		return api.DeleteStory404JSONResponse{NotFoundJSONResponse: notFound("no such story")}, nil
+	}
+	if err := svc.Delete(ctx, sid, id.ID); err != nil {
+		if errors.Is(err, story.ErrNotFound) {
+			return api.DeleteStory404JSONResponse{NotFoundJSONResponse: notFound("no such story")}, nil
+		}
+		return nil, err
+	}
+	return api.DeleteStory204Response{}, nil
 }
 
 // AnswerStoryQuestion grades one comprehension question. The first answer
@@ -387,6 +461,7 @@ func storyView(st *story.Story, threshold int) api.Story {
 	}
 	view := api.Story{
 		Id:         st.ID.String(),
+		Title:      st.Title,
 		Genre:      st.Genre,
 		Text:       st.Text,
 		Sentences:  sentences,
@@ -394,6 +469,21 @@ func storyView(st *story.Story, threshold int) api.Story {
 		VocabItems: vocab,
 		CreatedAt:  st.CreatedAt,
 		Attempts:   &st.Attempts,
+		Origin:     api.StoryOrigin(st.Origin),
+	}
+	if view.Origin == "" {
+		view.Origin = api.Automatic // a stored story predating the column still reads as generator-made
+	}
+	if st.TitleEN != "" {
+		te := st.TitleEN
+		view.TitleEn = &te
+	}
+	if st.Theme != "" {
+		th := st.Theme
+		view.Theme = &th
+	}
+	if st.ReadAt != nil {
+		view.ReadAt = st.ReadAt
 	}
 	if st.Rating != nil {
 		r := api.StoryRating(*st.Rating)
