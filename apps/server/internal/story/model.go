@@ -97,6 +97,10 @@ type Store interface {
 	// Story — Today's Story (GLOSSARY.md) — whatever its Read mark. On-demand
 	// Stories never qualify. (false) when they have none yet.
 	LatestAutomaticStory(ctx context.Context, userID uuid.UUID) (*Story, bool, error)
+	// HasUnreadAutomaticStory reports whether the user has any VALIDATED
+	// Automatic Story they have not opened — the unread rule of issue #32
+	// holds the Automatic slot for ANY unread one, not just the newest.
+	HasUnreadAutomaticStory(ctx context.Context, userID uuid.UUID) (bool, error)
 	// LastFailedAt reports the newest Story's creation time when that newest
 	// Story failed the gate — the failure backoff's clock (false when the
 	// user has no stories or their newest one validated).

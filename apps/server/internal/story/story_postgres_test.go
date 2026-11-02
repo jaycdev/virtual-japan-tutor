@@ -225,6 +225,20 @@ func TestPostgresStoreAgainstPostgres(t *testing.T) {
 		t.Errorf("listed story missing children: %+v", page[0])
 	}
 
+	// The unread rule's read (issue #32): ANY unread validated Automatic
+	// Story counts — and the gate-failed one never does, read or not.
+	if unread, err := st.HasUnreadAutomaticStory(ctx, user); err != nil || !unread {
+		t.Errorf("HasUnreadAutomaticStory = %v/%v, want true while saved/first/third sit unread", unread, err)
+	}
+	for _, s := range []*Story{saved, first, third} {
+		if err := st.MarkRead(ctx, s.ID, user, time.Now().UTC()); err != nil {
+			t.Fatalf("mark read (%s): %v", s.Genre, err)
+		}
+	}
+	if unread, err := st.HasUnreadAutomaticStory(ctx, user); err != nil || unread {
+		t.Errorf("HasUnreadAutomaticStory = %v/%v, want false once every validated Automatic Story is read (a failed one must not count)", unread, err)
+	}
+
 	// Genres seed PickGenre newest-first.
 	genres, err := st.GenresByLastActivity(ctx, user, 2)
 	if err != nil {

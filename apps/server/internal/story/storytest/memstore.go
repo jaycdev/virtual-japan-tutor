@@ -125,6 +125,19 @@ func (s *MemStore) RatingCounts(_ context.Context, userID uuid.UUID) (map[string
 	return out, nil
 }
 
+// HasUnreadAutomaticStory mirrors the Postgres store: any validated
+// Automatic Story with no Read mark yet, On-demand Stories excluded.
+func (s *MemStore) HasUnreadAutomaticStory(_ context.Context, userID uuid.UUID) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, st := range s.stories {
+		if st.UserID == userID && st.Validated && st.Origin == story.OriginAutomatic && st.ReadAt == nil {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // LatestAutomaticStory mirrors PostgresStore: the newest validated Automatic
 // Story whatever its Read mark, On-demand Stories excluded.
 func (s *MemStore) LatestAutomaticStory(_ context.Context, userID uuid.UUID) (*story.Story, bool, error) {

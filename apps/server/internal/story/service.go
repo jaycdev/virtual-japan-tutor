@@ -385,8 +385,8 @@ func (s *Service) GenreThemeSuggestions(ctx context.Context, userID uuid.UUID) (
 
 // ensureAutomaticStory applies the Automatic Story rule (issue #32): at most
 // one Automatic Story per day in the Learner's Timezone, and none while the
-// user still has an unread one. When today's story already exists or the
-// newest one waits unread, this is a cheap store read with no LLM call —
+// user still has an unread one. When today's story already exists or an
+// unread one waits, this is a cheap store read with no LLM call —
 // that is what makes the background scheduler affordable. The scheduler's
 // regular pass writes the story soon after the day starts; if the server was
 // down then, the first pass after it comes back writes it. Deleting Today's
@@ -415,16 +415,21 @@ func (s *Service) ensureAutomaticStory(ctx context.Context, userID uuid.UUID) er
 	if err != nil {
 		return err
 	}
+	unread, err := s.store.HasUnreadAutomaticStory(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if unread {
+		// The unread rule (issue #32): ANY unread Automatic Story holds
+		// the slot until the Learner opens it, however many days pass —
+		// it is not the newest one alone that counts.
+		return nil
+	}
 	latest, have, err := s.store.LatestAutomaticStory(ctx, userID)
 	if err != nil {
 		return err
 	}
 	if have {
-		if latest.ReadAt == nil {
-			// The unread rule: an unread Automatic Story holds the slot
-			// until the Learner opens it, however many days pass.
-			return nil
-		}
 		loc := userLocation(tzname)
 		if sameLocalDay(s.now().In(loc), latest.CreatedAt.In(loc)) {
 			return nil // this local day's story is already written
