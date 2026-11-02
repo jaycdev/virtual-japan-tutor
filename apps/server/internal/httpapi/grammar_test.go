@@ -438,6 +438,22 @@ func TestDetailReadWithoutProviderIsServed(t *testing.T) {
 	}
 }
 
+// The web client reads point.variants.length, so the detail must carry the
+// catalogue's variants as an array, never null.
+func TestDetailCarriesVariantsAsArray(t *testing.T) {
+	e := newGrammarEnv(t, gDake)
+	tok := e.login(t, "alice")
+	rec := e.do(t, "GET", "/grammar/points/1", "Bearer "+tok, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET detail = %d %s", rec.Code, rec.Body)
+	}
+	var raw map[string]json.RawMessage
+	mustJSON(t, rec, &raw)
+	if got := string(raw["variants"]); got != `["〜だけ"]` {
+		t.Fatalf("variants = %s, want [\"〜だけ\"]", got)
+	}
+}
+
 func TestUnknownOrMalformedPointIs404(t *testing.T) {
 	e := newGrammarEnv(t, gDake)
 	tok := e.login(t, "alice")

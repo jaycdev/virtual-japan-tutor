@@ -99,9 +99,12 @@ func (s *server) grammarDetail(ctx context.Context, id int64) (api.GrammarPointD
 	if content.Explanation != nil {
 		explanation = *content.Explanation
 	}
+	// The contract declares variants as a required array: never serialise nil as null.
+	variants := append([]string{}, point.Variants...)
 	return api.GrammarPointDetail{
 		Id: point.ID, JlptLevel: jlptLevel(string(point.Level)),
 		CatalogueNumber: point.Number, Pattern: point.Pattern, Meaning: point.Meaning,
+		Variants:    variants,
 		Explanation: explanation, ExplanationEdited: content.ExplanationEdited,
 		Examples: examplesView(examples),
 	}, nil
