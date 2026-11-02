@@ -330,25 +330,40 @@ func TestServiceMarkClearReadAndDelete(t *testing.T) {
 	}
 }
 
-// Deleting the story that is ready for reading must leave nothing ready:
-// the generator is re-armed by there being no ready story at all.
-func TestDeleteReadyStoryLeavesNothingReady(t *testing.T) {
+// Deleting Today's Story reveals the older Automatic Story underneath —
+// and deleting that leaves none at all, which frees the day for the next
+// scheduler pass (issue #32).
+func TestDeleteTodaysStoryFallsBackToTheOlderOne(t *testing.T) {
 	ctx := context.Background()
 	store := newFakeStore()
 	svc, _, _, _ := newTestServiceOn(t, nil, store)
 
 	user := uuid.New()
-	st := &Story{UserID: user, Text: "x", Validated: true}
-	if err := store.Save(ctx, st); err != nil {
-		t.Fatalf("Save: %v", err)
+	older := &Story{UserID: user, Text: "x", Validated: true, Origin: OriginAutomatic}
+	if err := store.Save(ctx, older); err != nil {
+		t.Fatalf("Save (older): %v", err)
 	}
-	if err := store.SetReady(ctx, st.ID, user); err != nil {
-		t.Fatalf("SetReady: %v", err)
+	newer := &Story{UserID: user, Text: "y", Validated: true, Origin: OriginAutomatic}
+	if err := store.Save(ctx, newer); err != nil {
+		t.Fatalf("Save (newer): %v", err)
 	}
-	if err := svc.Delete(ctx, st.ID, user); err != nil {
+	got, ok, err := store.LatestAutomaticStory(ctx, user)
+	if err != nil || !ok || got.ID != newer.ID {
+		t.Fatalf("LatestAutomaticStory = %v/%v/%v, want the newest", got, ok, err)
+	}
+
+	if err := svc.Delete(ctx, newer.ID, user); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if id, ready, err := store.ReadyStoryID(ctx, user); err != nil || ready {
-		t.Errorf("after deleting the ready story: ready=%v (id=%v) err=%v, want nothing ready", ready, id, err)
+	got, ok, err = store.LatestAutomaticStory(ctx, user)
+	if err != nil || !ok || got.ID != older.ID {
+		t.Fatalf("after deleting today's story: %v/%v/%v, want the older one", got, ok, err)
+	}
+
+	if err := svc.Delete(ctx, older.ID, user); err != nil {
+		t.Fatalf("Delete (older): %v", err)
+	}
+	if _, ok, err := store.LatestAutomaticStory(ctx, user); err != nil || ok {
+		t.Errorf("after deleting every Automatic Story: ok=%v err=%v, want none", ok, err)
 	}
 }

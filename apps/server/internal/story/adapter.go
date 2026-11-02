@@ -209,20 +209,6 @@ func (f *MasteryFocus) KnownWords(ctx context.Context, userID uuid.UUID, limit i
 	return vocab, nil
 }
 
-// SnapshotKeys names Focus Set membership the way mastery's ItemKey does
-// ("vocabulary:12345", "grammar:678"), the form stored in
-// story_user_state.focus_snapshot.
-func (f *MasteryFocus) SnapshotKeys(fs FocusSet) []string {
-	keys := make([]string, 0, len(fs.Vocab)+len(fs.Grammar))
-	for _, v := range fs.Vocab {
-		keys = append(keys, string(mastery.KindVocabulary)+":"+strconv.FormatInt(v.EntSeq, 10))
-	}
-	for _, g := range fs.Grammar {
-		keys = append(keys, string(mastery.KindGrammar)+":"+strconv.FormatInt(g.PointID, 10))
-	}
-	return keys
-}
-
 // vocabByID fetches headword and gloss for a set of ent_seqs: the first
 // kanji form (else the first reading), and the first gloss of the first
 // sense that has one.

@@ -689,21 +689,3 @@ func TestFuriganaThreshold(t *testing.T) {
 		t.Fatal("kana-only unknown surface must not get ruby either")
 	}
 }
-
-func TestFocusChangedSignificance(t *testing.T) {
-	if FocusChanged([]string{"a", "b", "c"}, []string{"a", "b", "c"}) {
-		t.Fatal("unchanged focus set must not re-arm generation")
-	}
-	if FocusChanged([]string{"a", "b", "c"}, []string{"a", "b", "c", "d"}) {
-		t.Fatal("one new member of four (25%) is below the one-third rule")
-	}
-	if !FocusChanged([]string{"a"}, []string{"a", "b", "c"}) {
-		t.Fatal("two new members of three (67%) is a significant change")
-	}
-	if !FocusChanged(nil, []string{"a"}) {
-		t.Fatal("no snapshot means generation has never run: always changed")
-	}
-	if FocusChanged([]string{"a"}, nil) {
-		t.Fatal("an empty current set is not a change")
-	}
-}

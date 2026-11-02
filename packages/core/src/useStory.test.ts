@@ -2,7 +2,7 @@ import type { Story } from "@vjt/api-client";
 import { createApiClient } from "@vjt/api-client";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { NO_READY_STORY, useStory } from "./useStory.ts";
+import { useStory } from "./useStory.ts";
 import type { ActionResult } from "./useAiSettings.ts";
 
 function fakeClient() {
@@ -14,7 +14,8 @@ function fakeClient() {
       headers: { "content-type": "application/json" },
     });
   const noContent = () => new Response(null, { status: 204 });
-  return { client, fetchImpl, json, noContent };
+  const noStory = () => json(404, { code: "no_story", message: "no automatic story yet" });
+  return { client, fetchImpl, json, noContent, noStory };
 }
 
 function story(overrides: Partial<Story> = {}): Story {
@@ -72,70 +73,78 @@ function page(items: Story[], total = items.length) {
 }
 
 function settingsBody(overrides: Record<string, unknown> = {}) {
-  return { furiganaThresholdSrsLevel: 3, preferredGenre: "", preferredTheme: "", ...overrides };
+  return {
+    furiganaThresholdSrsLevel: 3,
+    preferredGenre: "",
+    preferredTheme: "",
+    timezone: "",
+    ...overrides,
+  };
 }
 
 describe("useStory", () => {
-  it("loads the library page and the story settings on mount", async () => {
+  it("loads the library page, Today's Story and the settings on mount", async () => {
     const { client, fetchImpl, json } = fakeClient();
     fetchImpl
       .mockImplementationOnce(async () => json(200, page([story()])))
+      .mockImplementationOnce(async () => json(200, story()))
       .mockImplementationOnce(async () => json(200, settingsBody()));
     const { result } = renderHook(() => useStory(client));
 
     await waitFor(() => expect(result.current.library.status).toBe("ready"));
+    await waitFor(() => expect(result.current.today.status).toBe("story"));
     const lib = result.current.library;
     expect(lib.status === "ready" && lib.page.total).toBe(1);
     expect(lib.status === "ready" && lib.page.items[0]?.genre).toBe("diary");
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
-    const settingsCall = fetchImpl.mock.calls[1]?.[0] as Request;
+    const today = result.current.today;
+    expect(today.status === "story" && today.story.id).toBe("st-1");
+    // Today's Story comes from storage: GET /stories/today, never a generate endpoint.
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    const todayCall = fetchImpl.mock.calls[1]?.[0] as Request;
+    expect(todayCall.url).toContain("/stories/today");
+    const settingsCall = fetchImpl.mock.calls[2]?.[0] as Request;
     expect(settingsCall.url).toContain("/story-settings");
   });
 
-  it("opens the ready story instantly and refreshes the library", async () => {
-    const { client, fetchImpl, json } = fakeClient();
+  it("reports no Automatic Story as none, not a failure", async () => {
+    const { client, fetchImpl, json, noStory } = fakeClient();
     fetchImpl
       .mockImplementationOnce(async () => json(200, page([])))
-      .mockImplementationOnce(async () => json(200, settingsBody()))
-      .mockImplementationOnce(async () => json(200, story()))
-      .mockImplementationOnce(async () => json(200, page([story()])));
+      .mockImplementationOnce(async () => noStory())
+      .mockImplementationOnce(async () => json(200, settingsBody()));
     const { result } = renderHook(() => useStory(client));
-    await waitFor(() => expect(result.current.library.status).toBe("ready"));
 
-    await act(async () => {
-      await result.current.openReady();
-    });
-
-    expect(result.current.story?.id).toBe("st-1");
-    expect(result.current.open).toBe(true);
+    await waitFor(() => expect(result.current.today.status).toBe("none"));
     expect(result.current.error).toBeNull();
-    // GET /stories, GET /story-settings, GET /stories/ready, then the library refresh.
-    expect(fetchImpl).toHaveBeenCalledTimes(4);
-    const readyCall = fetchImpl.mock.calls[2]?.[0] as Request;
-    expect(readyCall.url).toContain("/stories/ready");
-  });
-
-  it("reports the no-ready-story case as a message, not a failure", async () => {
-    const { client, fetchImpl, json } = fakeClient();
-    fetchImpl
-      .mockImplementationOnce(async () => json(200, page([])))
-      .mockImplementationOnce(async () => json(200, settingsBody()))
-      .mockImplementationOnce(async () => json(404, { code: "no_ready_story", message: "no story is ready" }));
-    const { result } = renderHook(() => useStory(client));
-    await waitFor(() => expect(result.current.library.status).toBe("ready"));
-
-    await act(async () => {
-      await result.current.openReady();
-    });
-
-    expect(result.current.error).toBe(NO_READY_STORY);
     expect(result.current.story).toBeNull();
   });
 
+  it("reloads Today's Story when asked", async () => {
+    const { client, fetchImpl, json, noStory } = fakeClient();
+    fetchImpl
+      .mockImplementationOnce(async () => json(200, page([])))
+      .mockImplementationOnce(async () => noStory())
+      .mockImplementationOnce(async () => json(200, settingsBody()))
+      .mockImplementationOnce(async () => json(200, story()));
+    const { result } = renderHook(() => useStory(client));
+    await waitFor(() => expect(result.current.today.status).toBe("none"));
+
+    await act(async () => {
+      result.current.reloadToday();
+    });
+
+    await waitFor(() => expect(result.current.today.status).toBe("story"));
+    const todayCalls = fetchImpl.mock.calls.filter(([req]) =>
+      (req as Request).url.includes("/stories/today"),
+    );
+    expect(todayCalls.length).toBe(2);
+  });
+
   it("opens a library story by id", async () => {
-    const { client, fetchImpl, json } = fakeClient();
+    const { client, fetchImpl, json, noStory } = fakeClient();
     fetchImpl
       .mockImplementationOnce(async () => json(200, page([story({ id: "st-old" })])))
+      .mockImplementationOnce(async () => noStory())
       .mockImplementationOnce(async () => json(200, settingsBody()))
       .mockImplementationOnce(async () => json(200, story({ id: "st-old" })));
     const { result } = renderHook(() => useStory(client));
@@ -146,22 +155,22 @@ describe("useStory", () => {
     });
 
     expect(result.current.story?.id).toBe("st-old");
-    const openCall = fetchImpl.mock.calls[2]?.[0] as Request;
+    const openCall = fetchImpl.mock.calls[3]?.[0] as Request;
     expect(openCall.url).toContain("/stories/st-old");
   });
 
   it("answers each question once and keeps the verdict", async () => {
-    const { client, fetchImpl, json } = fakeClient();
+    const { client, fetchImpl, json, noStory } = fakeClient();
     fetchImpl
       .mockImplementationOnce(async () => json(200, page([])))
+      .mockImplementationOnce(async () => noStory())
       .mockImplementationOnce(async () => json(200, settingsBody()))
       .mockImplementationOnce(async () => json(200, story()))
-      .mockImplementationOnce(async () => json(200, page([])))
       .mockImplementationOnce(async () => json(200, { correct: true, practiceRecorded: true }));
     const { result } = renderHook(() => useStory(client));
     await waitFor(() => expect(result.current.library.status).toBe("ready"));
     await act(async () => {
-      await result.current.openReady();
+      await result.current.openStory("st-1");
     });
 
     await act(async () => {
@@ -183,22 +192,22 @@ describe("useStory", () => {
     // The verdict POST is in flight; the Learner closes the story and opens
     // another one. The late reply belongs to the story it was asked about,
     // so it must not paint the now-open story's questions or its error.
-    const { client, fetchImpl, json } = fakeClient();
+    const { client, fetchImpl, json, noStory } = fakeClient();
     let resolveAnswer: (res: Response) => void = () => {};
     const answerPending = new Promise<Response>((resolve) => {
       resolveAnswer = resolve;
     });
     fetchImpl
       .mockImplementationOnce(async () => json(200, page([])))
+      .mockImplementationOnce(async () => noStory())
       .mockImplementationOnce(async () => json(200, settingsBody()))
       .mockImplementationOnce(async () => json(200, story()))
-      .mockImplementationOnce(async () => json(200, page([])))
       .mockImplementationOnce(() => answerPending)
       .mockImplementationOnce(async () => json(200, story({ id: "st-2" })));
     const { result } = renderHook(() => useStory(client));
     await waitFor(() => expect(result.current.library.status).toBe("ready"));
     await act(async () => {
-      await result.current.openReady();
+      await result.current.openStory("st-1");
     });
 
     let inFlight: Promise<void>;
@@ -221,18 +230,18 @@ describe("useStory", () => {
     expect(result.current.error).toBeNull();
   });
 
-  it("rates a story and shows the rating on the story and the library", async () => {
-    const { client, fetchImpl, json, noContent } = fakeClient();
+  it("rates a story and shows the rating on the story, the library and Today's Story", async () => {
+    const { client, fetchImpl, json } = fakeClient();
     fetchImpl
       .mockImplementationOnce(async () => json(200, page([story()])))
+      .mockImplementationOnce(async () => json(200, story()))
       .mockImplementationOnce(async () => json(200, settingsBody()))
       .mockImplementationOnce(async () => json(200, story()))
-      .mockImplementationOnce(async () => json(200, page([story()])))
-      .mockImplementationOnce(async () => noContent());
+      .mockImplementationOnce(async () => new Response(null, { status: 204 }));
     const { result } = renderHook(() => useStory(client));
-    await waitFor(() => expect(result.current.library.status).toBe("ready"));
+    await waitFor(() => expect(result.current.today.status).toBe("story"));
     await act(async () => {
-      await result.current.openReady();
+      await result.current.openStory("st-1");
     });
 
     await act(async () => {
@@ -242,18 +251,21 @@ describe("useStory", () => {
     expect(result.current.story?.rating).toBe("up");
     const lib = result.current.library;
     expect(lib.status === "ready" && lib.page.items[0]?.rating).toBe("up");
+    const today = result.current.today;
+    expect(today.status === "story" && today.story.rating).toBe("up");
     const rateCall = fetchImpl.mock.calls[4]?.[0] as Request;
     expect(rateCall.url).toContain("/stories/st-1/rate");
     expect(await rateCall.json()).toBe("up");
   });
 
   it("marks a library story Read and shows the mark on the story and the page", async () => {
-    const { client, fetchImpl, json, noContent } = fakeClient();
+    const { client, fetchImpl, json } = fakeClient();
     fetchImpl
       .mockImplementationOnce(async () => json(200, page([story()])))
+      .mockImplementationOnce(async () => json(200, story()))
       .mockImplementationOnce(async () => json(200, settingsBody()))
       .mockImplementationOnce(async () => json(200, story()))
-      .mockImplementationOnce(async () => noContent());
+      .mockImplementationOnce(async () => new Response(null, { status: 204 }));
     const { result } = renderHook(() => useStory(client));
     await waitFor(() => expect(result.current.library.status).toBe("ready"));
     await act(async () => {
@@ -269,17 +281,20 @@ describe("useStory", () => {
     expect(result.current.story?.readAt).toBeTruthy();
     const lib = result.current.library;
     expect(lib.status === "ready" && lib.page.items[0]?.readAt).toBeTruthy();
-    const readCall = fetchImpl.mock.calls[3]?.[0] as Request;
+    const today = result.current.today;
+    expect(today.status === "story" && today.story.readAt).toBeTruthy();
+    const readCall = fetchImpl.mock.calls[4]?.[0] as Request;
     expect(readCall.method).toBe("PUT");
     expect(readCall.url).toContain("/stories/st-1/read");
   });
 
   it("unmarks a Read story so the library shows it unread again", async () => {
-    const { client, fetchImpl, json, noContent } = fakeClient();
+    const { client, fetchImpl, json, noStory } = fakeClient();
     fetchImpl
       .mockImplementationOnce(async () => json(200, page([story({ readAt: "2026-11-01T10:00:00Z" })])))
+      .mockImplementationOnce(async () => noStory())
       .mockImplementationOnce(async () => json(200, settingsBody()))
-      .mockImplementationOnce(async () => noContent());
+      .mockImplementationOnce(async () => new Response(null, { status: 204 }));
     const { result } = renderHook(() => useStory(client));
     await waitFor(() => expect(result.current.library.status).toBe("ready"));
     const before = result.current.library;
@@ -292,18 +307,19 @@ describe("useStory", () => {
     expect(result.current.error).toBeNull();
     const lib = result.current.library;
     expect(lib.status === "ready" && lib.page.items[0]?.readAt).toBeUndefined();
-    const clearCall = fetchImpl.mock.calls[2]?.[0] as Request;
+    const clearCall = fetchImpl.mock.calls[3]?.[0] as Request;
     expect(clearCall.method).toBe("DELETE");
     expect(clearCall.url).toContain("/stories/st-1/read");
   });
 
   it("deletes a story: the row leaves the page, the total drops, and an open story closes", async () => {
-    const { client, fetchImpl, json, noContent } = fakeClient();
+    const { client, fetchImpl, json, noStory } = fakeClient();
     fetchImpl
       .mockImplementationOnce(async () => json(200, page([story(), story({ id: "st-2" })], 2)))
+      .mockImplementationOnce(async () => noStory())
       .mockImplementationOnce(async () => json(200, settingsBody()))
       .mockImplementationOnce(async () => json(200, story()))
-      .mockImplementationOnce(async () => noContent());
+      .mockImplementationOnce(async () => new Response(null, { status: 204 }));
     const { result } = renderHook(() => useStory(client));
     await waitFor(() => expect(result.current.library.status).toBe("ready"));
     await act(async () => {
@@ -319,15 +335,41 @@ describe("useStory", () => {
     expect(lib.status === "ready" && lib.page.items.map((s) => s.id)).toEqual(["st-2"]);
     expect(lib.status === "ready" && lib.page.total).toBe(1);
     expect(result.current.story).toBeNull();
-    const delCall = fetchImpl.mock.calls[3]?.[0] as Request;
+    const delCall = fetchImpl.mock.calls[4]?.[0] as Request;
     expect(delCall.method).toBe("DELETE");
     expect(delCall.url).toContain("/stories/st-1");
   });
 
-  it("pages the library by offset", async () => {
+  it("handing the day over: deleting Today's Story falls back to the older Automatic Story", async () => {
     const { client, fetchImpl, json } = fakeClient();
     fetchImpl
+      .mockImplementationOnce(async () => json(200, page([story(), story({ id: "st-2" })], 2)))
+      .mockImplementationOnce(async () => json(200, story())) // today = st-1
+      .mockImplementationOnce(async () => json(200, settingsBody()))
+      .mockImplementationOnce(async () => new Response(null, { status: 204 })) // delete st-1
+      .mockImplementationOnce(async () => json(200, story({ id: "st-2" }))); // today = st-2
+    const { result } = renderHook(() => useStory(client));
+    await waitFor(() => expect(result.current.today.status).toBe("story"));
+
+    await act(async () => {
+      await result.current.removeStory("st-1");
+    });
+
+    await waitFor(() => {
+      const today = result.current.today;
+      expect(today.status === "story" && today.story.id).toBe("st-2");
+    });
+    const todayCalls = fetchImpl.mock.calls.filter(([req]) =>
+      (req as Request).url.includes("/stories/today"),
+    );
+    expect(todayCalls.length).toBe(2);
+  });
+
+  it("pages the library by offset", async () => {
+    const { client, fetchImpl, json, noStory } = fakeClient();
+    fetchImpl
       .mockImplementationOnce(async () => json(200, page([story()], 12)))
+      .mockImplementationOnce(async () => noStory())
       .mockImplementationOnce(async () => json(200, settingsBody()))
       .mockImplementationOnce(async () =>
         json(200, { items: [story({ id: "st-11" })], total: 12, limit: 10, offset: 10 }),
@@ -344,7 +386,7 @@ describe("useStory", () => {
       expect(lib.status === "ready" && lib.page.offset).toBe(10);
       expect(lib.status === "ready" && lib.page.items[0]?.id).toBe("st-11");
     });
-    const secondCall = fetchImpl.mock.calls[2]?.[0] as Request;
+    const secondCall = fetchImpl.mock.calls[3]?.[0] as Request;
     expect(secondCall.url).toContain("offset=10");
   });
 
@@ -358,12 +400,14 @@ describe("useStory", () => {
     expect(result.current.library.status === "error" && result.current.library.message).toBe(
       "Cannot reach the server",
     );
+    await waitFor(() => expect(result.current.today.status).toBe("error"));
   });
 
   it("loads the story settings on mount", async () => {
-    const { client, fetchImpl, json } = fakeClient();
+    const { client, fetchImpl, json, noStory } = fakeClient();
     fetchImpl
       .mockImplementationOnce(async () => json(200, page([])))
+      .mockImplementationOnce(async () => noStory())
       .mockImplementationOnce(async () => json(200, settingsBody({ preferredGenre: "mystery" })));
     const { result } = renderHook(() => useStory(client));
 
@@ -374,12 +418,21 @@ describe("useStory", () => {
   });
 
   it("saves settings and adopts the server's answer", async () => {
-    const { client, fetchImpl, json } = fakeClient();
+    const { client, fetchImpl, json, noStory } = fakeClient();
     fetchImpl
       .mockImplementationOnce(async () => json(200, page([])))
+      .mockImplementationOnce(async () => noStory())
       .mockImplementationOnce(async () => json(200, settingsBody()))
       .mockImplementationOnce(async () =>
-        json(200, settingsBody({ furiganaThresholdSrsLevel: 7, preferredGenre: "mystery", preferredTheme: "robots" })),
+        json(
+          200,
+          settingsBody({
+            furiganaThresholdSrsLevel: 7,
+            preferredGenre: "mystery",
+            preferredTheme: "robots",
+            timezone: "Asia/Tokyo",
+          }),
+        ),
       );
     const { result } = renderHook(() => useStory(client));
     await waitFor(() => expect(result.current.settings.status).toBe("ready"));
@@ -390,26 +443,30 @@ describe("useStory", () => {
         furiganaThresholdSrsLevel: 7,
         preferredGenre: "mystery",
         preferredTheme: "robots",
+        timezone: "Asia/Tokyo",
       });
     });
     expect(outcome).toEqual({ ok: true });
     const s = result.current.settings;
     expect(s.status === "ready" && s.settings.furiganaThresholdSrsLevel).toBe(7);
     expect(s.status === "ready" && s.settings.preferredGenre).toBe("mystery");
-    const putCall = fetchImpl.mock.calls[2]?.[0] as Request;
+    expect(s.status === "ready" && s.settings.timezone).toBe("Asia/Tokyo");
+    const putCall = fetchImpl.mock.calls[3]?.[0] as Request;
     expect(putCall.method).toBe("PUT");
     expect(putCall.url).toContain("/story-settings");
     expect(await putCall.json()).toEqual({
       furiganaThresholdSrsLevel: 7,
       preferredGenre: "mystery",
       preferredTheme: "robots",
+      timezone: "Asia/Tokyo",
     });
   });
 
   it("surfaces a rejected settings save and keeps the stored settings", async () => {
-    const { client, fetchImpl, json } = fakeClient();
+    const { client, fetchImpl, json, noStory } = fakeClient();
     fetchImpl
       .mockImplementationOnce(async () => json(200, page([])))
+      .mockImplementationOnce(async () => noStory())
       .mockImplementationOnce(async () => json(200, settingsBody()))
       .mockImplementationOnce(async () =>
         json(400, { code: "invalid_preference", message: "preferred genre is too long" }),
@@ -431,9 +488,10 @@ describe("useStory", () => {
   });
 
   it("reloads settings after a load error", async () => {
-    const { client, fetchImpl, json } = fakeClient();
+    const { client, fetchImpl, json, noStory } = fakeClient();
     fetchImpl
       .mockImplementationOnce(async () => json(200, page([])))
+      .mockImplementationOnce(async () => noStory())
       .mockImplementationOnce(async () => json(500, { code: "internal", message: "boom" }))
       .mockImplementationOnce(async () => json(200, settingsBody()));
     const { result } = renderHook(() => useStory(client));

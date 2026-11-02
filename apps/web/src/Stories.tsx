@@ -10,6 +10,7 @@ import type {
   WeakSignalRequest,
 } from "@vjt/api-client";
 import { useItemLists, useReadingSettings, useStory, type ItemListsView, type StoryView } from "@vjt/core";
+import { TimezoneAutocomplete } from "./TimezoneAutocomplete.tsx";
 import {
   useCallback,
   useEffect,
@@ -22,12 +23,16 @@ import {
 import "./reader.css";
 
 /**
- * Stories (issue #10): read the Story the background generator has ready,
- * browse the Story Library, rate stories (thumbs up/down steer future
- * genres), answer the comprehension questions — the first answer writes
- * Practice Records for the story's Focus Set items — and choose the story
- * settings (Furigana Threshold, preferred genre/theme). Generation is never
- * triggered from this screen, so opening a story is instant.
+ * Stories (issues #10, #32): the page opens on Today's Story — the newest
+ * Automatic Story, which the background generator writes once per day in the
+ * Learner's Timezone — with the Story Library one click away ("View all
+ * stories"). Read stories (rate thumbs up/down to steer future genres),
+ * answer the comprehension questions — the first answer writes Practice
+ * Records for the story's Focus Set items — and choose the story settings
+ * (Furigana Threshold, preferred genre/theme, and the Learner's Timezone).
+ * Generation is never triggered from this screen, so opening a story is
+ * instant; with no Automatic Story yet the panel says one is being written.
+ * On-demand Stories live in the Library but are never Today's Story.
  *
  * The reader itself (issue #11) puts a fixed-size Reading Panel above the
  * story: tapping any word or punctuation selects its sentence (shown with
@@ -60,6 +65,9 @@ import "./reader.css";
  */
 export function Stories({ client }: { client: ApiClient }) {
   const view = useStory(client);
+  // Today's Story is the landing view; "View all stories" opens the Story
+  // Library, and the reader's Back returns to whichever one it opened from.
+  const [showLibrary, setShowLibrary] = useState(false);
   return (
     <section>
       <h2>Stories</h2>
@@ -68,13 +76,78 @@ export function Stories({ client }: { client: ApiClient }) {
           {view.error}
         </p>
       )}
-      {view.open && view.story ? <StoryReader key={view.story.id} view={view} client={client} /> : <StoryLibrary view={view} />}
+      {view.open && view.story ? (
+        <StoryReader key={view.story.id} view={view} client={client} />
+      ) : showLibrary ? (
+        <StoryLibrary view={view} onBack={() => setShowLibrary(false)} />
+      ) : (
+        <TodaysStoryPanel view={view} onViewAll={() => setShowLibrary(true)} />
+      )}
       <StorySettingsForm view={view} />
     </section>
   );
 }
 
-function StoryLibrary({ view }: { view: StoryView }) {
+const sameLocalDay = (a: Date, b: Date) =>
+  a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
+/** "today", "yesterday", or the weekday name — the Learner's local calendar. */
+function localDayLabel(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  if (sameLocalDay(d, now)) return "today";
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (sameLocalDay(d, yesterday)) return "yesterday";
+  return d.toLocaleDateString(undefined, { weekday: "long" });
+}
+
+/** Which day today's slot is on: the ticket's "Still unread from Monday". */
+function todayLine(s: StoryData): string {
+  if (s.readAt) return `You read it ${localDayLabel(s.readAt)}.`;
+  if (!sameLocalDay(new Date(s.createdAt), new Date())) return `Still unread from ${localDayLabel(s.createdAt)}.`;
+  return "Written for you today.";
+}
+
+function TodaysStoryPanel({ view, onViewAll }: { view: StoryView; onViewAll: () => void }) {
+  const t = view.today;
+  return (
+    <>
+      {t.status === "loading" && <p className="muted">Writing today&apos;s story…</p>}
+      {t.status === "story" && (
+        <p>
+          <button type="button" disabled={view.pending} onClick={() => void view.openStory(t.story.id)}>
+            {t.story.readAt ? "Read today’s story again" : "Read today’s story"}
+          </button>{" "}
+          <span className="muted">{todayLine(t.story)}</span>
+        </p>
+      )}
+      {t.status === "none" && (
+        <p className="muted">
+          No story yet — the tutor writes one for you every day.{" "}
+          <button type="button" onClick={view.reloadToday}>
+            Check again
+          </button>
+        </p>
+      )}
+      {t.status === "error" && (
+        <p>
+          Cannot load today&apos;s story: {t.message}{" "}
+          <button type="button" onClick={view.reloadToday}>
+            Retry
+          </button>
+        </p>
+      )}
+      <p>
+        <button type="button" onClick={onViewAll}>
+          View all stories
+        </button>
+      </p>
+    </>
+  );
+}
+
+function StoryLibrary({ view, onBack }: { view: StoryView; onBack: () => void }) {
   const lib = view.library;
   // Story Library (issue #31): the English title sits behind the same blur as
   // the Reading Panel's Sentence Translation, but revealing it is transient —
@@ -92,8 +165,8 @@ function StoryLibrary({ view }: { view: StoryView }) {
   return (
     <>
       <p>
-        <button type="button" disabled={view.pending} onClick={() => void view.openReady()}>
-          Read today&apos;s story
+        <button type="button" onClick={onBack}>
+          Back to today’s story
         </button>
       </p>
       {lib.status === "loading" && <p className="muted">Loading your stories…</p>}
@@ -414,7 +487,7 @@ function StoryReader({ view, client }: { view: StoryView; client: ApiClient }) {
     <section onKeyDown={escape}>
       <p>
         <button type="button" onClick={view.close}>
-          ← Library
+          ← Back
         </button>
       </p>
       <h3>
@@ -1326,7 +1399,7 @@ function RatingButtons({ view, story }: { view: StoryView; story: StoryData }) {
   );
 }
 
-/** The Furigana Threshold and preferred genre/theme, steering future stories. */
+/** The Furigana Threshold, preferred genre/theme, and the Learner's Timezone. */
 function StorySettingsForm({ view }: { view: StoryView }) {
   const s = view.settings;
   return (
@@ -1353,6 +1426,7 @@ function StorySettingsForm({ view }: { view: StoryView }) {
 function StorySettingsFields({ view, stored }: { view: StoryView; stored: StorySettings }) {
   const [genre, setGenre] = useState<string | null>(null);
   const [theme, setTheme] = useState<string | null>(null);
+  const [timezone, setTimezone] = useState<string | null>(null);
   const [threshold, setThreshold] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
@@ -1360,6 +1434,7 @@ function StorySettingsFields({ view, stored }: { view: StoryView; stored: StoryS
 
   const genreValue = genre ?? stored.preferredGenre ?? "";
   const themeValue = theme ?? stored.preferredTheme ?? "";
+  const timezoneValue = timezone ?? stored.timezone ?? "";
   const thresholdValue = threshold ?? String(stored.furiganaThresholdSrsLevel);
 
   const save = async (e: FormEvent) => {
@@ -1377,10 +1452,12 @@ function StorySettingsFields({ view, stored }: { view: StoryView; stored: StoryS
         furiganaThresholdSrsLevel: level,
         preferredGenre: genreValue,
         preferredTheme: themeValue,
+        timezone: timezoneValue,
       });
       if (res.ok) {
         setGenre(null);
         setTheme(null);
+        setTimezone(null);
         setThreshold(null);
         setSaved(true);
       } else setError(res.message);
@@ -1433,6 +1510,17 @@ function StorySettingsFields({ view, stored }: { view: StoryView; stored: StoryS
             />
           </label>
         </p>
+        <p>
+          <label htmlFor="story-timezone">
+            Your timezone (decides which day your daily story belongs to)
+          </label>
+          <TimezoneAutocomplete
+            id="story-timezone"
+            value={timezoneValue}
+            disabled={busy}
+            onChange={setTimezone}
+          />
+        </p>
         <button type="submit" disabled={busy}>
           Save settings
         </button>
@@ -1450,7 +1538,8 @@ function StorySettingsFields({ view, stored }: { view: StoryView; stored: StoryS
       <p className="muted">
         Genre and theme steer what the generator is asked for; the validation gate still has the last
         word, so a preference it cannot fill falls back rather than forcing a bad story. The furigana
-        threshold applies when stories are read.
+        threshold applies when stories are read. Your timezone decides which local day each daily
+        story belongs to — until you choose one, the server’s own day is used.
       </p>
     </>
   );
