@@ -2,22 +2,20 @@ package story
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/dbtest"
 )
 
-// The Store contract over the real 00009 schema (skipped without
+// The Store contract over the real migrated schema (skipped without
 // TEST_DATABASE_URL): the Save/Get round trip of every child row, the
-// one-ready-per-user invariant, the validated-only library, the at-most-once
+// Today's-Story read, the validated-only library, the at-most-once
 // practiced marker, and the per-user settings. This is the schema-drift guard
 // the in-memory fakeStore cannot provide.
 func TestPostgresStoreAgainstPostgres(t *testing.T) {
@@ -164,37 +162,37 @@ func TestPostgresStoreAgainstPostgres(t *testing.T) {
 		t.Errorf("rating counts: %+v", counts)
 	}
 
-	// One ready story per user, enforced in the store itself.
-	if _, ok, err := st.ReadyStoryID(ctx, user); err != nil || ok {
-		t.Fatalf("fresh user has a ready story: ok=%v err=%v", ok, err)
+	// Today's Story is the store's read, not a stored flag: the newest
+	// validated Automatic Story, whatever its Read mark, with the older one
+	// underneath it the moment the newest is deleted. One-per-local-day is
+	// the service's rule (service_test.go); this is what it reads.
+	if _, ok, err := st.LatestAutomaticStory(ctx, user); err != nil || ok {
+		t.Fatalf("fresh user has an automatic story: ok=%v err=%v", ok, err)
 	}
 	first := saveStory(t, ctx, st, user, "ready one", true)
 	second := saveStory(t, ctx, st, user, "ready two", true)
-	if err := st.SetReady(ctx, first.ID, user); err != nil {
-		t.Fatal(err)
+	latest, ok, err := st.LatestAutomaticStory(ctx, user)
+	if err != nil || !ok || latest.ID != second.ID {
+		t.Fatalf("latest automatic story: %+v ok=%v err=%v, want %v", latest, ok, err, second.ID)
 	}
-	if err := st.SetReady(ctx, second.ID, user); err != nil {
-		t.Fatalf("SetReady should replace the previous ready story: %v", err)
+	if err := st.MarkRead(ctx, second.ID, user, time.Now().UTC()); err != nil {
+		t.Fatalf("mark read: %v", err)
 	}
-	id, ok, err := st.ReadyStoryID(ctx, user)
-	if err != nil || !ok || id != second.ID {
-		t.Fatalf("ready story: id=%v ok=%v err=%v, want %v", id, ok, err, second.ID)
+	if latest, ok, _ := st.LatestAutomaticStory(ctx, user); !ok || latest.ID != second.ID {
+		t.Errorf("a read story left the Today slot; any Read mark must qualify")
 	}
-	if err := st.ClearReady(ctx, second.ID); err != nil {
-		t.Fatal(err)
+	if err := st.Delete(ctx, second.ID, user); err != nil {
+		t.Fatalf("delete the newest: %v", err)
 	}
-	if _, ok, _ := st.ReadyStoryID(ctx, user); ok {
-		t.Error("ready survived ClearReady")
-	}
-	if err := st.SetReady(ctx, uuid.New(), user); err != ErrNotFound {
-		t.Errorf("SetReady unknown story: %v, want ErrNotFound", err)
+	if latest, ok, _ := st.LatestAutomaticStory(ctx, user); !ok || latest.ID != first.ID {
+		t.Errorf("after deleting the newest story: ok=%v, want the older one to qualify", ok)
 	}
 
 	// The library shows validated Stories only, newest first, paginated.
 	third := saveStory(t, ctx, st, user, "validated three", true)
 	failed := saveStory(t, ctx, st, user, "failed", false)
 	// Pin creation times so the newest-first order is unambiguous.
-	for i, s := range []*Story{saved, first, second, third, failed} {
+	for i, s := range []*Story{saved, first, third, failed} {
 		if _, err := pool.Exec(ctx, `UPDATE stories SET created_at = now() - make_interval(hours => $2) WHERE id = $1`, s.ID, 5-i); err != nil {
 			t.Fatal(err)
 		}
@@ -203,17 +201,17 @@ func TestPostgresStoreAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if total != 4 { // saved ("diary"), first, second, third; the failed story is excluded
-		t.Errorf("list total: %d, want 4 (validated only)", total)
+	if total != 3 { // saved ("diary"), first, third; "second" was deleted above, the failed story is excluded
+		t.Errorf("list total: %d, want 3 (validated only)", total)
 	}
-	if len(page) != 2 || page[0].ID != third.ID || page[1].ID != second.ID {
+	if len(page) != 2 || page[0].ID != third.ID || page[1].ID != first.ID {
 		t.Errorf("list page order: %v", ids(page))
 	}
 	page2, total2, err := st.List(ctx, user, 2, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if total2 != 4 || len(page2) != 2 || page2[0].ID != first.ID || page2[1].ID != saved.ID {
+	if total2 != 3 || len(page2) != 1 || page2[0].ID != saved.ID {
 		t.Errorf("list page two: total=%d ids=%v", total2, ids(page2))
 	}
 	if _, total, err := st.List(ctx, other, 10, 0); err != nil || total != 0 {
@@ -229,7 +227,7 @@ func TestPostgresStoreAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(genres) != 2 || genres[0] != "validated three" || genres[1] != "ready two" {
+	if len(genres) != 2 || genres[0] != "validated three" || genres[1] != "ready one" {
 		t.Errorf("genres by activity: %v", genres)
 	}
 
@@ -254,7 +252,7 @@ func TestPostgresStoreAgainstPostgres(t *testing.T) {
 		t.Errorf("MarkPracticed unknown story: %v, want ErrNotFound", err)
 	}
 
-	// Per-user settings: furigana threshold and focus snapshot.
+	// Per-user settings: furigana threshold and reading settings.
 	threshold, err := st.FuriganaThreshold(ctx, user)
 	if err != nil {
 		t.Fatal(err)
@@ -287,40 +285,22 @@ func TestPostgresStoreAgainstPostgres(t *testing.T) {
 		t.Errorf("blur setting for unknown user: %v, want ErrNotFound", err)
 	}
 
-	// Checked while the user has no story_user_state row at all.
-	if keys, err := st.FocusSnapshot(ctx, user); err != nil || keys != nil {
-		t.Errorf("empty snapshot: %v err=%v", keys, err)
-	}
-	if err := st.SetFocusSnapshot(ctx, user, []string{"vocabulary:990101", "grammar:1"}); err != nil {
-		t.Fatal(err)
-	}
-	keys, err := st.FocusSnapshot(ctx, user)
-	if err != nil || len(keys) != 2 || keys[0] != "vocabulary:990101" {
-		t.Errorf("snapshot round trip: %v err=%v", keys, err)
-	}
-	if err := st.SetFocusSnapshot(ctx, user, nil); err != nil {
-		t.Fatal(err)
-	}
-	if keys, err := st.FocusSnapshot(ctx, user); err != nil || len(keys) != 0 {
-		t.Errorf("cleared snapshot: %v err=%v", keys, err)
-	}
-
 	// Story prefs: empty means "surprise me", and the round trip stores
-	// genre and theme together.
-	if g, th, err := st.StoryPrefs(ctx, user); err != nil || g != "" || th != "" {
-		t.Errorf("default prefs: %q/%q err=%v, want empty", g, th, err)
+	// genre, theme and the learner's timezone together.
+	if g, th, tz, err := st.StoryPrefs(ctx, user); err != nil || g != "" || th != "" || tz != "" {
+		t.Errorf("default prefs: %q/%q/%q err=%v, want empty", g, th, tz, err)
 	}
-	if err := st.SetStoryPrefs(ctx, user, "mystery", "ロボット"); err != nil {
+	if err := st.SetStoryPrefs(ctx, user, "mystery", "ロボット", "Pacific/Honolulu"); err != nil {
 		t.Fatal(err)
 	}
-	if g, th, err := st.StoryPrefs(ctx, user); err != nil || g != "mystery" || th != "ロボット" {
-		t.Errorf("prefs round trip: %q/%q err=%v", g, th, err)
+	if g, th, tz, err := st.StoryPrefs(ctx, user); err != nil || g != "mystery" || th != "ロボット" || tz != "Pacific/Honolulu" {
+		t.Errorf("prefs round trip: %q/%q/%q err=%v", g, th, tz, err)
 	}
-	if err := st.SetStoryPrefs(ctx, user, "", ""); err != nil {
+	if err := st.SetStoryPrefs(ctx, user, "", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	if g, th, err := st.StoryPrefs(ctx, user); err != nil || g != "" || th != "" {
-		t.Errorf("cleared prefs: %q/%q err=%v, want empty", g, th, err)
+	if g, th, tz, err := st.StoryPrefs(ctx, user); err != nil || g != "" || th != "" || tz != "" {
+		t.Errorf("cleared prefs: %q/%q/%q err=%v, want empty", g, th, tz, err)
 	}
 
 	// UserIDs drives the background sweep.
@@ -474,25 +454,6 @@ func storyIndexes(ctx context.Context, pool *pgxpool.Pool, tables ...string) (ma
 		out[name] = true
 	}
 	return out, rows.Err()
-}
-
-// wrapReadyConflict is pure: the one-ready-per-user partial index's 23505
-// becomes the package's benign sentinel, while any other failure stays a
-// genuine fault. (The race itself needs two servers to force, so the store's
-// contract is pinned here and the service's handling in service_test.go.)
-func TestWrapReadyConflict(t *testing.T) {
-	unique := &pgconn.PgError{Code: "23505", ConstraintName: "stories_one_ready_per_user_idx", Message: "duplicate key value violates unique constraint"}
-	err := wrapReadyConflict(unique)
-	if !errors.Is(err, errReadyConflict) {
-		t.Fatalf("23505 wrapped as %v, want it to wrap errReadyConflict", err)
-	}
-	fkey := &pgconn.PgError{Code: "23503", Message: "insert or update on table violates foreign key constraint"}
-	if got := wrapReadyConflict(fkey); errors.Is(got, errReadyConflict) {
-		t.Fatalf("a foreign-key failure wrapped as %v, must not look like a ready race", got)
-	}
-	if got := wrapReadyConflict(errors.New("network down")); errors.Is(got, errReadyConflict) {
-		t.Fatalf("a transport failure wrapped as %v, must not look like a ready race", got)
-	}
 }
 
 // The failure backoff's clock and the failed-story bound, against the real

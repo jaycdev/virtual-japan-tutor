@@ -1,9 +1,9 @@
 // Package storytest provides an in-memory story.Store for tests of the
 // packages that consume the story service — the httpapi story and reader
 // routes in particular. It mirrors PostgresStore's observable behaviour
-// (ownership scoping, validated-only listings, one ready Story per user,
-// default preferences) without needing a database; story's own package
-// tests keep the richer fake beside the generation code it exercises.
+// (ownership scoping, validated-only listings, newest-Automatic-Story
+// lookup, default preferences) without needing a database; story's own
+// package tests keep the richer fake beside the generation code it exercises.
 package storytest
 
 import (
@@ -24,8 +24,7 @@ type MemStore struct {
 	threshold map[uuid.UUID]int
 	blur      map[uuid.UUID]bool      // missing = default true, like the users column
 	lookupMs  map[uuid.UUID]int       // missing = default 800, like the users column
-	prefs     map[uuid.UUID][2]string // genre, theme ("" = surprise-me / no theme)
-	snapshots map[uuid.UUID][]string
+	prefs     map[uuid.UUID][3]string // genre, theme ("" = surprise-me / no theme), timezone ("" = unset)
 	now       time.Time
 }
 
@@ -36,8 +35,7 @@ func New() *MemStore {
 		threshold: map[uuid.UUID]int{},
 		blur:      map[uuid.UUID]bool{},
 		lookupMs:  map[uuid.UUID]int{},
-		prefs:     map[uuid.UUID][2]string{},
-		snapshots: map[uuid.UUID][]string{},
+		prefs:     map[uuid.UUID][3]string{},
 		now:       time.Unix(1700000000, 0).UTC(),
 	}
 }
@@ -125,41 +123,24 @@ func (s *MemStore) RatingCounts(_ context.Context, userID uuid.UUID) (map[string
 	return out, nil
 }
 
-func (s *MemStore) ReadyStoryID(_ context.Context, userID uuid.UUID) (uuid.UUID, bool, error) {
+// LatestAutomaticStory mirrors PostgresStore: the newest validated Automatic
+// Story whatever its Read mark, On-demand Stories excluded.
+func (s *MemStore) LatestAutomaticStory(_ context.Context, userID uuid.UUID) (*story.Story, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	var newest *story.Story
 	for _, st := range s.stories {
-		if st.UserID == userID && st.ReadyAt != nil {
-			return st.ID, true, nil
+		if st.UserID != userID || !st.Validated || st.Origin != story.OriginAutomatic {
+			continue
+		}
+		if newest == nil || st.CreatedAt.After(newest.CreatedAt) {
+			newest = st
 		}
 	}
-	return uuid.Nil, false, nil
-}
-
-func (s *MemStore) SetReady(_ context.Context, id, userID uuid.UUID) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	st, err := s.get(id, userID)
-	if err != nil {
-		return err
+	if newest == nil {
+		return nil, false, nil
 	}
-	now := s.now
-	for _, other := range s.stories {
-		if other.UserID == userID {
-			other.ReadyAt = nil
-		}
-	}
-	st.ReadyAt = &now
-	return nil
-}
-
-func (s *MemStore) ClearReady(_ context.Context, id uuid.UUID) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if st, ok := s.stories[id]; ok {
-		st.ReadyAt = nil
-	}
-	return nil
+	return newest, true, nil
 }
 
 func (s *MemStore) LastFailedAt(_ context.Context, userID uuid.UUID) (time.Time, bool, error) {
@@ -250,30 +231,17 @@ func (s *MemStore) SetLookupHoldMs(_ context.Context, userID uuid.UUID, holdMs i
 	return nil
 }
 
-func (s *MemStore) StoryPrefs(_ context.Context, userID uuid.UUID) (string, string, error) {
+func (s *MemStore) StoryPrefs(_ context.Context, userID uuid.UUID) (genre, theme, timezone string, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	p := s.prefs[userID]
-	return p[0], p[1], nil
+	return p[0], p[1], p[2], nil
 }
 
-func (s *MemStore) SetStoryPrefs(_ context.Context, userID uuid.UUID, genre, theme string) error {
+func (s *MemStore) SetStoryPrefs(_ context.Context, userID uuid.UUID, genre, theme, timezone string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.prefs[userID] = [2]string{genre, theme}
-	return nil
-}
-
-func (s *MemStore) FocusSnapshot(_ context.Context, userID uuid.UUID) ([]string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.snapshots[userID], nil
-}
-
-func (s *MemStore) SetFocusSnapshot(_ context.Context, userID uuid.UUID, keys []string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.snapshots[userID] = keys
+	s.prefs[userID] = [3]string{genre, theme, timezone}
 	return nil
 }
 

@@ -11,6 +11,11 @@ import (
 	"syscall"
 	"time"
 
+	// Embed the IANA zone table in the binary: container images often ship
+	// without /usr/share/zoneinfo, and the Learner's Timezone (issue #32)
+	// must resolve there too.
+	_ "time/tzdata"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/aiprovider"
