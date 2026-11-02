@@ -270,7 +270,7 @@ function renderStories(client: ApiClient, generationPollMs?: number) {
 async function openStory(client: ApiClient) {
   renderStories(client);
   fireEvent.click(await screen.findByRole("button", { name: "Read today’s story" }));
-  await screen.findByTestId("back-to-library");
+  await screen.findByTestId("back-to-stories");
   // The reader fetches reading settings + Item Lists on mount; give their
   // mocked responses time to land before any gesture reads them.
   await act(async () => {
@@ -482,7 +482,7 @@ describe("On-demand Generate (mobile)", () => {
     // Later polls bring the finished Story: the ready line offers "Ready, read now".
     expect(await screen.findByText("A new Story is ready for you.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Ready, read now" }));
-    await screen.findByTestId("back-to-library");
+    await screen.findByTestId("back-to-stories");
   });
 
   it("a failed run keeps the retry line on screen and leaves the form ready", async () => {
@@ -914,7 +914,7 @@ describe("Reading Panel placement, modes and scroll lock (review fixes)", () => 
     back.press();
     await waitFor(() => expect(screen.queryByLabelText("Lookup menu")).toBeNull());
     expect(screen.queryByTestId("dictionary-window")).toBeNull();
-    expect(screen.getByTestId("back-to-library")).toBeTruthy();
+    expect(screen.getByTestId("back-to-stories")).toBeTruthy();
     fireEvent.mouseUp(token(0, 1), { clientX: 300, clientY: 300 }); // finger lifts after Back
 
     // The failure is not remembered forever: the next press retries the fetch.
@@ -993,7 +993,7 @@ describe("hardware Back in the reader (mobile)", () => {
     await screen.findByTestId("save-list-l1");
     back.press();
     await waitFor(() => expect(screen.queryByTestId("save-list-l1")).toBeNull());
-    expect(screen.getByTestId("back-to-library")).toBeTruthy();
+    expect(screen.getByTestId("back-to-stories")).toBeTruthy();
 
     // Window.
     await pressAndHold(1, 0);
@@ -1007,12 +1007,12 @@ describe("hardware Back in the reader (mobile)", () => {
     await screen.findByLabelText("Lookup menu");
     back.press();
     await waitFor(() => expect(screen.queryByLabelText("Lookup menu")).toBeNull());
-    expect(screen.getByTestId("back-to-library")).toBeTruthy();
+    expect(screen.getByTestId("back-to-stories")).toBeTruthy();
 
     // Nothing open: Back leaves the reader back to Today's Story, where it
     // was opened from.
     back.press();
-    await waitFor(() => expect(screen.queryByTestId("back-to-library")).toBeNull());
+    await waitFor(() => expect(screen.queryByTestId("back-to-stories")).toBeNull());
     expect(await screen.findByRole("button", { name: "View all stories" })).toBeTruthy();
   });
 
@@ -1020,8 +1020,8 @@ describe("hardware Back in the reader (mobile)", () => {
     const { client } = fakeApi();
     await openStory(client);
 
-    fireEvent.click(screen.getByTestId("back-to-library"));
-    await waitFor(() => expect(screen.queryByTestId("back-to-library")).toBeNull());
+    fireEvent.click(screen.getByTestId("back-to-stories"));
+    await waitFor(() => expect(screen.queryByTestId("back-to-stories")).toBeNull());
     expect(await screen.findByRole("button", { name: "Read today’s story" })).toBeTruthy();
   });
 
@@ -1029,10 +1029,10 @@ describe("hardware Back in the reader (mobile)", () => {
     const { client } = fakeApi();
     await openLibrary(client);
     fireEvent.click(screen.getByTestId("story-row-st-1"));
-    await screen.findByTestId("back-to-library");
+    await screen.findByTestId("back-to-stories");
 
-    fireEvent.click(screen.getByTestId("back-to-library"));
-    await waitFor(() => expect(screen.queryByTestId("back-to-library")).toBeNull());
+    fireEvent.click(screen.getByTestId("back-to-stories"));
+    await waitFor(() => expect(screen.queryByTestId("back-to-stories")).toBeNull());
     expect(await screen.findByTestId("story-row-st-1")).toBeTruthy();
   });
 });

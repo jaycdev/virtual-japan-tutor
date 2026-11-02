@@ -31,7 +31,7 @@ type generateEnv struct {
 }
 
 // focusStub answers an empty Focus Set — every on-demand run then finishes
-// failed with the fit-failure message without ever reaching a provider,
+// failed with the focus-failure message without ever reaching a provider,
 // which is all these wire tests need. block, when set, turns FocusFor into
 // a handshake so a test can hold a run mid-flight.
 type focusStub struct {
@@ -110,9 +110,11 @@ func decodeProgress(t *testing.T, rec *httptest.ResponseRecorder) progressView {
 	return got
 }
 
-// The progress poll starts idle, and an On-demand run with nothing to
-// build from comes back failed with the ticket's retry line — kept readable
-// afterwards, so a client that reloaded mid-run still learns how it ended.
+// The progress poll starts idle, and an On-demand run answers 202 with a
+// RUNNING snapshot — the start never waits on the write. The run then
+// terminates on its own: with nothing to build from it comes back failed
+// with its honest line, kept readable afterwards, so a client that
+// reloaded mid-run still learns how it ended.
 func TestGenerateStoryProgressFlow(t *testing.T) {
 	o := newGenerateEnv(t, &focusStub{})
 
@@ -129,13 +131,29 @@ func TestGenerateStoryProgressFlow(t *testing.T) {
 		t.Fatalf("POST generate = %d %s, want 202", rec.Code, rec.Body)
 	}
 	p := decodeProgress(t, rec)
-	if p.Status != "failed" || p.Message == nil || *p.Message != story.FitFailureMessage {
-		t.Fatalf("failed run = %+v, want the fit-failure message", p)
+	if p.Status != "running" || p.StoryID != nil {
+		t.Fatalf("start snapshot = %+v, want a running run", p)
 	}
 
-	rec = o.as(t, "alice", "GET", "/stories/generation", nil)
-	if p2 := decodeProgress(t, rec); p2.Status != "failed" || p2.Message == nil || *p2.Message != story.FitFailureMessage {
-		t.Fatalf("terminal state after the run = %+v, want it still readable", p2)
+	// The run goes terminal without anyone waiting on the POST: poll until
+	// it does.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		rec = o.as(t, "alice", "GET", "/stories/generation", nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET generation = %d, want 200", rec.Code)
+		}
+		p2 := decodeProgress(t, rec)
+		if p2.Status == "failed" {
+			if p2.Message == nil || *p2.Message != story.EmptyFocusFailureMessage {
+				t.Fatalf("failed run = %+v, want the focus-failure message", p2)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the run never terminated over the wire: last = %+v", p2)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

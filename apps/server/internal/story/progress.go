@@ -39,10 +39,22 @@ const (
 )
 
 // FitFailureMessage is the ticket's failure line: shown under a stopped bar
-// with the chance to try again. It covers every way a run can end without a
-// Story — every attempt rejected by the gate, a provider that never
-// answered, or a Focus Set too empty to build from.
+// with the chance to try again. Issue #33 reserves it for a run whose
+// attempts were all rejected by the validation gate (or a provider that
+// never produced a candidate at all); the ways a run can fail before any
+// attempt — no AI Provider set up, nothing in the Focus Set to build from —
+// have their own honest lines below.
 const FitFailureMessage = "Couldn't write a Story that fits your vocabulary. Try again?"
+
+// NoProviderFailureMessage is the failure line when the Learner's Stories
+// task has no AI Provider assigned: the run could not even ask a model to
+// write, and the Learner can fix that in Settings.
+const NoProviderFailureMessage = "Stories aren't set up yet: no AI provider is chosen for Stories. Pick one in Settings, then try again."
+
+// EmptyFocusFailureMessage is the failure line when there is nothing in the
+// Focus Set to build a Story from: the Learner has too few Known Items so
+// far, not a Story the model failed to fit.
+const EmptyFocusFailureMessage = "There aren't enough Known Items to write a Story from yet. Keep learning and try again."
 
 // Progress is one snapshot of a user's generation run, as the client polls
 // it. Stage, Attempt and MaxAttempts carry the "Writing… attempt 2 of 3"

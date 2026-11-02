@@ -1723,7 +1723,7 @@ function StorySettingsFields({
         </p>
         <p>
           <label htmlFor="story-timezone">
-            Your timezone (decides which day your daily story belongs to)
+            Your timezone (decides which day your Automatic Story belongs to)
           </label>
           <TimezoneAutocomplete
             id="story-timezone"
@@ -1749,8 +1749,8 @@ function StorySettingsFields({
       <p className="muted">
         Genre and theme steer what the generator is asked for; the validation gate still has the last
         word, so a preference it cannot fill falls back rather than forcing a bad story. The furigana
-        threshold applies when stories are read. Your timezone decides which local day each daily
-        story belongs to — until you choose one, the server’s own day is used.
+        threshold applies when stories are read. Your timezone decides which local day each
+        Automatic Story belongs to — until you choose one, the server’s own day is used.
       </p>
     </>
   );

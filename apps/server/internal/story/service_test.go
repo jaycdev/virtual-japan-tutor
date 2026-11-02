@@ -307,6 +307,19 @@ func (s *fakeStore) LatestAutomaticStory(_ context.Context, userID uuid.UUID) (*
 	return newest, true, nil
 }
 
+// HasUnreadAutomaticStory mirrors the Postgres store: any validated
+// Automatic Story with no Read mark yet, On-demand Stories excluded.
+func (s *fakeStore) HasUnreadAutomaticStory(_ context.Context, userID uuid.UUID) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, st := range s.stories {
+		if st.UserID == userID && st.Validated && st.Origin == OriginAutomatic && st.ReadAt == nil {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // LastFailedAt mirrors the Postgres store's contract: the timestamp counts
 // only when the user's newest story failed the gate.
 func (s *fakeStore) LastFailedAt(_ context.Context, userID uuid.UUID) (time.Time, bool, error) {
@@ -696,6 +709,51 @@ func TestEnsureAutomaticStoryUnreadHoldsTheSlot(t *testing.T) {
 	newer, ok, _ := store.LatestAutomaticStory(ctx, user)
 	if !ok || newer.ID == st.ID {
 		t.Fatal("the catch-up pass produced no new Automatic Story")
+	}
+}
+
+func TestEnsureAutomaticStoryUnreadRuleSeesPastTheNewest(t *testing.T) {
+	// Issue #32's unread rule takes ANY unread Automatic Story, not just
+	// the newest: with a read Story on top of an older unread one, the
+	// pass still holds back. Opening the old one frees the rule.
+	ctx := context.Background()
+	user := uuid.New()
+	provider := newFakeProvider(t, string(fixture(t, "travel", cleanClause, cleanClause, cleanClause, cleanClause)))
+	svc, store, _, _ := newTestService(t, provider)
+	svc.now = store.storeNow
+	if err := store.SetStoryPrefs(ctx, user, "", "", "UTC"); err != nil {
+		t.Fatalf("SetStoryPrefs: %v", err)
+	}
+
+	older := &Story{UserID: user, Text: "x", Validated: true, Origin: OriginAutomatic}
+	if err := store.Save(ctx, older); err != nil {
+		t.Fatalf("Save (older): %v", err)
+	}
+	newest := &Story{UserID: user, Text: "y", Validated: true, Origin: OriginAutomatic}
+	if err := store.Save(ctx, newest); err != nil {
+		t.Fatalf("Save (newest): %v", err)
+	}
+	if err := store.MarkRead(ctx, newest.ID, user, store.storeNow()); err != nil {
+		t.Fatalf("MarkRead (newest): %v", err)
+	}
+	store.advanceNow(2 * 24 * time.Hour) // the read one is from an older day
+
+	if err := svc.ensureAutomaticStory(ctx, user); err != nil {
+		t.Fatalf("ensureAutomaticStory (newest read, older unread): %v", err)
+	}
+	if provider.callCount() != 0 {
+		t.Fatalf("provider calls = %d while an older Automatic Story sat unread, want 0", provider.callCount())
+	}
+
+	// Opening the old one is what frees the rule: the next pass writes.
+	if err := store.MarkRead(ctx, older.ID, user, store.storeNow()); err != nil {
+		t.Fatalf("MarkRead (older): %v", err)
+	}
+	if err := svc.ensureAutomaticStory(ctx, user); err != nil {
+		t.Fatalf("ensureAutomaticStory (all read): %v", err)
+	}
+	if provider.callCount() != 1 {
+		t.Fatalf("provider calls = %d after every Automatic Story was read, want the write", provider.callCount())
 	}
 }
 

@@ -379,6 +379,22 @@ func (st *PostgresStore) LatestAutomaticStory(ctx context.Context, userID uuid.U
 	return s, true, nil
 }
 
+// HasUnreadAutomaticStory reports any VALIDATED Automatic Story of the
+// user's with no Read mark — the unread rule of issue #32, which holds the
+// Automatic slot for ANY unread one, not just the newest.
+func (st *PostgresStore) HasUnreadAutomaticStory(ctx context.Context, userID uuid.UUID) (bool, error) {
+	var found bool
+	err := st.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM stories
+			WHERE user_id = $1 AND origin = $2 AND validated AND read_at IS NULL
+		)`, userID, string(OriginAutomatic)).Scan(&found)
+	if err != nil {
+		return false, fmt.Errorf("story unread automatic: %w", err)
+	}
+	return found, nil
+}
+
 // LastFailedAt is the failure backoff's clock: it reports the newest story's
 // creation time only when that newest story failed the gate. An older
 // failure followed by a validated story is not "stuck", so it reports false.
