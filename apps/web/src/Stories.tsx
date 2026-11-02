@@ -1,15 +1,26 @@
 import type {
   ApiClient,
   DictionaryEntry,
+  GenerateStoryRequest,
   GrammarPointDetail,
   PitchPattern,
   Story as StoryData,
+  StoryGenerationProgress,
   StoryGrammarSpan,
   StorySettings,
   StoryToken,
+  StorySuggestions,
   WeakSignalRequest,
 } from "@vjt/api-client";
-import { useItemLists, useReadingSettings, useStory, type ItemListsView, type StoryView } from "@vjt/core";
+import {
+  useItemLists,
+  useReadingSettings,
+  useStory,
+  useStoryGeneration,
+  type ItemListsView,
+  type StoryGeneration,
+  type StoryView,
+} from "@vjt/core";
 import { TimezoneAutocomplete } from "./TimezoneAutocomplete.tsx";
 import {
   useCallback,
@@ -23,16 +34,20 @@ import {
 import "./reader.css";
 
 /**
- * Stories (issues #10, #32): the page opens on Today's Story — the newest
- * Automatic Story, which the background generator writes once per day in the
- * Learner's Timezone — with the Story Library one click away ("View all
+ * Stories (issues #10, #31, #32, #33): the page opens on Today’s Story — the
+ * newest Automatic Story, which the background generator writes once per day in
+ * the Learner’s Timezone — with the Story Library one click away ("View all
  * stories"). Read stories (rate thumbs up/down to steer future genres),
  * answer the comprehension questions — the first answer writes Practice
- * Records for the story's Focus Set items — and choose the story settings
- * (Furigana Threshold, preferred genre/theme, and the Learner's Timezone).
- * Generation is never triggered from this screen, so opening a story is
- * instant; with no Automatic Story yet the panel says one is being written.
- * On-demand Stories live in the Library but are never Today's Story.
+ * Records for the story’s Focus Set items — and choose the story settings
+ * (Furigana Threshold, preferred genre/theme, and the Learner’s Timezone).
+ * Opening a story is always a plain storage read. The Generate box (issue #33)
+ * starts an On-demand Story — optional genre/theme autocomplete, blank means
+ * the Automatic rules, "Surprise me" lets the model pick — and its progress
+ * bar shows the server’s snapshots ("Writing… attempt 2 of 3"), surviving
+ * reloads and view changes; a finished run offers "Ready, read now" and is
+ * never auto-opened. On-demand Stories live in the Library but are never
+ * Today’s Story.
  *
  * The reader itself (issue #11) puts a fixed-size Reading Panel above the
  * story: tapping any word or punctuation selects its sentence (shown with
@@ -63,11 +78,33 @@ import "./reader.css";
  * menu — then the windows one at a time. Whichever way a menu or window
  * closes, focus goes back to the token button it came from.
  */
-export function Stories({ client }: { client: ApiClient }) {
+export function Stories({
+  client,
+  generationPollMs,
+}: {
+  client: ApiClient;
+  /** Poll interval for the generation progress bar (tests shorten it). */
+  generationPollMs?: number;
+}) {
   const view = useStory(client);
+  // One generation view for the whole screen: the Today panel and the Story
+  // Library share it, so switching views never restarts (or cancels) the run.
+  const gen = useStoryGeneration(client, generationPollMs);
   // Today's Story is the landing view; "View all stories" opens the Story
   // Library, and the reader's Back returns to whichever one it opened from.
   const [showLibrary, setShowLibrary] = useState(false);
+
+  // A run finishing while the Learner is anywhere on the page: the Library
+  // quietly picks the new Story up (seenReady keeps the reload once per run).
+  const readyId = gen.generation.status === "ready" ? (gen.generation.progress.storyId ?? null) : null;
+  const seenReady = useRef<string | null>(null);
+  useEffect(() => {
+    if (readyId && seenReady.current !== readyId) {
+      seenReady.current = readyId;
+      view.reload();
+    }
+  }, [readyId, view]);
+
   return (
     <section>
       <h2>Stories</h2>
@@ -78,12 +115,13 @@ export function Stories({ client }: { client: ApiClient }) {
       )}
       {view.open && view.story ? (
         <StoryReader key={view.story.id} view={view} client={client} />
-      ) : showLibrary ? (
-        <StoryLibrary view={view} onBack={() => setShowLibrary(false)} />
       ) : (
-        <TodaysStoryPanel view={view} onViewAll={() => setShowLibrary(true)} />
+        <>
+          <GeneratePanel gen={gen} view={view} />
+          {showLibrary ? <StoryLibrary view={view} onBack={() => setShowLibrary(false)} /> : <TodaysStoryPanel view={view} onViewAll={() => setShowLibrary(true)} />}
+        </>
       )}
-      <StorySettingsForm view={view} />
+      <StorySettingsForm view={view} suggestions={gen.suggestions} />
     </section>
   );
 }
@@ -143,6 +181,167 @@ function TodaysStoryPanel({ view, onViewAll }: { view: StoryView; onViewAll: () 
           View all stories
         </button>
       </p>
+    </>
+  );
+}
+
+/**
+ * The Generate box (issue #33): genre and theme are optional free text with
+ * autocomplete (presets merged with the Learner's past Story genres/themes);
+ * blank follows the Automatic rules, and "Surprise me" tells the model to pick
+ * both itself. While a run is live the bar shows the server's snapshot — it
+ * survives reloads and view switches because the run is the server's, not
+ * this form's. A finished run offers "Ready, read now" (never auto-opened);
+ * a rejected one shows the retry line and leaves the form ready for another
+ * try. The failure cooldown never gates the learner-initiated start: only
+ * another live run does, with the 409 refusal shown here.
+ */
+function GeneratePanel({ gen, view }: { gen: StoryGeneration; view: StoryView }) {
+  const g = gen.generation;
+  const [genre, setGenre] = useState("");
+  const [theme, setTheme] = useState("");
+  const running = g.status === "running";
+
+  const start = (surprise: boolean) => {
+    const req: GenerateStoryRequest = {};
+    if (genre.trim() !== "") req.genre = genre.trim();
+    if (theme.trim() !== "") req.theme = theme.trim();
+    if (surprise) req.surprise = true;
+    void gen.startGeneration(req);
+  };
+
+  return (
+    <div className="generate-box">
+      {running && <GenerationProgress progress={g.progress} />}
+      {g.status === "ready" && (
+        <p className="saved" role="status">
+          A new Story is ready for you.{" "}
+          <button type="button" onClick={() => g.status === "ready" && g.progress.storyId && void view.openStory(g.progress.storyId)}>
+            Ready, read now
+          </button>
+        </p>
+      )}
+      {g.status === "failed" && (
+        <p className="error" role="status">
+          {g.progress.message ?? "Couldn’t write your Story."}
+        </p>
+      )}
+      {gen.error && (
+        <p className="error" role="alert">
+          {gen.error}
+        </p>
+      )}
+      <form onSubmit={(e) => { e.preventDefault(); start(false); }}>
+        <label>
+          Genre for this story
+          <AutocompleteInput
+            id="generate-genre"
+            name="genre"
+            maxLength={60}
+            placeholder="travel, mystery… empty = automatic"
+            value={genre}
+            disabled={running}
+            options={gen.suggestions.genres}
+            onChange={setGenre}
+          />
+        </label>{" "}
+        <label>
+          Theme for this story
+          <AutocompleteInput
+            id="generate-theme"
+            name="theme"
+            maxLength={200}
+            placeholder="a robot running a ramen shop — empty = automatic"
+            value={theme}
+            disabled={running}
+            options={gen.suggestions.themes}
+            onChange={setTheme}
+          />
+        </label>{" "}
+        <button type="submit" disabled={running}>
+          Generate
+        </button>{" "}
+        <button type="button" disabled={running} onClick={() => start(true)}>
+          Surprise me
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function stageLabel(p: StoryGenerationProgress): string {
+  switch (p.stage) {
+    case "preparing":
+      return "Preparing…";
+    case "writing":
+      return p.attempt != null && p.maxAttempts != null
+        ? `Writing… attempt ${p.attempt} of ${p.maxAttempts}`
+        : "Writing…";
+    case "checking":
+      return "Checking it fits your vocabulary…";
+    case "saving":
+      return "Saving…";
+    default:
+      return "Writing…";
+  }
+}
+
+/** The progress bar: server-computed percent, server-named stage. */
+function GenerationProgress({ progress }: { progress: StoryGenerationProgress }) {
+  return (
+    <p className="generation-progress" role="status">
+      <progress value={progress.percent} max={100} aria-label="Story generation progress" />{" "}
+      <span className="generation-stage">{stageLabel(progress)}</span>{" "}
+      <span className="generation-percent">{progress.percent}%</span>
+    </p>
+  );
+}
+
+/**
+ * A free-text input with a datalist of suggestions — used for the Generate
+ * box and, from the same list, for the Preferred Genre/Theme settings. The
+ * list is a convenience, not a whitelist: any text the Learner types is sent
+ * as-is (the server's bounds are the only limits).
+ */
+function AutocompleteInput({
+  id,
+  name,
+  maxLength,
+  placeholder,
+  value,
+  disabled,
+  options,
+  onChange,
+}: {
+  id: string;
+  name: string;
+  maxLength: number;
+  placeholder: string;
+  value: string;
+  disabled?: boolean;
+  options: string[];
+  onChange: (next: string) => void;
+}) {
+  const listId = `${id}-choices`;
+  return (
+    <>
+      <input
+        id={id}
+        name={name}
+        type="text"
+        maxLength={maxLength}
+        list={listId}
+        autoComplete="off"
+        placeholder={placeholder}
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <datalist id={listId}>
+        {options.map((opt) => (
+          <option key={opt} value={opt} />
+        ))}
+      </datalist>
     </>
   );
 }
@@ -1400,7 +1599,7 @@ function RatingButtons({ view, story }: { view: StoryView; story: StoryData }) {
 }
 
 /** The Furigana Threshold, preferred genre/theme, and the Learner's Timezone. */
-function StorySettingsForm({ view }: { view: StoryView }) {
+function StorySettingsForm({ view, suggestions }: { view: StoryView; suggestions: StorySuggestions }) {
   const s = view.settings;
   return (
     <section>
@@ -1414,7 +1613,7 @@ function StorySettingsForm({ view }: { view: StoryView }) {
           </button>
         </p>
       )}
-      {s.status === "ready" && <StorySettingsFields view={view} stored={s.settings} />}
+      {s.status === "ready" && <StorySettingsFields view={view} stored={s.settings} suggestions={suggestions} />}
     </section>
   );
 }
@@ -1423,7 +1622,15 @@ function StorySettingsForm({ view }: { view: StoryView }) {
  * The form itself. Local edits overlay the stored settings; a successful
  * save clears the overlay, so the fields then show the server's answer.
  */
-function StorySettingsFields({ view, stored }: { view: StoryView; stored: StorySettings }) {
+function StorySettingsFields({
+  view,
+  stored,
+  suggestions,
+}: {
+  view: StoryView;
+  stored: StorySettings;
+  suggestions: StorySuggestions;
+}) {
   const [genre, setGenre] = useState<string | null>(null);
   const [theme, setTheme] = useState<string | null>(null);
   const [timezone, setTimezone] = useState<string | null>(null);
@@ -1487,26 +1694,30 @@ function StorySettingsFields({ view, stored }: { view: StoryView; stored: StoryS
         <p>
           <label>
             Preferred genre
-            <input
+            <AutocompleteInput
+              id="preferred-genre"
               name="preferredGenre"
               maxLength={60}
               placeholder="travel, mystery… empty = surprise me"
               value={genreValue}
               disabled={busy}
-              onChange={(e) => setGenre(e.target.value)}
+              options={suggestions.genres}
+              onChange={setGenre}
             />
           </label>
         </p>
         <p>
           <label>
             Preferred theme
-            <input
+            <AutocompleteInput
+              id="preferred-theme"
               name="preferredTheme"
               maxLength={200}
               placeholder="a robot running a ramen shop — empty = none"
               value={themeValue}
               disabled={busy}
-              onChange={(e) => setTheme(e.target.value)}
+              options={suggestions.themes}
+              onChange={setTheme}
             />
           </label>
         </p>
