@@ -1,5 +1,7 @@
-# No bind mounts: Docker runs on a remote VM, so everything is baked into images
-# or stored in named volumes. Use `docker --context docker-dev compose up --build`.
+# Runs the published images (ghcr.io/jaycdev). Pick a version with VJT_VERSION in .env:
+#   latest (default) = newest release, dev = newest commit on main, or a number like 1.2.3.
+# To build from source instead (development), add docker-compose.dev.yml:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 services:
   db:
     image: postgres:18-alpine
@@ -16,10 +18,7 @@ services:
       retries: 20
 
   server:
-    build:
-      context: .
-      dockerfile: apps/server/Dockerfile
-      target: server
+    image: ghcr.io/jaycdev/virtual-japan-tutor-server:${VJT_VERSION:-latest}
     depends_on:
       db:
         condition: service_healthy
@@ -47,14 +46,11 @@ services:
 
   # One-off reference data import (JMdict, KANJIDIC2, JLPT lists, Kanjium pitch accents, Grammar
   # Catalogue). Not started by `up`. Run it with:
-  #   docker --context docker-dev compose run --rm import [--only grammar] [--refresh]
+  #   docker compose run --rm import [--only grammar] [--refresh]
   # Downloads are cached in the refdata-cache volume, so a re-run does not download again.
   import:
     profiles: ["import"]
-    build:
-      context: .
-      dockerfile: apps/server/Dockerfile
-      target: import
+    image: ghcr.io/jaycdev/virtual-japan-tutor-import:${VJT_VERSION:-latest}
     depends_on:
       db:
         condition: service_healthy

@@ -3,16 +3,18 @@
 # needs neither the OpenAPI spec nor any code generation.
 #
 # Targets: `server` (default, the last stage) and `import` (one-off reference data import).
-FROM golang:1.27.1-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.1-alpine AS build
+ARG TARGETOS
+ARG TARGETARCH
 WORKDIR /src
 COPY apps/server/go.mod apps/server/go.sum ./
 RUN go mod download
 COPY apps/server/ ./
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/ ./cmd/server ./cmd/import
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/ ./cmd/server ./cmd/import
 
 # Reference data import: JMdict, KANJIDIC2, JLPT lists, Kanjium and the Grammar Catalogue.
-# Downloads land in a cache directory meant to be a named volume (no bind mounts: Docker
-# runs on a remote VM). Run with: docker compose run --rm import
+# Downloads land in a cache directory meant to be a named volume (no bind mounts).
+# Run with: docker compose run --rm import
 FROM alpine:3.22 AS import
 RUN apk add --no-cache ca-certificates \
  && adduser -D -u 10001 app \
