@@ -10,7 +10,7 @@ import {
   type StoryGenerationState,
   type TodaysStoryState,
 } from "@vjt/core";
-import { SIDEBAR_BREAKPOINT } from "./chrome/Shell.tsx";
+import { CONTENT_MAX_WIDTH, SIDEBAR_BREAKPOINT } from "./chrome/Shell.tsx";
 import { useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 
@@ -162,7 +162,7 @@ function Greeting({
   }, []);
   const clock = learnerClock(now, timezone);
   return (
-    <View className="gap-1" testID="today-greeting">
+    <View className="mb-1 gap-1" testID="today-greeting">
       {settingsPending ? (
         // Same shape as the settled greeting: a display-size bar and a
         // smaller date bar (issue #47 review S7).
@@ -353,11 +353,14 @@ function TodayStoryCard({
 }
 
 /** Genre and length (plan 4.4 item 2). The API has no length field, so the
- * sentence count is what the Story actually reports — see the issue #47 notes. */
+ * sentence count is what the Story actually reports — see the issue #47 notes.
+ * A story with no genre says only the length: "no genre · " is noise the
+ * Learner cannot act on (issue #47 review N1). */
 function storyMeta(story: Story): string {
   const sentences = story.sentences?.length ?? 0;
-  const genre = story.genre?.trim() ? story.genre.trim() : "no genre";
-  return `${genre} · ${sentences} sentence${sentences === 1 ? "" : "s"}`;
+  const length = `${sentences} sentence${sentences === 1 ? "" : "s"}`;
+  const genre = story.genre?.trim();
+  return genre ? `${genre} · ${length}` : length;
 }
 
 /** The generation stage in Learner's words, same as the Stories screen's. */
@@ -647,8 +650,12 @@ function ActionButton({
 }
 
 const styles = StyleSheet.create({
-  page: { flexGrow: 1, padding: 16 },
+  // paddingTop matches Practice's card column (24), so the first card sits at
+  // the same height on either screen. Top safe-area insets are the Shell's
+  // job, not this screen's - follow-up filed as a Shell issue (the greeting
+  // can sit under the Android status bar until that lands).
+  page: { flexGrow: 1, padding: 16, paddingTop: 24 },
   // The Shell caps the column on wide screens; Today only keeps the narrow
   // reading measure when the chrome has no sidebar to do it.
-  column: { width: "100%", maxWidth: 960, gap: 16 },
+  column: { width: "100%", maxWidth: CONTENT_MAX_WIDTH, gap: 16 },
 });

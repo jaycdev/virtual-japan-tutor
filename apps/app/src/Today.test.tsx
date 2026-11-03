@@ -331,6 +331,7 @@ describe('Today', () => {
     fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
       const request = new Request(input);
       const path = new URL(request.url).pathname;
+      gets.push(`${request.method} ${path}`);
       if (path === '/stories/generation') return jsonResponse(generation);
       if (path === '/stories/today') {
         return jsonResponse(generation.status === 'ready' ? storyBody() : { message: 'not_found' }, generation.status === 'ready' ? 200 : 404);
@@ -355,6 +356,22 @@ describe('Today', () => {
       },
       { timeout: 3000 },
     );
+    // Exactly two reads of Today's story: the one on mount (a 404 then) and
+    // the one the finish triggers - the ready snapshot must not make it ask
+    // again (issue #47 review N3).
+    expect(gets.filter((call) => call === 'GET /stories/today')).toHaveLength(2);
+  });
+
+  it('omits the genre when the story has none', async () => {
+    // issue #47 review N1: "no genre · 2 sentences" reads as broken; the
+    // length alone says what there is to say.
+    fixture.today = { status: 200, body: storyBody({ genre: '' }) };
+    renderToday();
+
+    await waitFor(() => {
+      expect(screen.getByText('2 sentences')).toBeTruthy();
+    });
+    expect(screen.queryByText(/no genre/)).toBeNull();
   });
 
   it('retries a failed Today’s story in place', async () => {

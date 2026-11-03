@@ -19,7 +19,7 @@ export const SIDEBAR_BREAKPOINT = 1024;
 export const OVERLAY_BREAKPOINT = 640;
 
 /** Widest the content column grows on large screens; the rest is margin. */
-const CONTENT_MAX_WIDTH = 960;
+export const CONTENT_MAX_WIDTH = 960;
 
 /**
  * The app chrome around every route (issue #44): a bottom tab bar on narrow
