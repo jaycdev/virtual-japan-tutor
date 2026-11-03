@@ -1,5 +1,7 @@
 import type { TokenStorage } from "@vjt/core";
 
+export type { TokenStorage };
+
 /** The slice of `expo-secure-store` we use; injectable so the adapter is testable without native code. */
 export interface SecureStoreLike {
   getItemAsync(key: string): Promise<string | null>;

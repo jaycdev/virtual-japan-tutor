@@ -92,4 +92,14 @@ export default tseslint.config(
     languageOptions: { globals: globals.node },
     rules: { "@typescript-eslint/no-require-imports": "off" },
   },
+  {
+    // Benign CommonJS shims that vitest aliases over native-only modules
+    // (see apps/app/vitest.setup.ts): hand-written CJS, not app code.
+    files: ["apps/app/test/cjs-stubs/**/*.cjs"],
+    languageOptions: {
+      sourceType: "commonjs",
+      globals: { ...globals.node, window: "readonly" },
+    },
+    rules: { "@typescript-eslint/no-require-imports": "off" },
+  },
 );
