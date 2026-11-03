@@ -9,8 +9,11 @@ import { InlineError, Skeleton } from "../../src/state/states.tsx";
 
 /**
  * Story reader route (#44): opened by /stories (push) or deep-linked directly.
- * Back is the router's — "Back to stories" pops the stack, and Android hardware
- * Back pops it too, so the reader is a real screen now, not an overlay.
+ * Back is the router's — "Back to stories" pops the stack (Android hardware
+ * Back reaches it through StoryReader's useHardwareBack, the overlay hook,
+ * whose last branch falls through to this onBack), and on a fresh tab deep
+ * link Back replaces with /stories instead of dead-ending. The reader is a
+ * real screen now, not an overlay.
  */
 export default function StoryRoute() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -39,6 +42,11 @@ export default function StoryRoute() {
     );
   }
   return (
-    <StoryReader client={client} view={view} story={view.story} onBack={() => router.back()} />
+    <StoryReader
+      client={client}
+      view={view}
+      story={view.story}
+      onBack={() => (router.canGoBack() ? router.back() : router.replace("/stories"))}
+    />
   );
 }

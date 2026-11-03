@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 
-import type { SettingsSection } from "../../src/SettingsHome.tsx";
+import { SETTINGS_SECTIONS, type SettingsSection } from "../../src/SettingsHome.tsx";
 import { useSession } from "../../src/session.tsx";
 import { EmptyState } from "../../src/state/states.tsx";
 import { AiProvidersSettings } from "../../src/AiProvidersSettings.tsx";
@@ -11,29 +11,20 @@ import { ServerSettings } from "../../src/ServerSettings.tsx";
 import { StartingLevelSettings } from "../../src/StartingLevelSettings.tsx";
 import { StorySettingsSection } from "../../src/StorySettingsSection.tsx";
 
-const SECTIONS: readonly SettingsSection[] = [
-  "marumori",
-  "ai",
-  "level",
-  "stories",
-  "reading",
-  "lists",
-  "server",
-];
-
 /**
  * Settings sections as routes (#44): each /settings/:section renders the
- * existing section component with its Back wired to router.back (so Android
- * hardware Back pops it like any other screen). An unknown section gets the
- * shared EmptyState rather than a blank screen.
+ * existing section component. Route Back is the router's — normally
+ * router.back(); on a fresh tab (deep link, nothing under the route) Back
+ * replaces with the settings hub so the screen is never a dead end. An
+ * unknown section gets the shared EmptyState rather than a blank screen.
  */
 export default function SettingsSectionRoute() {
   const { section } = useLocalSearchParams<{ section: string }>();
   const router = useRouter();
   const session = useSession();
-  const onBack = () => router.back();
+  const onBack = () => (router.canGoBack() ? router.back() : router.replace("/settings"));
 
-  if (!SECTIONS.includes(section as SettingsSection)) {
+  if (!SETTINGS_SECTIONS.includes(section as SettingsSection)) {
     return (
       <EmptyState
         message="That settings section doesn’t exist."

@@ -1,13 +1,21 @@
 import { Card, Row, Screen, Scroll, Title } from "./ui.tsx";
 
-export type SettingsSection =
-  | "marumori"
-  | "ai"
-  | "level"
-  | "stories"
-  | "reading"
-  | "lists"
-  | "server";
+/**
+ * The settings sections, single source: the union below is derived from this
+ * list, and the /settings/[section] route validates params against the same
+ * array, so a new section is added in exactly one place.
+ */
+export const SETTINGS_SECTIONS = [
+  "marumori",
+  "ai",
+  "level",
+  "stories",
+  "reading",
+  "lists",
+  "server",
+] as const;
+
+export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 
 /**
  * Settings hub (#44): a list of grouped rows into the /settings/:section
