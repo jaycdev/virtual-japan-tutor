@@ -18,7 +18,9 @@ const CONTENT_MAX_WIDTH = 960;
  * screens (<1024 px), hidden while a Story/Grammar reader route is open, and a
  * left sidebar (wordmark, destinations, signed-in Learner, Log out) on wide
  * ones, where content is capped at ~960 px. Navigation is the router's: taps
- * push, hardware Back pops, and the selected destination follows the pathname.
+ * REPLACE between destinations (tabs never stack history, so Back does not
+ * walk through visited tabs), detail routes push and pop, and the selected
+ * destination follows the pathname.
  *
  * Mounted by app/_layout.tsx *inside* <App>, so it only exists while signed in
  * (AuthGate swaps the whole tree out for Login/splash/error below it).
@@ -31,7 +33,13 @@ export function Shell({ children }: { children: ReactNode }) {
 
   const active = activeDestination(pathname);
   const select = (d: Destination) => {
-    if (d.path !== active) router.push(d.path as Href);
+    // Top-level taps REPLACE (#44 review): neither push nor navigate keeps
+    // tabs out of the history — expo-router's navigate still appends a web
+    // history entry — so both let Back walk every tab you visited. Replacing
+    // the current entry gives native-tab semantics: one entry for the tab
+    // area, Back never pages through visited tabs. Detail routes (a section
+    // row, opening a Story) keep pushing so their Backs pop normally.
+    if (d.path !== active) router.replace(d.path as Href);
   };
 
   if (width >= SIDEBAR_BREAKPOINT) {
