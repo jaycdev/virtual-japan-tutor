@@ -43,6 +43,15 @@ export default defineConfig({
       "react-native-screens": fileURLToPath(new URL("./test/react-native-screens-stub.tsx", import.meta.url)),
       // --- #44: expo-router boots under jsdom; expo-modules-core needs the native host.
       "expo-modules-core": fileURLToPath(new URL("./test/cjs-stubs/expo-modules-core.cjs", import.meta.url)),
+      // --- #45: the reader's Lookup menu and windows use Popover/Dialog. Expo picks the
+      // primitives' .web build per platform and jsdom is "web", so tests follow web —
+      // the native build gates its Portal on measure(), which jsdom does not implement:
+      // aliased to native, Popover/Dialog content never renders and the menu/window
+      // tests would pass (or fail) for the wrong reason. Expo really does resolve the
+      // web files: the reader's web popover fork is src/rnr/popover.web.tsx, the same
+      // platform-extension mechanism.
+      "@rn-primitives/popover": fileURLToPath(new URL("../../node_modules/@rn-primitives/popover/dist/popover.web.mjs", import.meta.url)),
+      "@rn-primitives/dialog": fileURLToPath(new URL("../../node_modules/@rn-primitives/dialog/dist/dialog.web.mjs", import.meta.url)),
     },
   },
   test: {

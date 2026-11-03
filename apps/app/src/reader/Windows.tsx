@@ -1,6 +1,7 @@
 import type { DictionaryEntry, StoryGrammarSpan } from "@vjt/api-client";
 import { X } from "lucide-react-native";
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import * as DialogPrimitives from "@rn-primitives/dialog";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { JlptBadge } from "./parts.tsx";
 import { PitchGraph } from "./PitchGraph.tsx";
@@ -10,6 +11,13 @@ import { PitchGraph } from "./PitchGraph.tsx";
  * over a dimmed story, like the web's windows. Opening one leaves the story
  * text visible behind; the reader keeps the tap-selection and the Lookup row
  * while a window is open, and Android Back closes the topmost window.
+ *
+ * Issue #45 review: the windows are RN Primitives Dialogs, not RN Modal and
+ * not hand-rolled layers — WIDE screens get the centred card, narrow ones a
+ * bottom sheet (the Reader passes `narrow` from the shell's OVERLAY_BREAKPOINT).
+ * The Title passes through Dialog.Title so assistive tech announces the window,
+ * and every dismissal path (×, tap-outside, Escape, Android Back) arrives at
+ * `onClose` through the Root's onOpenChange.
  */
 
 function WindowCard({
@@ -17,6 +25,7 @@ function WindowCard({
   title,
   reading,
   jlpt,
+  narrow,
   onClose,
   children,
 }: {
@@ -24,22 +33,29 @@ function WindowCard({
   title: string;
   reading?: string;
   jlpt?: string | null;
+  narrow: boolean;
   onClose: () => void;
   children: React.ReactNode;
 }) {
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.backdrop} className="bg-backdrop">
-        <View
+    <DialogPrimitives.Root open onOpenChange={(open) => !open && onClose()}>
+      <DialogPrimitives.Portal>
+        <DialogPrimitives.Overlay style={styles.backdrop} className="bg-backdrop" />
+        <DialogPrimitives.Content
           testID={testID}
           accessibilityLabel={testID === "dictionary-window" ? "Dictionary Entry window" : "Grammar Point window"}
           className="bg-card border-border"
-          style={styles.card}
+          style={[styles.card, narrow ? styles.cardNarrow : styles.cardWide]}
+          // No Description for these windows — the title says it all; this is
+          // Radix's documented way to skip the aria-describedby warning.
+          aria-describedby={undefined}
         >
           <View style={styles.head}>
-            <Text className="text-foreground" style={{ fontSize: 20, fontWeight: "600" }}>
-              {title}
-            </Text>
+            <DialogPrimitives.Title asChild>
+              <Text className="text-foreground" style={styles.title}>
+                {title}
+              </Text>
+            </DialogPrimitives.Title>
             {reading && reading !== title ? (
               <Text className="text-muted-foreground" style={{ fontSize: 16 }}>
                 {reading}
@@ -51,19 +67,28 @@ function WindowCard({
             </Pressable>
           </View>
           <ScrollView style={styles.body}>{children}</ScrollView>
-        </View>
-      </View>
-    </Modal>
+        </DialogPrimitives.Content>
+      </DialogPrimitives.Portal>
+    </DialogPrimitives.Root>
   );
 }
 
-export function DictionaryWindow({ entry, onClose }: { entry: DictionaryEntry; onClose: () => void }) {
+export function DictionaryWindow({
+  entry,
+  narrow,
+  onClose,
+}: {
+  entry: DictionaryEntry;
+  narrow: boolean;
+  onClose: () => void;
+}) {
   return (
     <WindowCard
       testID="dictionary-window"
       title={entry.headword}
       reading={entry.reading !== entry.headword ? entry.reading : undefined}
       jlpt={entry.jlptLevel}
+      narrow={narrow}
       onClose={onClose}
     >
       {entry.pitch ? (
@@ -91,9 +116,17 @@ export function DictionaryWindow({ entry, onClose }: { entry: DictionaryEntry; o
   );
 }
 
-export function GrammarWindow({ span, onClose }: { span: StoryGrammarSpan; onClose: () => void }) {
+export function GrammarWindow({
+  span,
+  narrow,
+  onClose,
+}: {
+  span: StoryGrammarSpan;
+  narrow: boolean;
+  onClose: () => void;
+}) {
   return (
-    <WindowCard testID="grammar-window" title={span.pattern} jlpt={span.jlptLevel} onClose={onClose}>
+    <WindowCard testID="grammar-window" title={span.pattern} jlpt={span.jlptLevel} narrow={narrow} onClose={onClose}>
       <Text className="text-foreground" style={styles.senseMeaning}>
         {span.meaning}
       </Text>
@@ -101,15 +134,40 @@ export function GrammarWindow({ span, onClose }: { span: StoryGrammarSpan; onClo
   );
 }
 
+// The Dialog portals leave positioning entirely to these styles: centred card
+// wide, pinned to the bottom edge narrow. fixed on web (the portal lands at
+// the end of <body>), absolute inside the native PortalHost.
+// Both overlay kinds sit inside the primitives' portal, which on web is a
+// full-viewport fixed div — an `absolute` inset fills the viewport there and the
+// reader host on native, so one value works on both platforms.
+const positioned = { position: "absolute" as const };
+
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, alignItems: "center", justifyContent: "center" },
+  backdrop: { ...positioned, top: 0, left: 0, right: 0, bottom: 0 },
   card: {
-    width: "88%",
-    maxHeight: "70%",
     borderRadius: 12,
     borderWidth: 1,
     elevation: 8,
   },
+  cardWide: {
+    ...positioned,
+    top: "15%",
+    left: "6%",
+    right: "6%",
+    maxHeight: "70%",
+  },
+  cardNarrow: {
+    ...positioned,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    maxHeight: "80%",
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+  },
+  title: { fontSize: 20, fontWeight: "600" },
   head: { flexDirection: "row", alignItems: "center", gap: 8, padding: 14, flexWrap: "wrap" },
   close: { marginLeft: "auto", width: 22, height: 22, alignItems: "center", justifyContent: "center" },
   body: { paddingHorizontal: 14, paddingBottom: 14 },

@@ -286,7 +286,7 @@ function SizeProbe() {
   return null;
 }
 
-function renderStories(client: ApiClient, generationPollMs?: number) {
+function renderStories(client: ApiClient, generationPollMs?: number, overrideScreen?: { width: number; height: number }) {
   return render(
     <StoryTextSizeProvider>
       <PortalHost />
@@ -294,7 +294,7 @@ function renderStories(client: ApiClient, generationPollMs?: number) {
       <Stories
         client={client}
         measure={(testID) => RECTS[testID] ?? null}
-        screenSize={SCREEN}
+        screenSize={overrideScreen ?? SCREEN}
         generationPollMs={generationPollMs}
         onPracticeStory={(id) => practiceCalls.push(id)}
       />
@@ -546,6 +546,38 @@ describe("Story reader gestures (mobile)", () => {
     await waitFor(() => expect(screen.queryByLabelText("Lookup menu")).toBeNull());
     expect(screen.queryByTestId("dictionary-window")).toBeNull();
     expect(requests.some((r) => r.method === "POST" && r.path.startsWith("/item-lists/"))).toBe(false);
+  });
+
+  it("on wide screens the anchored menu closes on Escape and on a click outside it", async () => {
+    const { client } = fakeApi();
+    // Wide viewport (≥ OVERLAY_BREAKPOINT): the menu is the anchored Popover
+    // rather than the narrow bottom sheet.
+    renderStories(client, undefined, { width: 1280, height: 800 });
+    fireEvent.click(await screen.findByRole("button", { name: "Read today’s story" }));
+    await screen.findByTestId("back-to-stories");
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 30));
+    });
+
+    await pressAndHold(0, 0);
+    const menu = screen.getByLabelText("Lookup menu");
+    expect(within(menu).getByTestId("menu-option-dictionary").textContent).toContain("Dictionary");
+
+    // The keyboard closes it, and the gesture machine sees the dismissal.
+    fireEvent.keyDown(menu, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByLabelText("Lookup menu")).toBeNull());
+    // The hold never lifted, so lift it before pressing again.
+    releaseAt(0, 0, 300, 300);
+
+    await pressAndHold(0, 0);
+    expect(screen.getByLabelText("Lookup menu")).toBeTruthy();
+    // A click outside the popover dismisses it. The primitives defer a
+    // left-button pointerdown to the click that completes it, and a bare click
+    // on a story token does nothing else, so the story is the tap target.
+    const elsewhere = token(1, 0);
+    fireEvent.pointerDown(elsewhere, { button: 0 });
+    fireEvent.click(elsewhere);
+    await waitFor(() => expect(screen.queryByLabelText("Lookup menu")).toBeNull());
   });
 
   it("slide-release on Save writes to the Default List and notes it in the header", async () => {

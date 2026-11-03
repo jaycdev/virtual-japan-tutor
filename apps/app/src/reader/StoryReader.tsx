@@ -14,6 +14,7 @@ import {
 } from "react-native";
 
 import { useHardwareBack } from "../useHardwareBack.ts";
+import { OVERLAY_BREAKPOINT } from "../chrome/Shell.tsx";
 import { useStoryTextSize } from "../storysize/index.tsx";
 import { RatingButtons } from "./parts.tsx";
 import { ReadingPanel, type LookedTarget } from "./ReadingPanel.tsx";
@@ -208,6 +209,9 @@ export function StoryReader({
   }, [gesture.token, hovered, story]);
 
   const menuOpen = gesture.phase === "menu";
+  // Wide or narrow decides the overlay FORM (anchored popover / centred card
+  // vs bottom sheet) — the shell's breakpoint, never an ad-hoc number here.
+  const narrowOverlays = (screenSize ?? screen).width < OVERLAY_BREAKPOINT;
   // The scroll freeze belongs to the menu alone: before it, the story stays
   // scrollable so a swipe on text pans instead of hijacking the word.
   const scrollEnabled = !menuOpen;
@@ -761,21 +765,23 @@ export function StoryReader({
           options={openOptions}
           x={gesture.anchorX - (viewOrigin?.x ?? 0)}
           y={gesture.anchorY - (viewOrigin?.y ?? 0)}
+          narrow={narrowOverlays}
           screenWidth={(screenSize ?? screen).width}
           screenHeight={(screenSize ?? screen).height}
           measure={measure}
           onRects={setMenuRects}
           onSelect={onMenuSelect}
+          onDismiss={closeMenu}
         />
       ) : null}
 
       {top ? (
         top.kind === "grammar" && topSpan ? (
-          <GrammarWindow span={topSpan} onClose={closeTopWindow} />
+          <GrammarWindow span={topSpan} narrow={narrowOverlays} onClose={closeTopWindow} />
         ) : topVocabLinked && topEntry ? (
           // The window is only pushed when the entry is already cached (see
           // runMenuOption), so this renders with real content, never a stub.
-          <DictionaryWindow entry={topEntry} onClose={closeTopWindow} />
+          <DictionaryWindow entry={topEntry} narrow={narrowOverlays} onClose={closeTopWindow} />
         ) : null
       ) : null}
 
@@ -785,6 +791,7 @@ export function StoryReader({
           defaultListId={lists.state.defaultListId}
           busy={saveBusy}
           error={sheetError}
+          narrow={narrowOverlays}
           onClose={() => {
             setSheetToken(null);
             setSheetError(null);

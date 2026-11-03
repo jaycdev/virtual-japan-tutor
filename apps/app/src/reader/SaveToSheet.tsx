@@ -1,9 +1,10 @@
 import type { ItemList } from "@vjt/api-client";
 import { X } from "lucide-react-native";
+import * as DialogPrimitives from "@rn-primitives/dialog";
 import { useState } from "react";
 import {
   KeyboardAvoidingView,
-  Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,16 +14,22 @@ import {
 } from "react-native";
 
 /**
- * The "Save to…" bottom sheet (issue #14): the mobile form of the web's
- * popover. It lists the Learner's Item Lists — the Default List marked —
- * and offers inline list creation, mirroring the web's create-then-save
- * flow: the save only follows a successful create.
+ * The "Save to…" sheet (issue #14): the mobile form of the web's popover. It
+ * lists the Learner's Item Lists — the Default List marked — and offers
+ * inline list creation, mirroring the web's create-then-save flow: the save
+ * only follows a successful create.
+ *
+ * Issue #45 review: it is an RN Primitives Dialog like the windows, not an RN
+ * Modal — bottom sheet on narrow screens, centred card on wide ones (the
+ * Reader passes `narrow` from the shell's OVERLAY_BREAKPOINT). ×, tap-outside,
+ * Escape and Android Back all arrive at `onClose` through the Root.
  */
 export function SaveToSheet({
   lists,
   defaultListId,
   busy,
   error,
+  narrow,
   onSaveToList,
   onCreateAndSave,
   onClose,
@@ -31,6 +38,7 @@ export function SaveToSheet({
   defaultListId: string | null;
   busy: boolean;
   error: string | null;
+  narrow: boolean;
   onSaveToList: (listId: string) => void;
   onCreateAndSave: (name: string) => void;
   onClose: () => void;
@@ -45,89 +53,133 @@ export function SaveToSheet({
   };
 
   return (
-    // onRequestClose covers Back inside the Android dialog (the Modal consumes
-    // the key press, so the reader's own Back listener never also pops the
-    // sheet); the reader keeps its sheetToken branch as a deliberate safety
-    // net for when the Modal path is unavailable — see StoryReader.useHardwareBack.
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      {/* KeyboardAvoidingView lifts the sheet — and the inline "New list
-          name" TextInput — above the on-screen keyboard (Android padding
-          behaviour). Manual checklist: open Save to… with the keyboard up
-          on a device and confirm the input and Create button stay visible. */}
-      <KeyboardAvoidingView style={styles.backdrop} className="bg-backdrop" behavior="padding">
-        <View style={styles.sheet} className="bg-card border-t border-border">
-          <View style={styles.head}>
-            <Text className="text-foreground" style={styles.title}>
-              Save to…
-            </Text>
-            <Pressable
-              testID="sheet-close"
-              accessibilityRole="button"
-              accessibilityLabel="Close"
-              onPress={onClose}
-              hitSlop={8}
-              style={styles.close}
-            >
-              <X size={20} strokeWidth={2.5} className="text-muted-foreground" />
-            </Pressable>
-          </View>
-          {error ? (
-            <Text accessibilityRole="alert" className="text-destructive" style={styles.error}>
-              Could not save — {error}
-            </Text>
-          ) : null}
-          <ScrollView style={styles.list}>
-            {lists.map((list) => (
-              <Pressable
-                key={list.id}
-                testID={`save-list-${list.id}`}
-                accessibilityRole="button"
-                disabled={busy}
-                onPress={() => onSaveToList(list.id)}
-                style={styles.listRow}
-                className="border-b border-border"
-              >
-                <Text className="text-foreground" style={styles.listName}>
-                  {list.name}
+    <DialogPrimitives.Root open onOpenChange={(open) => !open && onClose()}>
+      <DialogPrimitives.Portal>
+        <DialogPrimitives.Overlay style={styles.backdrop} className="bg-backdrop" />
+        <DialogPrimitives.Content
+          style={[styles.sheet, narrow ? styles.sheetNarrow : styles.sheetWide]}
+          className={narrow ? "bg-card border-t border-border" : "bg-card border border-border"}
+        >
+          {/* The Dialog leaves the soft keyboard to the platform (Android
+              resize), but the manual checklist still wants the inline "New list
+              name" TextInput clear of the keyboard, so the avoiding view keeps
+              it lifted inside the sheet. It sits inside the Content: the
+              primitives' enter/exit transition needs the Content to be the
+              Portal's direct child. */}
+          <KeyboardAvoidingView
+            style={styles.avoider}
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+          >
+            <View style={styles.head}>
+              <DialogPrimitives.Title asChild>
+                <Text className="text-foreground" style={styles.title}>
+                  Save to…
                 </Text>
-                {list.id === defaultListId ? <Text className="text-muted-foreground" style={styles.defaultTag}>default</Text> : null}
+              </DialogPrimitives.Title>
+              <Pressable
+                testID="sheet-close"
+                accessibilityRole="button"
+                accessibilityLabel="Close"
+                onPress={onClose}
+                hitSlop={8}
+                style={styles.close}
+              >
+                <X size={20} strokeWidth={2.5} className="text-muted-foreground" />
               </Pressable>
-            ))}
-          </ScrollView>
-          <View style={styles.create}>
-            <TextInput
-              value={name}
-              onChangeText={setName}
-              placeholder="New list name"
-              className="text-foreground placeholder:text-muted-foreground bg-background border border-border"
-              style={styles.input}
-            />
-            <Pressable
-              testID="create-list"
-              accessibilityRole="button"
-              accessibilityLabel="Create a new list and save"
-              disabled={busy || !name.trim()}
-              onPress={create}
-              style={styles.createButton}
-              className="bg-primary"
-            >
-              <Text className="text-primary-foreground" style={styles.createLabel}>
-                Create
+            </View>
+            <DialogPrimitives.Description asChild>
+              <Text className="text-muted-foreground" style={styles.subtitle}>
+                Save the word or pattern to one of your lists.
               </Text>
-            </Pressable>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+            </DialogPrimitives.Description>
+            {error ? (
+              <Text accessibilityRole="alert" className="text-destructive" style={styles.error}>
+                Could not save — {error}
+              </Text>
+            ) : null}
+            <ScrollView style={styles.list}>
+              {lists.map((list) => (
+                <Pressable
+                  key={list.id}
+                  testID={`save-list-${list.id}`}
+                  accessibilityRole="button"
+                  disabled={busy}
+                  onPress={() => onSaveToList(list.id)}
+                  style={styles.listRow}
+                  className="border-b border-border"
+                >
+                  <Text className="text-foreground" style={styles.listName}>
+                    {list.name}
+                  </Text>
+                  {list.id === defaultListId ? <Text className="text-muted-foreground" style={styles.defaultTag}>default</Text> : null}
+                </Pressable>
+              ))}
+            </ScrollView>
+            <View style={styles.create}>
+              <TextInput
+                value={name}
+                onChangeText={setName}
+                placeholder="New list name"
+                className="text-foreground placeholder:text-muted-foreground bg-background border border-border"
+                style={styles.input}
+              />
+              <Pressable
+                testID="create-list"
+                accessibilityRole="button"
+                accessibilityLabel="Create a new list and save"
+                disabled={busy || !name.trim()}
+                onPress={create}
+                style={styles.createButton}
+                className="bg-primary"
+              >
+                <Text className="text-primary-foreground" style={styles.createLabel}>
+                  Create
+                </Text>
+              </Pressable>
+            </View>
+          </KeyboardAvoidingView>
+        </DialogPrimitives.Content>
+      </DialogPrimitives.Portal>
+    </DialogPrimitives.Root>
   );
 }
 
+// The Dialog portals leave positioning entirely to these styles: bottom sheet
+// narrow, centred card wide (fixed on web, where the portal lands at the end
+// of <body>; absolute inside the native PortalHost).
+// The sheet renders inside the primitives' portal, whose web wrapper is a
+// full-viewport fixed div, so `absolute` fills the screen there and the reader
+// host on native.
+const positioned = { position: "absolute" as const };
+
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, justifyContent: "flex-end" },
-  sheet: { borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingTop: 8, paddingBottom: 18 },
+  backdrop: { ...positioned, top: 0, left: 0, right: 0, bottom: 0 },
+  // the sheet's own box: it grows with the keyboard padding the view adds
+  avoider: { paddingBottom: 0 },
+  sheet: { elevation: 12 },
+  sheetNarrow: {
+    ...positioned,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    paddingTop: 8,
+    paddingBottom: 18,
+  },
+  sheetWide: {
+    ...positioned,
+    top: "15%",
+    left: "25%",
+    right: "25%",
+    maxHeight: "70%",
+    paddingTop: 12,
+    paddingBottom: 18,
+  },
   head: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingBottom: 8 },
   title: { fontSize: 17, fontWeight: "600" },
   close: { marginLeft: "auto", width: 22, height: 22, alignItems: "center", justifyContent: "center" },
+  subtitle: { fontSize: 13, marginBottom: 8, paddingHorizontal: 16 },
   error: { fontSize: 14, marginBottom: 8, paddingHorizontal: 16 },
   list: { maxHeight: 260 },
   listRow: {
