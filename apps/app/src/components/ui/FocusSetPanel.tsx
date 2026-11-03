@@ -1,6 +1,6 @@
 import type { ApiClient, FocusSetItem } from "@vjt/api-client";
 import type { FocusSetView } from "@vjt/core";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 
 import { EmptyState, InlineError, SkeletonBar } from "../../state/states.tsx";
@@ -92,8 +92,8 @@ export function createFocusLabelResolver(client: ApiClient): FocusLabelResolver 
  * session) so "See all" never refetches the first eight chips and a Sync
  * refresh reuses the words it already knows. A failed lookup caches null and
  * stays the fallback - Retry on the focus set itself is what would try again.
- * The resolver is held in a ref so callers can pass an inline function without
- * restarting the lookup effect on every render.
+ * Callers pass a memoised resolver, so the lookup effect starts once per
+ * client and item set.
  */
 const labelCaches = new WeakMap<ApiClient, Map<string, Promise<FocusChipLabel>>>();
 
@@ -121,8 +121,6 @@ export function useFocusChipLabels(
   resolve: FocusLabelResolver,
 ): Record<string, FocusChipLabel | undefined> {
   const [labels, setLabels] = useState<Record<string, FocusChipLabel>>({});
-  const resolver = useRef(resolve);
-  resolver.current = resolve;
   useEffect(() => {
     let cache = labelCaches.get(client);
     if (!cache) {
@@ -134,14 +132,14 @@ export function useFocusChipLabels(
     for (const item of items) {
       if (item.kind === "kanji") continue;
       const key = chipKey(item);
-      void labelPromise(lookup, (i) => (resolver.current as FocusLabelResolver)(i), item).then((label) => {
+      void labelPromise(lookup, resolve, item).then((label) => {
         if (live) setLabels((prev) => ({ ...prev, [key]: label }));
       });
     }
     return () => {
       live = false;
     };
-  }, [client, items, resolver]);
+  }, [client, items, resolve]);
   return labels;
 }
 
@@ -162,7 +160,7 @@ export function FocusSetPanel({
   /** Cap on the chips shown before "See all" (the Today glance passes 8). */
   max?: number;
 }) {
-  const items = focus.items ?? [];
+  const items = useMemo(() => focus.items ?? [], [focus.items]);
   // The Focus Set arrives before the Learner chooses to open it, and screen
   // readers announce every chip the moment it does - dozens at a time on the
   // ~100-item sets real Learners have (#46 review P8). Only the first `max` are
@@ -170,11 +168,23 @@ export function FocusSetPanel({
   // screen reader.
   const [expanded, setExpanded] = useState(false);
   const cap = Math.max(1, max);
-  const shown = expanded ? items : items.slice(0, cap);
+  // The resolver is memoised so the label effect keys on a stable function:
+  // an inline default would restart the (already cached) lookup on every
+  // render (issue #47 review B1, lint react-hooks/refs).
+  const resolve = useMemo(
+    () => resolveLabel ?? createFocusLabelResolver(client),
+    [resolveLabel, client],
+  );
+  // shown is derived, so it only changes when the set or the cap does; that is
+  // what the label hook watches.
+  const shown = useMemo(
+    () => (expanded ? items : items.slice(0, cap)),
+    [expanded, items, cap],
+  );
   // The button only appears, and the status line only matters, when there is
   // more behind the cap than is on screen.
   const hidden = Math.max(0, items.length - shown.length);
-  const labels = useFocusChipLabels(client, shown, resolveLabel ?? createFocusLabelResolver(client));
+  const labels = useFocusChipLabels(client, shown, resolve);
   return (
     <View className="gap-3">
       <Text

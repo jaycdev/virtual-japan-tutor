@@ -11,16 +11,11 @@ import {
   type TodaysStoryState,
 } from "@vjt/core";
 import { CONTENT_MAX_WIDTH, SIDEBAR_BREAKPOINT } from "./chrome/Shell.tsx";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 
 import { Card } from "./components/ui/Card.tsx";
-import {
-  createFocusLabelResolver,
-  FocusSetPanel,
-  FOCUS_CHIPS_MAX,
-  type FocusLabelResolver,
-} from "./components/ui/FocusSetPanel.tsx";
+import { createFocusLabelResolver, FocusSetPanel, FOCUS_CHIPS_MAX } from "./components/ui/FocusSetPanel.tsx";
 import { EmptyState, InlineError, ProgressBar, SkeletonBar } from "./state/states.tsx";
 
 /**
@@ -72,9 +67,8 @@ export function Today({
   const timezone = learnerSettings.status === "ready" ? learnerSettings.settings.timezone : undefined;
 
   // Chip labels for the Focus Set glance (issue #47 review B1): created once
-  // per screen so the panel's lookup cache keys stay stable across renders.
-  const resolveChipLabel = useRef<FocusLabelResolver | undefined>(undefined);
-  if (!resolveChipLabel.current) resolveChipLabel.current = createFocusLabelResolver(client);
+  // per client so the panel's lookup cache keys stay stable across renders.
+  const resolveChipLabel = useMemo(() => createFocusLabelResolver(client), [client]);
 
   // A run that finishes while the Learner is looking at Today lands in the
   // card without a reload. Only the transition counts: the server keeps the
@@ -119,7 +113,7 @@ export function Today({
           <FocusSetPanel
             focus={focus}
             client={client}
-            resolveLabel={resolveChipLabel.current}
+            resolveLabel={resolveChipLabel}
             max={FOCUS_CHIPS_MAX}
             onOpenWordLists={onOpenWordLists}
           />
