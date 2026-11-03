@@ -766,6 +766,7 @@ function StoryReader({ view, client }: { view: StoryView; client: ApiClient }) {
                       token={tok}
                       span={coveringSpan(sen, tok)}
                       lists={lists}
+                      onDismiss={() => setMenu(null)}
                       onSave={(listId, name) => {
                         const sp = coveringSpan(sen, tok);
                         if (tok.entSeq !== undefined)
@@ -1064,6 +1065,7 @@ function TokenMenu({
   onSave,
   onDictionary,
   onGrammar,
+  onDismiss,
 }: {
   token: StoryToken;
   span: StoryGrammarSpan | null;
@@ -1072,6 +1074,8 @@ function TokenMenu({
   onSave: (listId: string | null, name?: string) => void;
   onDictionary: () => void;
   onGrammar: () => void;
+  /** The Learner pressed somewhere outside the menu and its token. */
+  onDismiss: () => void;
 }) {
   const [picking, setPicking] = useState(false);
   const [newName, setNewName] = useState("");
@@ -1080,6 +1084,24 @@ function TokenMenu({
   useEffect(() => {
     const first = rootRef.current?.querySelector<HTMLButtonElement>("[role=menuitem]:not([disabled])");
     first?.focus();
+  }, []);
+
+  // A press anywhere outside closes the menu. The menu's own token wrapper
+  // (token button + menu) is exempt: pressing the token must stay a toggle
+  // handled by its click, or the click that follows would reopen the menu.
+  // Pressing a different token does close this one, and its click opens that
+  // token's menu. Focus is deliberately not pulled back to the token — the
+  // Learner pointed elsewhere.
+  const dismissRef = useRef(onDismiss);
+  dismissRef.current = onDismiss;
+  useEffect(() => {
+    const onPress = (e: Event) => {
+      const wrap = rootRef.current?.parentElement;
+      if (wrap && e.target instanceof Node && wrap.contains(e.target)) return;
+      dismissRef.current();
+    };
+    document.addEventListener("pointerdown", onPress);
+    return () => document.removeEventListener("pointerdown", onPress);
   }, []);
 
   const ready = lists.state.status === "ready";

@@ -1095,6 +1095,39 @@ describe("Word menu and windows", () => {
     expect(within(win).getByText(/shop; store/)).toBeTruthy();
   });
 
+  it("pressing outside the open menu closes it; pressing inside it or on its own token does not", async () => {
+    const { client } = fakeApi();
+    await openStory(client);
+
+    const word = tokenButton("がっこう");
+    fireEvent.click(word);
+    const menu = screen.getByRole("menu");
+
+    // Inside the menu: stays open.
+    fireEvent.pointerDown(within(menu).getByRole("menuitem", { name: "Dictionary" }));
+    expect(screen.queryByRole("menu")).toBeTruthy();
+    // On the menu's own token: stays open, so the click that follows toggles
+    // it shut (a close-on-press here would let that click reopen it).
+    fireEvent.pointerDown(word);
+    expect(screen.queryByRole("menu")).toBeTruthy();
+    fireEvent.click(word);
+    expect(screen.queryByRole("menu")).toBeNull();
+
+    // Anywhere else on the page: closes.
+    fireEvent.click(word);
+    expect(screen.queryByRole("menu")).toBeTruthy();
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole("menu")).toBeNull();
+
+    // Pressing another word closes the first menu and its click opens the new one.
+    fireEvent.click(word);
+    const other = tokenButton("みせ");
+    fireEvent.pointerDown(other);
+    fireEvent.click(other);
+    expect(screen.getAllByRole("menu")).toHaveLength(1);
+    expect(other.parentElement?.contains(screen.getByRole("menu"))).toBe(true);
+  });
+
   it("Enter opens the menu focused on its first item; Escape closes just the menu", async () => {
     const { client } = fakeApi();
     await openStory(client);
