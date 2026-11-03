@@ -9,8 +9,9 @@ import { type MeasurableNode, type TokenRef } from "./holdMenu.ts";
  * The story body (issues #14, #45): centred serif text in a column 40
  * characters wide, sized by the saved Story text size. Marks follow the ticket:
  *   Known Item          → no mark at all
- *   lookup-marked word  → its own underline element (class `border-lookup-mark`)
- *   Grammar Span        → a highlighter background, stronger for Focus Spans
+ *   lookup-marked word  → its own underline element (class `border-lookup-mark`):
+ *                         a View border, so it paints on Android as on web
+ *   Grammar Span        → a rounded highlighter background, stronger for Focus Spans
  *   selected token      → the selected-token background
  *
  * Layout is a token column, identically on BOTH platforms (issue #45 review,
@@ -91,7 +92,12 @@ export function tokenMarkClasses(
   const classes: string[] = [];
   if (selected) classes.push("bg-selected-sentence");
   const covered = spans.filter((sp) => token.start < sp.end && sp.start < token.end);
-  if (covered.length > 0) classes.push(covered.some((sp) => sp.isFocus) ? "bg-grammar-focus" : "bg-grammar");
+  if (covered.length > 0) {
+    // The highlighter swipe is rounded (review on #45): a square block of
+    // colour around a word reads as a table cell, not a mark. The radius rides
+    // with the colour so a mark can never arrive without its shape.
+    classes.push(covered.some((sp) => sp.isFocus) ? "bg-grammar-focus rounded-sm" : "bg-grammar rounded-sm");
+  }
   if (isLookupMarked(token)) classes.push("border-lookup-mark");
   return classes;
 }

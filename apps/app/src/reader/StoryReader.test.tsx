@@ -1022,12 +1022,29 @@ describe("Reading Panel placement, modes and scroll lock (review fixes)", () => 
     expect(hasClass("token-0-0", "bg-grammar-focus")).toBe(false);
     expect(hasClass("token-0-0", "border-lookup-mark")).toBe(false);
 
-    // An entry that is not Known: the 1px dotted underline element.
+    // An entry that is not Known: the 1px dotted underline element. It is an
+    // element of its own below the word, with a real bottom border — a View
+    // border paints on Android, where a text decoration on nested Text does not.
     expect(hasClass("token-1-0", "border-lookup-mark")).toBe(true);
+    const column = screen.getByTestId("token-1-0");
+    // The underline is an element of its own, below the word: an empty box, so
+    // the mark never travels as a text decoration (which Android drops). Its
+    // 1px dotted border comes from the style prop (RNW paints it as a rule),
+    // and its colour class rides the element's props for both platforms.
+    const underline = column.lastElementChild as HTMLElement;
+    expect(underline.textContent).toBe("");
+    expect(cssValue(underline, "r-borderBottomWidth", "border-bottom-width")).toBe("1px");
+    const dotted =
+      cssValue(underline, "r-borderStyle", "border-bottom-style") || cssValue(underline, "r-borderStyle", "border-style");
+    expect(dotted).toBe("dotted");
+    expect(fiberClassTokens(underline).includes("border-lookup-mark")).toBe(true);
 
-    // Grammar Spans: the highlighter background, stronger for Focus Set spans.
+    // Grammar Spans: the rounded highlighter background, stronger for Focus Set
+    // spans — the radius belongs to the mark, so it can never be square.
     expect(hasClass("token-1-1", "bg-grammar")).toBe(true);
+    expect(hasClass("token-1-1", "rounded-sm")).toBe(true);
     expect(hasClass("token-0-3", "bg-grammar-focus")).toBe(true);
+    expect(hasClass("token-0-3", "rounded-sm")).toBe(true);
 
     // Furigana rides above the word in its own colour.
     expect(screen.getByTestId("furigana-1-2")).toBeTruthy();
