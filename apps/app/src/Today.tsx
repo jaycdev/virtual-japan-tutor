@@ -92,10 +92,11 @@ export function Today({
               onReloadToday={reloadToday}
               onOpenStory={onOpenStory}
               onOpenStories={onOpenStories}
+              fill={wide}
             />
           </View>
           <View className={wide ? "flex-1" : undefined}>
-            <PracticeCard focus={focus} onOpenPractice={onOpenPractice} />
+            <PracticeCard focus={focus} onOpenPractice={onOpenPractice} fill={wide} />
           </View>
         </View>
 
@@ -113,10 +114,27 @@ export function Today({
   );
 }
 
-/** Card shell shared by the sections (the same shape Practice's card uses). */
-function Card({ children, testID }: { children: ReactNode; testID?: string }) {
+/**
+ * Card shell shared by the sections (the same shape Practice's card uses).
+ * `fill` asks for full parent height, for cards that sit side by side in the
+ * stretched wide row so their edges line up. It must stay off in the stacked
+ * narrow layout: a percentage height inside ScrollView content has no definite
+ * parent on native and the card grows instead of sizing to its content.
+ */
+function Card({
+  children,
+  testID,
+  fill = false,
+}: {
+  children: ReactNode;
+  testID?: string;
+  fill?: boolean;
+}) {
   return (
-    <View testID={testID} className="h-full gap-3 rounded-lg border border-border bg-card p-5">
+    <View
+      testID={testID}
+      className={`${fill ? "h-full " : ""}gap-3 rounded-lg border border-border bg-card p-5`}
+    >
       {children}
     </View>
   );
@@ -233,16 +251,18 @@ function TodayStoryCard({
   onReloadToday,
   onOpenStory,
   onOpenStories,
+  fill,
 }: {
   today: TodaysStoryState;
   generation: StoryGenerationState;
   onReloadToday: () => void;
   onOpenStory: (storyId: string) => void;
   onOpenStories: () => void;
+  fill: boolean;
 }) {
   const running = generation.status === "running" ? generation.progress : undefined;
   return (
-    <Card testID="today-story-card">
+    <Card testID="today-story-card" fill={fill}>
       <Text className="text-title-sm font-semibold text-foreground">Today’s story</Text>
 
       {today.status === "loading" ? (
@@ -327,10 +347,18 @@ function stageLabel(progress: StoryGenerationProgress): string {
  * The Practice call to action (plan 4.4 item 3): how many Focus Set items are
  * waiting, and one Start button.
  */
-function PracticeCard({ focus, onOpenPractice }: { focus: FocusSetView; onOpenPractice: () => void }) {
+function PracticeCard({
+  focus,
+  onOpenPractice,
+  fill,
+}: {
+  focus: FocusSetView;
+  onOpenPractice: () => void;
+  fill: boolean;
+}) {
   const items = focus.items;
   return (
-    <Card testID="today-practice-card">
+    <Card testID="today-practice-card" fill={fill}>
       <Text className="text-title-sm font-semibold text-foreground">Practice</Text>
       {focus.loading && items === null ? (
         <Skeleton lines={2} lineHeight={24} />
