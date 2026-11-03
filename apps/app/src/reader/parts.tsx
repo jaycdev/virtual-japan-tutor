@@ -46,7 +46,8 @@ export function RatingButtons({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityState={{ selected: rating === value }}
+      accessibilityState={{ selected: rating === value, disabled: view.pending }}
+      disabled={view.pending}
       onPress={() => void view.rate(storyId, value)}
       className={rating === value ? "bg-card border-pitch" : undefined}
       style={styles.thumb}

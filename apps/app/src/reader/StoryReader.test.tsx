@@ -484,6 +484,11 @@ describe("Story reader layout and Story text size (issue #45)", () => {
       expect(requests.some((r) => r.method === "DELETE" && r.path === "/stories/st-1/read")).toBe(true),
     );
 
+    // Ratings are disabled while a save is in flight (the `view.pending` guard), so
+    // wait for the unmark to finish before pressing the thumb.
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Rate up" }).getAttribute("aria-disabled")).not.toBe("true"),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Rate up" }));
     await waitFor(() =>
       expect(requests.find((r) => r.path === "/stories/st-1/rate")?.body).toBe("up"),
