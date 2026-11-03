@@ -318,12 +318,14 @@ function OptionButton({
 }) {
   const border =
     state === "correct" ? "border-success" : state === "wrong" ? "border-destructive" : "border-border";
+  // P1: option text sits at the body step (16/24) — title-sized options made
+  // the card louder than the prompt it answers.
   const text =
     state === "correct"
-      ? "text-title text-success"
+      ? "text-body text-success"
       : state === "wrong"
-        ? "text-title text-destructive"
-        : "text-title text-foreground";
+        ? "text-body text-destructive"
+        : "text-body text-foreground";
   return (
     <Pressable
       accessibilityRole="button"
