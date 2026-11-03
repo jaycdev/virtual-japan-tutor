@@ -1,7 +1,8 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { Today, cardFillClass, formatInstant, learnerClock } from './Today.tsx';
+import { Today, formatInstant, learnerClock } from './Today.tsx';
+import { cardFillClass } from './components/ui/Card.tsx';
 import { createApiClient } from '@vjt/api-client';
 
 /**

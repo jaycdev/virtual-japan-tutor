@@ -11,9 +11,10 @@ import {
   type TodaysStoryState,
 } from "@vjt/core";
 import { SIDEBAR_BREAKPOINT } from "./chrome/Shell.tsx";
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Pressable, Platform, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 
+import { Card } from "./components/ui/Card.tsx";
 import { FocusSetPanel, FOCUS_CHIPS_MAX } from "./components/ui/FocusSetPanel.tsx";
 import { EmptyState, InlineError, ProgressBar, Skeleton } from "./state/states.tsx";
 
@@ -111,39 +112,6 @@ export function Today({
         />
       </View>
     </ScrollView>
-  );
-}
-
-/**
- * Card shell shared by the sections (the same shape Practice's card uses).
- * `fill` makes the card as tall as its row, for cards that sit side by side in
- * the stretched wide row so their edges line up. It must stay off in the
- * stacked narrow layout, and percentage heights stay off on native entirely:
- * ScrollView content has no definite height there, and a 100% card balloons to
- * the viewport. Native instead grows with the row's own cross-axis stretch
- * (`flex-1` inside a wrapper the row has already stretched).
- */
-export function cardFillClass(fill: boolean, os: string): string {
-  if (!fill) return "";
-  return os === "web" ? "h-full " : "flex-1 ";
-}
-
-function Card({
-  children,
-  testID,
-  fill = false,
-}: {
-  children: ReactNode;
-  testID?: string;
-  fill?: boolean;
-}) {
-  return (
-    <View
-      testID={testID}
-      className={`${cardFillClass(fill, Platform.OS)}gap-3 rounded-lg border border-border bg-card p-5`}
-    >
-      {children}
-    </View>
   );
 }
 
