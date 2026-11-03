@@ -40,7 +40,16 @@ export function practiceSeedForStory(storyId: string): number {
   return hash;
 }
 
-export function Practice({ client, seed }: { client: ApiClient; seed?: number }) {
+export function Practice({
+  client,
+  seed,
+  onOpenWordLists,
+}: {
+  client: ApiClient;
+  seed?: number;
+  /** Empty-state action: take the Learner to their word lists. */
+  onOpenWordLists?: () => void;
+}) {
   const practice = usePractice(client);
   // The exercise on screen. It stays up after answering so the Learner sees
   // what was right — even after the last answer flips the session to done;
@@ -127,6 +136,10 @@ export function Practice({ client, seed }: { client: ApiClient; seed?: number })
                 onRetry={() => retryActive(shown.id)}
                 onAnswer={() => undefined}
               />
+            ) : practice.exercises.length === 0 ? (
+              // A "complete" session of nothing would otherwise read as a
+              // 0-of-0 score the Learner never played (#46 review).
+              <NothingToPractise onOpenWordLists={onOpenWordLists} />
             ) : (
               <PracticeResults practice={practice} onAgain={() => startSession(sessionSeed.current)} />
             );
@@ -146,6 +159,10 @@ export function Practice({ client, seed }: { client: ApiClient; seed?: number })
                   void practice.answer(exerciseId, optionId);
                 }}
               />
+            ) : practice.exercises.length === 0 ? (
+              // The Focus Set had nothing to build from: not a stuck session,
+              // a state with one clear next step (#46 review).
+              <NothingToPractise onOpenWordLists={onOpenWordLists} />
             ) : (
               <Text className="text-body text-muted-foreground">The next exercise is on its way…</Text>
             );
@@ -185,6 +202,19 @@ function StartingCard() {
     <Card>
       <Text className="text-body text-muted-foreground">Building your session from the Focus Set…</Text>
       <Skeleton lines={4} lineHeight={24} />
+    </Card>
+  );
+}
+
+/** The Focus Set has no practisable content: one line, one way forward. */
+function NothingToPractise({ onOpenWordLists }: { onOpenWordLists?: () => void }) {
+  return (
+    <Card>
+      <EmptyState
+        message="Nothing in your Focus Set to practise yet"
+        actionLabel="Open your word lists"
+        onAction={onOpenWordLists}
+      />
     </Card>
   );
 }

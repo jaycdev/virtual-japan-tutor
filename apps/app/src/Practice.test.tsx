@@ -239,6 +239,56 @@ describe('mobile Practice', () => {
     expect(screen.getByText('kanji')).toBeTruthy();
   });
 
+  it('an empty Focus Set gets one clear next step, not a stuck session', async () => {
+    fetchMock.mockImplementationOnce(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init);
+      posts.push({ path: new URL(request.url).pathname, body: await request.json() });
+      return jsonResponse({ id: 'practice-1', state: 'active', targetSize: 0, skipped: 0, exercises: [] });
+    });
+    const openLists = vi.fn();
+    const client = createApiClient({
+      baseUrl: 'http://localhost',
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+    render(<Practice client={client} onOpenWordLists={openLists} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start a practice session' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Nothing in your Focus Set to practise yet')).toBeTruthy();
+    });
+    expect(screen.queryByText(/Exercise \d of/)).toBeNull();
+    expect(screen.queryByText('The next exercise is on its way…')).toBeNull();
+    // One action, and it goes somewhere useful.
+    expect(screen.getAllByRole('button')).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Open your word lists' }));
+    expect(openLists).toHaveBeenCalledTimes(1);
+  });
+
+  it('a completed session with no exercises shows the empty state, not a 0-of-0 card', async () => {
+    fetchMock.mockImplementationOnce(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init);
+      posts.push({ path: new URL(request.url).pathname, body: await request.json() });
+      return jsonResponse({
+        id: 'practice-1',
+        state: 'complete',
+        targetSize: 0,
+        skipped: 0,
+        exercises: [],
+        results: { correct: 0, total: 0, items: [] },
+      });
+    });
+    renderPractice();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start a practice session' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Nothing in your Focus Set to practise yet')).toBeTruthy();
+    });
+    expect(screen.queryByText(/Session complete/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Practice again' })).toBeNull();
+  });
+
   it('deep-linked from a Story: starts on arrival, seeded from the Story id', async () => {
     const seed = practiceSeedForStory('st-1');
     const client = createApiClient({

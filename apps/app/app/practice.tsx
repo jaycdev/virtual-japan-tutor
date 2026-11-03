@@ -1,4 +1,4 @@
-import { useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 
 import { Practice, practiceSeedForStory } from "../src/Practice.tsx";
 import { useSession } from "../src/session.tsx";
@@ -20,6 +20,7 @@ export default function PracticeRoute() {
     <Practice
       client={client}
       seed={storyId === undefined ? undefined : practiceSeedForStory(storyId)}
+      onOpenWordLists={() => router.push("/settings/lists")}
     />
   );
 }
