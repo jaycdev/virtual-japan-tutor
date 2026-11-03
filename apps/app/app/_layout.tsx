@@ -1,3 +1,11 @@
+// The design source must be imported for the PRODUCTION web build: uniwind's
+// Metro patch adds global.css to the graph automatically only in dev (see
+// uniwind metro/index.cjs, initialTraverseDependencies), so `expo export -p web`
+// without this import ships no Tailwind CSS and the web app renders unstyled.
+// Same pattern as showcase/index.tsx; a no-op on native, where className is
+// compiled to styles.
+import "../global.css";
+
 import { Slot } from "expo-router";
 
 import App from "../App";
