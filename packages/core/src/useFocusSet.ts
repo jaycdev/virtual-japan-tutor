@@ -33,7 +33,8 @@ export function useFocusSet(client: ApiClient): FocusSetView {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
+    // No setLoading(true) here (react-hooks/set-state-in-effect): the initial
+    // state is already loading, and a retry flips the flag in retry() itself.
     void (async () => {
       try {
         const { data, error: err, response } = await client.GET("/focus-set");
@@ -54,7 +55,10 @@ export function useFocusSet(client: ApiClient): FocusSetView {
     };
   }, [client, attempt]);
 
-  const retry = useCallback(() => setAttempt((n) => n + 1), []);
+  const retry = useCallback(() => {
+    setLoading(true);
+    setAttempt((n) => n + 1);
+  }, []);
 
   return { loading, error, items, size, retry };
 }
