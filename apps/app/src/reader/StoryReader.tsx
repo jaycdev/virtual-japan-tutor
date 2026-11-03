@@ -1,6 +1,5 @@
 import type { ApiClient, Story, WeakSignalRequest } from "@vjt/api-client";
 import { type StoryView, useReadingSettings, useItemLists } from "@vjt/core";
-import { ChevronLeft, ChevronRight } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import {
   Platform,
@@ -14,7 +13,8 @@ import {
 } from "react-native";
 
 import { useHardwareBack } from "../useHardwareBack.ts";
-import { OVERLAY_BREAKPOINT } from "../chrome/Shell.tsx";
+import { SIDEBAR_BREAKPOINT, OVERLAY_BREAKPOINT } from "../chrome/Shell.tsx";
+import { Icon } from "../components/ui/icon";
 import { useStoryTextSize } from "../storysize/index.tsx";
 import { RatingButtons } from "./parts.tsx";
 import { ReadingPanel, type LookedTarget } from "./ReadingPanel.tsx";
@@ -212,6 +212,10 @@ export function StoryReader({
   // Wide or narrow decides the overlay FORM (anchored popover / centred card
   // vs bottom sheet) — the shell's breakpoint, never an ad-hoc number here.
   const narrowOverlays = (screenSize ?? screen).width < OVERLAY_BREAKPOINT;
+  // The footer drops its button labels below the shell's phone breakpoint: at
+  // 400dp nine actions with text do not fit on one row, and half-wrapped labels
+  // are worse than icons with the same accessibility labels.
+  const narrowFooter = (screenSize ?? screen).width < SIDEBAR_BREAKPOINT;
   // The scroll freeze belongs to the menu alone: before it, the story stays
   // scrollable so a swipe on text pans instead of hijacking the word.
   const scrollEnabled = !menuOpen;
@@ -580,9 +584,9 @@ export function StoryReader({
             onPress={onBack}
             style={styles.backButton}
           >
-            <ChevronLeft size={26} strokeWidth={2.5} className="text-primary" />
+            <Icon name="chevron-left" size="lg" strokeWidth={2.5} className="text-primary" />
           </Pressable>
-          <Text className="text-foreground" style={styles.headerTitle} numberOfLines={1}>
+          <Text className="text-body text-foreground" style={styles.headerTitle} numberOfLines={1}>
             {story.title}
           </Text>
         </View>
@@ -600,7 +604,7 @@ export function StoryReader({
                   web dims it with a real blur, Android — which has no filter
                   — paints it transparent. */}
               <Text
-                className="text-muted-foreground"
+                className="text-small text-muted-foreground"
                 style={
                   titleEnRevealed
                     ? styles.titleEn
@@ -613,17 +617,17 @@ export function StoryReader({
                 {story.titleEn}
               </Text>
               {titleEnRevealed ? null : (
-                <Text className="text-muted-foreground" style={{ fontSize: 11 }}>
+                <Text className="text-caption text-muted-foreground">
                   Title translation hidden — tap to show
                 </Text>
               )}
             </Pressable>
           ) : null}
-          <Text className="text-muted-foreground" style={{ fontSize: 12 }} numberOfLines={1}>
+          <Text className="text-caption text-muted-foreground" numberOfLines={1}>
             {`${story.genre} · ${story.origin === "on_demand" ? "On demand" : "Automatic"} · ${new Date(story.createdAt).toDateString()}`}
           </Text>
           {saveNote ? (
-            <Text testID="save-note" className="text-muted-foreground" style={{ fontSize: 13 }} numberOfLines={1}>
+            <Text testID="save-note" className="text-small text-muted-foreground" numberOfLines={1}>
               {saveNote}
             </Text>
           ) : null}
@@ -669,12 +673,12 @@ export function StoryReader({
         </View>
         {view.questions.length > 0 ? (
           <View style={styles.questions}>
-            <Text className="text-muted-foreground" style={{ fontSize: 13, fontWeight: "600", marginBottom: 6 }}>
+            <Text className="text-small text-muted-foreground" style={styles.questionHeading}>
               COMPREHENSION
             </Text>
             {view.questions.map((q) => (
               <View key={q.position} style={styles.question}>
-                <Text className="text-foreground" style={{ fontSize: 16 }}>
+                <Text className="text-body text-foreground">
                   {q.promptJa}
                 </Text>
                 <View style={styles.options}>
@@ -689,14 +693,14 @@ export function StoryReader({
                       style={styles.optionButton}
                       className="border-border bg-card"
                     >
-                      <Text className="text-foreground" style={{ fontSize: 15 }}>
+                      <Text className="text-body text-foreground">
                         {option}
                       </Text>
                     </Pressable>
                   ))}
                 </View>
                 {q.result ? (
-                  <Text className={q.result.correct ? "text-primary" : "text-destructive"} style={{ fontSize: 14 }}>
+                  <Text className={q.result.correct ? "text-small text-primary" : "text-small text-destructive"}>
                     {q.result.correct ? "Correct." : "Not quite — the answer is above your selection."}
                   </Text>
                 ) : null}
@@ -709,44 +713,49 @@ export function StoryReader({
       {/* The Story's own actions live in a footer bar (issue #45 — out of the
           header, where they crowded the title). */}
       <View style={styles.footer} className="border-t border-border bg-card">
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Previous story"
-          accessibilityState={{ disabled: positionInLibrary <= 0 }}
-          disabled={positionInLibrary <= 0}
-          onPress={() => navTo(-1)}
-          style={styles.footerButton}
-        >
-          <ChevronLeft size={18} strokeWidth={2.5} className="text-muted-foreground" />
-          <Text className="text-muted-foreground" style={{ fontSize: 13 }}>
-            Previous
-          </Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Next story"
-          accessibilityState={{ disabled: positionInLibrary < 0 || positionInLibrary >= libraryItems.length - 1 }}
-          disabled={positionInLibrary < 0 || positionInLibrary >= libraryItems.length - 1}
-          onPress={() => navTo(1)}
-          style={styles.footerButton}
-        >
-          <Text className="text-muted-foreground" style={{ fontSize: 13 }}>
-            Next
-          </Text>
-          <ChevronRight size={18} strokeWidth={2.5} className="text-muted-foreground" />
-        </Pressable>
+        {/* Groups, not nine loose buttons: when the row has to wrap on a phone it
+            wraps between nav / status / Practice, never inside a button. Below
+            SIDEBAR_BREAKPOINT the nav buttons are icon-only — same accessibility
+            labels, and the row fits one line at 400dp. */}
+        <View style={styles.footerGroup}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Previous story"
+            accessibilityState={{ disabled: positionInLibrary <= 0 }}
+            disabled={positionInLibrary <= 0}
+            onPress={() => navTo(-1)}
+            style={styles.footerButton}
+          >
+            <Icon name="chevron-left" size="sm" strokeWidth={2.5} className="text-muted-foreground" />
+            {narrowFooter ? null : <Text className="text-small text-muted-foreground">Previous</Text>}
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Next story"
+            accessibilityState={{ disabled: positionInLibrary < 0 || positionInLibrary >= libraryItems.length - 1 }}
+            disabled={positionInLibrary < 0 || positionInLibrary >= libraryItems.length - 1}
+            onPress={() => navTo(1)}
+            style={styles.footerButton}
+          >
+            {narrowFooter ? null : <Text className="text-small text-muted-foreground">Next</Text>}
+            <Icon name="chevron-right" size="sm" strokeWidth={2.5} className="text-muted-foreground" />
+          </Pressable>
+        </View>
         <View style={styles.footerSpacer} />
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={story.readAt != null ? "Unmark read" : "Mark read"}
-          onPress={() => void (story.readAt != null ? view.clearRead(story.id) : view.setRead(story.id))}
-          style={styles.footerButton}
-        >
-          <Text className={story.readAt != null ? "text-primary" : "text-muted-foreground"} style={{ fontSize: 13 }}>
-            {story.readAt != null ? "Read ✓" : "Read"}
-          </Text>
-        </Pressable>
-        <RatingButtons view={view} storyId={story.id} rating={story.rating} />
+        <View style={styles.footerGroup}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={story.readAt != null ? "Unmark read" : "Mark read"}
+            onPress={() => void (story.readAt != null ? view.clearRead(story.id) : view.setRead(story.id))}
+            style={styles.footerButton}
+          >
+            {story.readAt != null ? <Icon name="check" size="sm" className="text-primary" /> : null}
+            <Text className={story.readAt != null ? "text-small text-primary" : "text-small text-muted-foreground"}>
+              Read
+            </Text>
+          </Pressable>
+          <RatingButtons view={view} storyId={story.id} rating={story.rating} />
+        </View>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Practice this Story"
@@ -754,9 +763,7 @@ export function StoryReader({
           style={styles.footerButton}
           className="bg-primary"
         >
-          <Text className="text-primary-foreground" style={{ fontSize: 13 }}>
-            Practice
-          </Text>
+          <Text className="text-small text-primary-foreground">Practice</Text>
         </Pressable>
       </View>
 
@@ -849,9 +856,10 @@ const styles = StyleSheet.create({
   },
   headerMeta: { flexDirection: "row", alignItems: "center", gap: 12, flexWrap: "wrap" },
   backButton: { paddingVertical: 10, paddingRight: 8 },
-  headerTitle: { flex: 1, fontSize: 16, fontWeight: "600" },
+  headerTitle: { flex: 1, fontWeight: "600" },
   titleTranslation: { paddingVertical: 2 },
-  titleEn: { fontSize: 13 },
+  titleEn: {},
+  questionHeading: { fontWeight: "600", marginBottom: 6 },
   column: { alignSelf: "center", maxWidth: "100%" },
   questions: { marginTop: 20, paddingTop: 12 },
   question: { marginBottom: 16, gap: 6 },
@@ -860,18 +868,26 @@ const styles = StyleSheet.create({
   footer: {
     flexDirection: "row",
     alignItems: "center",
-    flexWrap: "wrap", // narrow phones: the labelled buttons wrap instead of clipping
+    flexWrap: "wrap", // narrow phones: the groups wrap instead of clipping
     gap: 8,
     paddingHorizontal: 12,
     paddingVertical: 6,
+  },
+  footerGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flexShrink: 0, // a group moves to the next line whole, or not at all
   },
   footerButton: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
     minHeight: 44,
+    minWidth: 44,
     paddingHorizontal: 8,
     borderRadius: 8,
+    flexShrink: 0,
   },
-  footerSpacer: { flex: 1 },
+  footerSpacer: { flex: 1, minWidth: 4 },
 });
