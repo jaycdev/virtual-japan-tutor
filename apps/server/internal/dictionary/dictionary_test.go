@@ -130,6 +130,18 @@ func TestChooseHeadwordAndReading(t *testing.T) {
 	if got := chooseHeadword(kana, "ねこ"); got != "ねこ" {
 		t.Errorf("kana-only headword = %q, want the first reading", got)
 	}
+
+	soko := refdata.Vocabulary{JMdictEntry: refdata.JMdictEntry{
+		Kanji:    []refdata.JMdictKanji{{Text: "其処"}},
+		Readings: []refdata.JMdictReading{{Text: "そこ"}},
+		Senses:   []refdata.JMdictSense{{Misc: []string{"uk"}, Glosses: []string{"there"}}},
+	}}
+	if got := chooseHeadword(soko, "そこ"); got != "そこ" {
+		t.Errorf("usually-kana headword for the tapped kana = %q, want そこ", got)
+	}
+	if got := chooseHeadword(soko, "其処"); got != "其処" {
+		t.Errorf("tapped kanji form = %q, want it echoed back", got)
+	}
 }
 
 // --- Entry's scoring gate ---------------------------------------------------

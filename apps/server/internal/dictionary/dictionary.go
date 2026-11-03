@@ -233,11 +233,8 @@ func chooseHeadword(v refdata.Vocabulary, surface string) string {
 			return surface
 		}
 	}
-	if len(v.Kanji) > 0 {
-		return v.Kanji[0].Text
-	}
-	if len(v.Readings) > 0 {
-		return v.Readings[0].Text
+	if h := v.Headword(); h != "" {
+		return h
 	}
 	return surface
 }

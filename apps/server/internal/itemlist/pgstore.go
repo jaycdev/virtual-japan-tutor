@@ -8,6 +8,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/refdata"
 )
 
 // PostgresStore implements Store over item_lists, item_list_items and the
@@ -189,6 +191,7 @@ func (s *PostgresStore) RemoveItem(ctx context.Context, userID, listID uuid.UUID
 // finally to the raw ref. Rows are few (the endpoint caps at 500), so the
 // refs are cast to text for the join rather than indexed.
 func (s *PostgresStore) ListItems(ctx context.Context, userID, listID uuid.UUID, limit int) ([]Member, error) {
+	headword := refdata.HeadwordSQL(func(a string) string { return a + ".ent_seq::text = m.item_ref" })
 	rows, err := s.pool.Query(ctx,
 		`SELECT m.item_kind, m.item_ref,
 		        CASE m.item_kind
@@ -196,8 +199,7 @@ func (s *PostgresStore) ListItems(ctx context.Context, userID, listID uuid.UUID,
 		            (SELECT g.pattern FROM grammar_points g WHERE g.id::text = m.item_ref), m.item_ref)
 		          WHEN 'kanji' THEN m.item_ref
 		          ELSE COALESCE(
-		            (SELECT k.text FROM jmdict_kanji_forms k WHERE k.ent_seq::text = m.item_ref ORDER BY k.ord LIMIT 1),
-		            (SELECT r.text FROM jmdict_readings r WHERE r.ent_seq::text = m.item_ref ORDER BY r.ord LIMIT 1),
+		            `+headword+`,
 		            (SELECT u.text FROM marumori_known_items u
 		              WHERE u.user_id = $1 AND u.kind = 'vocabulary' AND u.marumori_id = m.item_ref),
 		            m.item_ref)
