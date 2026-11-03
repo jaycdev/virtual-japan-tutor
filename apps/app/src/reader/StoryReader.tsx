@@ -138,6 +138,12 @@ export function StoryReader({
   // absolutely inside this view, which sits below the safe-area padding.
   const [viewOrigin, setViewOrigin] = useState<{ x: number; y: number } | null>(null);
 
+  // Is a finger or mouse button still down on the story text? The web popover
+  // hands focus back to the token when it closes — but never mid-press:
+  // moving focus during a live RN Web press corrupts the responder system,
+  // and the next hold dies without ever granting (issue #45 review).
+  const pointerHeld = useRef(false);
+
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelHold = () => {
     if (holdTimer.current !== null) clearTimeout(holdTimer.current);
@@ -251,6 +257,7 @@ export function StoryReader({
 
   /** Finger down on a token: select, prime the Lookup row, start the hold. */
   const onTokenGrant = (ref: TokenRef, e: NativeSyntheticEvent<NativeTouchEvent>) => {
+    pointerHeld.current = true;
     cancelHold();
     closeMenu();
     const sen = story.sentences[ref.sentence];
@@ -281,6 +288,7 @@ export function StoryReader({
 
   /** Finger up: before the threshold this is a tap; after it, the option under the release runs. */
   const onTokenRelease = (ref: TokenRef, e: NativeSyntheticEvent<NativeTouchEvent>) => {
+    pointerHeld.current = false;
     cancelHold();
     const g = gestureRef.current;
     if (g.phase !== "menu" || !g.token || !sameRef(g.token, ref)) {
@@ -300,6 +308,7 @@ export function StoryReader({
 
   /** The responder was taken (a scroll swipe panned the story): abandon the gesture. */
   const onTokenTerminate = (ref: TokenRef) => {
+    pointerHeld.current = false;
     cancelHold();
     const g = gestureRef.current;
     if (g.phase === "menu" && g.token && sameRef(g.token, ref)) closeMenu();
@@ -321,6 +330,9 @@ export function StoryReader({
   /** Web right-click: open the Lookup Menu at the pointer. The machine sees a
    * press and its hold at once — right-click is an instant, deliberate hold. */
   const onTokenContextMenu = (ref: TokenRef, e: MouseEvent) => {
+    // A right-click is complete the moment it fires — nothing is being held —
+    // so focus may return to the token when this menu closes.
+    pointerHeld.current = false;
     cancelHold();
     closeMenu();
     const sen = story.sentences[ref.sentence];
@@ -329,7 +341,11 @@ export function StoryReader({
     setSelected(ref.sentence);
     setSelectedToken(ref);
     if (token.entSeq !== undefined) lookup.load(token.entSeq, token.surface, token.reading);
-    dispatch({ type: "press", token: ref, x: e.clientX, y: e.clientY });
+    // Anchor under the token's bottom edge, not the pointer: a context menu
+    // that covers the word it describes hides the thing the Learner aimed at.
+    const target = e.target instanceof Element ? e.target.closest(`[data-testid="token-${ref.sentence}-${ref.index}"]`) : null;
+    const y = target ? target.getBoundingClientRect().bottom : e.clientY;
+    dispatch({ type: "press", token: ref, x: e.clientX, y });
     dispatch({ type: "holdElapsed" });
   };
 
@@ -779,6 +795,8 @@ export function StoryReader({
           onRects={setMenuRects}
           onSelect={onMenuSelect}
           onDismiss={closeMenu}
+          focusReturnTestId={gesture.token ? `token-${gesture.token.sentence}-${gesture.token.index}` : null}
+          pointerHeld={pointerHeld}
         />
       ) : null}
 

@@ -1,5 +1,5 @@
-import { type ComponentRef, useEffect, useRef, useState } from "react";
-import { Platform, Pressable, StyleSheet, Text } from "react-native";
+import { type ComponentRef, type RefObject, useEffect, useRef, useState } from "react";
+import { Platform, Pressable, StyleSheet, Text, type ViewStyle } from "react-native";
 
 import * as DialogPrimitive from "@rn-primitives/dialog";
 
@@ -35,6 +35,8 @@ export function TokenMenu({
   onRects,
   onSelect,
   onDismiss,
+  focusReturnTestId,
+  pointerHeld,
 }: {
   options: MenuOption[];
   x: number;
@@ -50,6 +52,10 @@ export function TokenMenu({
   onSelect: (option: MenuOptionId) => void;
   /** The overlay wants to close: tap outside, Escape, or Back. */
   onDismiss: () => void;
+  /** Web: the testID of the token the menu belongs to; focus returns to it. */
+  focusReturnTestId?: string | null;
+  /** Whether a finger or mouse button is still down on the story text. */
+  pointerHeld: RefObject<boolean>;
 }) {
   const cardRef = useRef<MeasurableNode | null>(null);
   // The invisible anchor the wide popover is placed against. RN Primitives
@@ -76,10 +82,9 @@ export function TokenMenu({
   }, [options, measure, onRects, layoutTick]);
 
   useEffect(() => {
-    // A token press, not a click on a trigger, is what opens the wide menu:
-    // the primitives' Root holds its own open state, so the way in is the
-    // trigger's own handle. Everything that closes it comes back through
-    // onOpenChange.
+    // RN Primitives augments the mounted trigger node with open(); the hold
+    // (or web right-click) has already decided the menu is open, so ask the
+    // anchored overlay to open with it.
     triggerRef.current?.open();
   }, []);
 
@@ -144,7 +149,29 @@ export function TokenMenu({
       // the screen. Web places with Radix's own props; the native primitives
       // read `sidePlacement`, and either prop on the other platform is noise.
       {...(Platform.OS === "web"
-        ? { side: y < screenHeight / 2 ? ("bottom" as const) : ("top" as const) }
+        ? {
+            side: y < screenHeight / 2 ? ("bottom" as const) : ("top" as const),
+            // The menu unmounts with the gesture, so Radix's own focus-back
+            // (to the trigger) lands nowhere; hand focus to the token itself.
+            // One task late — focusing inside Radix's own close handler gets
+            // undone by the unmount that follows — and never mid-press: moving
+            // focus during a live RN Web press corrupts the responder system
+            // for the next one, and a Learner who closes with Escape has
+            // already lifted the mouse.
+            onCloseAutoFocus: (event: { preventDefault: () => void }) => {
+              event.preventDefault();
+              const testId = focusReturnTestId;
+              if (!testId) return;
+              setTimeout(() => {
+                if (pointerHeld.current) return;
+                const el = document.querySelector(`[data-testid=${JSON.stringify(testId)}]`);
+                if (el instanceof HTMLElement) {
+                  el.tabIndex = -1;
+                  el.focus();
+                }
+              }, 0);
+            },
+          }
         : { sidePlacement: y < screenHeight / 2 ? (["bottom"] as const) : (["top"] as const) })}
       align="center"
       sideOffset={12}
@@ -156,7 +183,22 @@ export function TokenMenu({
   );
 
   return (
-    <Popover.Root onOpenChange={(open) => !open && onDismiss()}>
+    <Popover.Root
+      onOpenChange={(open) => !open && onDismiss()}
+      // The primitives' Root renders a real View — give it the geometry the
+      // anchor expects. Without it the View sits in flow at the bottom of the
+      // column and the anchor's viewport coordinates land in the wrong
+      // containing block (the card opens off-screen). box-none keeps it from
+      // swallowing the tap-outside the dismissal is watching for.
+      style={
+        Platform.OS === "web"
+          ? // RN's type map has no `fixed`, but RN Web honours it — and only it
+            // keeps the anchor's containing block at the viewport origin.
+            ({ ...hostFixedWeb, width: screenWidth, height: screenHeight } as ViewStyle)
+          : styles.hostFull
+      }
+      pointerEvents="box-none"
+    >
       {/* The anchor, not a control: it is invisible, it is never clicked, and
           the primitives place the card against it and hand focus back to it on
           close. The labelled surface is the menu itself, below. */}
@@ -177,6 +219,11 @@ export function TokenMenu({
   );
 }
 
+// Web only: the viewport-covering host for the anchor. `position: fixed` is
+// outside RN's type map (StyleSheet.create would reject it), but RN Web
+// honours it, and only it keeps the anchor's containing block at (0,0).
+const hostFixedWeb = { left: 0, position: "fixed", top: 0, zIndex: 20 };
+
 const styles = StyleSheet.create({
   anchor: {
     height: 1,
@@ -186,6 +233,10 @@ const styles = StyleSheet.create({
     width: 1,
     zIndex: 19,
   },
+  // The invisible container the anchor is placed inside: it covers the whole
+  // viewport, so the anchor's coordinates are viewport coordinates on web
+  // (fixed) and reader-view coordinates on native (the reader fills the screen).
+  hostFull: { bottom: 0, left: 0, position: "absolute", right: 0, top: 0, zIndex: 20 },
   card: {
     borderRadius: 12,
     borderWidth: 1,
