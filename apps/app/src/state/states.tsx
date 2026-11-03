@@ -16,7 +16,14 @@ export function Skeleton({
   lineHeight?: number;
 }) {
   return (
-    <View accessibilityElementsHidden className="gap-2">
+    <View
+      // Hidden from screen readers on both hosts: the RN prop plus
+      // importantForAccessibility, whose descendants RNW keeps out of the
+      // a11y tree the way Android does.
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      className="gap-2"
+    >
       {Array.from({ length: lines }, (_, i) => (
         <View
           key={i}

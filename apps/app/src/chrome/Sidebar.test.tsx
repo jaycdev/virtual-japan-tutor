@@ -13,6 +13,8 @@ describe("Sidebar", () => {
     renderSidebar();
     expect(screen.getByText("読")).toBeTruthy();
     expect(screen.getByText("learner")).toBeTruthy();
+    // The a11y label names who the session belongs to, not just "Signed in as".
+    expect(screen.getByLabelText("Signed in as learner")).toBeTruthy();
     const links = screen.getAllByRole("link");
     expect(links.map((l) => l.getAttribute("aria-label"))).toEqual([
       "Today",

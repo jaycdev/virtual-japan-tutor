@@ -64,12 +64,17 @@ export function Sidebar({
         </View>
       </View>
       <View className="gap-2 border-t border-border p-4">
-        <Text className="text-small text-muted-foreground" accessibilityLabel="Signed in as">
+        <Text
+          className="text-small text-muted-foreground"
+          accessibilityLabel={`Signed in as ${username}`}
+        >
           {username}
         </Text>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Log out"
+          // Raw ARIA role for react-native-web (see the destinations above).
+          role="button"
           onPress={onLogout}
           className="min-h-11 flex-row items-center gap-2 rounded-md px-1 active:bg-accent"
         >
