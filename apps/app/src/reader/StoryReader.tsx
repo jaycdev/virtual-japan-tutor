@@ -853,6 +853,7 @@ const styles = StyleSheet.create({
   footer: {
     flexDirection: "row",
     alignItems: "center",
+    flexWrap: "wrap", // narrow phones: the labelled buttons wrap instead of clipping
     gap: 8,
     paddingHorizontal: 12,
     paddingVertical: 6,
