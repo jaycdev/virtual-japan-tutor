@@ -6,6 +6,32 @@
 
 import { Pressable, Text, View } from "react-native";
 
+/**
+ * One shimmering placeholder bar. Exported so a screen can lay its skeleton
+ * out like the content that will replace it — a title bar, a meta bar, a
+ * button block — instead of a generic stack of lines (issue #47 review S7).
+ */
+export function SkeletonBar({
+  width,
+  height,
+}: {
+  /** px, or a percentage string. */
+  width: number | string;
+  height: number;
+}) {
+  return (
+    <View
+      // Hidden from screen readers on both hosts: the RN prop plus
+      // importantForAccessibility, whose descendants RNW keeps out of the
+      // a11y tree the way Android does.
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      className="animate-pulse rounded-md bg-muted"
+      style={{ width, height }}
+    />
+  );
+}
+
 /** A shimmering placeholder block while content loads. */
 export function Skeleton({
   lines = 3,
@@ -16,19 +42,12 @@ export function Skeleton({
   lineHeight?: number;
 }) {
   return (
-    <View
-      // Hidden from screen readers on both hosts: the RN prop plus
-      // importantForAccessibility, whose descendants RNW keeps out of the
-      // a11y tree the way Android does.
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
-      className="gap-2"
-    >
+    <View className="gap-2">
       {Array.from({ length: lines }, (_, i) => (
-        <View
+        <SkeletonBar
           key={i}
-          className="animate-pulse rounded-md bg-muted"
-          style={{ height: lineHeight, width: i === lines - 1 && lines > 1 ? "60%" : "100%" }}
+          width={i === lines - 1 && lines > 1 ? "60%" : "100%"}
+          height={lineHeight}
         />
       ))}
     </View>
@@ -38,18 +57,25 @@ export function Skeleton({
 /**
  * Nothing to show yet: one calm line and exactly one action (issue #44 spec —
  * EmptyState never grows a paragraph or two buttons).
+ *
+ * `compact` drops the 24 px of padding for the common case of an EmptyState
+ * already sitting inside a Card, which brings its own 20 px of it — the two
+ * stacks read as one oversized margin (issue #47 review S8).
  */
 export function EmptyState({
   message,
   actionLabel,
   onAction,
+  compact = false,
 }: {
   message: string;
   actionLabel?: string;
   onAction?: () => void;
+  /** For use inside a card or other already-padded surface. */
+  compact?: boolean;
 }) {
   return (
-    <View className="flex-1 items-center justify-center gap-3 p-6">
+    <View className={`${compact ? "" : "p-6 "}flex-1 items-center justify-center gap-3`}>
       <Text className="text-center text-body text-muted-foreground">{message}</Text>
       {actionLabel && onAction ? (
         <Pressable

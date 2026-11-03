@@ -132,6 +132,12 @@ function stubApi(): ReturnType<typeof vi.fn> {
       return jsonResponse(200, { furiganaThresholdSrsLevel: 3, preferredGenre: "", preferredTheme: "" });
     if (path === "/item-lists")
       return jsonResponse(200, { items: [], defaultListId: null });
+    // Today (#47) reads these two; without stubs they fall into the catch-all
+    // below, whose shape is not a valid payload for either.
+    if (path === "/focus-set")
+      return jsonResponse(200, { size: 0, items: [] });
+    if (path === "/marumori")
+      return jsonResponse(200, { connected: false, lastSync: null, lastFailure: null, counts: null });
     return jsonResponse(200, { items: [], nextCursor: null, total: 0, updatedMs: 0 });
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -193,7 +199,9 @@ it("signed-in narrow viewport shows the tab bar with five destinations", async (
   await screen.findByText("Starting Level"); // the settings hub replaced Today
 
   await user.click(screen.getByRole("tab", { name: "Today" }));
-  await screen.findByText("Your daily story and review queue will appear here.");
+  // Today is a real screen now (#47): its Story card section stands in for the
+  // old placeholder as the "we are back on Today" signal.
+  await screen.findByText("Today’s story");
 });
 
 it("opening a settings section pushes it and Back returns to the hub", async () => {
