@@ -1,5 +1,5 @@
 import type { ComponentProps } from "react";
-import { Check, ChevronLeft, ChevronRight, CircleCheck, CircleX, ThumbsDown, ThumbsUp, X } from "lucide-react-native";
+import { Check, ChevronDown, ChevronLeft, ChevronRight, CircleCheck, CircleX, MoreHorizontal, ThumbsDown, ThumbsUp, Trash2, X } from "lucide-react-native";
 import { useCSSVariable } from "uniwind";
 
 /**
@@ -18,10 +18,13 @@ import { useCSSVariable } from "uniwind";
  */
 const GLYPHS = {
   check: Check,
+  "chevron-down": ChevronDown,
   "chevron-left": ChevronLeft,
   "chevron-right": ChevronRight,
   "circle-check": CircleCheck,
   "circle-x": CircleX,
+  "menu": MoreHorizontal,
+  "trash": Trash2,
   "thumbs-down": ThumbsDown,
   "thumbs-up": ThumbsUp,
   close: X,
