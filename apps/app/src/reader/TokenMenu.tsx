@@ -1,15 +1,16 @@
 import { useEffect, useRef } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { MIN_TOUCH, useColors } from "../theme.ts";
 import type { MeasurableNode, MenuOption, MenuOptionId, Rect } from "./holdMenu.ts";
 
 /**
- * The Lookup menu (issue #14): it opens once the Learner keeps holding a
- * token, sits at the token, and the release on one of its options is the
- * choice. Rows carry testID `menu-option-<id>` (and the card `token-menu`)
- * so the release hit-test can measure them; StoryReader injects the
- * measuring function because the test host reports no geometry.
+ * The Lookup menu (issues #14, #45): it opens once the Learner keeps holding
+ * a token (or right-clicks one on web), sits at the token, and the release on
+ * one of its options is the choice — on web, so is a plain click on the row
+ * (`onSelect`), since a mouse release never travels through the hold gesture.
+ * Rows carry testID `menu-option-<id>` (and the card `token-menu`) so the
+ * release hit-test can measure them; StoryReader injects the measuring
+ * function because the test host reports no geometry.
  */
 export function TokenMenu({
   options,
@@ -19,6 +20,7 @@ export function TokenMenu({
   screenHeight,
   measure,
   onRects,
+  onSelect,
 }: {
   options: MenuOption[];
   x: number;
@@ -28,8 +30,9 @@ export function TokenMenu({
   measure: (testID: string, node: MeasurableNode | null) => Rect | null;
   /** Reports the option rectangles (plus the card) once they are known. */
   onRects: (rects: Map<string, Rect>) => void;
+  /** A click/tap on an option row (the web path; mobile picks on release). */
+  onSelect: (option: MenuOptionId) => void;
 }) {
-  const colors = useColors();
   const cardRef = useRef<MeasurableNode | null>(null);
   const optionRefs = useRef(new Map<MenuOptionId, MeasurableNode>());
 
@@ -63,7 +66,8 @@ export function TokenMenu({
         ref={(node) => {
           cardRef.current = node;
         }}
-        style={[styles.card, { backgroundColor: colors.card, borderColor: colors.separator }]}
+        className="bg-card border-border shadow-md"
+        style={styles.card}
       >
         {options.map((option) => (
           <Pressable
@@ -72,6 +76,7 @@ export function TokenMenu({
             accessibilityRole="button"
             accessibilityState={{ disabled: !option.enabled }}
             disabled={!option.enabled}
+            onPress={() => onSelect(option.id)}
             ref={(node) => {
               if (node) optionRefs.current.set(option.id, node);
               else optionRefs.current.delete(option.id);
@@ -80,12 +85,7 @@ export function TokenMenu({
           >
             {/* Labels read dimmed when disabled; the release never picks a
                 disabled option (see optionAt). */}
-            <Text
-              style={{
-                fontSize: 16,
-                color: option.enabled ? colors.label : colors.subtle,
-              }}
-            >
+            <Text className={option.enabled ? "text-foreground" : "text-muted-foreground"} style={{ fontSize: 16 }}>
               {option.label}
             </Text>
           </Pressable>
@@ -101,12 +101,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     paddingVertical: 4,
-    // A shadow reads as a floating card over the story text.
-    shadowColor: "#000",
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
+    // A shadow reads as a floating card over the story text (elevation is
+    // the Android half; web gets it from the Uniwind shadow class).
     elevation: 6,
   },
-  option: { minHeight: MIN_TOUCH, justifyContent: "center", paddingHorizontal: 16 },
+  option: { minHeight: 44, justifyContent: "center", paddingHorizontal: 16 },
 });

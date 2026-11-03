@@ -12,8 +12,6 @@ import {
   View,
 } from "react-native";
 
-import { MIN_TOUCH, useColors } from "../theme.ts";
-
 /**
  * The "Save to…" bottom sheet (issue #14): the mobile form of the web's
  * popover. It lists the Learner's Item Lists — the Default List marked —
@@ -37,7 +35,6 @@ export function SaveToSheet({
   onCreateAndSave: (name: string) => void;
   onClose: () => void;
 }) {
-  const colors = useColors();
   const [name, setName] = useState("");
 
   const create = () => {
@@ -58,9 +55,11 @@ export function SaveToSheet({
           behaviour). Manual checklist: open Save to… with the keyboard up
           on a device and confirm the input and Create button stay visible. */}
       <KeyboardAvoidingView style={styles.backdrop} className="bg-backdrop" behavior="padding">
-        <View style={[styles.sheet, { backgroundColor: colors.card, borderTopColor: colors.separator }]}>
+        <View style={styles.sheet} className="bg-card border-t border-border">
           <View style={styles.head}>
-            <Text style={{ color: colors.label, fontSize: 17, fontWeight: "600" }}>Save to…</Text>
+            <Text className="text-foreground" style={styles.title}>
+              Save to…
+            </Text>
             <Pressable
               testID="sheet-close"
               accessibilityRole="button"
@@ -69,11 +68,11 @@ export function SaveToSheet({
               hitSlop={8}
               style={styles.close}
             >
-              <X size={20} color={colors.subtle} strokeWidth={2.5} />
+              <X size={20} strokeWidth={2.5} className="text-muted-foreground" />
             </Pressable>
           </View>
           {error ? (
-            <Text accessibilityRole="alert" style={{ color: colors.danger, fontSize: 14, marginBottom: 8 }}>
+            <Text accessibilityRole="alert" className="text-destructive" style={styles.error}>
               Could not save — {error}
             </Text>
           ) : null}
@@ -85,10 +84,13 @@ export function SaveToSheet({
                 accessibilityRole="button"
                 disabled={busy}
                 onPress={() => onSaveToList(list.id)}
-                style={[styles.listRow, { borderBottomColor: colors.separator }]}
+                style={styles.listRow}
+                className="border-b border-border"
               >
-                <Text style={{ color: colors.label, fontSize: 16 }}>{list.name}</Text>
-                {list.id === defaultListId ? <Text style={{ color: colors.subtle, fontSize: 13 }}>default</Text> : null}
+                <Text className="text-foreground" style={styles.listName}>
+                  {list.name}
+                </Text>
+                {list.id === defaultListId ? <Text className="text-muted-foreground" style={styles.defaultTag}>default</Text> : null}
               </Pressable>
             ))}
           </ScrollView>
@@ -97,11 +99,8 @@ export function SaveToSheet({
               value={name}
               onChangeText={setName}
               placeholder="New list name"
-              placeholderTextColor={colors.subtle}
-              style={[
-                styles.input,
-                { color: colors.label, backgroundColor: colors.background, borderColor: colors.separator },
-              ]}
+              className="text-foreground placeholder:text-muted-foreground bg-background border border-border"
+              style={styles.input}
             />
             <Pressable
               testID="create-list"
@@ -109,9 +108,12 @@ export function SaveToSheet({
               accessibilityLabel="Create a new list and save"
               disabled={busy || !name.trim()}
               onPress={create}
-              style={[styles.createButton, { backgroundColor: colors.accent }]}
+              style={styles.createButton}
+              className="bg-primary"
             >
-              <Text style={{ color: "#ffffff", fontSize: 15 }}>Create</Text>
+              <Text className="text-primary-foreground" style={styles.createLabel}>
+                Create
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -122,25 +124,29 @@ export function SaveToSheet({
 
 const styles = StyleSheet.create({
   backdrop: { flex: 1, justifyContent: "flex-end" },
-  sheet: { borderTopWidth: 1, borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingTop: 8, paddingBottom: 18 },
+  sheet: { borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingTop: 8, paddingBottom: 18 },
   head: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingBottom: 8 },
-  close: { marginLeft: "auto", width: MIN_TOUCH / 2, height: MIN_TOUCH / 2, alignItems: "center", justifyContent: "center" },
+  title: { fontSize: 17, fontWeight: "600" },
+  close: { marginLeft: "auto", width: 22, height: 22, alignItems: "center", justifyContent: "center" },
+  error: { fontSize: 14, marginBottom: 8, paddingHorizontal: 16 },
   list: { maxHeight: 260 },
   listRow: {
-    minHeight: MIN_TOUCH,
+    minHeight: 44,
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
     paddingHorizontal: 16,
-    borderBottomWidth: 1,
   },
+  listName: { fontSize: 16 },
+  defaultTag: { fontSize: 13 },
   create: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingTop: 12 },
-  input: { flex: 1, minHeight: MIN_TOUCH, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, fontSize: 15 },
+  input: { flex: 1, minHeight: 44, borderRadius: 8, paddingHorizontal: 10, fontSize: 15 },
   createButton: {
-    minHeight: MIN_TOUCH,
+    minHeight: 44,
     borderRadius: 8,
     paddingHorizontal: 16,
     alignItems: "center",
     justifyContent: "center",
   },
+  createLabel: { fontSize: 15 },
 });

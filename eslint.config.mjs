@@ -67,11 +67,10 @@ export default tseslint.config(
   {
     // Legacy JS-styled surface (see the note above): gate stays green today,
     // shrinks as #45..#50 port screens onto the Uniwind tokens. Listed here:
-    // the token bridge itself, and the reader surface built in #42 which
-    // still styles inline with hex colours until #46 ports it.
+    // the token bridge itself. The Story reader (#45) now styles through the
+    // design tokens, so it is off this list.
     files: [
       "apps/app/src/theme.ts",
-      "apps/app/src/reader/**",
       "apps/app/src/Stories.test.tsx",
     ],
     rules: { "vjt/no-hardcoded-color": "off" },

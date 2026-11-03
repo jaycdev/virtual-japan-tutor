@@ -2,18 +2,17 @@ import type { DictionaryEntry, StoryRating } from "@vjt/api-client";
 import type { StoryView } from "@vjt/core";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { useColors } from "../theme.ts";
-
 /**
  * Small shared pieces of the mobile reader: the JLPT badge, the gloss helpers
  * (same cap rules as the web Lookup row) and the thumbs rating buttons.
  */
 
 export function JlptBadge({ level }: { level: string }) {
-  const colors = useColors();
   return (
-    <View style={[styles.badge, { borderColor: colors.accent }]}>
-      <Text style={{ color: colors.accent, fontSize: 12, fontWeight: "600" }}>{level}</Text>
+    <View className="border-pitch" style={styles.badge}>
+      <Text className="text-pitch" style={{ fontSize: 12, fontWeight: "600" }}>
+        {level}
+      </Text>
     </View>
   );
 }
@@ -33,7 +32,7 @@ export function firstGlosses(entry: DictionaryEntry, n: number): string[] {
   return out;
 }
 
-/** 👍/👎 on the open Story or any library row; a rating is replaceable. */
+/** 👍/👎 on the open Story's footer or any library row; a rating is replaceable. */
 export function RatingButtons({
   view,
   storyId,
@@ -43,15 +42,14 @@ export function RatingButtons({
   storyId: string;
   rating: StoryRating | null | undefined;
 }) {
-  const colors = useColors();
   const thumb = (value: StoryRating, glyph: string, label: string) => (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityState={{ selected: rating === value, disabled: view.pending }}
-      disabled={view.pending}
+      accessibilityState={{ selected: rating === value }}
       onPress={() => void view.rate(storyId, value)}
-      style={[styles.thumb, rating === value && { borderColor: colors.accent, backgroundColor: colors.card }]}
+      className={rating === value ? "bg-card border-pitch" : undefined}
+      style={styles.thumb}
     >
       <Text style={{ fontSize: 18 }}>{glyph}</Text>
     </Pressable>

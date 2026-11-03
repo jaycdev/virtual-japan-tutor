@@ -2,7 +2,6 @@ import type { DictionaryEntry, StoryGrammarSpan } from "@vjt/api-client";
 import { X } from "lucide-react-native";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
-import { MIN_TOUCH, useColors } from "../theme.ts";
 import { JlptBadge } from "./parts.tsx";
 import { PitchGraph } from "./PitchGraph.tsx";
 
@@ -28,27 +27,27 @@ function WindowCard({
   onClose: () => void;
   children: React.ReactNode;
 }) {
-  const colors = useColors();
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.backdrop} className="bg-backdrop">
         <View
           testID={testID}
           accessibilityLabel={testID === "dictionary-window" ? "Dictionary Entry window" : "Grammar Point window"}
-          style={[styles.card, { backgroundColor: colors.card, borderColor: colors.separator }]}
+          className="bg-card border-border"
+          style={styles.card}
         >
           <View style={styles.head}>
-            <Text style={{ color: colors.label, fontSize: 20, fontWeight: "600" }}>{title}</Text>
-            {reading && reading !== title ? <Text style={{ color: colors.subtle, fontSize: 16 }}>{reading}</Text> : null}
+            <Text className="text-foreground" style={{ fontSize: 20, fontWeight: "600" }}>
+              {title}
+            </Text>
+            {reading && reading !== title ? (
+              <Text className="text-muted-foreground" style={{ fontSize: 16 }}>
+                {reading}
+              </Text>
+            ) : null}
             {jlpt ? <JlptBadge level={jlpt} /> : null}
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Close"
-              onPress={onClose}
-              hitSlop={8}
-              style={styles.close}
-            >
-              <X size={20} color={colors.subtle} strokeWidth={2.5} />
+            <Pressable accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} hitSlop={8} style={styles.close}>
+              <X size={20} strokeWidth={2.5} className="text-muted-foreground" />
             </Pressable>
           </View>
           <ScrollView style={styles.body}>{children}</ScrollView>
@@ -59,7 +58,6 @@ function WindowCard({
 }
 
 export function DictionaryWindow({ entry, onClose }: { entry: DictionaryEntry; onClose: () => void }) {
-  const colors = useColors();
   return (
     <WindowCard
       testID="dictionary-window"
@@ -71,7 +69,7 @@ export function DictionaryWindow({ entry, onClose }: { entry: DictionaryEntry; o
       {entry.pitch ? (
         <View style={styles.pitchRow}>
           <PitchGraph pitch={entry.pitch} />
-          <Text style={{ color: colors.subtle, fontSize: 13 }}>
+          <Text className="text-muted-foreground" style={{ fontSize: 13 }}>
             {entry.pitch.heiban ? "heiban (flat)" : `downstep after mora ${entry.pitch.downstepAfterMora}`}
             {entry.pitch.tag ? ` — ${entry.pitch.tag}` : ""}
           </Text>
@@ -79,9 +77,11 @@ export function DictionaryWindow({ entry, onClose }: { entry: DictionaryEntry; o
       ) : null}
       {entry.senses.map((sense, i) => (
         <View key={i} style={styles.sense}>
-          <Text style={{ color: colors.subtle, fontSize: 13 }}>{sense.partsOfSpeech.join(", ")}</Text>
+          <Text className="text-muted-foreground" style={{ fontSize: 13 }}>
+            {sense.partsOfSpeech.join(", ")}
+          </Text>
           {sense.glosses.map((gloss, j) => (
-            <Text key={j} style={{ color: colors.label, fontSize: 16 }}>
+            <Text key={j} className="text-foreground" style={{ fontSize: 16 }}>
               {gloss}
             </Text>
           ))}
@@ -92,10 +92,11 @@ export function DictionaryWindow({ entry, onClose }: { entry: DictionaryEntry; o
 }
 
 export function GrammarWindow({ span, onClose }: { span: StoryGrammarSpan; onClose: () => void }) {
-  const colors = useColors();
   return (
     <WindowCard testID="grammar-window" title={span.pattern} jlpt={span.jlptLevel} onClose={onClose}>
-      <Text style={[styles.senseMeaning, { color: colors.label }]}>{span.meaning}</Text>
+      <Text className="text-foreground" style={styles.senseMeaning}>
+        {span.meaning}
+      </Text>
     </WindowCard>
   );
 }
@@ -110,7 +111,7 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   head: { flexDirection: "row", alignItems: "center", gap: 8, padding: 14, flexWrap: "wrap" },
-  close: { marginLeft: "auto", width: MIN_TOUCH / 2, height: MIN_TOUCH / 2, alignItems: "center", justifyContent: "center" },
+  close: { marginLeft: "auto", width: 22, height: 22, alignItems: "center", justifyContent: "center" },
   body: { paddingHorizontal: 14, paddingBottom: 14 },
   pitchRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
   sense: { marginBottom: 10 },

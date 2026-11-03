@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { View } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter, type Href } from "expo-router";
 import { useStory } from "@vjt/core";
 
 import { StoryReader } from "../../src/reader/StoryReader.tsx";
@@ -47,6 +47,10 @@ export default function StoryRoute() {
       view={view}
       story={view.story}
       onBack={() => (router.canGoBack() ? router.back() : router.replace("/stories"))}
+      // The footer's "Practice this Story" (#45) hands the Story to the
+      // Practice destination; the Practice Session seeded from it lands with
+      // the Practice redesign (#46).
+      onPractice={() => router.push(`/practice?story=${id}` as Href)}
     />
   );
 }
