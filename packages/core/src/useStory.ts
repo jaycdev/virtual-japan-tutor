@@ -165,6 +165,48 @@ export function useStorySettings(client: ApiClient): StorySettingsView {
   return { settings, saveSettings, reloadSettings };
 }
 
+/**
+ * Today's Story on its own (issue #47): the Today screen's card needs the
+ * newest Automatic Story without the library page `useStory` also loads. Same
+ * read, same rules — a 404 means the generator has not written one (yet), not
+ * that something failed.
+ */
+export async function fetchTodaysStory(client: ApiClient): Promise<TodaysStoryState> {
+  try {
+    const { data, error: err, response } = await client.GET("/stories/today");
+    if (data) return { status: "story", story: data };
+    if (response.status === 404) return { status: "none" };
+    return { status: "error", message: message(err, response.status) };
+  } catch {
+    return { status: "error", message: UNREACHABLE };
+  }
+}
+
+export interface TodaysStoryView {
+  today: TodaysStoryState;
+  /** Re-read: the empty state invites it, and a finished run ends on it. */
+  reloadToday(): void;
+}
+
+export function useTodaysStory(client: ApiClient): TodaysStoryView {
+  const [today, setToday] = useState<TodaysStoryState>({ status: "loading" });
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchTodaysStory(client).then((next) => {
+      if (!cancelled) setToday(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, attempt]);
+
+  const reloadToday = useCallback(() => setAttempt((n) => n + 1), []);
+
+  return { today, reloadToday };
+}
+
 export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
   const [offset, setOffset] = useState(0);
   const [attempt, setAttempt] = useState(0);
@@ -206,16 +248,7 @@ export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
   // Today's Story comes from storage, exactly like opening it: a 404 is the
   // "the generator has not written one (yet)" state, not a failure; anything
   // else is a real error the view can retry.
-  const fetchToday = useCallback(async (): Promise<TodaysStoryState> => {
-    try {
-      const { data, error: err, response } = await client.GET("/stories/today");
-      if (data) return { status: "story", story: data };
-      if (response.status === 404) return { status: "none" };
-      return { status: "error", message: message(err, response.status) };
-    } catch {
-      return { status: "error", message: UNREACHABLE };
-    }
-  }, [client]);
+  const fetchToday = useCallback(async (): Promise<TodaysStoryState> => fetchTodaysStory(client), [client]);
 
   useEffect(() => {
     let cancelled = false;
