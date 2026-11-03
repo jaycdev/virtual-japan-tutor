@@ -271,8 +271,10 @@ describe('App shell (auth bootstrap)', () => {
   });
 
   it('the default export wires the real secure-store adapters', async () => {
-    // The test-harness expo-secure-store stub holds no token, so the production
-    // App (no props injected) must hydrate and land on the login form.
+    // Under vitest the app's secure store is the web variant (localStorage).
+    // It holds no token here, so the production App (no props injected) must
+    // hydrate and land on the login form.
+    localStorage.clear();
     render(<App>{null}</App>);
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Log in' })).toBeTruthy();

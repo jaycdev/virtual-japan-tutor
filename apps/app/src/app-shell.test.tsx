@@ -21,16 +21,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import * as secureStoreModule from "expo-secure-store";
 import { resolveApiBaseUrl } from "./config.ts";
-
-// The test alias (test/cjs-stubs/expo-secure-store.cjs) adds sync helpers and a
-// clearAll() the public types don't declare.
-type SecureStoreStub = typeof secureStoreModule & {
-  clearAll(): void;
-  setItemSync(key: string, value: string): void;
-};
-const secureStore = secureStoreModule as SecureStoreStub;
 
 const TEST_SERVER_URL = resolveApiBaseUrl({});
 
@@ -154,10 +145,11 @@ function renderApp(path: string) {
 
 beforeEach(() => {
   // A stored session is the signed-in starting point; the Login flow itself is
-  // covered by src/Login.test.tsx.
-  secureStore.clearAll();
-  secureStore.setItemSync("vjt.token", "preset-token");
-  secureStore.setItemSync("vjt.serverUrl", TEST_SERVER_URL);
+  // covered by src/Login.test.tsx. Under vitest the app's secure store is the
+  // web variant (src/secureStore.ts), i.e. localStorage.
+  localStorage.clear();
+  localStorage.setItem("vjt.token", "preset-token");
+  localStorage.setItem("vjt.serverUrl", TEST_SERVER_URL);
 });
 
 afterEach(() => {
@@ -283,7 +275,7 @@ it("wide viewport swaps the tab bar for the sidebar with the learner and Log out
 });
 
 it("signed-out visitors see the login screen and no chrome", async () => {
-  secureStore.clearAll();
+  localStorage.clear();
   stubApi();
   setViewport(NARROW);
   renderApp("/");

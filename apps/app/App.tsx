@@ -9,7 +9,6 @@
 import { useEffect, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import * as SecureStore from "expo-secure-store";
 import { useFonts } from "expo-font";
 import { StatusBar } from "expo-status-bar";
 
@@ -17,14 +16,16 @@ import { Login } from "./src/Login.tsx";
 import { AuthProvider, useSession } from "./src/session.tsx";
 import { resolveApiBaseUrl } from "./src/config.ts";
 import { appFonts } from "./src/fonts";
+import { appSecureStore } from "./src/secureStore";
 import { secureStoreServerUrl, type ServerUrlStorage } from "./src/serverUrlStorage.ts";
 import { ThemeProvider } from "./src/theme/index.tsx";
 import { secureStoreTokenStorage, type TokenStorage } from "./src/tokenStorage.ts";
 
 // One adapter pair for the whole app: the secure store is a process singleton,
 // so module scope is honest and keeps Root's defaults referentially stable.
-const tokenStorage = secureStoreTokenStorage(SecureStore);
-const urlStorage = secureStoreServerUrl(SecureStore);
+// (secureStore.ts / .native.ts split the storage per platform.)
+const tokenStorage = secureStoreTokenStorage(appSecureStore);
+const urlStorage = secureStoreServerUrl(appSecureStore);
 
 export default function App({ children }: { children: React.ReactNode }) {
   return (
