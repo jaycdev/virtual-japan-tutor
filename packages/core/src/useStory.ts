@@ -202,7 +202,14 @@ export function useTodaysStory(client: ApiClient): TodaysStoryView {
     };
   }, [client, attempt]);
 
-  const reloadToday = useCallback(() => setAttempt((n) => n + 1), []);
+  const reloadToday = useCallback(() => {
+    // A manual reload flips the card to its loading state in place of the
+    // stale error, so pressing Retry visibly does something (issue #47
+    // review N7). The initial state is already loading, so the flip lives
+    // in this callback rather than in the effect.
+    setToday({ status: "loading" });
+    setAttempt((n) => n + 1);
+  }, []);
 
   return { today, reloadToday };
 }
