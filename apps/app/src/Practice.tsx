@@ -424,8 +424,10 @@ function PrimaryAction({
 }
 
 const styles = StyleSheet.create({
-  // Centred column, card capped (plan 4.3); the content centres vertically
-  // while short and scrolls once the results list outgrows the viewport.
-  page: { flexGrow: 1, alignItems: "center", justifyContent: "center", padding: 16 },
+  // Top-aligned column with a fixed top inset, card capped (plan 4.3). It is
+  // deliberately not vertically centred: when feedback appears below the
+  // options, a centred column shifts the whole card up under the Learner's
+  // eyes (#46 review S3 — the progress bar's y must not move).
+  page: { flexGrow: 1, alignItems: "center", paddingTop: 24, paddingHorizontal: 16 },
   column: { width: "100%", maxWidth: CARD_MAX_WIDTH, gap: 16 },
 });
