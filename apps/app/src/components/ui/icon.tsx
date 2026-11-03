@@ -1,5 +1,5 @@
 import type { ComponentProps } from "react";
-import { Check, ChevronLeft, ChevronRight, ThumbsDown, ThumbsUp, X } from "lucide-react-native";
+import { Check, ChevronLeft, ChevronRight, CircleCheck, CircleX, ThumbsDown, ThumbsUp, X } from "lucide-react-native";
 
 /**
  * The app's one way to draw an icon, so glyph choice and size live in one file
@@ -12,6 +12,8 @@ const GLYPHS = {
   check: Check,
   "chevron-left": ChevronLeft,
   "chevron-right": ChevronRight,
+  "circle-check": CircleCheck,
+  "circle-x": CircleX,
   "thumbs-down": ThumbsDown,
   "thumbs-up": ThumbsUp,
   close: X,

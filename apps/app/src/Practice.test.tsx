@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
-import { Practice } from './Practice.tsx';
+import { Practice, practiceSeedForStory } from './Practice.tsx';
 import { createApiClient } from '@vjt/api-client';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -77,7 +77,7 @@ describe('mobile Practice', () => {
       const request = new Request(input, init);
       const path = new URL(request.url).pathname;
       if (request.method === 'POST' && path === '/practice/sessions') {
-        posts.push({ path });
+        posts.push({ path, body: await request.json() });
         session = freshSession();
         return jsonResponse(session);
       }
@@ -228,6 +228,37 @@ describe('mobile Practice', () => {
       expect(screen.getByText('Session complete — 1 of 2 correct.')).toBeTruthy();
     });
     expect(screen.getByRole('button', { name: 'Practice again' })).toBeTruthy();
+    // The summary lists the items needing another look (#46): the missed
+    // exercise's prompt, its item kind, and a fresh start.
+    expect(screen.getByText('Needs another look')).toBeTruthy();
+    expect(screen.getByText('水')).toBeTruthy();
+    expect(screen.getByText('kanji')).toBeTruthy();
+  });
+
+  it('deep-linked from a Story: starts on arrival, seeded from the Story id', async () => {
+    const seed = practiceSeedForStory('st-1');
+    const client = createApiClient({
+      baseUrl: 'http://localhost',
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+    render(<Practice client={client} seed={seed} />);
+
+    // No Start tap: the session begins on mount, seeded from the Story.
+    await waitFor(() => {
+      expect(postCalls('/practice/sessions')).toHaveLength(1);
+    });
+    expect(postCalls('/practice/sessions')[0]?.body).toEqual({ seed });
+    await waitFor(() => {
+      expect(screen.getByText('Exercise 1 of 2')).toBeTruthy();
+    });
+    expect(screen.queryByRole('button', { name: 'Start a practice session' })).toBeNull();
+  });
+
+  it('practiceSeedForStory is deterministic, non-negative, and specific to the Story', () => {
+    expect(practiceSeedForStory('st-1')).toBe(practiceSeedForStory('st-1'));
+    expect(practiceSeedForStory('st-1')).not.toBe(practiceSeedForStory('st-2'));
+    expect(Number.isSafeInteger(practiceSeedForStory('st-1'))).toBe(true);
+    expect(practiceSeedForStory('st-1')).toBeGreaterThanOrEqual(0);
   });
 
   it('shows a start failure and stays retryable', async () => {

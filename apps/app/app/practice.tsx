@@ -1,10 +1,25 @@
-import { Practice } from "../src/Practice.tsx";
+import { useLocalSearchParams } from "expo-router";
+
+import { Practice, practiceSeedForStory } from "../src/Practice.tsx";
 import { useSession } from "../src/session.tsx";
 
-// Practice destination (#44): the existing Practice screen, now under the
-// router. Its state (session in flight) is per-mount — leaving the tab
-// interrupts a session the way switching screens always has.
+// Practice destination (#44), Practice redesign wiring (#46): the existing
+// Practice screen, now under the router. Its state (session in flight) is
+// per-mount — leaving the tab interrupts a session the way switching screens
+// always has.
+//
+// The reader footer links here as /practice?story=<id> ("Practice these
+// words"): with the param the session starts on arrival rather than waiting
+// for the Start tap, seeded from the Story id. The API only takes an integer
+// seed, not a Story reference, so the seed comes from practiceSeedForStory.
 export default function PracticeRoute() {
   const { client } = useSession();
-  return <Practice client={client} />;
+  const { story } = useLocalSearchParams<{ story?: string | string[] }>();
+  const storyId = typeof story === "string" ? story : undefined;
+  return (
+    <Practice
+      client={client}
+      seed={storyId === undefined ? undefined : practiceSeedForStory(storyId)}
+    />
+  );
 }
