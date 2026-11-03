@@ -32,25 +32,25 @@ describe("parseThemePreference", () => {
 
 describe("createThemeStore", () => {
   it("starts loading and defaults to system", () => {
-    const store = createThemeStore(fakeStorage());
+    const store = createThemeStore(fakeStorage(), () => {});
     expect(store.getSnapshot()).toEqual({ status: "loading", preference: "system" });
   });
 
   it("hydrates the saved preference", async () => {
-    const store = createThemeStore(fakeStorage({ [THEME_STORAGE_KEY]: "dark" }));
+    const store = createThemeStore(fakeStorage({ [THEME_STORAGE_KEY]: "dark" }), () => {});
     await store.hydrate();
     expect(store.getSnapshot()).toEqual({ status: "ready", preference: "dark" });
   });
 
   it("hydrates to system when nothing is saved", async () => {
-    const store = createThemeStore(fakeStorage());
+    const store = createThemeStore(fakeStorage(), () => {});
     await store.hydrate();
     expect(store.getSnapshot()).toEqual({ status: "ready", preference: "system" });
   });
 
   it("persists and notifies on setPreference", async () => {
     const storage = fakeStorage();
-    const store = createThemeStore(storage);
+    const store = createThemeStore(storage, () => {});
     await store.hydrate();
 
     let notified = 0;
@@ -71,14 +71,39 @@ describe("createThemeStore", () => {
   it("hydrates only once", async () => {
     let reads = 0;
     const storage = fakeStorage();
-    const store = createThemeStore({
-      getItem: async (key) => {
-        reads += 1;
-        return storage.getItem(key);
+    const store = createThemeStore(
+      {
+        getItem: async (key) => {
+          reads += 1;
+          return storage.getItem(key);
+        },
+        setItem: storage.setItem,
       },
-      setItem: storage.setItem,
-    });
+      () => {},
+    );
     await Promise.all([store.hydrate(), store.hydrate()]);
     expect(reads).toBe(1);
+  });
+
+  it("applies the theme before notifying subscribers, on hydrate", async () => {
+    const order: string[] = [];
+    const store = createThemeStore(fakeStorage({ [THEME_STORAGE_KEY]: "dark" }), (p) =>
+      order.push(`apply:${p}`),
+    );
+    store.subscribe(() => order.push(`emit:${store.getSnapshot().preference}`));
+    await store.hydrate();
+    // A subscriber that re-renders must never see a state whose theme has not
+    // been applied yet.
+    expect(order).toEqual(["apply:dark", "emit:dark"]);
+  });
+
+  it("applies the theme before notifying subscribers, on setPreference", async () => {
+    const order: string[] = [];
+    const store = createThemeStore(fakeStorage(), (p) => order.push(`apply:${p}`));
+    await store.hydrate();
+    order.length = 0; // the hydrate-time apply already has its own test
+    store.subscribe(() => order.push(`emit:${store.getSnapshot().preference}`));
+    store.setPreference("dark");
+    expect(order).toEqual(["apply:dark", "emit:dark"]);
   });
 });

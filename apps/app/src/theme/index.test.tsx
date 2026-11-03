@@ -30,8 +30,22 @@ describe("ThemeProvider", () => {
 
   it("applies the saved preference to Uniwind before children show", async () => {
     const { theme, stub } = await freshThemeModule({ "vjt.theme": "dark" });
-    render(<theme.ThemeProvider>ready</theme.ThemeProvider>);
+    // Each child render records how many setTheme calls had already happened
+    // at that moment: a render seeing 0 means a frame was painted before the
+    // theme was applied (the flash this ordering contract forbids).
+    const setThemeCallsAtRender: number[] = [];
+    function Child() {
+      setThemeCallsAtRender.push(stub.setThemeCalls.length);
+      return <span>ready</span>;
+    }
+    render(
+      <theme.ThemeProvider>
+        <Child />
+      </theme.ThemeProvider>,
+    );
     await waitFor(() => screen.getByText("ready"));
+    expect(setThemeCallsAtRender.length).toBeGreaterThan(0);
+    expect(Math.min(...setThemeCallsAtRender)).toBeGreaterThan(0);
     expect(stub.setThemeCalls).toEqual(["dark"]);
   });
 

@@ -21,7 +21,13 @@ export function parseThemePreference(value: string | null): ThemePreference {
   return PREFERENCES.includes(value as ThemePreference) ? (value as ThemePreference) : "system";
 }
 
-export function createThemeStore(storage: ThemeStorage) {
+/**
+ * @param applyTheme called with the effective preference BEFORE subscribers
+ * are notified, on both paths (hydrate and setPreference). Consumers render
+ * from the notification, so this ordering guarantees every render happens
+ * with the palette already applied - no first-frame theme flash.
+ */
+export function createThemeStore(storage: ThemeStorage, applyTheme: (preference: ThemePreference) => void) {
   let state: ThemeState = { status: "loading", preference: "system" };
   const listeners = new Set<() => void>();
   let hydrating: Promise<void> | null = null;
@@ -46,10 +52,13 @@ export function createThemeStore(storage: ThemeStorage) {
         hydrating = storage
           .getItem(THEME_STORAGE_KEY)
           .then((saved) => {
-            state = { status: "ready", preference: parseThemePreference(saved) };
+            const preference = parseThemePreference(saved);
+            state = { status: "ready", preference };
+            applyTheme(preference);
           })
           .catch(() => {
             state = { status: "ready", preference: "system" };
+            applyTheme("system");
           })
           .then(emit);
       }
@@ -58,6 +67,7 @@ export function createThemeStore(storage: ThemeStorage) {
 
     setPreference(preference: ThemePreference): void {
       state = { ...state, preference };
+      applyTheme(preference);
       emit();
       void storage.setItem(THEME_STORAGE_KEY, preference);
     },
