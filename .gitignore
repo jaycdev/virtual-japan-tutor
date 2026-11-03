@@ -1,5 +1,7 @@
 node_modules/
 dist/
+# Throwaway web export from the issue #42 spike (uniwind trial).
+apps/mobile/dist-web-trial/
 bin/
 .turbo/
 .expo/

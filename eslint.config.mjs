@@ -7,6 +7,7 @@ export default tseslint.config(
   {
     ignores: [
       "**/dist/**",
+      "apps/mobile/dist-web-trial/**",
       "**/node_modules/**",
       "**/.expo/**",
       "**/.turbo/**",
@@ -24,5 +25,11 @@ export default tseslint.config(
     rules: {
       ...reactHooks.configs.recommended.rules,
     },
+  },
+  {
+    // Metro and friends only load CommonJS config files
+    files: ["**/*.config.js"],
+    languageOptions: { globals: globals.node },
+    rules: { "@typescript-eslint/no-require-imports": "off" },
   },
 );

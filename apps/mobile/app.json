@@ -6,7 +6,14 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "platforms": ["android"],
+    "platforms": [
+      "android",
+      "web"
+    ],
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png"
+    },
     "android": {
       "package": "com.jaycdev.virtualjapantutor",
       "adaptiveIcon": {
@@ -16,6 +23,9 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false
-    }
+    },
+    "plugins": [
+      "expo-font"
+    ]
   }
 }
