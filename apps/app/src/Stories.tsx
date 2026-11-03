@@ -420,10 +420,11 @@ const styles = StyleSheet.create({
   filterRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12 },
   chipRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   list: { gap: 12 },
-  // Two columns on wide screens, growing with the row rather than a fixed width
-  // so the last row never leaves a gap-sized hole.
+  // Two fixed equal columns on wide screens (issue #48 review, B3): no grow,
+  // so a row's odd card keeps the same width as its neighbours and sits at the
+  // column's left edge instead of stretching across the hole.
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
-  gridCell: { flexBasis: "46%", flexGrow: 1, minWidth: 280 },
+  gridCell: { flexBasis: "49%" },
   pager: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
 });
 
