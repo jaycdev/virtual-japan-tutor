@@ -8,10 +8,14 @@ import { useSession } from "../src/session.tsx";
 // per-mount — leaving the tab interrupts a session the way switching screens
 // always has.
 //
-// The reader footer links here as /practice?story=<id> ("Practice these
-// words"): with the param the session starts on arrival rather than waiting
-// for the Start tap, seeded from the Story id. The API only takes an integer
-// seed, not a Story reference, so the seed comes from practiceSeedForStory.
+// The reader footer links here as /practice?story=<id> ("Practice this
+// Story"): with the param the session starts on arrival rather than waiting
+// for the Start tap, seeded from the Story id. The session draws from the
+// Learner's Focus Set, not from the Story itself (that seeding waits on the
+// API, see practiceSeedForStory and backend issue #57) — which is why the
+// footer says "this Story" and never "these words". The API only takes an
+// integer seed, not a Story reference, so the seed comes from
+// practiceSeedForStory.
 export default function PracticeRoute() {
   const { client } = useSession();
   const { story } = useLocalSearchParams<{ story?: string | string[] }>();
