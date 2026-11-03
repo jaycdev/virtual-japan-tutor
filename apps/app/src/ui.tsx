@@ -50,7 +50,11 @@ export function BottomSpace() {
   return <View style={{ height: insets.bottom }} />;
 }
 
-/** Large screen title, optionally with a Back affordance (no hardware back). */
+/**
+ * Large screen title, optionally with a Back affordance. Between routes,
+ * hardware Back is the router's (useHardwareBack is only for in-component
+ * overlays); this button is the on-screen twin of that pop.
+ */
 export function Title({ text, onBack }: { text: string; onBack?: () => void }) {
   const colors = useColors();
   return (

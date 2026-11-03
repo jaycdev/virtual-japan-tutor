@@ -38,9 +38,13 @@ export function Stories({
   client: ApiClient;
   /**
    * Opens a Story (issue #44): the router route passes router.push so reading
-   * lives at /stories/:id — hardware Back pops it and the chrome knows to hide.
-   * Without it, the reader opens in-place (the pre-router behaviour, kept for
-   * the component's own tests).
+   * lives at /stories/:id — route Back is the router's and the chrome knows
+   * to hide. Optional on purpose (#44 review, Q8): the component's own test
+   * suite (~28 cases in Stories.test.tsx) drives the reader IN PLACE through
+   * the fallback below. Making the prop required would force every one of
+   * them to inject a no-op that still lands on this same fallback, so it
+   * would add churn without removing the fallback. Hosts that route pass it;
+   * hosts that just host the component let it open its own reader.
    */
   onOpenStory?: (storyId: string) => void;
   /** Passed to the reader: test hosts inject menu geometry the DOM cannot measure. */
