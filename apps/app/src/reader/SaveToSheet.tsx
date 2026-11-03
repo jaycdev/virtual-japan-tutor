@@ -57,7 +57,7 @@ export function SaveToSheet({
       <DialogPrimitives.Portal>
         <DialogPrimitives.Overlay style={styles.backdrop} className="bg-backdrop" />
         <DialogPrimitives.Content
-          style={[styles.sheet, narrow ? styles.sheetNarrow : styles.sheetWide]}
+          style={StyleSheet.flatten([styles.sheet, narrow ? styles.sheetNarrow : styles.sheetWide])}
           className={narrow ? "bg-card border-t border-border" : "bg-card border border-border"}
         >
           {/* The Dialog leaves the soft keyboard to the platform (Android

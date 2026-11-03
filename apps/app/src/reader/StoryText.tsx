@@ -61,7 +61,7 @@ export interface TokenWebHostHandlers {
 export function sentenceNodes(
   sentence: StorySentence,
   renderToken: (token: StoryToken, index: number) => ReactNode,
-  renderGap: (text: string, key: string) => ReactNode = (text) => <Text>{text}</Text>,
+  renderGap: (text: string, key: string) => ReactNode = (text, key) => <Text key={key}>{text}</Text>,
 ): ReactNode[] {
   const chars = Array.from(sentence.ja);
   const out: ReactNode[] = [];

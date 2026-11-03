@@ -124,7 +124,7 @@ export function TokenMenu({
           <DialogPrimitive.Content
             {...surfaceProps}
             className="bg-card border-t border-border"
-            style={[styles.sheet, { maxWidth: screenWidth - 24 }]}
+            style={StyleSheet.flatten([styles.sheet, { maxWidth: screenWidth - 24 }])}
           >
             {/* The menu is labelled by its options; the dialog still wants a
                 title for screen readers, so it gets one nobody sees. */}
@@ -160,7 +160,7 @@ export function TokenMenu({
       {/* The anchor, not a control: it is invisible, it is never clicked, and
           the primitives place the card against it and hand focus back to it on
           close. The labelled surface is the menu itself, below. */}
-      <Popover.Trigger ref={triggerRef} style={[styles.anchor, { left: x, top: Math.max(0, y - 8) }]} />
+      <Popover.Trigger ref={triggerRef} style={StyleSheet.flatten([styles.anchor, { left: x, top: Math.max(0, y - 8) }])} />
       <Popover.Portal>
         {/* Native needs a layer to swallow a tap outside the menu; web
             dismisses through the primitives' own outside-pointer handling, and

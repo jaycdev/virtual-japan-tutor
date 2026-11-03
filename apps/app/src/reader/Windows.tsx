@@ -45,7 +45,7 @@ function WindowCard({
           testID={testID}
           accessibilityLabel={testID === "dictionary-window" ? "Dictionary Entry window" : "Grammar Point window"}
           className="bg-card border-border"
-          style={[styles.card, narrow ? styles.cardNarrow : styles.cardWide]}
+          style={StyleSheet.flatten([styles.card, narrow ? styles.cardNarrow : styles.cardWide])}
           // No Description for these windows — the title says it all; this is
           // Radix's documented way to skip the aria-describedby warning.
           aria-describedby={undefined}
