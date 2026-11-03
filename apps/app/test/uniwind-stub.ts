@@ -20,3 +20,12 @@ export const Uniwind = {
 export function useUniwind() {
   return { theme: "light", hasAdaptiveThemes: true };
 }
+
+/**
+ * The real hook returns the token's resolved value; under vitest there is no
+ * CSS engine, so it hands back the var() reference — enough for components to
+ * pass *a* colour through and for tests to assert the token was consulted.
+ */
+export function useCSSVariable(name: string | string[]): string | string[] {
+  return Array.isArray(name) ? name.map((n) => `var(${n})`) : `var(${name})`;
+}
