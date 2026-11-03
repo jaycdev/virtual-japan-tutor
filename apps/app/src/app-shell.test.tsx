@@ -3,11 +3,14 @@
  * app/_layout.tsx + route files via ExpoRoot) on jsdom with a fake API, and
  * asserts the shell behaviour end to end — chrome per viewport, navigation
  * between destinations, the reader route hiding the tab bar, deep links,
- * and log out. Android hardware Back is covered by the pop assertions:
- * expo-router drives its stack from the history the OS Back maps to.
+ * and log out. Mental model: route Back is the router's (Android hardware
+ * Back maps to history, and history.back() stands in for it here); the
+ * useHardwareBack hook is only for in-component overlays — one test drives
+ * that hook to prove the reader's route pop runs through it.
  */
 import { ExpoRoot } from "expo-router";
 import { expoRouterTestContext, type RouteModule } from "../test/expo-router-app-root.ts";
+import { fakeBackHandler } from "../test/back-handler-fake.ts";
 import * as layoutRoute from "../app/_layout.tsx";
 import * as indexRoute from "../app/index.tsx";
 import * as storiesRoute from "../app/stories.tsx";
@@ -21,6 +24,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
+import { setBackHandlerForTests } from "./useHardwareBack.ts";
 import { resolveApiBaseUrl } from "./config.ts";
 
 const TEST_SERVER_URL = resolveApiBaseUrl({});
@@ -155,6 +159,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  setBackHandlerForTests(undefined);
 });
 
 async function signedIn(width = NARROW) {
@@ -191,7 +196,7 @@ it("signed-in narrow viewport shows the tab bar with five destinations", async (
   await screen.findByText("Your daily story and review queue will appear here.");
 });
 
-it("selecting a tab pushes the route and Back returns to it", async () => {
+it("opening a settings section pushes it and Back returns to the hub", async () => {
   stubApi();
   renderApp("/");
   const user = await signedIn();
@@ -246,6 +251,67 @@ it("a story deep link lands directly in the reader with the tab bar hidden", asy
 
   await screen.findByRole("button", { name: "Back to stories" });
   expect(screen.queryAllByRole("tab")).toHaveLength(0);
+});
+
+it("Back from a fresh-tab story deep link replaces to the Stories tab", async () => {
+  stubApi();
+  renderApp("/stories/st-1"); // nothing under the route: canGoBack is false
+  setViewport(NARROW);
+  const user = await userEvent.setup();
+
+  await user.click(await screen.findByRole("button", { name: "Back to stories" }));
+  await screen.findByRole("button", { name: "View all stories" }); // /stories, no dead end
+  await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(5));
+});
+
+it("Back from a fresh-tab settings deep link returns to the hub", async () => {
+  stubApi();
+  renderApp("/settings/server"); // deep link in a fresh tab: nothing to pop
+  const user = await signedIn();
+
+  await screen.findByDisplayValue("http://10.0.2.2:8080");
+  await user.click(await screen.findByRole("button", { name: "Back" }));
+  await screen.findByText("Starting Level"); // the hub, not a dead end
+});
+
+it("browser Back from a tab does not walk through the visited tabs", async () => {
+  stubApi();
+  renderApp("/");
+  const user = await signedIn();
+
+  await user.click(screen.getByRole("tab", { name: "Settings" }));
+  await screen.findByText("Starting Level");
+  await user.click(screen.getByRole("tab", { name: "Stories" }));
+  await screen.findByRole("button", { name: "View all stories" });
+  await user.click(screen.getByRole("tab", { name: "Settings" }));
+  await screen.findByText("Starting Level");
+
+  // Tab taps replace, so the history never stacked them (Today → Settings is
+  // the whole trail). Back must not land on Stories, the tab visited before.
+  window.history.back();
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  expect(screen.queryByRole("button", { name: "View all stories" })).toBeNull();
+  expect(screen.getByText("Starting Level")).toBeTruthy();
+});
+
+it("hardware Back inside the reader pops the route through the useHardwareBack hook", async () => {
+  stubApi();
+  const backHandler = fakeBackHandler();
+  setBackHandlerForTests(backHandler);
+
+  renderApp("/stories");
+  const user = await signedIn();
+  await user.click(await screen.findByRole("button", { name: "View all stories" }));
+  await user.click(await screen.findByRole("button", { name: "Open story: がっこうの 一日" }));
+  await screen.findByRole("button", { name: "Back to stories" });
+  await waitFor(() => expect(screen.queryAllByRole("tab")).toHaveLength(0));
+
+  // The press runs the reader's useHardwareBack listener (the overlay hook);
+  // with no lookup window or menu open its last branch calls the route's
+  // onBack — router.back — so the reader really pops back to the library.
+  expect(backHandler.press()).toBe(true);
+  await screen.findByRole("button", { name: "View all stories" });
+  await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(5));
 });
 
 it("a grammar deep link renders the grammar screen inside the chrome", async () => {
