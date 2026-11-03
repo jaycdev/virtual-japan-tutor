@@ -402,7 +402,10 @@ export function ConfirmDelete({
         <DialogPrimitives.Overlay style={styles.backdrop} className="bg-backdrop" />
         <DialogPrimitives.Content
           testID="confirm-delete"
-          style={[narrow ? styles.sheet : centeredDialog(viewWidth), styles.dialogBody]}
+          // The wide dialog centres over the Shell's content column, not the
+          // viewport's middle third (S7). One merged object: the web Content
+          // hands style straight to a div, and React DOM cannot take an array.
+          style={narrow ? { ...styles.sheet, ...styles.dialogBody } : { ...centeredDialog(viewWidth), ...styles.dialogBody }}
           className={narrow ? "bg-card border-t border-border" : "bg-card border border-border"}
         >
           <DialogPrimitives.Title asChild>
@@ -500,7 +503,9 @@ export function GenerateDialog({
         <DialogPrimitives.Overlay style={styles.backdrop} className="bg-backdrop" />
         <DialogPrimitives.Content
           testID="generate-dialog"
-          style={[narrow ? styles.sheet : centeredDialog(viewWidth), styles.dialogBody]}
+          // One merged object, not an array: the web Content hands style
+          // straight to a div, and React DOM cannot take an array (evidence v2).
+          style={narrow ? { ...styles.sheet, ...styles.dialogBody } : { ...centeredDialog(viewWidth), ...styles.dialogBody }}
           className={narrow ? "bg-card border-t border-border" : "bg-card border border-border"}
         >
           <DialogPrimitives.Title asChild>
