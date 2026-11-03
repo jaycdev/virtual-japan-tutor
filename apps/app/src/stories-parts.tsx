@@ -155,6 +155,10 @@ export function StoryCard({
           <View
             testID={`story-read-${story.id}`}
             className="flex-row items-center gap-1"
+            // A plain View is not an element on Android: say what it is and make
+            // it one, so the label is actually read out (issue #48, N3).
+            accessibilityRole="text"
+            accessible
             accessibilityLabel={`Read on ${storyDate(story.readAt)}`}
           >
             {/* The check is the mark; the words spell it out for screen readers
@@ -586,14 +590,18 @@ export function Picker({
   options: string[];
   onChange: (value: string | null) => void;
 }) {
+  // The primitive owns the menu, but reports every open and close here;
+  // mirroring that state lets the trigger tell assistive tech what the
+  // chevron already tells the eye (issue #48 review, N1).
+  const [open, setOpen] = useState(false);
   return (
-    <DropdownMenuPrimitive.Root>
+    <DropdownMenuPrimitive.Root onOpenChange={setOpen}>
       <DropdownMenuPrimitive.Trigger asChild>
         <Pressable
           testID={testID}
           accessibilityRole="button"
           accessibilityLabel={`${ariaLabel}: ${value ? genreLabel(value) || value : placeholder}`}
-          accessibilityState={{ expanded: false }}
+          accessibilityState={{ expanded: open }}
           style={styles.picker}
           className="rounded-md border border-border bg-card active:bg-accent"
         >
@@ -653,7 +661,9 @@ export function FilterChip({
       accessibilityState={{ selected: active }}
       onPress={onPress}
       style={styles.chip}
-      className={`rounded-md px-4 active:bg-accent ${active ? "border-2 border-foreground bg-accent" : "border border-border bg-card"}`}
+      // Selection reads as fill + weight, never a heavier border: a 2 px border
+      // would change the chip's size the moment it is pressed (issue #48, N2).
+      className={`rounded-md px-4 border border-border active:bg-accent ${active ? "bg-accent" : "bg-card"}`}
     >
       <Text className={`text-small ${active ? "font-semibold text-foreground" : "text-muted-foreground"}`}>{label}</Text>
     </Pressable>
