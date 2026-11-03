@@ -8,7 +8,10 @@ declare function require(id: string): unknown;
 // static require at build time, so the real gating lives in metro.config.js,
 // which aliases "@dev/showcase" to ./showcase-off (a null-returning stub)
 // unless EXPO_PUBLIC_SHOWCASE=1; the check below then keeps the call itself
-// dead. Android gotcha (from #42): registration must stay synchronous.
+// dead. Entry choice (#44 review, Q6): package.json "main" MUST stay
+// "index.ts" — Metro starts at "main", so setting it to "expo-router/entry"
+// would bypass this file entirely and make the showcase gate dead code.
+// Android gotcha (from #42): registration must stay synchronous.
 // Awaiting any native round-trip (SecureStore) before registerRootComponent
 // means the bundle finishes evaluating with "main" unregistered and Expo Go
 // shows "App entry not found". Theme and font bootstrapping therefore live
