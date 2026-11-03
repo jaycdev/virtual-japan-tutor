@@ -15,7 +15,12 @@ import { useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 
 import { Card } from "./components/ui/Card.tsx";
-import { FocusSetPanel, FOCUS_CHIPS_MAX } from "./components/ui/FocusSetPanel.tsx";
+import {
+  createFocusLabelResolver,
+  FocusSetPanel,
+  FOCUS_CHIPS_MAX,
+  type FocusLabelResolver,
+} from "./components/ui/FocusSetPanel.tsx";
 import { EmptyState, InlineError, ProgressBar, Skeleton } from "./state/states.tsx";
 
 /**
@@ -66,6 +71,11 @@ export function Today({
   // own zone, so the device's zone is the closest thing we have to that.
   const timezone = learnerSettings.status === "ready" ? learnerSettings.settings.timezone : undefined;
 
+  // Chip labels for the Focus Set glance (issue #47 review B1): created once
+  // per screen so the panel's lookup cache keys stay stable across renders.
+  const resolveChipLabel = useRef<FocusLabelResolver | undefined>(undefined);
+  if (!resolveChipLabel.current) resolveChipLabel.current = createFocusLabelResolver(client);
+
   // A run that finishes while the Learner is looking at Today lands in the
   // card without a reload. Only the transition counts: the server keeps the
   // last finished snapshot for a while, and re-reading on mount would ask for
@@ -102,7 +112,13 @@ export function Today({
         </View>
 
         <Card>
-          <FocusSetPanel focus={focus} max={FOCUS_CHIPS_MAX} onOpenWordLists={onOpenWordLists} />
+          <FocusSetPanel
+            focus={focus}
+            client={client}
+            resolveLabel={resolveChipLabel.current}
+            max={FOCUS_CHIPS_MAX}
+            onOpenWordLists={onOpenWordLists}
+          />
         </Card>
 
         <SyncCard
@@ -248,6 +264,7 @@ function TodayStoryCard({
           <Text className="text-small text-muted-foreground">{storyMeta(today.story)}</Text>
           <ActionButton
             label="Open"
+            accessibilityLabel="Open today's story"
             onPress={() => onOpenStory(today.story.id)}
             filled
             testID="today-story-open"
@@ -346,6 +363,12 @@ function PracticeCard({
           </Text>
           <ActionButton
             label="Start"
+            accessibilityLabel="Start practice"
+            accessibilityHint={
+              items && items.length > 0
+                ? `Builds a session from ${items.length} Focus Set item${items.length === 1 ? "" : "s"}`
+                : undefined
+            }
             onPress={onOpenPractice}
             filled
             testID="today-practice-start"
@@ -514,12 +537,18 @@ function ActionButton({
   filled = false,
   disabled = false,
   testID,
+  accessibilityLabel,
+  accessibilityHint,
 }: {
   label: string;
   onPress: () => void;
   filled?: boolean;
   disabled?: boolean;
   testID?: string;
+  /** Screen-reader name when the visible text alone is too terse (S4). */
+  accessibilityLabel?: string;
+  /** Screen-reader hint on what pressing does, e.g. how many items feed it. */
+  accessibilityHint?: string;
 }) {
   const shape = filled ? "bg-primary" : "border border-border bg-card";
   const text = filled ? "text-primary-foreground" : "text-foreground";
@@ -527,7 +556,8 @@ function ActionButton({
     <Pressable
       testID={testID}
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityHint={accessibilityHint}
       accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}

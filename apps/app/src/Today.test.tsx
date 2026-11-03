@@ -27,6 +27,8 @@ type Fixture = {
   focus: { status: number; body: unknown };
   marumori: unknown;
   syncRun?: unknown;
+  /** Status for the chip-label lookup endpoints (B1); 200 unless a test says otherwise. */
+  lookupStatus?: number;
 };
 
 function focusItem(kind: 'kanji' | 'vocabulary' | 'grammar', itemRef: string, srsLevel: number | null) {
@@ -121,6 +123,43 @@ describe('Today', () => {
         case '/marumori':
           return jsonResponse(fixture.marumori);
         default:
+          // The two catalogue endpoints the Focus Set chips resolve their labels
+          // through (B1); a fixture status of its own when a test wants failure.
+          if (path.startsWith('/dictionary/entries/')) {
+            if (fixture.lookupStatus && fixture.lookupStatus !== 200) {
+              return jsonResponse({ message: 'dictionary down' }, fixture.lookupStatus);
+            }
+            // Realistic JMdict rows: the ent_seq the chip asks for, a headword
+            // and reading for it. An unknown ent_seq reads as not found, the
+            // way the API answers one, so old stub fixtures fall back to the id.
+            const entSeq = Number(path.split('/').pop());
+            if (entSeq !== 1583100) {
+              return jsonResponse({
+                entSeq,
+                found: false,
+                headword: '',
+                reading: '',
+                jlptLevel: null,
+                senses: [],
+                kanji: [],
+              });
+            }
+            return jsonResponse({
+              entSeq: 1583100,
+              found: true,
+              headword: '雨',
+              reading: 'あめ',
+              jlptLevel: 'n5',
+              senses: [],
+              kanji: [],
+            });
+          }
+          if (path.startsWith('/grammar/points/')) {
+            if (fixture.lookupStatus && fixture.lookupStatus !== 200) {
+              return jsonResponse({ message: 'grammar down' }, fixture.lookupStatus);
+            }
+            return jsonResponse({ id: 342, pattern: '〜ては', meaning: 'repeated action', jlptLevel: 'n4' });
+          }
           return jsonResponse({ message: `stub: unexpected GET ${path}` }, 500);
       }
     });
@@ -195,7 +234,7 @@ describe('Today', () => {
     });
     expect(screen.getByText('travel · 2 sentences')).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+    fireEvent.click(screen.getByRole('button', { name: "Open today's story" }));
     expect(handlers.onOpenStory).toHaveBeenCalledWith('story-1');
   });
 
@@ -296,7 +335,7 @@ describe('Today', () => {
     await waitFor(() => {
       expect(screen.getByText('12 Focus Set items waiting.')).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Start practice' }));
     expect(handlers.onOpenPractice).toHaveBeenCalled();
   });
 
@@ -326,6 +365,78 @@ describe('Today', () => {
     expect(screen.getByText('All 11 Focus Set items shown')).toBeTruthy();
   });
 
+  it('uses resolved labels for vocabulary and grammar chips', async () => {
+    // Real itemRefs are ids (JMdict ent_seq / catalogue point id), so the
+    // chips resolve them through the two catalogue endpoints and show the
+    // word/pattern instead (issue #47 review B1).
+    fixture.focus = {
+      status: 200,
+      body: {
+        size: 15,
+        items: [
+          focusItem('vocabulary', '1583100', 4),
+          focusItem('grammar', '342', 2),
+          focusItem('kanji', '水', 5),
+        ],
+      },
+    };
+
+    renderToday();
+
+    await waitFor(() => {
+      expect(screen.getByText('雨 (あめ)')).toBeTruthy();
+    });
+    expect(screen.getByText('〜ては')).toBeTruthy();
+    // The kanji literal is the label already; no lookup was needed for it.
+    expect(screen.getByText('水')).toBeTruthy();
+    expect(gets.filter((call) => call.startsWith('GET /dictionary/entries/')).length).toBe(1);
+    expect(gets.filter((call) => call.startsWith('GET /grammar/points/')).length).toBe(1);
+    // ...and the raw id never reached the screen.
+    expect(screen.queryByText('Word 1583100')).toBeNull();
+  });
+
+  it('keeps a chip as a skeleton while its label resolves', async () => {
+    // The focus set has landed but the dictionary has not answered yet: the
+    // chip must be a placeholder, not an id the Learner cannot read.
+    fixture.focus = { status: 200, body: { size: 15, items: [focusItem('vocabulary', '1583100', 4)] } };
+    let holdDictionary: (value: Response) => void = () => {};
+    const held = new Promise<Response>((resolve) => (holdDictionary = resolve));
+    const base = fetchMock.getMockImplementation() as (
+      input: RequestInfo | URL,
+    ) => Promise<Response>;
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const path = new URL(new Request(input).url).pathname;
+      if (path.startsWith('/dictionary/entries/')) return held;
+      return base(input);
+    });
+
+    renderToday();
+    await waitFor(() => {
+      expect(screen.getByText('1 Focus Set item waiting.')).toBeTruthy();
+    });
+    // Neither the id nor a word: the chip is a skeleton.
+    expect(screen.queryByText('Word 1583100')).toBeNull();
+    expect(screen.queryByText('雨 (あめ)')).toBeNull();
+
+    holdDictionary(
+      jsonResponse({ entSeq: 1583100, found: true, headword: '雨', reading: 'あめ', jlptLevel: 'n5', senses: [], kanji: [] }),
+    );
+    await waitFor(() => {
+      expect(screen.getByText('雨 (あめ)')).toBeTruthy();
+    });
+  });
+
+  it('falls back to the id only when the label lookup fails', async () => {
+    fixture.lookupStatus = 500;
+    fixture.focus = { status: 200, body: { size: 15, items: [focusItem('vocabulary', '1583100', 4)] } };
+
+    renderToday();
+
+    await waitFor(() => {
+      expect(screen.getByText('Word 1583100')).toBeTruthy();
+    });
+  });
+
   it('labels a vocabulary chip by its id rather than inventing a word', async () => {
     fixture.focus = { status: 200, body: { size: 15, items: [focusItem('vocabulary', '158310', 4)] } };
 
@@ -352,7 +463,7 @@ describe('Today', () => {
       expect(gets.filter((call) => call.includes('/focus-set')).length).toBeGreaterThan(before);
     });
     // The other sections kept working through it.
-    expect(screen.getByRole('button', { name: 'Open' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: "Open today's story" })).toBeTruthy();
   });
 
   it('reports the last sync’s time and result in the Learner’s Timezone', async () => {
