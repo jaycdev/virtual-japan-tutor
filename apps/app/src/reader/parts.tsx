@@ -2,18 +2,21 @@ import type { DictionaryEntry, StoryRating } from "@vjt/api-client";
 import type { StoryView } from "@vjt/core";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { useColors } from "../theme.ts";
+import { Icon } from "../components/ui/icon";
+import { MIN_TOUCH } from "../theme";
 
 /**
  * Small shared pieces of the mobile reader: the JLPT badge, the gloss helpers
- * (same cap rules as the web Lookup row) and the thumbs rating buttons.
+ * (same cap rules as the web Lookup row), and the thumbs rating buttons.
  */
 
+/** JLPT level pill — the caller passes the label it shows (`N2`). */
 export function JlptBadge({ level }: { level: string }) {
-  const colors = useColors();
   return (
-    <View style={[styles.badge, { borderColor: colors.accent }]}>
-      <Text style={{ color: colors.accent, fontSize: 12, fontWeight: "600" }}>{level}</Text>
+    <View className="rounded-sm border-pitch bg-primary-subtle px-2" style={styles.badge}>
+      <Text className="text-caption text-primary" style={styles.badgeText}>
+        {level}
+      </Text>
     </View>
   );
 }
@@ -33,7 +36,12 @@ export function firstGlosses(entry: DictionaryEntry, n: number): string[] {
   return out;
 }
 
-/** 👍/👎 on the open Story or any library row; a rating is replaceable. */
+/**
+ * Thumbs up/down for "was this the right difficulty", on the open Story's footer
+ * and on library rows. Both are Lucide, both are at least MIN_TOUCH to hit, and
+ * both are disabled while a save is in flight, so two presses can't race for the
+ * rating column.
+ */
 export function RatingButtons({
   view,
   storyId,
@@ -43,23 +51,28 @@ export function RatingButtons({
   storyId: string;
   rating: StoryRating | null | undefined;
 }) {
-  const colors = useColors();
-  const thumb = (value: StoryRating, glyph: string, label: string) => (
+  const thumb = (value: StoryRating, glyph: "thumbs-up" | "thumbs-down", label: string) => (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ selected: rating === value, disabled: view.pending }}
       disabled={view.pending}
       onPress={() => void view.rate(storyId, value)}
-      style={[styles.thumb, rating === value && { borderColor: colors.accent, backgroundColor: colors.card }]}
+      className={rating === value ? "border-primary bg-card" : "border-transparent"}
+      style={styles.thumb}
     >
-      <Text style={{ fontSize: 18 }}>{glyph}</Text>
+      <Icon
+        name={glyph}
+        size="sm"
+        className={rating === value ? "text-primary" : "text-muted-foreground"}
+        pointerEvents="none"
+      />
     </Pressable>
   );
   return (
     <View style={styles.rating}>
-      {thumb("up", "👍", "Rate up")}
-      {thumb("down", "👎", "Rate down")}
+      {thumb("up", "thumbs-up", "Rate up")}
+      {thumb("down", "thumbs-down", "Rate down")}
     </View>
   );
 }
@@ -71,10 +84,12 @@ export function pageSummary(page: { items: unknown[]; total: number; limit: numb
 
 const styles = StyleSheet.create({
   badge: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 },
+  badgeText: { fontWeight: "600" },
+  underline: { height: 2, marginTop: 2 },
   rating: { flexDirection: "row", gap: 6 },
   thumb: {
-    minWidth: 40,
-    minHeight: 40,
+    minWidth: MIN_TOUCH,
+    minHeight: MIN_TOUCH,
     borderRadius: 10,
     borderWidth: 1,
     alignItems: "center",

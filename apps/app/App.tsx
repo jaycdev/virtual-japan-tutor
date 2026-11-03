@@ -17,6 +17,7 @@ import { AuthProvider, useSession } from "./src/session.tsx";
 import { resolveApiBaseUrl } from "./src/config.ts";
 import { appFonts } from "./src/fonts";
 import { appSecureStore } from "./src/secureStore";
+import { StoryTextSizeProvider } from "./src/storysize/index.tsx";
 import { secureStoreServerUrl, type ServerUrlStorage } from "./src/serverUrlStorage.ts";
 import { ThemeProvider } from "./src/theme/index.tsx";
 import { secureStoreTokenStorage, type TokenStorage } from "./src/tokenStorage.ts";
@@ -30,9 +31,13 @@ const urlStorage = secureStoreServerUrl(appSecureStore);
 export default function App({ children }: { children: React.ReactNode }) {
   return (
     <ThemeProvider>
-      <AppBootstrapped tokenStorage={tokenStorage} urlStorage={urlStorage}>
-        {children}
-      </AppBootstrapped>
+      {/* The Story text size (#45) hydrates from device storage; it never
+          gates the first frame — it only relayouts the reader. */}
+      <StoryTextSizeProvider>
+        <AppBootstrapped tokenStorage={tokenStorage} urlStorage={urlStorage}>
+          {children}
+        </AppBootstrapped>
+      </StoryTextSizeProvider>
     </ThemeProvider>
   );
 }

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { useRouter, usePathname, type Href } from "expo-router";
+import { PortalHost } from "@rn-primitives/portal";
 import { useWindowDimensions, View } from "react-native";
 
 import { useSession } from "../session.tsx";
@@ -9,6 +10,13 @@ import { activeDestination, isReaderRoute, type Destination } from "./destinatio
 
 /** At/above this viewport width the chrome becomes a left sidebar (issue #44). */
 export const SIDEBAR_BREAKPOINT = 1024;
+
+/**
+ * Below this viewport width, reader overlays (the Lookup menu, the word
+ * windows, the Save to… sheet) take their bottom-sheet form; at/above it the
+ * Lookup menu anchors to its token and the windows are centred cards.
+ */
+export const OVERLAY_BREAKPOINT = 640;
 
 /** Widest the content column grows on large screens; the rest is margin. */
 const CONTENT_MAX_WIDTH = 960;
@@ -52,6 +60,9 @@ export function Shell({ children }: { children: ReactNode }) {
             {children}
           </View>
         </View>
+        {/* the reader's Lookup menu and windows portal here on native (RN Primitives);
+            web portals straight to the document, so this only ever holds native content */}
+        <PortalHost />
       </View>
     );
   }
@@ -60,6 +71,7 @@ export function Shell({ children }: { children: ReactNode }) {
     <View className="flex-1 bg-background">
       <View className="flex-1">{children}</View>
       {!isReaderRoute(pathname) && <TabBar active={active} onSelect={select} />}
+      <PortalHost />
     </View>
   );
 }

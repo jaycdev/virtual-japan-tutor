@@ -1,26 +1,41 @@
 import type { StoryGrammarSpan, StorySentence, StoryToken } from "@vjt/api-client";
-import { memo, type ReactNode } from "react";
+import { forwardRef, memo, useEffect, useRef, type ReactNode } from "react";
 import { StyleSheet, Text, View, type NativeSyntheticEvent, type NativeTouchEvent } from "react-native";
 
-import { type ThemeColors, useColors } from "../theme.ts";
-import { coveringSpan, type TokenRef } from "./holdMenu.ts";
+import { useStoryTextSize } from "../storysize/index.tsx";
+import { type MeasurableNode, type TokenRef } from "./holdMenu.ts";
 
 /**
- * The story body: every sentence is a paragraph whose tokens are touchable.
- * A token's press begins the Lookup gesture (the handlers come from the
- * reader — this file only renders and forwards), and a press anywhere else in
- * the paragraph just selects its sentence, as the web paragraph click does.
+ * The story body (issues #14, #45): centred serif text in a column 40
+ * characters wide, sized by the saved Story text size. Marks follow the ticket:
+ *   Known Item          → no mark at all
+ *   lookup-marked word  → its own underline element (class `border-lookup-mark`):
+ *                         a View border, so it paints on Android as on web
+ *   Grammar Span        → a rounded highlighter background, stronger for Focus Spans
+ *   selected token      → the selected-token background
  *
- * Furigana: react-native has no ruby element, so a token with showFurigana
- * stacks its reading above its surface as one small inline block — one text
- * line for the reading, one for the word. Underline rules echo the web
- * reader, adapted for Android: RN's textDecorationStyle/textDecorationColor
- * are iOS-only (reactnative.dev/docs/next/text-style-props, RN 0.88), so on
- * Android every underline is solid and painted in the text's colour. The
- * four web classes are therefore told apart by underline presence + text
- * colour + weight (see tokenDecoration), not by dotted/wavy line styles.
+ * Layout is a token column, identically on BOTH platforms (issue #45 review,
+ * blocker 2): each token is its own View — a flex row of columns wraps per
+ * sentence — with a fixed-height reading slot above the word. The slot is
+ * always reserved, so words on one line share a baseline whether or not the
+ * token carries furigana, and the reading paints directly above its word.
+ * (The old `word + "\n" + reading` nested-Text trick is gone: on Android it
+ * broke the reading out of the word's line and reflowed the whole sentence.)
+ *
+ * The tap target is the whole column, so a Learner can press the reading, the
+ * word, or the space between them. Punctuation the tokeniser left out stays a
+ * plain span with no gesture of its own — a press there selects the sentence.
+ *
+ * A token's press begins the Lookup gesture — the reader's per-token handler
+ * objects are SPREAD onto the column (its responder wiring is what lets the
+ * ScrollView steal a swipe, see StoryReader) — and a press anywhere else in
+ * the paragraph just selects its sentence. On web the column element also
+ * listens for native `mouseover` (hover lookup) and `contextmenu` (right-click
+ * opens the Lookup menu at the pointer), because a mouse never fires RN's
+ * press events.
  */
 
+/** The gesture props the reader builds per token (holdMenu machine, StoryReader). */
 export interface TokenHandlers {
   onStartShouldSetResponder: () => boolean;
   onResponderGrant: (e: NativeSyntheticEvent<NativeTouchEvent>) => void;
@@ -28,6 +43,14 @@ export interface TokenHandlers {
   onResponderRelease: (e: NativeSyntheticEvent<NativeTouchEvent>) => void;
   onResponderTerminate: (e: NativeSyntheticEvent<NativeTouchEvent>) => void;
   onResponderTerminationRequest: () => boolean;
+}
+
+/** Extra props a web host adds to a token: hover lookup and right-click menu. */
+export interface TokenWebHostHandlers {
+  /** Pointer entered the token — look it up in the Reading Panel. */
+  onHover: (ref: TokenRef, e: MouseEvent) => void;
+  /** Right-click — open the Lookup menu at the pointer. */
+  onContextMenu: (ref: TokenRef, e: MouseEvent) => void;
 }
 
 /**
@@ -38,62 +61,215 @@ export interface TokenHandlers {
 export function sentenceNodes(
   sentence: StorySentence,
   renderToken: (token: StoryToken, index: number) => ReactNode,
+  renderGap: (text: string, key: string) => ReactNode = (text, key) => <Text key={key}>{text}</Text>,
 ): ReactNode[] {
   const chars = Array.from(sentence.ja);
   const out: ReactNode[] = [];
   let cursor = 0;
   sentence.tokens.forEach((tok, j) => {
-    if (tok.start > cursor) out.push(<Text key={`gap-${j}`}>{chars.slice(cursor, tok.start).join("")}</Text>);
+    if (tok.start > cursor) {
+      const key = `gap-${j}`;
+      out.push(renderGap(chars.slice(cursor, tok.start).join(""), key));
+    }
     out.push(renderToken(tok, j));
     cursor = Math.max(cursor, tok.end);
   });
-  if (cursor < chars.length) out.push(<Text key="gap-end">{chars.slice(cursor).join("")}</Text>);
+  if (cursor < chars.length) out.push(renderGap(chars.slice(cursor).join(""), "gap-end"));
   return out;
 }
 
-/** The word with its furigana stacked above it when the server asked for ruby. */
-export function TokenWords({ token, style }: { token: StoryToken; style?: object }) {
-  const colors = useColors();
-  const ruby = token.showFurigana && token.reading && token.reading !== token.surface;
+/** True when the word gets the lookup underline: linked, and not a Known Item. */
+export function isLookupMarked(token: StoryToken): boolean {
+  return token.entSeq !== undefined && token.tag !== "known";
+}
+
+/** The classes for the token's marks, from the ticket's four cases. */
+export function tokenMarkClasses(
+  token: StoryToken,
+  spans: StoryGrammarSpan[],
+  selected: boolean,
+): string[] {
+  const classes: string[] = [];
+  if (selected) classes.push("bg-selected-sentence");
+  const covered = spans.filter((sp) => token.start < sp.end && sp.start < token.end);
+  if (covered.length > 0) {
+    // The highlighter swipe is rounded (review on #45): a square block of
+    // colour around a word reads as a table cell, not a mark. The radius rides
+    // with the colour so a mark can never arrive without its shape.
+    classes.push(covered.some((sp) => sp.isFocus) ? "bg-grammar-focus rounded-sm" : "bg-grammar rounded-sm");
+  }
+  if (isLookupMarked(token)) classes.push("border-lookup-mark");
+  return classes;
+}
+
+/** Furigana classes: the base size always, the size step away from the default. */
+export function furiganaClasses(size: "S" | "M" | "L" | "XL"): string {
+  return size === "M" ? "text-furigana" : `text-furigana text-furigana-${size.toLowerCase()}`;
+}
+
+/**
+ * The reading size for a story-text size — half the word's font size, the
+ * same ratio the `--text-furigana-*` steps keep (9/10.5/12/14 for 18/21/24/28).
+ * Exported because the Reading Panel reserves the same slot.
+ */
+export function furiganaPxFor(fontSizePx: number): number {
+  return fontSizePx / 2;
+}
+
+/**
+ * A token as the panel renders it: reading stacked over surface in one inline
+ * Text, for flows that stay plain text (the panel's sentence mode). The story
+ * body uses the token-column layout below instead.
+ */
+export function TokenWords({ token, size }: { token: StoryToken; size?: "S" | "M" | "L" | "XL" }) {
+  const { size: storySize } = useStoryTextSize();
+  const ruby = token.showFurigana && token.reading !== undefined && token.reading !== "";
   return (
-    <Text style={style}>
-      {ruby ? (
-        <Text style={{ fontSize: 11, color: colors.subtle }}>{token.reading}</Text>
-      ) : null}
+    <Text>
+      {ruby ? <Text className={furiganaClasses(size ?? storySize)}>{token.reading}</Text> : null}
       {ruby ? "\n" : null}
       {token.surface}
     </Text>
   );
 }
 
+interface StoryTokenProps {
+  token: StoryToken;
+  sentenceIndex: number;
+  index: number;
+  spans: StoryGrammarSpan[];
+  /** The token the Learner last selected — its sentence's background tints it. */
+  selected: boolean;
+  /** Gesture props, spread straight onto the token column. */
+  handlers: TokenHandlers;
+  /** Web only: hover lookup + right-click menu, attached to the DOM element. */
+  webHandlers?: TokenWebHostHandlers;
+  /** The saved Story text size (the word's font size; the reading is half). */
+  fontSizePx: number;
+}
+
 /**
- * One paragraph of the story. `activeToken` lights up the pressed token, and
- * while a Grammar Span token is pressed every token the Span covers lights up
- * too — the whole Span reads as one unit, like the web hover.
- *
- * Memoised (issue #14 review, minor 6): `handlers` and `onSelect` are stable
- * across gesture renders (the reader caches them), so header notes, panel
- * updates and answer feedback re-render only the paragraphs whose active
- * token actually changed — the token props keep identical identity.
+ * One token: a column View — the reserved reading slot, the word, and (when
+ * lookup-marked) its own underline element. It carries the gesture wiring and
+ * the `token-{sentence}-{index}` / `furigana-{sentence}-{index}` test handles.
+ */
+const StoryToken = forwardRef<MeasurableNode | null, StoryTokenProps>(function StoryToken(
+  { token, sentenceIndex, index, spans, selected, handlers, webHandlers, fontSizePx },
+  ref,
+) {
+  const { size } = useStoryTextSize();
+  const localRef = useRef<MeasurableNode | null>(null);
+  useEffect(() => {
+    // Web only: a mouse has no RN press events, so hover and right-click come
+    // in as DOM events on the rendered element (native refs have no such
+    // method — the guard skips Android entirely). The column element spans
+    // reading + word, so hovering either one counts as hovering the word.
+    const host = localRef.current as unknown as HTMLElement | null;
+    if (!host || typeof host.addEventListener !== "function") return;
+    const ref_: TokenRef = { sentence: sentenceIndex, index };
+    const over = (e: Event) => webHandlers?.onHover(ref_, e as MouseEvent);
+    const menu = (e: Event) => {
+      e.preventDefault();
+      webHandlers?.onContextMenu(ref_, e as MouseEvent);
+    };
+    host.addEventListener("mouseover", over);
+    host.addEventListener("contextmenu", menu);
+    return () => {
+      host.removeEventListener("mouseover", over);
+      host.removeEventListener("contextmenu", menu);
+    };
+  }, [webHandlers, sentenceIndex, index]);
+
+  const classes = tokenMarkClasses(token, spans, selected);
+  // The highlighter marks belong to the WORD (the reading above stays clear of
+  // them); the lookup underline is its own element at the column's bottom —
+  // a View border paints on Android, where nested-Text borders do not.
+  const wordClasses = classes.filter((c) => c !== "border-lookup-mark");
+  const ruby = token.showFurigana === true && token.reading !== undefined && token.reading !== "";
+  const furiganaSlotPx = furiganaPxFor(fontSizePx);
+
+  return (
+    <View
+      ref={(el) => {
+        const node = el as unknown as MeasurableNode | null;
+        localRef.current = node;
+        if (typeof ref === "function") ref(node);
+        else if (ref !== null) (ref as { current: MeasurableNode | null }).current = node;
+      }}
+      testID={`token-${sentenceIndex}-${index}`}
+      accessibilityLabel={`${token.surface}${ruby ? ` (${token.reading})` : ""}`}
+      {...handlers}
+    >
+      {/* The reading slot: always the same height, furigana or not, so every
+          word on the line shares its baseline. leading-none keeps the reading
+          Text exactly `furiganaSlotPx` tall on both platforms. */}
+      {ruby ? (
+        <Text
+          key={"ruby-" + size}
+          testID={`furigana-${sentenceIndex}-${index}`}
+          className={furiganaClasses(size) + " text-center leading-none"}
+          style={{ lineHeight: furiganaSlotPx }}
+        >
+          {token.reading}
+        </Text>
+      ) : (
+        <View style={{ height: furiganaSlotPx }} />
+      )}
+      <Text
+        // Fiber-visible marks (see the test suite's fiberClassTokens helper)
+        // read the element's props; RN's Text can retain its first-pass props
+        // across a class-only update, so the marked span is keyed by its marks
+        // and gets a fresh fiber when the marks change.
+        key={"m-" + wordClasses.join("-")}
+        className={wordClasses.length > 0 ? wordClasses.join(" ") : undefined}
+        style={{ fontSize: fontSizePx, lineHeight: Math.round(fontSizePx * 1.4), textAlign: "center" }}
+      >
+        {token.surface}
+      </Text>
+      {isLookupMarked(token) ? (
+        <View
+          key={"mark-" + sentenceIndex + "-" + index}
+          className="border-lookup-mark"
+          style={styles.lookupUnderline}
+        />
+      ) : null}
+    </View>
+  );
+});
+
+/**
+ * One paragraph of the story: a flex row of token columns that wraps per
+ * sentence, centred line by line. Memoised (issue #14 review, minor 6): the
+ * reader caches `handlers`, `webHandlers` and `onSelect` across renders, so
+ * header notes, panel updates and answer feedback re-render only the
+ * paragraphs whose selected token actually changed.
  */
 export const StoryParagraph = memo(function StoryParagraph({
   sentence,
   sentenceIndex,
-  activeToken,
+  selectedToken,
   handlers,
+  webHandlers,
   onSelect,
+  fontSizePx,
 }: {
   sentence: StorySentence;
   sentenceIndex: number;
-  activeToken: TokenRef | null;
+  /** The token the Learner last selected (the background mark), in this paragraph. */
+  selectedToken: TokenRef | null;
   /** Gesture handlers per token (one stable function; the per-token objects are cached by the reader). */
   handlers: (sentenceIndex: number, index: number) => TokenHandlers;
+  /** Web hover / right-click wiring (stable; undefined on native hosts). */
+  webHandlers?: TokenWebHostHandlers;
   /** Stable selector: which sentence was pressed anywhere in this paragraph. */
   onSelect: (sentenceIndex: number) => void;
+  /** The saved Story text size (the column's font). */
+  fontSizePx: number;
 }) {
-  const colors = useColors();
-  const activeTok = activeToken?.sentence === sentenceIndex ? sentence.tokens[activeToken.index] : undefined;
-  const activeSpan = activeTok ? coveringSpan(sentence, activeTok) : null;
+  // Centred line-by-line via the flex container itself (issue #45): each
+  // wrapped line of token columns sits in the middle of the 40-character box.
+  // `alignItems: "flex-end"` keeps bare punctuation spans on the word baseline
+  // next to columns, whose words sit at the bottom of their reading slots.
   return (
     <View
       onStartShouldSetResponder={() => true}
@@ -101,96 +277,36 @@ export const StoryParagraph = memo(function StoryParagraph({
       accessibilityLabel={`Sentence ${sentenceIndex + 1}`}
       style={styles.paragraph}
     >
-      <Text style={[styles.body, { color: colors.label }]}>
-        {sentenceNodes(sentence, (tok, j) => (
-          <StoryToken
-            key={j}
-            token={tok}
-            sentenceIndex={sentenceIndex}
-            index={j}
-            spans={sentence.grammarSpans}
-            active={
-              (activeToken?.sentence === sentenceIndex && activeToken.index === j) ||
-              (activeSpan !== null && coveringSpan(sentence, tok) === activeSpan)
-            }
-            handlers={handlers(sentenceIndex, j)}
-          />
-        ))}
-      </Text>
+      {sentenceNodes(sentence, (tok, j) => (
+        <StoryToken
+          key={j}
+          token={tok}
+          sentenceIndex={sentenceIndex}
+          index={j}
+          spans={sentence.grammarSpans}
+          selected={selectedToken !== null && selectedToken.sentence === sentenceIndex && selectedToken.index === j}
+          handlers={handlers(sentenceIndex, j)}
+          webHandlers={webHandlers}
+          fontSizePx={fontSizePx}
+        />
+      ))}
     </View>
   );
 });
 
-/**
- * The underline mapping (issue #14 review, fix 5). Web draws: solid Known
- * Item, dotted unknown-with-entry, none unlinked, wavy purple Grammar
- * (thicker for Focus Grammar). `textDecorationStyle` and `textDecorationColor`
- * are iOS-only props in RN (reactnative.dev/docs/next/text-style-props —
- * both marked iOS, checked against RN 0.88.1), so on Android they are no-ops
- * and all underlines collapse into one solid line in the text's colour.
- * Nested-Text borders can fake per-token lines but are known-flaky on
- * Android, so the mobile reader keeps to the props Android definitely
- * honours and lets the underline follow the text colour:
- *   known item         → underline, body colour (dark)
- *   unknown w/ entry   → underline, dim grey (the web's dotted class)
- *   unlinked           → no underline
- *   Grammar Span       → underline, purple
- *   Focus Grammar      → underline, darker purple + bold weight
- * Five visually distinct treatments on Android, the same colour logic the
- * web reader uses for Grammar.
- */
-export function tokenDecoration(
-  token: StoryToken,
-  spans: StoryGrammarSpan[],
-  colors: ThemeColors,
-): { textDecorationLine: "underline" | "none"; color?: string; fontWeight?: string } {
-  const covered = spans.filter((sp) => token.start < sp.end && sp.start < token.end);
-  if (covered.length > 0) {
-    return covered.some((sp) => sp.isFocus)
-      ? { textDecorationLine: "underline", color: "#5b21b6", fontWeight: "600" }
-      : { textDecorationLine: "underline", color: "#7c3aed" };
-  }
-  if (token.tag === "known") return { textDecorationLine: "underline", color: colors.label };
-  if (token.entSeq !== undefined) return { textDecorationLine: "underline", color: colors.subtle };
-  return { textDecorationLine: "none" };
-}
-
-/** A token in the story body: touchable, underlined by its item status. */
-function StoryToken({
-  token,
-  sentenceIndex,
-  index,
-  spans,
-  active,
-  handlers,
-}: {
-  token: StoryToken;
-  sentenceIndex: number;
-  index: number;
-  spans: StoryGrammarSpan[];
-  active: boolean;
-  handlers: TokenHandlers;
-}) {
-  const colors = useColors();
-  const style: object[] = [tokenDecoration(token, spans, colors)];
-  if (active) style.push({ backgroundColor: `${colors.accent}33` });
-  const ruby = token.showFurigana && token.reading && token.reading !== token.surface;
-  return (
-    <Text
-      testID={`token-${sentenceIndex}-${index}`}
-      accessibilityLabel={`${token.surface}${token.reading && ruby ? ` (${token.reading})` : ""}`}
-      {...handlers}
-    >
-      {ruby ? (
-        <Text style={{ fontSize: 11, color: colors.subtle }}>{token.reading}</Text>
-      ) : null}
-      {ruby ? "\n" : null}
-      <Text style={style}>{token.surface}</Text>
-    </Text>
-  );
-}
-
 const styles = StyleSheet.create({
-  paragraph: { paddingVertical: 4 },
-  body: { fontSize: 18, lineHeight: 30 },
+  paragraph: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    alignItems: "flex-end",
+    paddingVertical: 4,
+  },
+  lookupUnderline: {
+    // The lookup mark is its own element spanning the column, not a text
+    // decoration: View borders paint identically on web and Android.
+    alignSelf: "stretch",
+    borderBottomWidth: 1,
+    borderStyle: "dotted",
+  },
 });

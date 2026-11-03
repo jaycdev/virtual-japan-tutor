@@ -31,6 +31,7 @@ import type { MeasurableNode, Rect } from "./reader/holdMenu.ts";
 export function Stories({
   client,
   onOpenStory,
+  onPracticeStory,
   measure,
   screenSize,
   generationPollMs,
@@ -47,6 +48,12 @@ export function Stories({
    * hosts that just host the component let it open its own reader.
    */
   onOpenStory?: (storyId: string) => void;
+  /**
+   * Queues a Story for speaking practice from the reader's footer (issue #45).
+   * Optional like onOpenStory: hosts that own the practice queue pass it; the
+   * component test suites exercise the footer through it.
+   */
+  onPracticeStory?: (storyId: string) => void;
   /** Passed to the reader: test hosts inject menu geometry the DOM cannot measure. */
   measure?: (testID: string, node: MeasurableNode | null) => Rect | null;
   screenSize?: { width: number; height: number };
@@ -85,6 +92,7 @@ export function Stories({
         view={view}
         story={view.story}
         onBack={() => view.close()}
+        onPractice={onPracticeStory}
         measure={measure}
         screenSize={screenSize}
       />
