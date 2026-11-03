@@ -23,7 +23,10 @@ export const DESTINATIONS: Destination[] = [
 /** Which destination a pathname belongs to ("/settings/server" → "/settings"). */
 export function activeDestination(pathname: string): string {
   if (pathname === "/") return "/";
-  const hit = DESTINATIONS.find((d) => d.path !== "/" && pathname.startsWith(d.path));
+  // Segment-aware prefix: "/storiesfoo" must not light up Stories.
+  const hit = DESTINATIONS.find(
+    (d) => d.path !== "/" && (pathname === d.path || pathname.startsWith(d.path + "/")),
+  );
   return hit?.path ?? "/";
 }
 

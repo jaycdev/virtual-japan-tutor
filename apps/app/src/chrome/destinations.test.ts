@@ -21,6 +21,9 @@ describe("destinations", () => {
     expect(activeDestination("/settings/server")).toBe("/settings");
     // Unrouted paths fall back to Today rather than selecting nothing.
     expect(activeDestination("/nowhere")).toBe("/");
+    // Prefix match is segment-aware: look-alikes must not select a tab.
+    expect(activeDestination("/storiesfoo")).toBe("/");
+    expect(activeDestination("/settingsx/foo")).toBe("/");
   });
 
   test("reader routes are the opened Story and Grammar point screens", () => {
