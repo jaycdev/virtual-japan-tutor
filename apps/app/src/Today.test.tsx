@@ -226,6 +226,42 @@ describe('Today', () => {
     expect(screen.getByText(/Good (morning|afternoon|evening)|Still studying/)).toBeTruthy();
   });
 
+  it('holds the greeting and date until the Learner’s Timezone is known', async () => {
+    // issue #47 review S2: while /story-settings is in flight the header must
+    // not show the device's clock and then switch — the Learner would watch
+    // their own date change under them.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-04T22:30:00Z'));
+    let holdSettings: (value: Response) => void = () => {};
+    const held = new Promise<Response>((resolve) => (holdSettings = resolve));
+    const base = fetchMock.getMockImplementation() as (
+      input: RequestInfo | URL,
+    ) => Promise<Response>;
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const path = new URL(new Request(input).url).pathname;
+      if (path === '/story-settings') return held;
+      return base(input);
+    });
+
+    renderToday();
+    // The rest of the screen lands while the settings are still outstanding…
+    await waitFor(() => {
+      expect(screen.getByText('雨の日の駅')).toBeTruthy();
+    });
+    // …and the header holds a skeleton: no greeting, and no date in the
+    // greeting's "Weekday, Month Day" form (the sync line's plain timestamp
+    // does not match this shape).
+    expect(screen.queryByText('Good morning')).toBeNull();
+    expect(screen.queryByText('Good afternoon')).toBeNull();
+    expect(screen.queryByText(/, November/)).toBeNull();
+
+    holdSettings(jsonResponse({ furiganaThresholdSrsLevel: 3, timezone: 'Pacific/Kiritimati' }));
+    await waitFor(() => {
+      expect(screen.getByText('Good afternoon')).toBeTruthy();
+    });
+    expect(screen.getByText('Thursday, November 5')).toBeTruthy();
+  });
+
   it('shows the story’s title, genre and length, and opens it', async () => {
     const handlers = renderToday();
 

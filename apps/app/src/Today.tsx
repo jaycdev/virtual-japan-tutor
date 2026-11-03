@@ -21,7 +21,7 @@ import {
   FOCUS_CHIPS_MAX,
   type FocusLabelResolver,
 } from "./components/ui/FocusSetPanel.tsx";
-import { EmptyState, InlineError, ProgressBar, Skeleton } from "./state/states.tsx";
+import { EmptyState, InlineError, ProgressBar, Skeleton, SkeletonBar } from "./state/states.tsx";
 
 /**
  * Today (issue #47), the signed-in landing screen on Android and web. Plan 4.4
@@ -93,7 +93,11 @@ export function Today({
   return (
     <ScrollView className="flex-1" accessibilityLabel="Today" contentContainerStyle={styles.page}>
       <View className="w-full gap-4" style={styles.column}>
-        <Greeting timezone={timezone} settingsFailed={learnerSettings.status === "error"} />
+        <Greeting
+          timezone={timezone}
+          settingsPending={learnerSettings.status === "loading"}
+          settingsFailed={learnerSettings.status === "error"}
+        />
 
         <View className={wide ? "flex-row items-stretch gap-4" : "gap-4"}>
           <View className={wide ? "flex-1" : undefined}>
@@ -132,15 +136,21 @@ export function Today({
 }
 
 /**
- * Greeting plus the date, both read in the Learner's Timezone. A settings read
- * that failed still shows a greeting and date (in the device's zone) with a
- * quiet note: the clock is not the part worth interrupting the Learner over.
+ * Greeting plus the date, both read in the Learner's Timezone. While the
+ * settings read is still in flight the block holds a skeleton rather than
+ * showing the device's clock first: a Learner whose zone is different would
+ * watch their greeting and date change under them (issue #47 review S2). A
+ * settings read that failed still shows a greeting and date (in the device's
+ * zone) with a quiet note: the clock is not the part worth interrupting the
+ * Learner over.
  */
 function Greeting({
   timezone,
+  settingsPending,
   settingsFailed,
 }: {
   timezone: string | undefined | null;
+  settingsPending: boolean;
   settingsFailed: boolean;
 }) {
   const [now, setNow] = useState(() => new Date());
@@ -153,13 +163,24 @@ function Greeting({
   const clock = learnerClock(now, timezone);
   return (
     <View className="gap-1" testID="today-greeting">
-      <Text className="text-display font-semibold text-foreground">{clock.greeting}</Text>
-      <Text className="text-body text-muted-foreground">{clock.date}</Text>
-      {settingsFailed ? (
-        <Text className="text-small text-muted-foreground">
-          Timezone unavailable — showing your device's time.
-        </Text>
-      ) : null}
+      {settingsPending ? (
+        // Same shape as the settled greeting: a display-size bar and a
+        // smaller date bar (issue #47 review S7).
+        <View className="gap-2 py-1">
+          <SkeletonBar width={180} height={30} />
+          <SkeletonBar width={140} height={16} />
+        </View>
+      ) : (
+        <>
+          <Text className="text-display font-semibold text-foreground">{clock.greeting}</Text>
+          <Text className="text-body text-muted-foreground">{clock.date}</Text>
+          {settingsFailed ? (
+            <Text className="text-small text-muted-foreground">
+              Timezone unavailable — showing your device's time.
+            </Text>
+          ) : null}
+        </>
+      )}
     </View>
   );
 }
