@@ -73,6 +73,34 @@ describe("usePractice", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
+  it("starts a session seeded by the caller (the Story deep link, issue #46)", async () => {
+    const { client, fetchImpl, json } = fakeClient();
+    fetchImpl.mockImplementation(async () => json(201, session()));
+    const { result } = renderHook(() => usePractice(client));
+
+    await act(async () => {
+      void result.current.start(1234);
+    });
+
+    await waitFor(() => expect(result.current.state).toBe("active"));
+    const [input, init] = fetchImpl.mock.calls[0] ?? [];
+    expect(await new Request(input as RequestInfo, init as RequestInit).json()).toEqual({ seed: 1234 });
+  });
+
+  it("starts a session with an empty body when no seed is given", async () => {
+    const { client, fetchImpl, json } = fakeClient();
+    fetchImpl.mockImplementation(async () => json(201, session()));
+    const { result } = renderHook(() => usePractice(client));
+
+    await act(async () => {
+      void result.current.start();
+    });
+
+    await waitFor(() => expect(result.current.state).toBe("active"));
+    const [input, init] = fetchImpl.mock.calls[0] ?? [];
+    expect(await new Request(input as RequestInfo, init as RequestInit).json()).toEqual({});
+  });
+
   it("reports starting while the create request is in flight", async () => {
     const { client, fetchImpl, json } = fakeClient();
     fetchImpl.mockImplementation(async () => {

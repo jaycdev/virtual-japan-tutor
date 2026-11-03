@@ -60,7 +60,12 @@ export interface PracticeView {
   /** True while an answer request is in flight: the option buttons are locked. */
   pending: boolean;
   error: string | null;
-  start(): Promise<void>;
+  /**
+   * Asks the server for a session. `seed` makes the session deterministic for
+   * the Learner's current Focus Set (the Story deep link starts one seeded
+   * from the Story id); omit it for a server-chosen seed.
+   */
+  start(seed?: number): Promise<void>;
   answer(exerciseId: string, optionId: string): Promise<void>;
 }
 
@@ -81,11 +86,13 @@ export function usePractice(client: ApiClient): PracticeView {
   // twice (the second POST would 409 already_answered).
   const inFlight = useRef(false);
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (seed?: number) => {
     setState("starting");
     setError(null);
     try {
-      const { data, error: err, response } = await client.POST("/practice/sessions", { body: {} });
+      const { data, error: err, response } = await client.POST("/practice/sessions", {
+        body: seed === undefined ? {} : { seed },
+      });
       if (!data) {
         setError(message(err, response.status));
         setState("error");
