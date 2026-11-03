@@ -12,7 +12,7 @@ These are the FULL static family files (~14,500 glyphs each) from the
 google/fonts repo, not subsets - the spike wanted byte-for-byte worst-case
 payload numbers. #43 should cut them with `pyftsubset` (kana + punctuation +
 JLPT-range kanji) or switch to on-demand/variable fonts; see
-`apps/mobile/TRIAL_RESULTS.md` (payload risk).
+`apps/app/TRIAL_RESULTS.md` (payload risk).
 
 Both families are licensed under the SIL Open Font License 1.1; the licence
 text travels with them as required:

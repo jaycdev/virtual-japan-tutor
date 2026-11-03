@@ -7,7 +7,7 @@ export default tseslint.config(
   {
     ignores: [
       "**/dist/**",
-      "apps/mobile/dist-web-trial/**",
+      "apps/app/dist-web*/**",
       "**/node_modules/**",
       "**/.expo/**",
       "**/.turbo/**",
