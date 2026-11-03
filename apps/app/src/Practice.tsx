@@ -124,6 +124,16 @@ export function Practice({
     setShownId(null);
   };
 
+  // Declared alongside retryActive rather than inline: the ref-touching
+  // handlers stay out of the render-scope arrow functions the hooks lint
+  // (rightly) distrusts.
+  const answerShown = (exerciseId: string, optionId: string) => {
+    setShownId(exerciseId);
+    lastAttempt.current = { exerciseId, optionId };
+    void practice.answer(exerciseId, optionId);
+  };
+  const practiceAgain = () => startSession(sessionSeed.current);
+
   return (
     <ScrollView
       className="flex-1"
@@ -153,7 +163,7 @@ export function Practice({
               // 0-of-0 score the Learner never played (#46 review).
               <NothingToPractise onOpenWordLists={onOpenWordLists} />
             ) : (
-              <PracticeResults practice={practice} onAgain={() => startSession(sessionSeed.current)} />
+              <PracticeResults practice={practice} onAgain={practiceAgain} />
             );
           })()
         ) : (
@@ -165,11 +175,7 @@ export function Practice({
                 current={shown}
                 onContinue={onContinue}
                 onRetry={() => retryActive(shown.id)}
-                onAnswer={(exerciseId, optionId) => {
-                  setShownId(exerciseId);
-                  lastAttempt.current = { exerciseId, optionId };
-                  void practice.answer(exerciseId, optionId);
-                }}
+                onAnswer={answerShown}
               />
             ) : practice.exercises.length === 0 ? (
               // The Focus Set had nothing to build from: not a stuck session,
