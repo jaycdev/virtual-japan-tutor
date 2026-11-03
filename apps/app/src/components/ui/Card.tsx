@@ -20,15 +20,24 @@ export function Card({
   children,
   testID,
   fill = false,
+  pinned = false,
 }: {
   children: ReactNode;
   testID?: string;
   fill?: boolean;
+  /**
+   * The pinned (Today's Story) card reads as special: a primary-bordered
+   * surface instead of the plain one (issue #48 review, plan §4.5). Token
+   * classes only — no one-off colours.
+   */
+  pinned?: boolean;
 }) {
   return (
     <View
       testID={testID}
-      className={`${cardFillClass(fill, Platform.OS)}gap-3 rounded-lg border border-border bg-card p-5`}
+      className={`${cardFillClass(fill, Platform.OS)}gap-3 rounded-lg ${
+        pinned ? "border-2 border-primary" : "border border-border"
+      } bg-card p-5`}
     >
       {children}
     </View>

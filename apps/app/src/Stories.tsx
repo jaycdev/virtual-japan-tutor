@@ -151,12 +151,13 @@ export function Stories({ client, onOpenStory, generationPollMs, screenSize }: S
                 fill={wide}
               />
             </View>
+            {/* Secondary/outline: the pinned card's Open stays the page's only
+                filled primary on narrow, where the two stack (issue #48 review). */}
             <ActionButton
               label={status === "running" ? "Writing…" : "Generate"}
               accessibilityHint="Writes one new Story now, with an optional Genre and Theme"
               disabled={status === "running"}
               fullWidth={!wide}
-              filled
               onPress={() => setGenerateOpen(true)}
               testID="today-generate"
             />
@@ -327,7 +328,7 @@ function TodayCard({
   const justWritten = readyStory && readyStory === readyId && (today.status !== "story" || today.story.id !== readyStory);
 
   return (
-    <Card testID="today-card" fill={fill}>
+    <Card testID="today-card" fill={fill} pinned>
       {today.status === "loading" ? (
         // Shaped like the settled card: a title bar, a meta line, the button
         // block (plan §5) — so nothing jumps when the story lands.
