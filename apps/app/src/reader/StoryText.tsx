@@ -124,7 +124,7 @@ const StoryToken = forwardRef<MeasurableNode | null, StoryTokenProps>(function S
   { token, sentenceIndex, index, spans, selected, handlers, webHandlers },
   ref,
 ) {
-  const { size } = useStoryTextSize();
+  const { size, fontSizePx } = useStoryTextSize();
   const localRef = useRef<MeasurableNode | null>(null);
   useEffect(() => {
     // Web only: a mouse has no RN press events, so hover and right-click come
@@ -148,6 +148,12 @@ const StoryToken = forwardRef<MeasurableNode | null, StoryTokenProps>(function S
 
   const classes = tokenMarkClasses(token, spans, selected);
   const ruby = token.showFurigana && token.reading !== undefined && token.reading !== "";
+  // Web lays each ruby token out as a tiny column (reading over surface):
+  // an inline-block box with its own centred lines, so the '\n' between
+  // reading and surface stacks INSIDE the token instead of breaking the
+  // sentence flow. Native Text cannot do inline-block — there the '\n'
+  // simply starts a new line in the paragraph flow.
+  const tokenClassName = ruby && Platform.OS === "web" ? "inline-block align-bottom text-center" : undefined;
   return (
     <Text
       ref={(el) => {
@@ -158,6 +164,10 @@ const StoryToken = forwardRef<MeasurableNode | null, StoryTokenProps>(function S
       }}
       testID={`token-${sentenceIndex}-${index}`}
       accessibilityLabel={`${token.surface}${ruby ? ` (${token.reading})` : ""}`}
+      className={tokenClassName}
+      // The stacked ruby lines get their own tighter leading (the paragraph's
+      // 2.1 leading is room for the reading ABOVE the line, not inside it).
+      style={ruby ? { lineHeight: Math.round(fontSizePx * 1.35) } : undefined}
       {...handlers}
     >
       {ruby ? (
@@ -222,6 +232,9 @@ export const StoryParagraph = memo(function StoryParagraph({
   /** The saved Story text size (the column's font). */
   fontSizePx: number;
 }) {
+  // text-center rides on the text element itself: web Text elements get a
+  // default `text-align: start` that beats inheritance, and native Text
+  // never inherits from a View at all.
   return (
     <View
       onStartShouldSetResponder={() => true}
@@ -229,7 +242,7 @@ export const StoryParagraph = memo(function StoryParagraph({
       accessibilityLabel={`Sentence ${sentenceIndex + 1}`}
       style={styles.paragraph}
     >
-      <Text style={[styles.body, { fontSize: fontSizePx, lineHeight: Math.round(fontSizePx * 2.1) }]}>
+      <Text className="text-center text-foreground" style={[styles.body, { fontSize: fontSizePx, lineHeight: Math.round(fontSizePx * 2.1) }]}>
         {sentenceNodes(sentence, (tok, j) => (
           <StoryToken
             key={j}
