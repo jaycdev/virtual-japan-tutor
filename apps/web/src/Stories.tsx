@@ -1093,7 +1093,9 @@ function TokenMenu({
   // token's menu. Focus is deliberately not pulled back to the token — the
   // Learner pointed elsewhere.
   const dismissRef = useRef(onDismiss);
-  dismissRef.current = onDismiss;
+  useEffect(() => {
+    dismissRef.current = onDismiss;
+  }, [onDismiss]);
   useEffect(() => {
     const onPress = (e: Event) => {
       const wrap = rootRef.current?.parentElement;
