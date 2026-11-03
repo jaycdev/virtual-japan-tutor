@@ -262,6 +262,20 @@ describe('Today', () => {
     expect(screen.getByText('Thursday, November 5')).toBeTruthy();
   });
 
+  it('gives the greeting and the section titles heading roles', async () => {
+    // issue #47 review S4: a screen reader should be able to jump between the
+    // sections of the page, not only read them in order.
+    renderToday();
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: "Open today's story" })).toBeTruthy();
+    });
+    expect(screen.getByRole('heading', { name: /Good |Still / })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Today’s story' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Practice' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Last sync' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Your Focus Set' })).toBeTruthy();
+  });
+
   it('shows the story’s title, genre and length, and opens it', async () => {
     const handlers = renderToday();
 

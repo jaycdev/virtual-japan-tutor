@@ -177,7 +177,13 @@ export function FocusSetPanel({
   const labels = useFocusChipLabels(client, shown, resolveLabel ?? createFocusLabelResolver(client));
   return (
     <View className="gap-3">
-      <Text className="text-title font-semibold text-foreground">Your Focus Set</Text>
+      <Text
+        role="heading"
+        accessibilityRole="header"
+        className="text-title font-semibold text-foreground"
+      >
+        Your Focus Set
+      </Text>
       <Text className="text-small text-muted-foreground">
         These are the items Practice builds a session from.
       </Text>

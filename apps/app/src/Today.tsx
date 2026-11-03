@@ -172,7 +172,15 @@ function Greeting({
         </View>
       ) : (
         <>
-          <Text className="text-display font-semibold text-foreground">{clock.greeting}</Text>
+          {/* Section labels read as headings to assistive tech on both hosts:
+              accessibilityRole on native, role on web (issue #47 review S4). */}
+          <Text
+            role="heading"
+            accessibilityRole="header"
+            className="text-display font-semibold text-foreground"
+          >
+            {clock.greeting}
+          </Text>
           <Text className="text-body text-muted-foreground">{clock.date}</Text>
           {settingsFailed ? (
             <Text className="text-small text-muted-foreground">
@@ -275,7 +283,13 @@ function TodayStoryCard({
   const running = generation.status === "running" ? generation.progress : undefined;
   return (
     <Card testID="today-story-card" fill={fill}>
-      <Text className="text-title-sm font-semibold text-foreground">Today’s story</Text>
+      <Text
+        role="heading"
+        accessibilityRole="header"
+        className="text-title-sm font-semibold text-foreground"
+      >
+        Today’s story
+      </Text>
 
       {today.status === "loading" ? (
         <Skeleton lines={2} lineHeight={24} />
@@ -372,7 +386,13 @@ function PracticeCard({
   const items = focus.items;
   return (
     <Card testID="today-practice-card" fill={fill}>
-      <Text className="text-title-sm font-semibold text-foreground">Practice</Text>
+      <Text
+        role="heading"
+        accessibilityRole="header"
+        className="text-title-sm font-semibold text-foreground"
+      >
+        Practice
+      </Text>
       {focus.loading && items === null ? (
         <Skeleton lines={2} lineHeight={24} />
       ) : focus.error ? (
@@ -453,7 +473,13 @@ function SyncCard({
   return (
     <Card testID="today-sync-card">
       <View className="flex-row flex-wrap items-center justify-between gap-3">
-        <Text className="text-title-sm font-semibold text-foreground">Last sync</Text>
+        <Text
+          role="heading"
+          accessibilityRole="header"
+          className="text-title-sm font-semibold text-foreground"
+        >
+          Last sync
+        </Text>
         <ActionButton
           label={syncing ? "Syncing…" : "Sync now"}
           onPress={syncNow}
