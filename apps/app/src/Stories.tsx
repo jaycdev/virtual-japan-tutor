@@ -96,6 +96,10 @@ export function Stories({ client, onOpenStory, generationPollMs, screenSize }: S
   const confirmTarget =
     pendingDelete !== null && items.some((story) => story.id === pendingDelete.id) ? pendingDelete : null;
 
+  // The Library's Unread/Genre filters stay page-local on purpose (issue #48):
+  // GET /stories only carries limit/offset in the contract (api/openapi.yaml
+  // listStories), and the legacy web Library had no filters at all — so the
+  // honest presentation is "what this page hides", not a fake server query.
   const visible = items.filter(
     (story) => (!unreadOnly || !story.readAt) && (genre === null || story.genre === genre),
   );
