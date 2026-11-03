@@ -28,21 +28,42 @@ func NewRefdataLookup(pool *pgxpool.Pool) *RefdataLookup {
 	return &RefdataLookup{ref: refdata.NewStore(pool)}
 }
 
-func (l *RefdataLookup) Lookup(ctx context.Context, surface, dictionary string) (VocabHit, bool, error) {
-	for _, form := range []string{surface, dictionary} {
-		if form == "" {
-			continue
+// lookupForms is the order to try a token's forms: the dictionary form first.
+// A conjugated stem's surface is often a different word altogether (あり from
+// ある is also 蟻, ant; い from いる is also 胃), and that wrong entry is never
+// in the Learner's Known Items, so ordinary verbs counted as unknown. The
+// surface still backs up a word the dictionary form does not find.
+func lookupForms(surface, dictionary string) []string {
+	var forms []string
+	for _, f := range []string{dictionary, surface} {
+		if f != "" && (len(forms) == 0 || forms[len(forms)-1] != f) {
+			forms = append(forms, f)
 		}
+	}
+	return forms
+}
+
+func (l *RefdataLookup) Lookup(ctx context.Context, surface, dictionary string) (VocabHit, bool, error) {
+	for _, form := range lookupForms(surface, dictionary) {
 		hits, err := l.ref.FindVocabulary(ctx, form, "")
 		if err != nil {
 			return VocabHit{}, false, err
 		}
 		if len(hits) > 0 {
-			return hitOf(hits[0]), true, nil
+			hit := hitOf(hits[0])
+			// Every entry sharing the spelling, for the Known-Item check;
+			// bounded, since a kana spelling can match dozens of entries.
+			for i := 0; i < len(hits) && i < maxHomographs; i++ {
+				hit.Alts = append(hit.Alts, hitOf(hits[i]))
+			}
+			return hit, true, nil
 		}
 	}
 	return VocabHit{}, false, nil
 }
+
+// maxHomographs bounds how many entries of one spelling are considered.
+const maxHomographs = 16
 
 // hitOf picks the entry's headword (first kanji form, else first reading)
 // and first gloss for display lists.

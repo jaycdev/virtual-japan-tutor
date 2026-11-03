@@ -377,10 +377,13 @@ func TestGateRejectsSpanIncludingVerbStem(t *testing.T) {
 		Grammar: []GrammarFocus{{PointID: point}},
 	}
 
+	// A mis-cut span is discarded, not fatal by itself; with every focus item
+	// required, losing it fails the passage, and the feedback still says why.
+	req.Settings.MinFocusFraction = 1.0
 	gen := NewGenerator(cleanLookup())
 	st, err := gen.Generate(context.Background(), client, req)
 	if err == nil {
-		t.Fatal("a span opening at the verb stem must be rejected")
+		t.Fatal("a span opening at the verb stem must be discarded, failing a passage that needs that grammar")
 	}
 	if !strings.Contains(err.Error(), "content word") || !strings.Contains(err.Error(), "てしまった") {
 		t.Fatalf("error %q should name the stem inclusion with the pattern example", err)

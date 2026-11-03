@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/ikawaha/kagome-dict/ipa"
@@ -58,13 +59,23 @@ func posSubCategory(t tokenizer.Token) string {
 }
 
 // isContent reports whether a token is a content word for coverage purposes:
-// nouns, verbs, adjectives and adverbs, minus bare numerals (名詞,数 — JMdict
-// is not a number list). It matches internal/grammar's coverage rule so the
-// two features count "content word" the same way.
+// nouns, verbs, adjectives and adverbs, minus
+//   - bare numerals (名詞,数 — JMdict is not a number list), and
+//   - grammatical suffixes and dependent words (接尾, 非自立): れる, さん, たち,
+//     こと, の, はず, ている's いる. They are grammar, not vocabulary, so a
+//     Learner never "knows" them as words and a model cannot replace them; live,
+//     れる alone held coverage at 94% against the 95% bar.
+//
+// internal/grammar has its own, different rule (it checks that words exist in
+// JMdict, and takes no adverbs), so the two need not agree.
 func isContent(t tokenizer.Token) bool {
 	switch posCategory(t) {
 	case "名詞", "動詞", "形容詞", "副詞":
-		return posSubCategory(t) != "数"
+		switch posSubCategory(t) {
+		case "数", "接尾", "非自立":
+			return false
+		}
+		return true
 	default:
 		return false
 	}
@@ -151,6 +162,7 @@ func (g *Generator) Generate(ctx context.Context, client ChatClient, req Request
 	// materialise failures included, so the stored candidate's Attempts says
 	// what it cost even when the final attempt never produced a candidate.
 	attemptsUsed := 0
+	var history []string
 	report := func(stage GenerationStage, attempt int) {
 		if req.ReportStage != nil {
 			req.ReportStage(stage, attempt)
@@ -202,7 +214,10 @@ func (g *Generator) Generate(ctx context.Context, client ChatClient, req Request
 		}
 		story.Validated = false
 		last = story
-		lastErr = fmt.Errorf("story rejected by the validation gate on attempt %d: %s", attempt, strings.Join(problems, "; "))
+		// Keep every attempt's complaints, not just the last: a final
+		// attempt that failed for a new reason hides why the earlier ones did.
+		history = append(history, fmt.Sprintf("attempt %d: %s", attempt, strings.Join(problems, "; ")))
+		lastErr = fmt.Errorf("story rejected by the validation gate: %s", strings.Join(history, " | "))
 		if attempt < settings.MaxAttempts {
 			msgs = append(msgs,
 				llm.Message{Role: llm.RoleAssistant, Content: string(res.JSON)},
@@ -269,17 +284,32 @@ func (g *Generator) materialise(ctx context.Context, raw *storyJSON, req Request
 					seq := hit.EntSeq
 					tok.EntSeq = &seq
 					tok.Dictionary = hit.JA
+					tok.alts = hit.Alts
 				}
 			}
 			sen.Tokens = append(sen.Tokens, tok)
 		}
 		for _, sp := range in.GrammarSpans {
-			sen.Spans = append(sen.Spans, Span{
+			span := Span{
 				Start:          sp.Start,
 				End:            sp.End,
 				GrammarPointID: sp.GrammarPointID,
 				IsFocus:        req.Focus.hasGrammar(sp.GrammarPointID),
-			})
+			}
+			if text := strings.TrimSpace(sp.Text); text != "" {
+				start, end, ok := locateSpan(sen.JA, text)
+				if !ok {
+					// The model claims a pattern the sentence does not
+					// contain. A span we cannot place is never stored or
+					// shown, and never counts towards the Focus Set; whether
+					// enough grammar genuinely appears is the focus
+					// fraction's call, with feedback the model can act on.
+					// Rejecting the whole passage over it failed every attempt.
+					continue
+				}
+				span.Start, span.End = start, end
+			}
+			sen.Spans = append(sen.Spans, span)
 		}
 		s.Sentences = append(s.Sentences, sen)
 		texts = append(texts, sen.JA)
@@ -307,8 +337,15 @@ func (g *Generator) materialise(ctx context.Context, raw *storyJSON, req Request
 		s.Theme = sanitizeLabel(raw.Theme, maxPreferredThemeLen)
 	}
 
-	// Vocabulary the Story covers: every linked content token, deduplicated
-	// by ent_seq keeping the first hit.
+	s.rebuildVocabItems()
+	return s, nil
+}
+
+// rebuildVocabItems lists the vocabulary the Story covers: every linked
+// token, deduplicated by ent_seq keeping the first hit. It runs again after
+// tagKnown has re-linked ambiguous tokens to the entry the Learner knows.
+func (s *Story) rebuildVocabItems() {
+	s.VocabItems = nil
 	seen := map[int64]bool{}
 	for _, sen := range s.Sentences {
 		for _, t := range sen.Tokens {
@@ -319,19 +356,29 @@ func (g *Generator) materialise(ctx context.Context, raw *storyJSON, req Request
 			s.VocabItems = append(s.VocabItems, VocabItem{EntSeq: *t.EntSeq, JA: t.Dictionary})
 		}
 	}
-	return s, nil
 }
 
 // tagKnown asks the KnownSource about every ent_seq the candidate linked to,
 // then tags tokens (known + SRS Level) and flags vocab items IsKnown/IsFocus.
 func (g *Generator) tagKnown(ctx context.Context, s *Story, req Request) error {
+	// Ask about every entry that shares a token's spelling, not just the
+	// first: the token cannot say which of them was meant.
 	var seqs []int64
 	seen := map[int64]bool{}
+	add := func(seq int64) {
+		if !seen[seq] {
+			seen[seq] = true
+			seqs = append(seqs, seq)
+		}
+	}
 	for _, sen := range s.Sentences {
 		for _, t := range sen.Tokens {
-			if t.EntSeq != nil && !seen[*t.EntSeq] {
-				seen[*t.EntSeq] = true
-				seqs = append(seqs, *t.EntSeq)
+			if t.EntSeq == nil {
+				continue
+			}
+			add(*t.EntSeq)
+			for _, a := range t.alts {
+				add(a.EntSeq)
 			}
 		}
 	}
@@ -353,13 +400,26 @@ func (g *Generator) tagKnown(ctx context.Context, s *Story, req Request) error {
 			if t.EntSeq == nil {
 				continue
 			}
-			if v, ok := known[*t.EntSeq]; ok && v.IsKnown {
-				t.Tag = TagKnown
-				level := v.SRSLevel
-				t.SRSLevel = &level
+			// The token counts as known when the Learner knows any entry
+			// of its spelling, and links to that entry: a focus word among
+			// them first (so a Story covers the item it was built around),
+			// then the first entry, then the other alternatives in order.
+			chosen := knownEntryFor(t, known, focusWant)
+			if chosen == nil {
+				continue
 			}
+			if *t.EntSeq != chosen.EntSeq {
+				seq := chosen.EntSeq
+				t.EntSeq = &seq
+				t.Dictionary = chosen.JA
+			}
+			v := known[chosen.EntSeq]
+			t.Tag = TagKnown
+			level := v.SRSLevel
+			t.SRSLevel = &level
 		}
 	}
+	s.rebuildVocabItems()
 	for i := range s.VocabItems {
 		v := &s.VocabItems[i]
 		if kv, ok := known[v.EntSeq]; ok {
@@ -373,6 +433,33 @@ func (g *Generator) tagKnown(ctx context.Context, s *Story, req Request) error {
 	return nil
 }
 
+// knownEntryFor picks the entry a token is linked to from among the entries
+// sharing its spelling that the Learner knows: a Focus Set word if one of them
+// is, else the token's own first entry, else the first known alternative. It
+// returns nil when the Learner knows none of them.
+func knownEntryFor(t *Token, known map[int64]KnownView, focusWant map[int64]bool) *VocabHit {
+	cands := make([]VocabHit, 0, len(t.alts)+1)
+	cands = append(cands, VocabHit{EntSeq: *t.EntSeq, JA: t.Dictionary})
+	for _, a := range t.alts {
+		if a.EntSeq != *t.EntSeq {
+			cands = append(cands, a)
+		}
+	}
+	var first *VocabHit
+	for i := range cands {
+		if v, ok := known[cands[i].EntSeq]; !ok || !v.IsKnown {
+			continue
+		}
+		if focusWant[cands[i].EntSeq] {
+			return &cands[i]
+		}
+		if first == nil {
+			first = &cands[i]
+		}
+	}
+	return first
+}
+
 // gate runs the deterministic checks over an already-tokenised, already-
 // tagged candidate: Known-word coverage over content tokens, Focus Set
 // inclusion over BOTH the vocabulary and grammar halves, and Grammar Spans
@@ -381,7 +468,7 @@ func (g *Generator) tagKnown(ctx context.Context, s *Story, req Request) error {
 // a rejected Story still records what the gate saw.
 func (g *Generator) gate(s *Story, settings Settings, focus FocusSet) []string {
 	if err := s.Validate(); err != nil {
-		return []string{err.Error()}
+		return []string{err.Error() + shortfallHint(s)}
 	}
 	var problems []string
 
@@ -394,42 +481,77 @@ func (g *Generator) gate(s *Story, settings Settings, focus FocusSet) []string {
 		focusGrammar[gm.PointID] = true
 	}
 	content, knownCount := 0, 0
+	var unknown []string
+	unknownSeen := map[string]bool{}
 	focusHit := map[int64]bool{}
 	grammarHit := map[int64]bool{}
-	for _, sen := range s.Sentences {
+	var discarded []string
+	for senIdx := range s.Sentences {
+		sen := &s.Sentences[senIdx]
 		for _, t := range sen.Tokens {
 			if !t.content {
 				continue
 			}
 			content++
 			if t.Tag != TagKnown {
-				continue // unlinked vocabulary items count as unknown
+				// Unlinked vocabulary items count as unknown. Remember the
+				// word so the retry can name it: "use only known words" alone
+				// gave the model nothing to change.
+				w := t.Dictionary
+				if w == "" {
+					w = t.Surface
+				}
+				if !unknownSeen[w] {
+					unknownSeen[w] = true
+					unknown = append(unknown, w)
+				}
+				continue
 			}
 			knownCount++
 			if t.EntSeq != nil && focusWant[*t.EntSeq] {
 				focusHit[*t.EntSeq] = true
 			}
 		}
-		for si := range sen.Spans {
-			sp := &sen.Spans[si]
+		// A mis-cut span (across word boundaries, or swallowing a verb or
+		// adjective stem) is discarded, not a reason to throw the passage away:
+		// it is never stored or shown, so no wrong highlight reaches the
+		// Learner, and it does not count towards the Focus Set, so the focus
+		// fraction below still decides whether enough grammar really appears.
+		// Live, mis-cut spans failed otherwise good passages on every attempt.
+		kept := sen.Spans[:0]
+		for _, sp := range sen.Spans {
+			// Validate (run first) guarantees the span lies inside the sentence.
+			txt := runeSlice(sen.JA, sp.Start, sp.End)
 			if !focusGrammar[sp.GrammarPointID] {
-				problems = append(problems, fmt.Sprintf(
-					"grammar span [%d,%d) in sentence %d cites point %d, which was not in the suggested list",
-					sp.Start, sp.End, sen.Pos, sp.GrammarPointID))
+				// Discarded like a mis-cut span: a Story's spans are all
+				// Focus Set spans. Live, one run failed all five attempts on
+				// nothing but these.
+				discarded = append(discarded, fmt.Sprintf(
+					"grammar span [%d,%d) %q in sentence %d (%q) cites point %d, which was not in the suggested list, and was discarded",
+					sp.Start, sp.End, txt, sen.Pos, sen.JA, sp.GrammarPointID))
 				continue
 			}
+			miscut := false
 			if !onTokenBoundary(sen.Tokens, sp.Start, sp.End) {
-				problems = append(problems, fmt.Sprintf(
-					"grammar span [%d,%d) in sentence %d cuts across word boundaries; spans must cover whole words",
-					sp.Start, sp.End, sen.Pos))
+				miscut = true
+				discarded = append(discarded, fmt.Sprintf(
+					"grammar span [%d,%d) %q in sentence %d (%q) cuts across word boundaries and was discarded; spans must cover whole words",
+					sp.Start, sp.End, txt, sen.Pos, sen.JA))
 			}
-			if surf, atStem := spanStartsAtContentWord(sen.Tokens, sp.Start); atStem {
-				problems = append(problems, fmt.Sprintf(
-					"grammar span [%d,%d) in sentence %d opens at the content word %s; a span must cover the pattern's own characters only, never the verb or adjective stem (for 食べてしまった with pattern てしまった the span covers てしまった)",
-					sp.Start, sp.End, sen.Pos, surf))
+			if surf, atStem := spanStartsAtContentWord(sen.Tokens, sp.Start); atStem &&
+				!spanStartsLikePattern(txt, focus.grammarPattern(sp.GrammarPointID)) {
+				miscut = true
+				discarded = append(discarded, fmt.Sprintf(
+					"grammar span [%d,%d) %q in sentence %d (%q) opens at the content word %s, which is not part of the pattern, and was discarded; a span must cover the pattern's own characters only, never the verb or adjective stem before it (for 食べてしまった with pattern てしまった the span covers てしまった)",
+					sp.Start, sp.End, txt, sen.Pos, sen.JA, surf))
+			}
+			if miscut {
+				continue
 			}
 			grammarHit[sp.GrammarPointID] = true
+			kept = append(kept, sp)
 		}
+		sen.Spans = kept
 	}
 	// The focus fraction counts both halves of the Focus Set: a point counts
 	// as hit when at least one span in the Story realises it.
@@ -441,8 +563,8 @@ func (g *Generator) gate(s *Story, settings Settings, focus FocusSet) []string {
 		cov := float64(knownCount) / float64(content)
 		if cov < settings.MinCoverage {
 			problems = append(problems, fmt.Sprintf(
-				"known-word coverage is %.0f%% (%d of %d content words are words the learner knows); at least %.0f%% are required — rewrite using only the known words you were given",
-				cov*100, knownCount, content, settings.MinCoverage*100))
+				"known-word coverage is %.0f%% (%d of %d content words are words the learner knows); at least %.0f%% are required — rewrite using only the known words you were given. Replace these words, which the learner does not know: %s",
+				cov*100, knownCount, content, settings.MinCoverage*100, listWords(unknown, 25)))
 		}
 	}
 	if focusTotal > 0 {
@@ -453,7 +575,70 @@ func (g *Generator) gate(s *Story, settings Settings, focus FocusSet) []string {
 				focusHits, focusTotal, len(focusHit), len(focusWant), len(grammarHit), len(focusGrammar), frac*100, settings.MinFocusFraction*100))
 		}
 	}
+	// A passage that passes is not nagged about spans that were quietly
+	// discarded; one that fails is told, so the retry can fix the cause.
+	if len(problems) > 0 {
+		problems = append(problems, discarded...)
+	}
 	return problems
+}
+
+// listWords joins up to max words for feedback, saying how many were left out.
+func listWords(words []string, max int) string {
+	if len(words) <= max {
+		return strings.Join(words, "、")
+	}
+	return fmt.Sprintf("%s (and %d more)", strings.Join(words[:max], "、"), len(words)-max)
+}
+
+// locateSpan finds text in a sentence and returns its rune offsets [start,end).
+// The first occurrence wins; a pattern that repeats within one sentence is rare
+// and the model can disambiguate by citing a longer run of text.
+func locateSpan(sentence, text string) (start, end int, ok bool) {
+	i := strings.Index(sentence, text)
+	if i < 0 {
+		return 0, 0, false
+	}
+	start = utf8.RuneCountInString(sentence[:i])
+	return start, start + utf8.RuneCountInString(text), true
+}
+
+// runeSlice is s[start:end] in runes, for quoting a span in feedback.
+func runeSlice(s string, start, end int) string {
+	rs := []rune(s)
+	if start < 0 || end > len(rs) || start > end {
+		return ""
+	}
+	return string(rs[start:end])
+}
+
+// shortfallHint turns a too-short passage into an instruction the model can
+// act on. "203 characters, want 400" alone made a model merge sentences to
+// reach the floor (or just shrug), since it cannot count characters; saying
+// how far short it is and that the fix is more sentences, each in its own
+// entry, steers it where the length actually comes from.
+func shortfallHint(s *Story) string {
+	runes := utf8.RuneCountInString(s.Text)
+	if runes >= MinChars || len(s.Sentences) == 0 {
+		return ""
+	}
+	short := MinChars - runes
+	n := len(s.Sentences)
+	avg := runes / n
+	// Exact targets, not advice. "Make them longer" and "add 12 more" were
+	// both easy to ignore or overdo: live, length-only retries came back
+	// byte-identical four times running, and "add 12" drew 50 tiny sentences.
+	// Sentences at least 10 characters longer than the ones written (and never
+	// under 25), enough of them to land on a target with a clear margin above
+	// the floor, since models still undershoot what they are asked for.
+	per := max(avg+10, 25)
+	target := (MinChars + PromptMinChars) / 2
+	count := max(min((target+per-1)/per, PromptMaxSentences), 1)
+	return fmt.Sprintf(" — it is about %d characters too short. You wrote %d sentences averaging %d characters (%d in total). "+
+		"Rewrite it as %d sentences of at least %d characters each, about %d characters in total: "+
+		"give every sentence a time, a place, a reason or a feeling to say, "+
+		"and keep each sentence as its own separate entry (never merge sentences into one entry)",
+		short, n, avg, runes, count, per, count*per)
 }
 
 // spanStartsAtContentWord reports whether a span opens at the first
@@ -467,6 +652,35 @@ func spanStartsAtContentWord(toks []Token, start int) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// spanStartsLikePattern reports whether a span begins the way its Grammar
+// Point's own pattern begins, which makes an opening content word part of the
+// pattern (必要がある, はずがない, どうやって) rather than a verb or adjective
+// stem the span swallowed before it (食べ in 食べてしまった). It compares the
+// leading characters, so a conjugated span still matches (いたしました for
+// いたします). With no pattern known it answers false, keeping the rule strict.
+func spanStartsLikePattern(span, pattern string) bool {
+	p := []rune(strings.TrimLeft(pattern, "～〜~"))
+	if len(p) == 0 {
+		return false
+	}
+	s := []rune(span)
+	common := 0
+	for common < len(p) && common < len(s) && p[common] == s[common] {
+		common++
+	}
+	return common >= min(2, len(p))
+}
+
+// grammarPattern is the catalogue text of a suggested grammar point.
+func (f FocusSet) grammarPattern(pointID int64) string {
+	for _, g := range f.Grammar {
+		if g.PointID == pointID {
+			return g.Pattern
+		}
+	}
+	return ""
 }
 
 // hasGrammar reports whether the Focus Set suggested this grammar point;
@@ -558,10 +772,10 @@ func userPrompt(req Request, settings Settings) string {
 	fmt.Fprintf(&b, `Write a Japanese reading passage for a learner.
 
 Passage rules:
-- %d to %d characters total (counting every character), split into 4 to %d sentences.
+- %d to %d characters total (counting every character), split into %d to %d sentences. That is about 20 to 30 characters per sentence, so write a complete sentence in each entry and do not stop early: a passage of fewer than %d characters is rejected. Never put several sentences into one entry.
 - Natural modern Japanese in kana and kanji, plain text: no markdown, no quotes, no brackets.
 - Use only words from the Known Words list below. A word not in the list is an error the checker will reject.
-`, MinChars, 800, MaxSentences)
+`, PromptMinChars, PromptMaxChars, PromptMinSentences, PromptMaxSentences, MinChars)
 	if req.Genre != "" {
 		fmt.Fprintf(&b, "- Genre/theme: %s. Repeat it in the genre field.\n", req.Genre)
 	} else {
@@ -603,9 +817,9 @@ Title: give the passage a short Japanese title (title) and translate that title 
 
 Comprehension questions: write %d to %d multiple-choice questions in Japanese about the passage. Each has 2 to 4 options and the index (from 0) of the correct option.
 
-Character positions: for each grammar span, start is the position of its first character (counting from 0 across the sentence) and end is the position just after its last character. Spans must cover whole words, and they cover the pattern's characters only — never the stem of the verb or adjective. Example: for 食べてしまった with the pattern てしまった, the span starts at the て, not at 食べ. A span that opens at the first character of a content word is rejected.
+Grammar spans: for each use of a grammar point, give its grammar_point_id and text — the exact characters of that sentence that express the pattern, copied verbatim from the sentence's ja field. Do not count positions; the checker finds the text itself. Spans must cover whole words, and they cover the pattern's characters only — never the stem of the verb or adjective. Example: for 食べてしまった with the pattern てしまった, text is てしまった, not 食べてしまった. Never include the verb or adjective that comes before the pattern. A pattern that itself begins with a word, such as 必要がある or はずがない, is spanned in full.
 
-Return JSON: {"title": string, "title_en": string, "theme": string, "genre": string, "sentences": [{"ja": string, "en": string, "grammar_spans": [{"start": int, "end": int, "grammar_point_id": int}]}], "questions": [{"prompt_ja": string, "options_ja": [string], "answer_index": int}]}`,
+Return JSON: {"title": string, "title_en": string, "theme": string, "genre": string, "sentences": [{"ja": string, "en": string, "grammar_spans": [{"text": string, "grammar_point_id": int}]}], "questions": [{"prompt_ja": string, "options_ja": [string], "answer_index": int}]}`,
 		MinQuestions, MaxQuestions)
 	return b.String()
 }
@@ -641,7 +855,7 @@ const storySchemaJSON = `{"type":"object","properties":{
 	"title_en":{"type":"string"},
 	"theme":{"type":"string"},
 	"genre":{"type":"string"},
-	"sentences":{"type":"array","minItems":3,"maxItems":8,"items":{
+	"sentences":{"type":"array","minItems":3,"maxItems":100,"items":{
 		"type":"object",
 		"properties":{
 			"ja":{"type":"string"},
@@ -649,11 +863,10 @@ const storySchemaJSON = `{"type":"object","properties":{
 			"grammar_spans":{"type":"array","items":{
 				"type":"object",
 				"properties":{
-					"start":{"type":"integer"},
-					"end":{"type":"integer"},
+					"text":{"type":"string"},
 					"grammar_point_id":{"type":"integer"}
 				},
-				"required":["start","end","grammar_point_id"],
+				"required":["text","grammar_point_id"],
 				"additionalProperties":false
 			}}
 		},
@@ -672,8 +885,11 @@ const storySchemaJSON = `{"type":"object","properties":{
 	}}
 },"required":["title","title_en","theme","genre","sentences","questions"],"additionalProperties":false}`
 
-// storyJSON is the model's reply shape; indexes are characters, as the
-// schema and system prompt both say.
+// storyJSON is the model's reply shape. A Grammar Span arrives as the text it
+// covers, and the server finds the character offsets itself: models cannot
+// count characters, and one bad offset used to discard a whole passage (every
+// retry repeated it). Start/End are still read, as a fallback for replies
+// that give offsets instead of text.
 type storyJSON struct {
 	Genre     string `json:"genre"`
 	Title     string `json:"title"`
@@ -683,9 +899,10 @@ type storyJSON struct {
 		JA           string `json:"ja"`
 		EN           string `json:"en"`
 		GrammarSpans []struct {
-			Start          int   `json:"start"`
-			End            int   `json:"end"`
-			GrammarPointID int64 `json:"grammar_point_id"`
+			Text           string `json:"text"`
+			Start          int    `json:"start"`
+			End            int    `json:"end"`
+			GrammarPointID int64  `json:"grammar_point_id"`
 		} `json:"grammar_spans"`
 	} `json:"sentences"`
 	Questions []struct {
