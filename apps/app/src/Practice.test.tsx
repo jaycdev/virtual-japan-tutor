@@ -122,6 +122,7 @@ describe('mobile Practice', () => {
   }
 
   const postCalls = (pathPart: string) => posts.filter((p) => p.path.includes(pathPart));
+  const startCalls = () => posts.filter((p) => p.path === '/practice/sessions');
 
   it('starts idle and only asks for a session on Start', async () => {
     renderPractice();
@@ -132,7 +133,7 @@ describe('mobile Practice', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Start a practice session' }));
 
     await waitFor(() => {
-      expect(postCalls('/practice/sessions')).toHaveLength(1);
+      expect(startCalls()).toHaveLength(1);
     });
     await waitFor(() => {
       expect(screen.getByText('Exercise 1 of 2')).toBeTruthy();
@@ -248,17 +249,80 @@ describe('mobile Practice', () => {
 
     // No Start tap: the session begins on mount, seeded from the Story.
     await waitFor(() => {
-      expect(postCalls('/practice/sessions')).toHaveLength(1);
+      expect(startCalls()).toHaveLength(1);
     });
-    expect(postCalls('/practice/sessions')[0]?.body).toEqual({ seed });
+    expect(startCalls()[0]?.body).toEqual({ seed });
     await waitFor(() => {
       expect(screen.getByText('Exercise 1 of 2')).toBeTruthy();
     });
     expect(screen.queryByRole('button', { name: 'Start a practice session' })).toBeNull();
   });
 
-  it('practiceSeedForStory is deterministic, non-negative, and specific to the Story', () => {
-    expect(practiceSeedForStory('st-1')).toBe(practiceSeedForStory('st-1'));
+  it('a new Story seed on the same screen starts that session instead (#46 review B4)', async () => {
+    const client = createApiClient({
+      baseUrl: 'http://localhost',
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+    const seedA = practiceSeedForStory('st-1');
+    const seedB = practiceSeedForStory('st-2');
+    const view = render(<Practice client={client} seed={seedA} />);
+
+    await waitFor(() => {
+      expect(startCalls()).toHaveLength(1);
+    });
+    expect(startCalls()[0]?.body).toEqual({ seed: seedA });
+
+    // The reader deep-links a different Story while Practice is mounted:
+    // the screen must restart with the new seed, not keep the old session.
+    view.rerender(<Practice client={client} seed={seedB} />);
+
+    await waitFor(() => {
+      expect(startCalls()).toHaveLength(2);
+    });
+    expect(startCalls()[1]?.body).toEqual({ seed: seedB });
+    await waitFor(() => {
+      expect(screen.getByText('Exercise 1 of 2')).toBeTruthy();
+    });
+  });
+
+  it('Practice again re-runs the seeded session the deep link asked for', async () => {
+    const client = createApiClient({
+      baseUrl: 'http://localhost',
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+    const seed = practiceSeedForStory('st-1');
+    render(<Practice client={client} seed={seed} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Exercise 1 of 2')).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'learn' }));
+    await waitFor(() => {
+      expect(screen.getByText('Correct')).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() => {
+      expect(screen.getByText('Exercise 2 of 2')).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'water' }));
+    await waitFor(() => {
+      expect(screen.getByText('Correct')).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Practice again' })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Practice again' }));
+
+    await waitFor(() => {
+      expect(startCalls()).toHaveLength(2);
+    });
+    // Same seed as the deep link: the Story link stays reproducible through a retry.
+    expect(startCalls()[1]?.body).toEqual({ seed });
+  });
+
+  it('practiceSeedForStory is deterministic, non-negative, and specific to the Story', () => {    expect(practiceSeedForStory('st-1')).toBe(practiceSeedForStory('st-1'));
     expect(practiceSeedForStory('st-1')).not.toBe(practiceSeedForStory('st-2'));
     expect(Number.isSafeInteger(practiceSeedForStory('st-1'))).toBe(true);
     expect(practiceSeedForStory('st-1')).toBeGreaterThanOrEqual(0);

@@ -1,6 +1,6 @@
 import type { ApiClient } from "@vjt/api-client";
 import { usePractice, type ExerciseView, type PracticeView } from "@vjt/core";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { Icon } from "./components/ui/icon.tsx";
@@ -26,6 +26,13 @@ const CARD_MAX_WIDTH = 560;
  * the same Story and Focus Set produce the same session, and retrying the
  * link never reshuffles it. Content seeding from the Story itself waits on
  * the API (see the issue #46 notes).
+ *
+ * Plainly said (PR note, backend issue #57): this hash is a stand-in until
+ * the API accepts a storyId on POST /practice/sessions. When that lands,
+ * delete this function and pass the Story id through — the footer link
+ * already carries it. Until then, two Learners sharing a Story link get
+ * "the same session shape" only because their Focus Sets, not the Story,
+ * pick the exercises.
  */
 export function practiceSeedForStory(storyId: string): number {
   let hash = 5381;
@@ -44,14 +51,30 @@ export function Practice({ client, seed }: { client: ApiClient; seed?: number })
   const lastAttempt = useRef<{ exerciseId: string; optionId: string } | null>(null);
 
   // Deep-linked from a Story footer (#46): no Start tap — the session begins
-  // immediately, seeded from the Story so the link is reproducible. The ref
-  // keeps Strict Mode's double effect from posting two starts.
-  const autoStarted = useRef(false);
+  // immediately, seeded from the Story so the link is reproducible. Keyed on
+  // the seed, not a fired-once flag: arriving with a different Story's seed
+  // must start that session too instead of leaving the old one up
+  // (#46 review B4). The ref still swallows Strict Mode's double effect.
+  const startedSeed = useRef<number | undefined>(undefined);
+  // The seed the current session started with, so "Practice again" runs the
+  // same session the deep link asked for rather than a server-chosen one.
+  const sessionSeed = useRef<number | undefined>(undefined);
+
+  const startSession = useCallback(
+    (startSeed?: number) => {
+      sessionSeed.current = startSeed;
+      lastAttempt.current = null;
+      setShownId(null);
+      void practice.start(startSeed);
+    },
+    [practice],
+  );
+
   useEffect(() => {
-    if (seed === undefined || autoStarted.current) return;
-    autoStarted.current = true;
-    void practice.start(seed);
-  }, [practice, seed]);
+    if (seed === undefined || startedSeed.current === seed) return;
+    startedSeed.current = seed;
+    startSession(seed);
+  }, [practice, seed, startSession]);
 
   // Retry inside the active card (B3): if the shown exercise already has
   // feedback the answer landed and it was the session refresh that failed, so
@@ -88,7 +111,7 @@ export function Practice({ client, seed }: { client: ApiClient; seed?: number })
     >
       <View className="w-full gap-4" style={styles.column}>
         {practice.state === "idle" || practice.state === "error" ? (
-          <StartPractice practice={practice} />
+          <StartPractice practice={practice} onStart={startSession} />
         ) : practice.state === "starting" ? (
           <StartingCard />
         ) : practice.state === "done" ? (
@@ -105,7 +128,7 @@ export function Practice({ client, seed }: { client: ApiClient; seed?: number })
                 onAnswer={() => undefined}
               />
             ) : (
-              <PracticeResults practice={practice} />
+              <PracticeResults practice={practice} onAgain={() => startSession(sessionSeed.current)} />
             );
           })()
         ) : (
@@ -142,17 +165,17 @@ function Card({ children }: { children: ReactNode }) {
   );
 }
 
-function StartPractice({ practice }: { practice: PracticeView }) {
+function StartPractice({ practice, onStart }: { practice: PracticeView; onStart: (seed?: number) => void }) {
   return (
     <Card>
       {practice.error ? (
-        <InlineError message={practice.error} onRetry={() => void practice.start()} />
+        <InlineError message={practice.error} onRetry={() => onStart()} />
       ) : null}
       <Text className="text-body text-muted-foreground">
         A session is about twenty exercises drawn from your Focus Set — recognition and grammar
         cloze — and every answer feeds your mastery record.
       </Text>
-      <PrimaryAction label="Start a practice session" onPress={() => void practice.start()} />
+      <PrimaryAction label="Start a practice session" onPress={() => onStart()} />
     </Card>
   );
 }
@@ -283,7 +306,7 @@ function OptionButton({
   );
 }
 
-function PracticeResults({ practice }: { practice: PracticeView }) {
+function PracticeResults({ practice, onAgain }: { practice: PracticeView; onAgain: () => void }) {
   const exercises = practice.session?.exercises ?? [];
   const items = practice.results?.items ?? [];
   const again = items.filter((item) => !item.correct);
@@ -315,7 +338,7 @@ function PracticeResults({ practice }: { practice: PracticeView }) {
       ) : (
         <Text className="text-body text-muted-foreground">Nothing to revisit this time.</Text>
       )}
-      <PrimaryAction label="Practice again" onPress={() => void practice.start()} />
+      <PrimaryAction label="Practice again" onPress={onAgain} />
     </Card>
   );
 }
