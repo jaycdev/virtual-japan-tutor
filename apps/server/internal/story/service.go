@@ -351,7 +351,9 @@ func (s *Service) runGeneration(ctx context.Context, userID uuid.UUID, opts OnDe
 	if !st.Validated {
 		// Failed-story policy: stored for analysis, never offered.
 		s.log.Warn("story: on-demand attempt failed the validation gate",
-			"user_id", userID, "story_id", st.ID, "attempts", st.Attempts)
+			"user_id", userID, "story_id", st.ID, "attempts", st.Attempts, "reason", genErr,
+			"known_words", st.KnownWords, "content_words", st.ContentWords,
+			"focus_hit", st.FocusHit, "focus_items", st.FocusItems)
 		return s.finishRun(userID, GenerationFailed, FitFailureMessage, uuid.Nil), nil
 	}
 	s.recordGenerationDuration(ctx, userID, started)

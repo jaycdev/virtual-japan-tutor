@@ -258,6 +258,14 @@ func (c *Client) known(ctx context.Context, path string) ([]KnownItem, error) {
 }
 
 // GrammarLessons reads /srs/grammar-lessons (pending points; no progress upstream).
+//
+// A pending lesson MaruMori has not started carries no identity at all: today's
+// payload gives it only `english`, `japanese`, `index` and `status`, with no
+// `_id` or `_key`. Such a lesson cannot be keyed, linked to the Grammar
+// Catalogue or observed, and it is not known grammar yet, so it is skipped.
+// Failing the whole Sync over it (as this once did) stopped every Learner with a
+// pending lesson from syncing anything. Reviews stay strict: a point in review
+// always has an identity, so one without is a bad response.
 func (c *Client) GrammarLessons(ctx context.Context) ([]GrammarObservation, error) {
 	var body struct {
 		successFlag
@@ -278,6 +286,9 @@ func (c *Client) GrammarLessons(ctx context.Context) ([]GrammarObservation, erro
 	}
 	out := make([]GrammarObservation, 0, len(body.Lessons))
 	for _, l := range body.Lessons {
+		if l.ID == "" && l.Key == "" {
+			continue // a pending lesson with no identity; see above
+		}
 		o, err := grammarObservation(l.ID, l.Key, l.Japanese, l.Grammar, l.JLPT, l.Progress)
 		if err != nil {
 			return nil, err

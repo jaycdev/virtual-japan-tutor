@@ -81,9 +81,17 @@ func (st *PostgresStore) Save(ctx context.Context, s *Story) error {
 			if sp.ID == uuid.Nil {
 				sp.ID = uuid.New()
 			}
+			// Only for a grammar point that exists: a rejected candidate is
+			// saved for analysis, and a model can cite an ID that is not in
+			// the catalogue (the gate rejects that). The foreign key would
+			// fail the whole Save, so the Learner would see an internal
+			// error instead of the retry line. A validated Story only cites
+			// the Focus Set's points, which always exist.
 			if _, err := tx.Exec(ctx, `
 				INSERT INTO story_grammar_spans (id, story_id, sentence_id, start, "end", grammar_point_id, is_focus)
-				VALUES ($1,$2,$3,$4,$5,$6,$7)`, sp.ID, s.ID, sen.ID, sp.Start, sp.End, sp.GrammarPointID, sp.IsFocus); err != nil {
+				SELECT $1,$2,$3,$4,$5,$6,$7
+				WHERE EXISTS (SELECT 1 FROM grammar_points WHERE id = $6)`,
+				sp.ID, s.ID, sen.ID, sp.Start, sp.End, sp.GrammarPointID, sp.IsFocus); err != nil {
 				return fmt.Errorf("story save: span: %w", err)
 			}
 		}

@@ -202,4 +202,9 @@ type VocabHit struct {
 	// Headword and first gloss for the Story's vocab_items list.
 	JA string
 	EN string
+	// Alts are every entry that shares the matched spelling, the first
+	// included (common entries first). A spelling is often ambiguous (いる is
+	// both "to be" and 射る, "to shoot"), and the token cannot say which was
+	// meant; the gate treats it as known when the Learner knows ANY of them.
+	Alts []VocabHit
 }

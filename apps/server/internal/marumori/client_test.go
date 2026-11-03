@@ -355,6 +355,25 @@ func TestSuccessFalseAt200IsAnError(t *testing.T) {
 	}
 }
 
+// Regression: a Learner with pending grammar lessons MaruMori has not started
+// could not Sync at all ("a grammar point had no id"), because those lessons
+// arrive with only english/japanese/index/status and no `_id` or `_key`.
+func TestPendingLessonsWithoutAnIdentityAreSkipped(t *testing.T) {
+	srv := newServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"success":true,"lessons":[
+			{"english":"must","japanese":"なければならない","index":0,"status":"pending"},
+			{"_id":"Grammar/101","japanese":"ばかり","index":1,"status":"pending"},
+			{"english":"may","japanese":"てもいい","index":2,"status":"pending"}]}`))
+	})
+	lessons, err := newClient(t, srv.URL).GrammarLessons(context.Background())
+	if err != nil {
+		t.Fatalf("pending lessons with no identity must not fail the Sync: %v", err)
+	}
+	if len(lessons) != 1 || lessons[0].MaruMoriID != "Grammar/101" {
+		t.Fatalf("lessons = %+v, want only the one that has an identity", lessons)
+	}
+}
+
 func TestNonJSONAndMalformedItemsAreBadResponses(t *testing.T) {
 	cases := []struct {
 		name, body string
@@ -363,7 +382,9 @@ func TestNonJSONAndMalformedItemsAreBadResponses(t *testing.T) {
 		{"known item missing id", `{"success":true,"items":[{"item":"肌","level":1}]}`},
 		{"known item missing level", `{"success":true,"items":[{"_id":"Kanji/1","item":"肌"}]}`},
 		{"known item with unusable text", `{"success":true,"items":[{"_id":"Kanji/1","item":{"foo":1},"level":1}]}`},
-		{"grammar point with no id", `{"success":true,"lessons":[{"grammar":"x"}]}`},
+		// A review always has an identity; one without is a bad response. (A pending
+		// lesson without one is skipped instead: see TestPendingLessonsWithoutAnIdentityAreSkipped.)
+		{"review with no id", `{"success":true,"reviews":[{"grammar":"x"}]}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -372,8 +393,8 @@ func TestNonJSONAndMalformedItemsAreBadResponses(t *testing.T) {
 			})
 			c := newClient(t, srv.URL)
 			var err error
-			if strings.Contains(tc.body, "lessons") {
-				_, err = c.GrammarLessons(context.Background())
+			if strings.Contains(tc.body, "reviews") {
+				_, err = c.GrammarReviews(context.Background())
 			} else if strings.Contains(tc.body, "items") {
 				_, err = c.KnownKanji(context.Background())
 			} else {

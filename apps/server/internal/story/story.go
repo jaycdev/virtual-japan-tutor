@@ -40,25 +40,45 @@ var ErrNotFound = errors.New("story: not found")
 // Focus Set included); the character bounds keep the passage in the short
 // range the prompt asks for.
 //
-// Note the deliberate asymmetry: the prompt ASKS for 400–800 characters,
-// but the gate only REJECTS outside 400–1200. A model that overshoots its
-// length ask slightly gets a usable story rather than a wasted retry; the
-// gate rejects only shapes far outside the intended range.
+// Note the deliberate asymmetry: the prompt ASKS for 800–1100 characters,
+// but the gate only REJECTS outside 400–1200. Models undershoot a length
+// target by about half (live: asked for 400–800 they wrote 216–343; asked for
+// 600–900, 281–394), so the ask sits far above the floor to leave the margin; a model that overshoots slightly still
+// gets a usable story rather than a wasted retry, and the gate rejects only
+// shapes far outside the intended range.
 const (
-	MinChars     = 400
-	MaxChars     = 1200
-	MinSentences = 3
-	MaxSentences = 8
-	MinQuestions = 3
-	MaxQuestions = 5
+	MinChars = 400
+	MaxChars = 1200
+	// PromptMinChars/PromptMaxChars are the length the prompt asks for.
+	PromptMinChars = 800
+	PromptMaxChars = 1100
+	MinSentences   = 3
+	// MaxSentences is only a sanity bound: MinChars/MaxChars govern length. It
+	// must leave MinChars reachable at the sentence length models really write
+	// under a restricted vocabulary (measured live: 16-25 characters; a cap of
+	// 8 held passages near 200 characters and every generation failed the
+	// length gate), and it must be loose enough that a retry which overshoots
+	// the prompt's range is not thrown away over sentence count alone (a cap of
+	// 20 rejected a 21-sentence passage that cleared every other check). The
+	// prompt asks for the tighter
+	// PromptMinSentences..PromptMaxSentences, because a model counts sentences
+	// far better than characters. The schema's maxItems in generate.go must
+	// equal MaxSentences.
+	MaxSentences       = 100
+	PromptMinSentences = 35
+	PromptMaxSentences = 45
+	MinQuestions       = 3
+	MaxQuestions       = 5
 	// DefaultCoverage is the Known-word coverage the gate enforces.
 	DefaultCoverage = 0.95
 	// DefaultFocusFraction is the share of the Focus Set's vocabulary items
 	// that must appear in the Story.
 	DefaultFocusFraction = 0.5
 	// DefaultMaxAttempts is total generation attempts, including the first:
-	// the gate's feedback drives at most two retries.
-	DefaultMaxAttempts = 3
+	// the gate's feedback drives the retries. Three was not enough against a
+	// real account: coverage improved on every retry (80 -> 92 -> 94%) and ran
+	// out of attempts just under the 95% bar.
+	DefaultMaxAttempts = 5
 	// DefaultPromptKnownLimit caps how many Known Items the prompt lists;
 	// truncation is safe because every listed word is genuinely Known.
 	DefaultPromptKnownLimit = 600
@@ -210,6 +230,11 @@ type Token struct {
 	// adjectives, adverbs; see isContent). Set during materialisation,
 	// never stored: the counts it produced are stored instead.
 	content bool
+
+	// alts are the other dictionary entries sharing this token's spelling
+	// (see VocabHit.Alts); tagKnown links the token to the Learner's known
+	// one. Never stored.
+	alts []VocabHit
 }
 
 // Span is a Grammar Span inside a sentence: runes [Start,End) realising one
@@ -283,8 +308,8 @@ func (s *Story) Validate() error {
 		n := utf8.RuneCountInString(sen.JA)
 		for _, sp := range sen.Spans {
 			if sp.Start < 0 || sp.End > n || sp.Start >= sp.End {
-				return fmt.Errorf("span [%d,%d) for grammar point %d is outside sentence %d (%d characters)",
-					sp.Start, sp.End, sp.GrammarPointID, i, n)
+				return fmt.Errorf("span [%d,%d) for grammar point %d is outside sentence %d (%d characters: %q)",
+					sp.Start, sp.End, sp.GrammarPointID, i, n, sen.JA)
 			}
 		}
 	}
