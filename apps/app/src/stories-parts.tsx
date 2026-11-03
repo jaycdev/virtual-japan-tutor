@@ -170,17 +170,21 @@ export function StoryCard({
         <Pressable
           testID={`title-translation-${story.id}`}
           accessibilityRole="button"
-          accessibilityLabel="Title translation"
-          accessibilityHint={revealed ? "Tap to hide the translation" : "Tap to show the translation"}
+          // Hidden: the label names the action, because there is no content to
+          // announce. Revealed: no override label — the English itself is what
+          // a screen reader should read.
+          accessibilityLabel={revealed ? undefined : "Show title translation"}
+          accessibilityState={{ expanded: revealed }}
           onPress={onToggleReveal}
           style={styles.translation}
         >
-          {/* Android has no CSS blur (the reader's trick): the text keeps its
-              place, transparent until revealed — revealing never shifts the card. */}
-          <Text className="text-small text-muted-foreground" style={{ color: revealed ? undefined : "transparent" }}>
-            {story.titleEn}
-          </Text>
-          {revealed ? null : (
+          {/* One reserved line, and the English is not in the tree at all until
+              revealed — "invisible text" tricks (transparent colour, CSS blur)
+              do not hold on Android. The hint sits in the same slot, so nothing
+              shifts and the card never grows when the Learner reveals (B1/B4). */}
+          {revealed ? (
+            <Text className="text-small text-muted-foreground">{story.titleEn}</Text>
+          ) : (
             <Text className="text-caption text-muted-foreground">Title translation hidden — tap to show</Text>
           )}
         </Pressable>
@@ -747,7 +751,9 @@ const positioned = { position: "absolute" as const };
 
 const styles = StyleSheet.create({
   titlePress: { flex: 1, minHeight: 44, justifyContent: "center" },
-  translation: { minHeight: 44, justifyContent: "center", gap: 2 },
+  // One reserved line for the translation (touch-sized): the hint shows in it
+  // while hidden, the English replaces the hint on reveal — no jump, no dead line.
+  translation: { minHeight: 44, justifyContent: "center" },
   trigger: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
   menuCard: {
     minWidth: 200,

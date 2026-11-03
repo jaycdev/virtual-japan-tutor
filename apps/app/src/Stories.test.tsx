@@ -293,17 +293,31 @@ describe("The Library list, pager and states", () => {
     await screen.findByTestId("generate-dialog");
   });
 
-  it("reveals and re-hides a card's title translation without any request", async () => {
+  it("reveals and re-hides one card's translation; the English is absent until then", async () => {
     const { client, requests } = fakeApi();
     renderStories(client);
     const cardEl = await screen.findByTestId("story-card-st-1");
     const HIDDEN = "Title translation hidden — tap to show";
 
+    // Hidden means hidden: the English string is not in the tree at all — a
+    // transparent/blur trick would still let Android render and announce it.
     expect(within(cardEl).getByText(HIDDEN)).toBeTruthy();
+    expect(within(cardEl).queryByText("A Day at School")).toBeNull();
+
     fireEvent.click(screen.getByTestId("title-translation-st-1"));
-    await waitFor(() => expect(within(cardEl).queryByText(HIDDEN)).toBeNull());
+    await waitFor(() => {
+      expect(within(cardEl).queryByText(HIDDEN)).toBeNull();
+      expect(within(cardEl).getByText("A Day at School")).toBeTruthy();
+    });
+
+    // Per card: revealing one never reveals its neighbours.
+    const card2 = await screen.findByTestId("story-card-st-2");
+    expect(within(card2).getByText(HIDDEN)).toBeTruthy();
+    expect(within(card2).queryByText("Weekend in Kyoto")).toBeNull();
+
     fireEvent.click(screen.getByTestId("title-translation-st-1"));
     expect(await within(cardEl).findByText(HIDDEN)).toBeTruthy();
+    expect(within(cardEl).queryByText("A Day at School")).toBeNull();
     expect(requests.some((r) => r.path === "/weak-signals")).toBe(false);
   });
 });
