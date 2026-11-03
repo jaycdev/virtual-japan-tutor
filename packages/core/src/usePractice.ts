@@ -67,6 +67,12 @@ export interface PracticeView {
    */
   start(seed?: number): Promise<void>;
   answer(exerciseId: string, optionId: string): Promise<void>;
+  /**
+   * Re-fetches the session (used when an answer landed but the automatic
+   * refresh after it failed). Resolves true when the session view is back in
+   * step, so the screen can tell a retry that worked from one that didn't.
+   */
+  refresh(): Promise<boolean>;
 }
 
 function message(error: { message?: string } | undefined, status: number): string {
@@ -107,6 +113,30 @@ export function usePractice(client: ApiClient): PracticeView {
     }
   }, [client]);
 
+  const refetch = useCallback(async (): Promise<boolean> => {
+    if (!session) return false;
+    try {
+      const refreshed = await client.GET("/practice/sessions/{sessionId}", {
+        params: { path: { sessionId: session.id } },
+      });
+      if (refreshed.data) {
+        setSession(refreshed.data);
+        setState(refreshed.data.state === "complete" ? "done" : "active");
+        setError(null);
+        return true;
+      }
+      setError(message(refreshed.error, refreshed.response.status));
+      if (refreshed.response.status === 404) {
+        setSession(null);
+        setState("error");
+      }
+      return false;
+    } catch {
+      setError(UNREACHABLE);
+      return false;
+    }
+  }, [client, session]);
+
   const answer = useCallback(
     async (exerciseId: string, optionId: string) => {
       if (!session || inFlight.current) return;
@@ -138,19 +168,7 @@ export function usePractice(client: ApiClient): PracticeView {
             correct: data.correct,
           }),
         );
-        const refreshed = await client.GET("/practice/sessions/{sessionId}", {
-          params: { path: { sessionId: session.id } },
-        });
-        if (refreshed.data) {
-          setSession(refreshed.data);
-          setState(refreshed.data.state === "complete" ? "done" : "active");
-        } else {
-          setError(message(refreshed.error, refreshed.response.status));
-          if (refreshed.response.status === 404) {
-            setSession(null);
-            setState("error");
-          }
-        }
+        await refetch();
       } catch {
         setError(UNREACHABLE);
       } finally {
@@ -158,7 +176,7 @@ export function usePractice(client: ApiClient): PracticeView {
         setPending(false);
       }
     },
-    [client, session],
+    [client, refetch, session],
   );
 
   const exercises = useMemo<ExerciseView[]>(() => {
@@ -203,5 +221,6 @@ export function usePractice(client: ApiClient): PracticeView {
     error,
     start,
     answer,
+    refresh: refetch,
   };
 }

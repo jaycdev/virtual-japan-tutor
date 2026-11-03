@@ -359,6 +359,66 @@ describe("usePractice", () => {
     expect(result.current.state).toBe("active");
   });
 
+  it("refresh() retries a failed session GET and reports whether it landed", async () => {
+    const { client, fetchImpl, json } = fakeClient();
+    const afterFirst = session({
+      exercises: session().exercises.map((ex, i) =>
+        i === 0 ? { ...ex, answered: true, correct: true, chosenOptionId: "a", correctOptionId: "a" } : ex,
+      ),
+    });
+    fetchImpl
+      .mockImplementationOnce(async () => json(201, session()))
+      .mockImplementationOnce(async () =>
+        json(200, { exerciseId: "e1", correct: true, correctOptionId: "a", state: "in_progress" }),
+      )
+      .mockImplementationOnce(async () => json(503, { message: "upstream hiccup" }))
+      .mockImplementationOnce(async () => json(200, afterFirst));
+
+    const { result } = renderHook(() => usePractice(client));
+    await act(async () => {
+      void result.current.start();
+    });
+    await waitFor(() => expect(result.current.state).toBe("active"));
+    await act(async () => {
+      await result.current.answer("e1", "a");
+    });
+
+    // The answer landed but its refresh did not: feedback is local, error shown.
+    expect(result.current.error).toContain("upstream hiccup");
+
+    let ok!: boolean;
+    await act(async () => {
+      ok = await result.current.refresh();
+    });
+    expect(ok).toBe(true);
+    // The session view is back in step and the error is cleared.
+    expect(result.current.error).toBeNull();
+    expect(result.current.exercises[0]?.answered).toBe(true);
+    expect(result.current.current?.id).toBe("e2");
+  });
+
+  it("refresh() reports failure without touching the usable session", async () => {
+    const { client, fetchImpl, json } = fakeClient();
+    fetchImpl
+      .mockImplementationOnce(async () => json(201, session()))
+      .mockImplementationOnce(async () => json(503, { message: "still down" }));
+
+    const { result } = renderHook(() => usePractice(client));
+    await act(async () => {
+      void result.current.start();
+    });
+    await waitFor(() => expect(result.current.state).toBe("active"));
+
+    let ok!: boolean;
+    await act(async () => {
+      ok = await result.current.refresh();
+    });
+    expect(ok).toBe(false);
+    expect(result.current.error).toContain("still down");
+    expect(result.current.state).toBe("active");
+    expect(result.current.current?.id).toBe("e1");
+  });
+
   it("ignores answers before a session exists", async () => {
     const { client, fetchImpl } = fakeClient();
     const { result } = renderHook(() => usePractice(client));
