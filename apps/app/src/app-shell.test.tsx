@@ -238,9 +238,7 @@ it("opening a story from the library pushes the reader route and hides the tab b
   renderApp("/stories");
   const user = await signedIn();
 
-  await user.click(await screen.findByRole("button", { name: "View all stories" }));
-  await screen.findByText("がっこうの 一日");
-
+  // #48: the Library lives on the Stories tab itself — no hop to it.
   await user.click(await screen.findByRole("button", { name: "Open story: がっこうの 一日" }));
   const back = await screen.findByRole("button", { name: "Back to stories" });
 
@@ -248,7 +246,7 @@ it("opening a story from the library pushes the reader route and hides the tab b
   await waitFor(() => expect(screen.queryAllByRole("tab")).toHaveLength(0));
 
   await user.click(back);
-  await screen.findByRole("button", { name: "View all stories" });
+  await screen.findByTestId("filter-unread");
   await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(5));
 });
 
@@ -268,7 +266,7 @@ it("Back from a fresh-tab story deep link replaces to the Stories tab", async ()
   const user = await userEvent.setup();
 
   await user.click(await screen.findByRole("button", { name: "Back to stories" }));
-  await screen.findByRole("button", { name: "View all stories" }); // /stories, no dead end
+  await screen.findByTestId("filter-unread"); // /stories, no dead end
   await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(5));
 });
 
@@ -290,7 +288,7 @@ it("browser Back from a tab does not walk through the visited tabs", async () =>
   await user.click(screen.getByRole("tab", { name: "Settings" }));
   await screen.findByText("Starting Level");
   await user.click(screen.getByRole("tab", { name: "Stories" }));
-  await screen.findByRole("button", { name: "View all stories" });
+  await screen.findByTestId("filter-unread");
   await user.click(screen.getByRole("tab", { name: "Settings" }));
   await screen.findByText("Starting Level");
 
@@ -298,7 +296,7 @@ it("browser Back from a tab does not walk through the visited tabs", async () =>
   // the whole trail). Back must not land on Stories, the tab visited before.
   window.history.back();
   await new Promise((resolve) => setTimeout(resolve, 150));
-  expect(screen.queryByRole("button", { name: "View all stories" })).toBeNull();
+  expect(screen.queryByTestId("filter-unread")).toBeNull();
   expect(screen.getByText("Starting Level")).toBeTruthy();
 });
 
@@ -309,7 +307,6 @@ it("hardware Back inside the reader pops the route through the useHardwareBack h
 
   renderApp("/stories");
   const user = await signedIn();
-  await user.click(await screen.findByRole("button", { name: "View all stories" }));
   await user.click(await screen.findByRole("button", { name: "Open story: がっこうの 一日" }));
   await screen.findByRole("button", { name: "Back to stories" });
   await waitFor(() => expect(screen.queryAllByRole("tab")).toHaveLength(0));
@@ -318,7 +315,7 @@ it("hardware Back inside the reader pops the route through the useHardwareBack h
   // with no lookup window or menu open its last branch calls the route's
   // onBack — router.back — so the reader really pops back to the library.
   expect(backHandler.press()).toBe(true);
-  await screen.findByRole("button", { name: "View all stories" });
+  await screen.findByTestId("filter-unread");
   await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(5));
 });
 

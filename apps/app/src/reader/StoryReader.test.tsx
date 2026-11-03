@@ -1,13 +1,16 @@
 import type { ApiClient } from "@vjt/api-client";
 import { createApiClient } from "@vjt/api-client";
+import { useStory } from "@vjt/core";
 import { PortalHost } from "@rn-primitives/portal";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useEffect, useState } from "react";
+import { Text, View } from "react-native";
 
 import { fakeBackHandler, type FakeBackHandler } from "../../test/back-handler-fake.ts";
 import { setBackHandlerForTests } from "../useHardwareBack.ts";
 import { reduceHold, type Rect } from "./holdMenu.ts";
-import { Stories } from "../Stories.tsx";
+import { StoryReader } from "./StoryReader.tsx";
 import { StoryTextSizeProvider, useStoryTextSize, type StoryTextSize } from "../storysize/index.tsx";
 
 // Pass the module through untouched except for wrapping reduceHold in a spy:
@@ -21,12 +24,12 @@ vi.mock("./holdMenu.ts", async (importOriginal) => {
 afterEach(cleanup);
 
 /**
- * The mobile Stories screen (issue #14) driven through the real gesture
- * stack: react-native-web runs the RN responder system in jsdom, so press /
- * slide / release are mousedown / mousemove / mouseup on the token — exactly
- * the events the Lookup Menu machine sees on Android. Geometry (menu rects,
- * viewport) is injected through the props Stories passes to StoryReader,
- * because jsdom measures everything as zero.
+ * The Story Reader (issue #14, standalone since #48) driven through the real
+ * gesture stack: react-native-web runs the RN responder system in jsdom, so
+ * press / slide / release are mousedown / mousemove / mouseup on the token —
+ * exactly the events the Lookup Menu machine sees on Android. Geometry (menu
+ * rects, viewport) is injected through the props the `/stories/:id` route
+ * would pass, because jsdom measures everything as zero.
  */
 
 const HOLD_MS = 30;
@@ -293,38 +296,61 @@ function SizeProbe() {
   return null;
 }
 
-function renderStories(client: ApiClient, generationPollMs?: number, overrideScreen?: { width: number; height: number }) {
+/**
+ * The Reader standalone, the way the `/stories/:id` route mounts it (#48 took
+ * the reading column out of Stories): `view` from the same hook the route runs,
+ * the Story off the fake API's Library page, and a stub host the Back returns
+ * to — the Stories suite proves that screen's own markup.
+ */
+function renderReader(client: ApiClient, overrideScreen?: { width: number; height: number }) {
   return render(
     <StoryTextSizeProvider>
       <PortalHost />
       <SizeProbe />
-      <Stories
-        client={client}
-        measure={(testID) => RECTS[testID] ?? null}
-        screenSize={overrideScreen ?? SCREEN}
-        generationPollMs={generationPollMs}
-        onPracticeStory={(id) => practiceCalls.push(id)}
-      />
+      <ReaderHarness client={client} screenSize={overrideScreen ?? SCREEN} />
     </StoryTextSizeProvider>,
   );
 }
-/** Today's Story landing → open story → the reader's fetches (reading settings, lists) settled. */
+
+function ReaderHarness({ client, screenSize }: { client: ApiClient; screenSize: { width: number; height: number } }) {
+  const view = useStory(client, 10);
+  useEffect(() => {
+    // The route opens the Story on the shared view before rendering the
+    // Reader — the comprehension questions are view state of the OPEN story.
+    void view.openStory("st-1");
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- open once on mount
+  }, []);
+  const [backToHost, setBackToHost] = useState(false);
+  const story = view.story
+    ?? (view.library.status === "ready" ? (view.library.page.items.find((s) => s.id === "st-1") ?? null) : null);
+  if (backToHost || story === null) {
+    return (
+      <View testID="stories-host">
+        <Text>Stories</Text>
+      </View>
+    );
+  }
+  return (
+    <StoryReader
+      client={client}
+      view={view}
+      story={story}
+      onBack={() => setBackToHost(true)}
+      onPractice={(id) => practiceCalls.push(id)}
+      measure={(testID) => RECTS[testID] ?? null}
+      screenSize={screenSize}
+    />
+  );
+}
+/** The Reader opens once the fake Library lands; settle its own fetches too. */
 async function openStory(client: ApiClient) {
-  renderStories(client);
-  fireEvent.click(await screen.findByRole("button", { name: "Read today’s story" }));
+  renderReader(client);
   await screen.findByTestId("back-to-stories");
   // The reader fetches reading settings + Item Lists on mount; give their
   // mocked responses time to land before any gesture reads them.
   await act(async () => {
     await new Promise((r) => setTimeout(r, 30));
   });
-}
-
-/** Today's Story landing → "View all stories" → the Library's first row. */
-async function openLibrary(client: ApiClient) {
-  renderStories(client);
-  fireEvent.click(await screen.findByRole("button", { name: "View all stories" }));
-  return screen.findByTestId("story-row-st-1");
 }
 
 const token = (sentence: number, index: number) => screen.getByTestId(`token-${sentence}-${index}`);
@@ -584,8 +610,7 @@ describe("Story reader gestures (mobile)", () => {
     const { client } = fakeApi();
     // Wide viewport (≥ OVERLAY_BREAKPOINT): the menu is the anchored Popover
     // rather than the narrow bottom sheet.
-    renderStories(client, undefined, { width: 1280, height: 800 });
-    fireEvent.click(await screen.findByRole("button", { name: "Read today’s story" }));
+    renderReader(client, { width: 1280, height: 800 });
     await screen.findByTestId("back-to-stories");
     await act(async () => {
       await new Promise((r) => setTimeout(r, 30));
@@ -1104,31 +1129,21 @@ describe("hardware Back in the reader (mobile)", () => {
     await waitFor(() => expect(screen.queryByLabelText("Lookup menu")).toBeNull());
     expect(screen.getByTestId("back-to-stories")).toBeTruthy();
 
-    // Nothing open: Back leaves the reader back to Today's Story, where it
-    // was opened from.
+    // Nothing open: Back leaves the reader for whatever screen opened it.
+    // Since #48 that destination is the route's business; this suite only
+    // proves the reader hands control back.
     back.press();
     await waitFor(() => expect(screen.queryByTestId("back-to-stories")).toBeNull());
-    expect(await screen.findByRole("button", { name: "View all stories" })).toBeTruthy();
+    expect(await screen.findByTestId("stories-host")).toBeTruthy();
   });
 
-  it("the header Back returns to Today's Story when the Story opened from there", async () => {
+  it("the header Back leaves the reader for the host", async () => {
     const { client } = fakeApi();
     await openStory(client);
 
     fireEvent.click(screen.getByTestId("back-to-stories"));
     await waitFor(() => expect(screen.queryByTestId("back-to-stories")).toBeNull());
-    expect(await screen.findByRole("button", { name: "Read today’s story" })).toBeTruthy();
-  });
-
-  it("the header Back returns to the Library when the Story opened from there", async () => {
-    const { client } = fakeApi();
-    await openLibrary(client);
-    fireEvent.click(screen.getByTestId("story-row-st-1"));
-    await screen.findByTestId("back-to-stories");
-
-    fireEvent.click(screen.getByTestId("back-to-stories"));
-    await waitFor(() => expect(screen.queryByTestId("back-to-stories")).toBeNull());
-    expect(await screen.findByTestId("story-row-st-1")).toBeTruthy();
+    expect(await screen.findByTestId("stories-host")).toBeTruthy();
   });
 });
 
