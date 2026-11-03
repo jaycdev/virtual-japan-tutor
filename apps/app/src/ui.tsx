@@ -1,3 +1,4 @@
+import { ChevronLeft } from "lucide-react-native";
 import { type ReactNode, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -49,7 +50,11 @@ export function BottomSpace() {
   return <View style={{ height: insets.bottom }} />;
 }
 
-/** Large screen title, optionally with a Back affordance (no hardware back). */
+/**
+ * Large screen title, optionally with a Back affordance. Between routes,
+ * hardware Back is the router's (useHardwareBack is only for in-component
+ * overlays); this button is the on-screen twin of that pop.
+ */
 export function Title({ text, onBack }: { text: string; onBack?: () => void }) {
   const colors = useColors();
   return (
@@ -62,7 +67,7 @@ export function Title({ text, onBack }: { text: string; onBack?: () => void }) {
           onPress={onBack}
           style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
         >
-          <Text style={{ color: colors.accent, fontSize: 16 }}>‹ Back</Text>
+          <ChevronLeft size={26} color={colors.accent} strokeWidth={2.5} />
         </Pressable>
       ) : null}
       <Text style={[styles.title, { color: colors.label }]} accessibilityRole="header">

@@ -2,7 +2,7 @@ import type { ApiClient, ItemList, ItemListMember, components } from "@vjt/api-c
 import { useItemLists, type ActionResult } from "@vjt/core";
 import { useCallback, useEffect, useState } from "react";
 
-import { useHardwareBack } from "./hardwareBack.ts";
+import { useHardwareBack } from "./useHardwareBack.ts";
 import { Body, Card, Chip, ChipRow, ErrorText, Field, LinkButton, Muted, PrimaryButton, Row, Screen, Scroll, SectionTitle, StatusText, Title, ToggleRow } from "./ui.tsx";
 
 type ItemKind = components["schemas"]["ItemKind"];

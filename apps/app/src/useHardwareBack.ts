@@ -2,10 +2,11 @@ import { useEffect } from "react";
 import * as ReactNative from "react-native";
 
 /**
- * Android hardware Back inside state-driven drill-ins (issue #13 review):
- * while a Settings section or an Item List detail is open, Back pops to the
- * parent view instead of leaving the app; on master views no listener is
- * attached, so the default behavior (exit) stands.
+ * Android hardware Back for IN-COMPONENT overlays (issue #44): the router
+ * stack owns hardware Back between screens, but layers that are not routes —
+ * the Story reader's lookup windows and hold menu, an Item List detail —
+ * still have to unwind one layer before Back leaves the screen. While an
+ * overlay is open, Back closes it instead of popping the route.
  *
  * react-native-web — the jsdom test host — has no BackHandler, so it is probed
  * off the namespace import rather than named-imported (a missing named export

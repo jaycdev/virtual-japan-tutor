@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { Platform } from 'react-native';
 
-import App, { Root } from '../App';
+import App, { AppBootstrapped } from '../App';
 import { secureStoreServerUrl } from './serverUrlStorage.ts';
 import { secureStoreTokenStorage, type SecureStoreLike } from './tokenStorage.ts';
 
@@ -39,9 +40,9 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-// Minimal stand-in for the Go server: login, /me session check, one practice
-// session (the tab shell loads Practice immediately), item-list plumbing 404s.
-// Every request is recorded so tests can assert which host saw what.
+// Minimal stand-in for the Go server: login, the /me session check, and
+// logout. The signed-in content is just a probe marker here — what routes
+// render is the app-shell test's job — so no screen endpoints are needed.
 function makeFetch(log: LoggedRequest[]): typeof fetch {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const request = new Request(input, init);
@@ -64,29 +65,26 @@ function makeFetch(log: LoggedRequest[]): typeof fetch {
       }
       return jsonResponse(USER);
     }
-    if (path === '/practice/session') {
-      return jsonResponse({ practiceSessionId: 'practice-1', items: [] });
-    }
-    if (request.method === 'GET' && path === '/stories') {
-      return jsonResponse({ items: [], total: 0, limit: 10, offset: 0 });
-    }
-    if (request.method === 'GET' && path === '/stories/today') {
-      return jsonResponse({ code: 'no_today_story', message: 'no automatic story yet' }, 404);
-    }
-    if (request.method === 'GET' && path === '/story-settings') {
-      return jsonResponse({ furiganaThresholdSrsLevel: 3, preferredGenre: '', preferredTheme: '' });
+    if (request.method === 'POST' && path === '/auth/logout') {
+      return new Response(null, { status: 204 });
     }
     return jsonResponse({ message: `stub: unexpected ${request.method} ${path}` }, 500);
   }) as unknown as typeof fetch;
 }
 
-function renderApp(store: SecureStoreLike, fetchImpl: typeof fetch) {
+// The signed-in content placeholder (what _layout puts in its place: the
+// router tree); its presence proves AuthGate let the children through.
+const PROBE = <span>signed-in-tree</span>;
+
+function renderApp(store: SecureStoreLike, fetchImpl: typeof fetch, children = PROBE) {
   return render(
-    <Root
+    <AppBootstrapped
       tokenStorage={secureStoreTokenStorage(store)}
       urlStorage={secureStoreServerUrl(store)}
       fetchOverride={fetchImpl}
-    />,
+    >
+      {children}
+    </AppBootstrapped>,
   );
 }
 
@@ -98,7 +96,7 @@ async function submitLogin(username: string, password: string) {
   fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
 }
 
-describe('mobile App', () => {
+describe('App shell (auth bootstrap)', () => {
   let fetchMock: typeof fetch;
   let logged: LoggedRequest[];
 
@@ -115,39 +113,18 @@ describe('mobile App', () => {
       expect(screen.getByRole('button', { name: 'Log in' })).toBeTruthy();
     });
     expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.queryByText('signed-in-tree')).toBeNull();
   });
 
-  it('restores a stored session on launch and lands on Practice', async () => {
+  it('restores a stored session and renders the signed-in tree', async () => {
     const store = fakeStore({ 'vjt.token': 'session-1' });
     renderApp(store, fetchMock);
 
     await waitFor(() => {
-      expect(screen.getByRole('tab', { name: 'Practice' })).toBeTruthy();
+      expect(screen.getByText('signed-in-tree')).toBeTruthy();
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it('opens the Story Library from the Stories tab against the session host', async () => {
-    const store = fakeStore({ 'vjt.token': 'session-1' });
-    renderApp(store, fetchMock);
-
-    await waitFor(() => {
-      expect(screen.getByRole('tab', { name: 'Practice' })).toBeTruthy();
-    });
-    fireEvent.click(screen.getByRole('tab', { name: 'Stories' }));
-
-    // The tab opens on Today's Story; the Library is one button away.
-    await waitFor(() => {
-      expect(screen.getByText(/No story yet/)).toBeTruthy();
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'View all stories' }));
-    await waitFor(() => {
-      expect(screen.getByLabelText('Story Library')).toBeTruthy();
-    });
-    expect(screen.getByText(/No stories yet/)).toBeTruthy();
-    expect(
-      logged.some((r) => new URL(r.url).pathname === '/stories' && r.authorization === 'Bearer session-1'),
-    ).toBe(true);
+    expect(logged[0]).toMatchObject({ method: 'GET', authorization: 'Bearer session-1' });
   });
 
   it('signs in and persists the session token to secure storage', async () => {
@@ -160,7 +137,7 @@ describe('mobile App', () => {
     await submitLogin('learner', 'hunter2');
 
     await waitFor(() => {
-      expect(screen.getByRole('tab', { name: 'Settings' })).toBeTruthy();
+      expect(screen.getByText('signed-in-tree')).toBeTruthy();
     });
     expect(store.dump()['vjt.token']).toBe('session-1');
   });
@@ -190,11 +167,14 @@ describe('mobile App', () => {
     expect(store.dump()['vjt.token']).toBeUndefined();
   });
 
-  it('reports an unreachable server and offers Retry', async () => {
+  it('reports an unreachable server and Retry recovers', async () => {
     const store = fakeStore({ 'vjt.token': 'session-1' });
-    fetchMock = vi.fn(async () => {
+    // fetchOverride is captured when AuthProvider mounts, so Retry must swap the
+    // implementation behind a stable wrapper rather than re-render with a new one.
+    let impl: typeof fetch = vi.fn(async () => {
       throw new TypeError('fetch failed');
     }) as unknown as typeof fetch;
+    fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => impl(input, init)) as unknown as typeof fetch;
     renderApp(store, fetchMock);
 
     await waitFor(() => {
@@ -202,80 +182,100 @@ describe('mobile App', () => {
     });
     expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
     expect(screen.getByText(/Server address: http:\/\/10\.0\.2\.2:8080/)).toBeTruthy();
+
+    // Retry re-checks the same stored session.
+    impl = makeFetch(logged);
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => {
+      expect(screen.getByText('signed-in-tree')).toBeTruthy();
+    });
   });
 
-  it('persists a new server address, drops the old session, and talks only to the new host', async () => {
-    const store = fakeStore({ 'vjt.token': 'session-1' });
-    renderApp(store, fetchMock);
+  it('Android saves a new server address, forgets the old token, and talks to the new host only after a fresh sign-in', async () => {
+    // The server-address field is Android-only (web infers it from the origin).
+    const os = Platform.OS;
+    (Platform as { OS: typeof os }).OS = 'android';
+    try {
+      const store = fakeStore({ 'vjt.token': 'stale-session' });
+      renderApp(store, fetchMock);
 
-    await waitFor(() => {
-      expect(screen.getByRole('tab', { name: 'Practice' })).toBeTruthy();
-    });
-    fireEvent.click(screen.getByRole('tab', { name: 'Settings' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Server' }));
-    fireEvent.change(screen.getByLabelText('Server address'), {
-      target: { value: 'http://192.168.1.50:8080/' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Save server' }));
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Change server' })).toBeTruthy();
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Change server' }));
+      fireEvent.change(screen.getByLabelText('Server address'), {
+        target: { value: 'http://192.168.1.50:8080/' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Save server' }));
 
-    await waitFor(() => {
-      expect(store.dump()['vjt.serverUrl']).toBe('http://192.168.1.50:8080');
-    });
-    // The old host minted the session token, so changing the address forgets it…
-    await waitFor(() => {
+      // The address is remembered and any token from the old host is gone…
+      await waitFor(() => {
+        expect(store.dump()['vjt.serverUrl']).toBe('http://192.168.1.50:8080');
+      });
       expect(store.dump()['vjt.token']).toBeUndefined();
-    });
-    // …the rebuilt tree lands on the login form, and nothing — least of all a
-    // bearer token from the previous server — ever reached the new host.
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Log in' })).toBeTruthy();
-    });
-    expect(logged.filter((r) => r.url.startsWith('http://192.168.1.50:8080'))).toEqual([]);
+      // …and nothing — least of all an old bearer token — reached the new host.
+      expect(logged.filter((r) => r.url.startsWith('http://192.168.1.50:8080'))).toEqual([]);
 
-    // Signing in again resumes the session against the new base URL.
-    await submitLogin('learner', 'hunter2');
-    await waitFor(() => {
-      expect(screen.getByRole('tab', { name: 'Practice' })).toBeTruthy();
-    });
-    expect(logged.some((r) => r.url === 'http://192.168.1.50:8080/auth/login')).toBe(true);
+      // Signing in on the rebuilt tree resumes against the new base URL.
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Log in' })).toBeTruthy();
+      });
+      await submitLogin('learner', 'hunter2');
+      await waitFor(() => {
+        expect(screen.getByText('signed-in-tree')).toBeTruthy();
+      });
+      expect(logged.some((r) => r.url === 'http://192.168.1.50:8080/auth/login')).toBe(true);
+    } finally {
+      (Platform as { OS: typeof os }).OS = os;
+    }
   });
 
   it('shows an error when saving a new server address fails', async () => {
-    const store = fakeStore();
-    const failingUrlStorage = {
-      get: async () => null,
-      set: async () => {
-        throw new Error('Could not remember the address');
-      },
-    };
-    render(
-      <Root
-        tokenStorage={secureStoreTokenStorage(store)}
-        urlStorage={failingUrlStorage}
-        fetchOverride={fetchMock}
-      />,
-    );
+    const os = Platform.OS;
+    (Platform as { OS: typeof os }).OS = 'android';
+    try {
+      const store = fakeStore();
+      const failingUrlStorage = {
+        get: async () => null,
+        set: async () => {
+          throw new Error('Could not remember the address');
+        },
+      };
+      render(
+        <AppBootstrapped
+          tokenStorage={secureStoreTokenStorage(store)}
+          urlStorage={failingUrlStorage}
+          fetchOverride={fetchMock}
+        >
+          {PROBE}
+        </AppBootstrapped>,
+      );
 
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Log in' })).toBeTruthy();
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Change server' }));
-    fireEvent.change(screen.getByLabelText('Server address'), {
-      target: { value: 'http://192.168.1.50:8080' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Save server' }));
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Change server' })).toBeTruthy();
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Change server' }));
+      fireEvent.change(screen.getByLabelText('Server address'), {
+        target: { value: 'http://192.168.1.50:8080' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Save server' }));
 
-    await waitFor(() => {
-      expect(screen.getByText('Could not remember the address')).toBeTruthy();
-    });
-    // Still editing, so the Learner can fix the address.
-    expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy();
+      await waitFor(() => {
+        expect(screen.getByText('Could not remember the address')).toBeTruthy();
+      });
+      // Still editing, so the Learner can fix the address.
+      expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy();
+    } finally {
+      (Platform as { OS: typeof os }).OS = os;
+    }
   });
 
   it('the default export wires the real secure-store adapters', async () => {
-    // The test-harness expo-secure-store stub holds no token, so the production
-    // App (no props injected) must hydrate and land on the login form.
-    render(<App />);
+    // Under vitest the app's secure store is the web variant (localStorage).
+    // It holds no token here, so the production App (no props injected) must
+    // hydrate and land on the login form.
+    localStorage.clear();
+    render(<App>{null}</App>);
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Log in' })).toBeTruthy();
     });

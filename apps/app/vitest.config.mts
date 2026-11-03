@@ -27,7 +27,7 @@ export default defineConfig({
       "react-native-safe-area-context": fileURLToPath(new URL("./test/safe-area-stub.tsx", import.meta.url)),
       // The Expo runtime needs the native host (HMR bridge, TurboModules).
       "expo-status-bar": fileURLToPath(new URL("./test/expo-status-bar-stub.tsx", import.meta.url)),
-      "expo-secure-store": fileURLToPath(new URL("./test/expo-secure-store-stub.ts", import.meta.url)),
+      "expo-secure-store": fileURLToPath(new URL("./test/cjs-stubs/expo-secure-store.cjs", import.meta.url)),
       // expo-font needs the native module host too.
       "expo-font": fileURLToPath(new URL("./test/expo-font-stub.ts", import.meta.url)),
       // react-native-svg binds to the native drawing host; jsdom gets inert views.
@@ -41,6 +41,8 @@ export default defineConfig({
       "react-native-reanimated": fileURLToPath(new URL("./test/reanimated-stub.tsx", import.meta.url)),
       // react-native-screens needs the native navigation host.
       "react-native-screens": fileURLToPath(new URL("./test/react-native-screens-stub.tsx", import.meta.url)),
+      // --- #44: expo-router boots under jsdom; expo-modules-core needs the native host.
+      "expo-modules-core": fileURLToPath(new URL("./test/cjs-stubs/expo-modules-core.cjs", import.meta.url)),
     },
   },
   test: {
@@ -51,9 +53,23 @@ export default defineConfig({
     server: {
       deps: {
         // must go through vite so the raw-JSX .mjs files above get compiled,
-        // and so lucide's `react-native` / `react-native-svg` imports hit the
-        // aliases above instead of Node loading the real native packages
-        inline: [/@rn-primitives\//, /lucide-react-native/],
+        // so lucide's `react-native` / `react-native-svg` imports hit the
+        // aliases above instead of Node loading the real native packages,
+        // and so expo-router's CJS build (and its ESM-first react-navigation
+        // deps, which Node's require-of-ESM cannot reexport from) are
+        // transformed instead of handed to Node's loader.
+        inline: [
+          /@rn-primitives\//,
+          /lucide-react-native/,
+          /expo-router/,
+          /@react-navigation\//,
+          /react-native-is-edge-to-edge/,
+          // Every expo-* / @expo/* package must go through vite so the
+          // `react-native` alias (react-native-web) applies to their requires;
+          // through Node's loader they hit the Flow-typed native sources.
+          /expo-/,
+          /@expo\//,
+        ],
       },
     },
   },
