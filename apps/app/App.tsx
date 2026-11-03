@@ -1,16 +1,19 @@
 import { createApiClient, type ApiClient } from "@vjt/api-client";
 import { useAuth, type Auth, type TokenStorage } from "@vjt/core";
 import * as SecureStore from "expo-secure-store";
+import { useFonts } from "expo-font";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { normalizeServerUrl, resolveApiBaseUrl } from "./src/config.ts";
+import { appFonts } from "./src/fonts";
 import { Practice } from "./src/Practice.tsx";
 import { secureStoreServerUrl, type ServerUrlStorage } from "./src/serverUrlStorage.ts";
 import { SettingsHome } from "./src/SettingsHome.tsx";
 import { Stories } from "./src/Stories.tsx";
+import { ThemeProvider } from "./src/theme/index.tsx";
 import { MIN_TOUCH, useColors } from "./src/theme.ts";
 import { secureStoreTokenStorage } from "./src/tokenStorage.ts";
 import { ErrorText, Field, LinkButton, Muted, PrimaryButton, Screen, Scroll, Title } from "./src/ui.tsx";
@@ -32,7 +35,11 @@ const tokenStorage = secureStoreTokenStorage(SecureStore);
 const urlStorage = secureStoreServerUrl(SecureStore);
 
 export default function App() {
-  return <Root tokenStorage={tokenStorage} urlStorage={urlStorage} />;
+  return (
+    <ThemeProvider>
+      <Root tokenStorage={tokenStorage} urlStorage={urlStorage} />
+    </ThemeProvider>
+  );
 }
 
 /**
@@ -49,6 +56,10 @@ export function Root({
   urlStorage: ServerUrlStorage;
   fetchOverride?: typeof globalThis.fetch;
 }) {
+  // Noto JP first (a no-op map on web, where global.css @font-face does it):
+  // the first frame must not flicker through the system font.
+  useFonts(appFonts);
+
   // Hydrate the server URL first: everything below (client, auth) is built on it.
   const [serverUrl, setServerUrl] = useState<string | null>(null);
   useEffect(() => {

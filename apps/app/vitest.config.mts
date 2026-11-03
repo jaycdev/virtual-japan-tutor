@@ -28,6 +28,8 @@ export default defineConfig({
       // The Expo runtime needs the native host (HMR bridge, TurboModules).
       "expo-status-bar": fileURLToPath(new URL("./test/expo-status-bar-stub.tsx", import.meta.url)),
       "expo-secure-store": fileURLToPath(new URL("./test/expo-secure-store-stub.ts", import.meta.url)),
+      // expo-font needs the native module host too.
+      "expo-font": fileURLToPath(new URL("./test/expo-font-stub.ts", import.meta.url)),
       // react-native-svg binds to the native drawing host; jsdom gets inert views.
       "react-native-svg": fileURLToPath(new URL("./test/react-native-svg-stub.tsx", import.meta.url)),
       // --- #42 spike additions (Uniwind + React Native Reusables) ---
@@ -45,7 +47,7 @@ export default defineConfig({
     environment: "jsdom",
     globals: true, // lets @testing-library/react register its automatic cleanup
     setupFiles: ["./vitest.setup.ts"],
-    include: ["src/**/*.test.{ts,tsx}", "trial/**/*.test.{ts,tsx}", "App.test.tsx"],
+    include: ["src/**/*.test.{ts,tsx}", "showcase/**/*.test.{ts,tsx}", "App.test.tsx"],
     server: {
       deps: {
         // must go through vite so the raw-JSX .mjs files above get compiled,
