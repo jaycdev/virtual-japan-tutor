@@ -5,6 +5,9 @@
 //
 //   node scripts/subset-fonts.mjs     (needs `uv`/`uvx` on PATH for fontTools)
 //
+// The fontTools version is pinned (see the exec below) so slice bytes are
+// reproducible across machines/CI. Bump the pin deliberately and re-check the
+// committed slice sizes when it moves.
 // The Android TTFs in apps/app/assets/fonts/ stay full (expo-font bundles them;
 // Android has no unicode-range loading). Commit the generated files: they are
 // static assets of the web export, rebuilt rarely and reviewed by diff size.
@@ -39,7 +42,7 @@ for (const face of FACES) {
       "uvx",
       [
         "--from",
-        "fonttools[woff]",
+        "fonttools[woff]==4.68.0",
         "pyftsubset",
         join(SRC_DIR, `${face}.ttf`),
         `--unicodes=${unicodes}`,

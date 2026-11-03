@@ -2,7 +2,9 @@
   "name": "virtual-japan-tutor",
   "private": true,
   "packageManager": "pnpm@10.33.2",
-  "engines": { "node": ">=24" },
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "build": "turbo run build",
     "test": "turbo run test",
@@ -14,6 +16,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@resvg/resvg-wasm": "^2.6.2",
     "eslint": "^10.14.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.13.0",

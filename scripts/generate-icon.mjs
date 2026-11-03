@@ -8,15 +8,13 @@
 // time (no installed fonts, no rasteriser required - the TTF's own contours
 // are emitted as SVG paths by the small sfnt reader below).
 //
-// SVG -> PNG uses resvg WASM (@resvg/resvg-wasm) when it is importable from
-// node_modules; PNGs are committed so normal builds never need the toolchain.
-// The repo uses pnpm with `catalog:` versions, which plain `npm i` chokes on,
-// so install it out-of-tree and copy it in:
+// SVG -> PNG uses resvg WASM (@resvg/resvg-wasm, a root devDependency); the
+// script requires it and fails loudly without it. PNGs are committed so
+// normal builds never need the toolchain:
 //
-//   npm i --prefix <tmpdir> --no-package-lock @resvg/resvg-wasm
-//   cp -r <tmpdir>/node_modules/@resvg node_modules/@resvg
+//   pnpm install
 //   node scripts/generate-icon.mjs
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -354,8 +352,8 @@ writeFileSync(
 
 console.log("SVG sources written to apps/app/assets/brand/.");
 
-// ---------- rasterise (when resvg-wasm is installed) ----------
-if (existsSync(path.join(root, "node_modules/@resvg/resvg-wasm"))) {
+// ---------- rasterise (requires @resvg/resvg-wasm: root devDependency) ----------
+{
   const { Resvg, initWasm } = await import("@resvg/resvg-wasm");
   await initWasm(readFileSync(path.join(root, "node_modules/@resvg/resvg-wasm/index_bg.wasm")));
   const render = (svgPath, size) =>
@@ -368,6 +366,4 @@ if (existsSync(path.join(root, "node_modules/@resvg/resvg-wasm"))) {
   writeFileSync(path.join(app, "assets/android-icon-background.png"), render(path.join(brand, "icon-bg.svg"), 432));
   writeFileSync(path.join(app, "assets/android-icon-monochrome.png"), render(path.join(brand, "icon-monochrome.svg"), 432));
   console.log("PNGs regenerated: icon, favicon, android-icon-{foreground,background,monochrome}.");
-} else {
-  console.log("(skipped PNG raster - install @resvg/resvg-wasm into node_modules and re-run to produce them)");
 }
