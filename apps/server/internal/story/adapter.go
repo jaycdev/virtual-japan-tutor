@@ -65,15 +65,10 @@ func (l *RefdataLookup) Lookup(ctx context.Context, surface, dictionary string) 
 // maxHomographs bounds how many entries of one spelling are considered.
 const maxHomographs = 16
 
-// hitOf picks the entry's headword (first kanji form, else first reading)
-// and first gloss for display lists.
+// hitOf picks the entry's headword (refdata.JMdictEntry.Headword: kana for
+// usually-kana words) and first gloss for display lists.
 func hitOf(v refdata.Vocabulary) VocabHit {
-	h := VocabHit{EntSeq: v.EntSeq}
-	if len(v.Kanji) > 0 {
-		h.JA = v.Kanji[0].Text
-	} else if len(v.Readings) > 0 {
-		h.JA = v.Readings[0].Text
-	}
+	h := VocabHit{EntSeq: v.EntSeq, JA: v.Headword()}
 	for _, s := range v.Senses {
 		if len(s.Glosses) > 0 {
 			h.EN = s.Glosses[0]
@@ -230,17 +225,17 @@ func (f *MasteryFocus) KnownWords(ctx context.Context, userID uuid.UUID, limit i
 	return vocab, nil
 }
 
-// vocabByID fetches headword and gloss for a set of ent_seqs: the first
-// kanji form (else the first reading), and the first gloss of the first
-// sense that has one.
+// vocabByID fetches headword and gloss for a set of ent_seqs: the entry's
+// headword (refdata.HeadwordSQL: kana for usually-kana words), and the first
+// gloss of the first sense that has one.
 func vocabByID(ctx context.Context, pool *pgxpool.Pool, ids []int64) ([]VocabFocus, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
+	headword := refdata.HeadwordSQL(func(a string) string { return a + ".ent_seq = e.ent_seq" })
 	rows, err := pool.Query(ctx, `
 		SELECT e.ent_seq,
-		       COALESCE((SELECT k.text FROM jmdict_kanji_forms k WHERE k.ent_seq = e.ent_seq ORDER BY k.ord LIMIT 1), ''),
-		       COALESCE((SELECT r.text FROM jmdict_readings r WHERE r.ent_seq = e.ent_seq ORDER BY r.ord LIMIT 1), ''),
+		       COALESCE(`+headword+`, ''),
 		       COALESCE((SELECT s.glosses[1] FROM jmdict_senses s WHERE s.ent_seq = e.ent_seq AND cardinality(s.glosses) > 0 ORDER BY s.ord LIMIT 1), '')
 		FROM jmdict_entries e
 		WHERE e.ent_seq = ANY ($1)`, ids)
@@ -251,13 +246,8 @@ func vocabByID(ctx context.Context, pool *pgxpool.Pool, ids []int64) ([]VocabFoc
 	byID := map[int64]VocabFocus{}
 	for rows.Next() {
 		var v VocabFocus
-		var form, reading, gloss string
-		if err := rows.Scan(&v.EntSeq, &form, &reading, &gloss); err != nil {
+		if err := rows.Scan(&v.EntSeq, &v.JA, &v.EN); err != nil {
 			return nil, fmt.Errorf("story vocab content: %w", err)
-		}
-		v.JA, v.EN = form, gloss
-		if v.JA == "" {
-			v.JA = reading // readings-only entries: keep something readable
 		}
 		byID[v.EntSeq] = v
 	}
