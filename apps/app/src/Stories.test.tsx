@@ -50,6 +50,10 @@ function fakeApi(
     genOutcome?: "ready" | "running" | "failed";
     /** PUT/DELETE /stories/:id/read answer 500. */
     failRead?: boolean;
+    /** DELETE /stories/st-1 answers 500. */
+    failDelete?: boolean;
+    /** The server still holds a failed snapshot from a run before this visit. */
+    staleFailed?: boolean;
   } = {},
 ) {
   const storyView = {
@@ -96,7 +100,18 @@ function fakeApi(
 
   // On-demand generation (#33/#34): the run lives "on the server"; GET hands out
   // snapshots, and "running" turns ready after two polls so the bar can move.
-  let generation: Record<string, unknown> = { status: "idle", stage: null, percent: 0 };
+  // A terminal snapshot stays on the server until the next start — including a
+  // failed one from before the Learner ever opened the dialog (S2's test).
+  let generation: Record<string, unknown> = opts.staleFailed
+    ? {
+        status: "failed",
+        stage: "writing",
+        attempt: 2,
+        maxAttempts: 2,
+        percent: 100,
+        message: "Couldn’t write a Story that fits your vocabulary. Try again?",
+      }
+    : { status: "idle", stage: null, percent: 0 };
   let genPolls = 0;
 
   const fetchImpl = vi.fn(async (request: Request) => {
@@ -114,7 +129,10 @@ function fakeApi(
       if (opts.failToday) return json(500, { code: "internal", message: "server exploded" });
       return json(200, opts.todayDiffers ? { ...storyView, id: "st-0", title: "きのうの 一日" } : storyView);
     }
-    if (url.pathname === "/stories/st-1" && request.method === "DELETE") return new Response(null, { status: 204 });
+    if (url.pathname === "/stories/st-1" && request.method === "DELETE") {
+      if (opts.failDelete) return json(500, { code: "internal", message: "server exploded" });
+      return new Response(null, { status: 204 });
+    }
     if (/^\/stories\/st-\d\/read$/.test(url.pathname) && (request.method === "PUT" || request.method === "DELETE")) {
       if (opts.failRead) return json(500, { code: "internal", message: "server exploded" });
       return new Response(null, { status: 204 });
@@ -230,7 +248,7 @@ describe("Today's Story pinned above the Library (issue #48)", () => {
     expect(today.getByTestId("today-check-again")).toBeTruthy();
   });
 
-  it("offers Ready, read now for the Story a finished run just wrote", async () => {
+  it("offers Ready, read now for the Story a finished run just wrote, and spends it on open", async () => {
     const api = fakeApi({ todayDiffers: true, genOutcome: "ready" });
     const { onOpenStory } = renderStories(api.client);
     await screen.findByTestId("today-open");
@@ -238,11 +256,37 @@ describe("Today's Story pinned above the Library (issue #48)", () => {
     fireEvent.click(screen.getByTestId("today-generate"));
     fireEvent.click(await screen.findByTestId("generate-confirm"));
 
+    // The dialog that started the run steps aside once the Story is Ready —
+    // the pinned card is the one that shows it (S2).
+    await waitFor(() => expect(screen.queryByTestId("generate-dialog")).toBeNull());
+
     // The finished run's Story is not Today's (the daily one was st-0), but the
     // card offers it the moment the run reports ready.
     const ready = await screen.findByTestId("today-ready");
     fireEvent.click(ready);
     await waitFor(() => expect(onOpenStory).toHaveBeenCalledWith("st-1"));
+    // Opening spends the offer: the card's own Open is the same Story now.
+    expect(screen.queryByTestId("today-ready")).toBeNull();
+  });
+
+  it("a spent ready offer does not come back on a fresh mount with the same snapshot", async () => {
+    const api = fakeApi({ todayDiffers: true, genOutcome: "ready" });
+    const first = renderStories(api.client);
+    await first.findByTestId("today-open");
+
+    fireEvent.click(screen.getByTestId("today-generate"));
+    fireEvent.click(await screen.findByTestId("generate-confirm"));
+    const ready = await screen.findByTestId("today-ready");
+    fireEvent.click(ready);
+    await waitFor(() => expect(first.onOpenStory).toHaveBeenCalledWith("st-1"));
+
+    // The server keeps the ready snapshot until the next start, but the offer
+    // was opened: a remount that saw the same stale snapshot starts a clean page
+    // (S3 — the old tautology left the button on screen forever).
+    first.unmount();
+    renderStories(api.client);
+    await screen.findByTestId("today-open");
+    expect(screen.queryByTestId("today-ready")).toBeNull();
   });
 });
 
@@ -382,6 +426,30 @@ describe("Card menus (wide dropdown, narrow sheet)", () => {
     // The rest of the page is untouched.
     expect(screen.getByTestId("story-card-st-2")).toBeTruthy();
   });
+
+  it("a failed delete keeps the confirm open and says why, once", async () => {
+    const { client } = fakeApi({ failDelete: true });
+    renderStories(client);
+    await screen.findByTestId("story-card-st-1");
+
+    fireEvent.click(screen.getByTestId("story-menu-st-1"));
+    const sheet = await screen.findByTestId("story-menu-sheet");
+    fireEvent.click(within(sheet).getByTestId("menu-delete"));
+    fireEvent.click(await screen.findByTestId("confirm-delete-accept"));
+
+    // The dialog stays open with the server's words inside it — once, not also
+    // on the page behind it (S10).
+    const dialog = await screen.findByTestId("confirm-delete");
+    expect(await within(dialog).findByTestId("confirm-delete-error")).toBeTruthy();
+    expect(within(dialog).getByTestId("confirm-delete-error").textContent).toContain("server exploded");
+    expect(screen.queryByTestId("library-action-error")).toBeNull();
+    expect(screen.getByTestId("story-card-st-1")).toBeTruthy();
+
+    // Keep afterwards hands the one remaining copy to the page's own line.
+    fireEvent.click(within(dialog).getByTestId("confirm-delete-keep"));
+    await waitFor(() => expect(screen.queryByTestId("confirm-delete")).toBeNull());
+    expect(await screen.findByTestId("library-action-error")).toBeTruthy();
+  });
 });
 
 describe("Filters: Unread/All and Genre", () => {
@@ -419,6 +487,30 @@ describe("Filters: Unread/All and Genre", () => {
     await screen.findByTestId("story-card-st-1");
     expect(screen.queryByTestId("library-empty")).toBeNull();
     expect(screen.queryByTestId("library-filter-note")).toBeNull();
+  });
+
+  it("Unread and Genre combine: both filters apply at once", async () => {
+    const { client } = fakeApi({ readStory: true });
+    renderStories(client);
+    await screen.findByTestId("story-card-st-2");
+
+    // st-1 is read; the Unread chip hides it.
+    fireEvent.click(screen.getByTestId("filter-unread"));
+    await waitFor(() => expect(screen.queryByTestId("story-card-st-1")).toBeNull());
+
+    // st-2 is a diary; Travel on top of Unread leaves nothing on the page.
+    fireEvent.pointerDown(screen.getByTestId("genre-filter"), { button: 0, pointerType: "mouse" });
+    fireEvent.pointerUp(screen.getByTestId("genre-filter"), { button: 0, pointerType: "mouse" });
+    const content = await screen.findByTestId("genre-filter-content");
+    fireEvent.click(within(content).getByTestId("genre-filter-option-travel"));
+
+    expect((await screen.findByTestId("library-empty")).textContent).toContain("No Stories match these filters.");
+    expect(screen.getByTestId("library-filter-note").textContent).toContain("2 of the 2");
+
+    // Both chips/labels still read as selected, and one Clear undoes both.
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    await screen.findByTestId("story-card-st-1");
+    expect(screen.queryByTestId("library-empty")).toBeNull();
   });
 });
 
@@ -496,6 +588,42 @@ describe("On-demand Generate dialog", () => {
       await within(today).findByText(/Couldn’t write a Story that fits your vocabulary/),
     ).toBeTruthy();
     expect(within(today).getByTestId("today-retry")).toBeTruthy();
+  });
+
+  it("a stale failed snapshot never speaks in a dialog that has started nothing", async () => {
+    renderStories(fakeApi({ staleFailed: true }).client);
+    await screen.findByTestId("today-card");
+
+    fireEvent.click(screen.getByTestId("today-generate"));
+    const dialog = await screen.findByTestId("generate-dialog");
+    expect(within(dialog).queryByTestId("generate-error")).toBeNull();
+    expect(dialog.textContent).not.toContain("Couldn’t write a Story");
+    // And a fresh run can still be started from here.
+    expect(within(dialog).getByTestId("generate-confirm").getAttribute("aria-disabled")).toBeNull();
+  });
+
+  it("a failed run started here keeps the dialog open, says it once, and can be retried", async () => {
+    const api = fakeApi({ genOutcome: "failed", noToday: true });
+    renderStories(api.client);
+    await screen.findByTestId("today-card");
+
+    fireEvent.click(screen.getByTestId("today-generate"));
+    fireEvent.click(await screen.findByTestId("generate-confirm"));
+
+    const dialog = await screen.findByTestId("generate-dialog");
+    expect(await within(dialog).findByTestId("generate-error")).toBeTruthy();
+    // Once — the words live in the dialog, not also behind it.
+    expect(screen.queryByTestId("library-action-error")).toBeNull();
+    expect((dialog.textContent.match(/Couldn’t write a Story/g) ?? []).length).toBe(1);
+
+    // Re-enabled: a second tap really starts a second run (the old dead button
+    // quietly blocked retries).
+    fireEvent.click(within(dialog).getByTestId("generate-confirm"));
+    await waitFor(() =>
+      expect(
+        api.requests.filter((r) => r.method === "POST" && r.path === "/stories/generate").length,
+      ).toBe(2),
+    );
   });
 });
 

@@ -68,9 +68,16 @@ export function Stories({ client, onOpenStory, generationPollMs, screenSize }: S
   const [pickGenre, setPickGenre] = useState<string | null>(null);
   const [pickTheme, setPickTheme] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Story | null>(null);
+  // A run started from this mount's Generate dialog — the only run the dialog
+  // may speak of, and the only finish that steps the dialog aside. The server
+  // keeps the last finished snapshot around, and a stale `failed` must not
+  // greet a dialog that has started nothing (issue #48 review, S2).
+  const [runHere, setRunHere] = useState(false);
+  // The pinned card's ready offer is spent once opened, and never revived by
+  // the server's stale snapshot on a reload (issue #48 review, S3).
+  const [spentReady, setSpentReady] = useState(false);
 
   const status = gen.generation.status;
-  const readyId = status === "ready" ? gen.generation.progress.storyId : undefined;
 
   // A run that finishes while the Learner is here lands in both halves of the
   // page without a reload. Only the transition counts: the server keeps the
@@ -86,6 +93,15 @@ export function Stories({ client, onOpenStory, generationPollMs, screenSize }: S
       reload();
     }
   }, [status, reload, reloadToday]);
+
+  // A run started from the dialog that has reached Ready: the dialog steps
+  // aside because its rendering derives from this — no effect, no cascade —
+  // and the pinned card offers the new Story until it is opened or the Learner
+  // sits down to write another. A failure keeps the dialog open with its words
+  // inside it. A stale server snapshot moves neither (S2/S3).
+  const readyStoryId = status === "ready" ? gen.generation.progress.storyId : undefined;
+  const finishedHere = runHere && status === "ready" ? (readyStoryId ?? null) : null;
+  const readyFlash = finishedHere !== null && !spentReady ? finishedHere : null;
 
   const items = view.library.status === "ready" ? view.library.page.items : [];
 
@@ -125,7 +141,16 @@ export function Stories({ client, onOpenStory, generationPollMs, screenSize }: S
     const request: GenerateStoryRequest = {};
     if (pickGenre) request.genre = pickGenre;
     if (pickTheme) request.theme = pickTheme;
+    setRunHere(true);
+    setSpentReady(false);
     void gen.startGeneration(request);
+  }
+
+  function openGenerate() {
+    // Sitting down to write another Story closes the last run's book: a fresh
+    // dialog never inherits its finished state.
+    setRunHere(false);
+    setGenerateOpen(true);
   }
 
   function clearFilters() {
@@ -148,10 +173,17 @@ export function Stories({ client, onOpenStory, generationPollMs, screenSize }: S
               <TodayCard
                 today={view.today}
                 generation={gen.generation}
-                readyId={readyId}
+                readyStoryId={readyFlash}
                 onReloadToday={view.reloadToday}
                 onOpenStory={onOpenStory}
-                onOpenGenerate={() => setGenerateOpen(true)}
+                onOpenReady={() => {
+                  if (readyFlash === null) return;
+                  onOpenStory(readyFlash);
+                  // Opening spends the offer: the Story is open now, and the
+                  // card's own Open is the same action (S3).
+                  setSpentReady(true);
+                }}
+                onOpenGenerate={openGenerate}
                 fill={wide}
               />
             </View>
@@ -162,7 +194,7 @@ export function Stories({ client, onOpenStory, generationPollMs, screenSize }: S
               accessibilityHint="Writes one new Story now, with an optional Genre and Theme"
               disabled={status === "running"}
               fullWidth={!wide}
-              onPress={() => setGenerateOpen(true)}
+              onPress={openGenerate}
               testID="today-generate"
             />
           </View>
@@ -201,7 +233,10 @@ export function Stories({ client, onOpenStory, generationPollMs, screenSize }: S
 
           {view.library.status === "loading" ? <LibrarySkeleton /> : null}
 
-          {view.error ? (
+          {/* One line for page-level failures; while the delete dialog is open
+              the same failure already speaks inside it, so it is not repeated
+              here (issue #48 review, S10). */}
+          {view.error && !confirmTarget ? (
             <Text accessibilityRole="alert" role="alert" testID="library-action-error" className="text-small text-destructive">
               {view.error}
             </Text>
@@ -239,7 +274,7 @@ export function Stories({ client, onOpenStory, generationPollMs, screenSize }: S
               filtered={filtered}
               onRetry={view.reload}
               onClearFilters={clearFilters}
-              onGenerate={() => setGenerateOpen(true)}
+              onGenerate={openGenerate}
             />
           )}
 
@@ -273,9 +308,13 @@ export function Stories({ client, onOpenStory, generationPollMs, screenSize }: S
         </View>
       </View>
 
-      {generateOpen ? (
+      {/* The dialog steps aside on its own once a run it started is Ready —
+          its rendering derives from `finishedHere` (S2). */}
+      {generateOpen && finishedHere === null ? (
         <GenerateDialog
           narrow={sheetOverlays}
+          viewWidth={size.width}
+          runHere={runHere}
           suggestions={gen.suggestions}
           genre={pickGenre}
           theme={pickTheme}
@@ -291,6 +330,7 @@ export function Stories({ client, onOpenStory, generationPollMs, screenSize }: S
       {confirmTarget ? (
         <ConfirmDelete
           narrow={sheetOverlays}
+          viewWidth={size.width}
           story={confirmTarget}
           pending={view.pending}
           error={view.error}
@@ -310,26 +350,30 @@ export function Stories({ client, onOpenStory, generationPollMs, screenSize }: S
 function TodayCard({
   today,
   generation,
-  readyId,
+  readyStoryId,
   onReloadToday,
   onOpenStory,
+  onOpenReady,
   onOpenGenerate,
   fill,
 }: {
   today: TodaysStoryState;
   generation: StoryGenerationState;
-  /** The Story a finished run wrote, when it is not the card's own. */
-  readyId: string | undefined;
+  /** The Story a run started from this page just wrote; null once opened. */
+  readyStoryId: string | null;
   onReloadToday: () => void;
   onOpenStory: (storyId: string) => void;
+  /** Opens the just-written Story and dismisses the offer (S3). */
+  onOpenReady: () => void;
   onOpenGenerate: () => void;
   fill: boolean;
 }) {
   const running = generation.status === "running" ? generation.progress : undefined;
-  const readyStory = generation.status === "ready" ? generation.progress.storyId : undefined;
-  // The finished run's Story is worth opening even before the reload lands it in
-  // the card; once Today has it, the card's own Open button is the same action.
-  const justWritten = readyStory && readyStory === readyId && (today.status !== "story" || today.story.id !== readyStory);
+  // The finished run's Story is worth opening even before the reload lands it
+  // in the page; once Today shows it, the card's own Open button is the same
+  // action, and the offer is gone for good once it is opened.
+  const justWritten =
+    readyStoryId !== null && (today.status !== "story" || today.story.id !== readyStoryId);
 
   return (
     <Card testID="today-card" fill={fill} pinned>
@@ -362,7 +406,7 @@ function TodayCard({
             <ActionButton
               label="Ready, read now"
               accessibilityHint="Opens the Story that was just written"
-              onPress={() => onOpenStory(readyStory)}
+              onPress={onOpenReady}
               testID="today-ready"
             />
           ) : null}

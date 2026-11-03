@@ -3,7 +3,7 @@ import type { StoryGenerationState, StoryLibraryState } from "@vjt/core";
 import * as DialogPrimitives from "@rn-primitives/dialog";
 import * as DropdownMenuPrimitive from "@rn-primitives/dropdown-menu";
 import { useState, type ReactNode } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View, type ViewStyle } from "react-native";
 
 import { Card } from "./components/ui/Card.tsx";
 import { Icon, type IconName } from "./components/ui/icon.tsx";
@@ -380,6 +380,7 @@ function MenuRow({
  */
 export function ConfirmDelete({
   narrow,
+  viewWidth,
   story,
   pending,
   error,
@@ -387,6 +388,8 @@ export function ConfirmDelete({
   onConfirm,
 }: {
   narrow: boolean;
+  /** Viewport width: the wide card centres over the content column, not the viewport's 50%. */
+  viewWidth: number;
   story: Story;
   pending: boolean;
   error: string | null;
@@ -399,19 +402,22 @@ export function ConfirmDelete({
         <DialogPrimitives.Overlay style={styles.backdrop} className="bg-backdrop" />
         <DialogPrimitives.Content
           testID="confirm-delete"
-          style={narrow ? styles.sheet : styles.centered}
+          style={[narrow ? styles.sheet : centeredDialog(viewWidth), styles.dialogBody]}
           className={narrow ? "bg-card border-t border-border" : "bg-card border border-border"}
         >
           <DialogPrimitives.Title asChild>
             <Text className="text-title-sm font-semibold text-foreground">Delete this Story?</Text>
           </DialogPrimitives.Title>
           <DialogPrimitives.Description asChild>
-            <Text className="text-small text-muted-foreground">
-              {`“${story.title}” goes away for good, along with its rating. Your Practice Records for it stay.`}
+            {/* The non-breaking tie keeps “Practice Records stay.” from orphaning
+                a single word at narrow widths; text-balance carries it on web
+                where the utility exists. */}
+            <Text className="text-small text-muted-foreground text-balance">
+              {`“${story.title}” goes away for good, along with its rating.\u00A0Your Practice Records stay.`}
             </Text>
           </DialogPrimitives.Description>
           {error ? (
-            <Text accessibilityRole="alert" role="alert" className="text-small text-destructive">
+            <Text accessibilityRole="alert" role="alert" testID="confirm-delete-error" className="text-small text-destructive">
               {error}
             </Text>
           ) : null}
@@ -453,6 +459,8 @@ export function ConfirmDelete({
  */
 export function GenerateDialog({
   narrow,
+  viewWidth,
+  runHere,
   suggestions,
   genre,
   theme,
@@ -464,6 +472,10 @@ export function GenerateDialog({
   onClose,
 }: {
   narrow: boolean;
+  /** Viewport width: the wide card centres over the content column, not the viewport's 50%. */
+  viewWidth: number;
+  /** Whether a run was started from this dialog in this visit (S2): the only run its words may speak of. */
+  runHere: boolean;
   suggestions: StorySuggestions;
   genre: string | null;
   theme: string | null;
@@ -475,20 +487,27 @@ export function GenerateDialog({
   onClose: () => void;
 }) {
   const running = generation.status === "running";
+  // One error line, inside the dialog, and only for a run this dialog started:
+  // an old server `failed` must not greet a dialog that has started nothing (S2).
+  const failure =
+    runHere && generation.status === "failed"
+      ? (generation.progress.message ?? "Couldn’t write a Story for you.")
+      : null;
+  const alert = failure ?? (runHere ? error : null);
   return (
     <DialogPrimitives.Root open onOpenChange={(open) => !open && onClose()}>
       <DialogPrimitives.Portal>
         <DialogPrimitives.Overlay style={styles.backdrop} className="bg-backdrop" />
         <DialogPrimitives.Content
           testID="generate-dialog"
-          style={narrow ? styles.sheet : styles.centered}
+          style={[narrow ? styles.sheet : centeredDialog(viewWidth), styles.dialogBody]}
           className={narrow ? "bg-card border-t border-border" : "bg-card border border-border"}
         >
           <DialogPrimitives.Title asChild>
             <Text className="text-title-sm font-semibold text-foreground">Generate a Story</Text>
           </DialogPrimitives.Title>
           <DialogPrimitives.Description asChild>
-            <Text className="text-small text-muted-foreground">
+            <Text className="text-small text-muted-foreground text-balance">
               One new Story now. Genre and Theme are optional — leave them on Any and the tutor chooses.
             </Text>
           </DialogPrimitives.Description>
@@ -526,14 +545,9 @@ export function GenerateDialog({
               />
             </View>
           ) : null}
-          {generation.status === "failed" ? (
-            <Text accessibilityRole="alert" role="alert" className="text-small text-destructive">
-              {generation.progress.message ?? "Couldn’t write a Story for you."}
-            </Text>
-          ) : null}
-          {error ? (
-            <Text accessibilityRole="alert" role="alert" className="text-small text-destructive">
-              {error}
+          {alert ? (
+            <Text accessibilityRole="alert" role="alert" testID="generate-error" className="text-small text-destructive">
+              {alert}
             </Text>
           ) : null}
 
@@ -792,9 +806,9 @@ const styles = StyleSheet.create({
     maxWidth: 220,
   },
   pickerList: { maxHeight: 280 },
-  pickerRows: { gap: 12, marginTop: 12 },
+  pickerRows: { gap: 12 },
   progress: { gap: 8 },
-  dialogActions: { flexDirection: "row", gap: 12, marginTop: 16 },
+  dialogActions: { flexDirection: "row", gap: 12, marginTop: 4 },
   dialogButton: { flex: 1, minHeight: 44, borderRadius: 8, alignItems: "center", justifyContent: "center" },
   backdrop: { ...positioned, top: 0, left: 0, right: 0, bottom: 0 },
   // Bottom sheet narrow, centred card wide: the reader's geometry (SaveToSheet).
@@ -810,18 +824,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     elevation: 12,
   },
-  centered: {
+  // Text dialogs (Generate, delete confirm) get breathing room the menu sheet
+  // does not need: 20 px padding and a 12 px gap so the title, its description,
+  // the pickers and the progress bar never touch (issue #48 review, S1/S7).
+  dialogBody: { paddingTop: 20, paddingBottom: 20, paddingHorizontal: 20, gap: 12 },
+  srOnly: { left: -9999, opacity: 0, position: "absolute" as const },
+});
+
+/**
+ * The wide text dialog, centred over the Shell's capped content column rather
+ * than the viewport's middle third (issue #48 review, S7): the column centres
+ * itself in the viewport, so a capped dialog at the viewport's centre sits at
+ * the column's centre at every width.
+ */
+export function centeredDialog(viewWidth: number): ViewStyle {
+  const width = Math.min(520, viewWidth - 32);
+  return {
     ...positioned,
     top: "15%",
-    left: "25%",
-    right: "25%",
+    left: (viewWidth - width) / 2,
+    width,
     maxHeight: "70%",
-    paddingTop: 12,
-    paddingBottom: 18,
-    paddingHorizontal: 16,
     borderRadius: 12,
     borderWidth: 1,
     elevation: 12,
-  },
-  srOnly: { left: -9999, opacity: 0, position: "absolute" as const },
-});
+  };
+}
