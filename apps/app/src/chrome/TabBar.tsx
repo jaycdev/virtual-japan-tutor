@@ -1,0 +1,56 @@
+import { Pressable, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+import { MIN_TOUCH, useColors } from "../theme.ts";
+import { DESTINATIONS, type Destination } from "./destinations.ts";
+
+/**
+ * Bottom tab bar for narrow screens (<1024 px, issue #44): five destinations
+ * as labelled icons. Rendered as accessibilityRole="tab" so screen readers
+ * announce selection; the Shell hides it while a Story reader route is open.
+ * Icon strokes take the JS theme palette (useColors) — Uniwind classNames do
+ * not reach SVG colour.
+ */
+export function TabBar({
+  active,
+  onSelect,
+}: {
+  active: string;
+  onSelect: (destination: Destination) => void;
+}) {
+  const colors = useColors();
+  const insets = useSafeAreaInsets();
+  return (
+    <View className="flex-row border-t border-border bg-card" style={{ paddingBottom: insets.bottom }}>
+      {DESTINATIONS.map(({ path, label, icon: Icon }) => {
+        const selected = path === active;
+        return (
+          <Pressable
+            key={path}
+            accessibilityRole="tab"
+            accessibilityLabel={label}
+            accessibilityState={{ selected }}
+            // react-native-web (jsdom test host) maps the raw ARIA props;
+            // native reads the accessibility* pair. Same state, both hosts.
+            role="tab"
+            aria-selected={selected}
+            onPress={() => onSelect({ path, label, icon: Icon })}
+            className="flex-1 items-center justify-center gap-1 active:bg-accent"
+            style={{ minHeight: MIN_TOUCH }}
+          >
+            <Icon size={22} color={selected ? colors.accent : colors.subtle} />
+            <Text
+              className={
+                selected
+                  ? "text-caption font-semibold text-primary"
+                  : "text-caption text-muted-foreground"
+              }
+            >
+              {label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
