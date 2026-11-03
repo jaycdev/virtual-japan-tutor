@@ -5,7 +5,7 @@ import { StyleSheet } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fakeBackHandler, type FakeBackHandler } from "../test/back-handler-fake.ts";
-import { setBackHandlerForTests } from "./hardwareBack.ts";
+import { setBackHandlerForTests } from "./useHardwareBack.ts";
 import { reduceHold, type Rect } from "./reader/holdMenu.ts";
 import { Stories } from "./Stories.tsx";
 

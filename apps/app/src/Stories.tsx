@@ -1,5 +1,6 @@
 import type { ApiClient, GenerateStoryRequest, Story, StoryGenerationProgress } from "@vjt/api-client";
 import { type StoryGeneration, type StoryView, useStory, useStoryGeneration } from "@vjt/core";
+import { ChevronLeft, ChevronRight } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
@@ -29,11 +30,19 @@ import type { MeasurableNode, Rect } from "./reader/holdMenu.ts";
  */
 export function Stories({
   client,
+  onOpenStory,
   measure,
   screenSize,
   generationPollMs,
 }: {
   client: ApiClient;
+  /**
+   * Opens a Story (issue #44): the router route passes router.push so reading
+   * lives at /stories/:id — hardware Back pops it and the chrome knows to hide.
+   * Without it, the reader opens in-place (the pre-router behaviour, kept for
+   * the component's own tests).
+   */
+  onOpenStory?: (storyId: string) => void;
   /** Passed to the reader: test hosts inject menu geometry the DOM cannot measure. */
   measure?: (testID: string, node: MeasurableNode | null) => Rect | null;
   screenSize?: { width: number; height: number };
@@ -47,6 +56,12 @@ export function Stories({
   // Today's Story is the landing view; "View all stories" opens the Story
   // Library, and the reader covers whichever one opened it.
   const [showLibrary, setShowLibrary] = useState(false);
+
+  // Route-driven open (the /stories route) or in-place open (component tests).
+  const openStory = (storyId: string) => {
+    if (onOpenStory) onOpenStory(storyId);
+    else void view.openStory(storyId);
+  };
 
   // A run finishing while the Learner is anywhere on the tab: the Library
   // quietly picks the new Story up (seenReady keeps the reload once per run).
@@ -76,11 +91,11 @@ export function Stories({
     <ScrollView accessibilityLabel={showLibrary ? "Story Library" : "Stories"}>
       <Title text="Stories" />
       {view.error ? <ErrorText text={view.error} /> : null}
-      <GeneratePanel gen={gen} view={view} />
+      <GeneratePanel gen={gen} onOpenStory={openStory} />
       {showLibrary ? (
-        <StoryLibrary view={view} onBack={() => setShowLibrary(false)} />
+        <StoryLibrary view={view} onBack={() => setShowLibrary(false)} onOpenStory={openStory} />
       ) : (
-        <TodaysStoryPanel view={view} onViewAll={() => setShowLibrary(true)} />
+        <TodaysStoryPanel view={view} onViewAll={() => setShowLibrary(true)} onOpenStory={openStory} />
       )}
     </ScrollView>
   );
@@ -107,7 +122,15 @@ function todayLine(s: Story): string {
   return "Written for you today.";
 }
 
-function TodaysStoryPanel({ view, onViewAll }: { view: StoryView; onViewAll: () => void }) {
+function TodaysStoryPanel({
+  view,
+  onViewAll,
+  onOpenStory,
+}: {
+  view: StoryView;
+  onViewAll: () => void;
+  onOpenStory: (storyId: string) => void;
+}) {
   const t = view.today;
   return (
     <>
@@ -117,7 +140,7 @@ function TodaysStoryPanel({ view, onViewAll }: { view: StoryView; onViewAll: () 
           <PrimaryButton
             label={t.story.readAt ? "Read today’s story again" : "Read today’s story"}
             disabled={view.pending}
-            onPress={() => void view.openStory(t.story.id)}
+            onPress={() => onOpenStory(t.story.id)}
           />
           <Muted text={todayLine(t.story)} />
         </>
@@ -147,7 +170,13 @@ function TodaysStoryPanel({ view, onViewAll }: { view: StoryView; onViewAll: () 
  * finished run offers "Ready, read now" (never auto-opened); a rejected one
  * shows the retry line and leaves the form ready for another try.
  */
-function GeneratePanel({ gen, view }: { gen: StoryGeneration; view: StoryView }) {
+function GeneratePanel({
+  gen,
+  onOpenStory,
+}: {
+  gen: StoryGeneration;
+  onOpenStory: (storyId: string) => void;
+}) {
   const colors = useColors();
   const g = gen.generation;
   const [genre, setGenre] = useState("");
@@ -187,7 +216,7 @@ function GeneratePanel({ gen, view }: { gen: StoryGeneration; view: StoryView })
             <PrimaryButton
               label="Ready, read now"
               onPress={() => {
-                if (g.status === "ready" && g.progress.storyId) void view.openStory(g.progress.storyId);
+                if (g.status === "ready" && g.progress.storyId) onOpenStory(g.progress.storyId);
               }}
             />
           </>
@@ -243,7 +272,15 @@ function stageLabel(p: StoryGenerationProgress): string {
 
 const originLabel = (s: Story) => (s.origin === "on_demand" ? "On demand" : "Automatic");
 
-function StoryLibrary({ view, onBack }: { view: StoryView; onBack: () => void }) {
+function StoryLibrary({
+  view,
+  onBack,
+  onOpenStory,
+}: {
+  view: StoryView;
+  onBack: () => void;
+  onOpenStory: (storyId: string) => void;
+}) {
   const colors = useColors();
   // Same rules as the web Library (issue #31): the title's translation
   // reveals transiently — nothing is saved and no Weak Signal is recorded —
@@ -281,7 +318,7 @@ function StoryLibrary({ view, onBack }: { view: StoryView; onBack: () => void })
                 testID={`story-row-${story.id}`}
                 accessibilityRole="button"
                 accessibilityLabel={`Open story: ${story.title}`}
-                onPress={() => void view.openStory(story.id)}
+                onPress={() => onOpenStory(story.id)}
                 style={styles.rowHead}
               >
                 <Text style={{ color: colors.label, fontSize: 17, fontWeight: "600" }}>{story.title}</Text>
@@ -365,7 +402,7 @@ function StoryLibrary({ view, onBack }: { view: StoryView; onBack: () => void })
             onPress={() => void view.loadPage(Math.max(0, lib.page.offset - lib.page.limit))}
             style={[styles.pageButton, lib.page.offset === 0 && styles.pageDisabled]}
           >
-            <Text style={{ color: colors.accent, fontSize: 15 }}>‹ Newer</Text>
+            <ChevronLeft size={22} color={colors.accent} strokeWidth={2.5} />
           </Pressable>
           <Text style={{ color: colors.subtle, fontSize: 14 }}>{pageSummary(lib.page)}</Text>
           <Pressable
@@ -375,7 +412,7 @@ function StoryLibrary({ view, onBack }: { view: StoryView; onBack: () => void })
             onPress={() => void view.loadPage(lib.page.offset + lib.page.items.length)}
             style={[styles.pageButton, lib.page.offset + lib.page.items.length >= lib.page.total && styles.pageDisabled]}
           >
-            <Text style={{ color: colors.accent, fontSize: 15 }}>Older ›</Text>
+            <ChevronRight size={22} color={colors.accent} strokeWidth={2.5} />
           </Pressable>
         </View>
       ) : null}

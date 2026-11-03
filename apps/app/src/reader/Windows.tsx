@@ -1,4 +1,5 @@
 import type { DictionaryEntry, StoryGrammarSpan } from "@vjt/api-client";
+import { X } from "lucide-react-native";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { MIN_TOUCH, useColors } from "../theme.ts";
@@ -47,7 +48,7 @@ function WindowCard({
               hitSlop={8}
               style={styles.close}
             >
-              <Text style={{ color: colors.subtle, fontSize: 18, fontWeight: "600" }}>×</Text>
+              <X size={20} color={colors.subtle} strokeWidth={2.5} />
             </Pressable>
           </View>
           <ScrollView style={styles.body}>{children}</ScrollView>

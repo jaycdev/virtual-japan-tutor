@@ -1,5 +1,6 @@
 import type { ApiClient, Story, WeakSignalRequest } from "@vjt/api-client";
 import { type StoryView, useItemLists, useReadingSettings } from "@vjt/core";
+import { ChevronLeft } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import {
   Pressable,
@@ -11,7 +12,7 @@ import {
   type NativeTouchEvent,
 } from "react-native";
 
-import { useHardwareBack } from "../hardwareBack.ts";
+import { useHardwareBack } from "../useHardwareBack.ts";
 import { MIN_TOUCH, useColors } from "../theme.ts";
 import { RatingButtons } from "./parts.tsx";
 import { ReadingPanel, type LookedTarget } from "./ReadingPanel.tsx";
@@ -459,7 +460,7 @@ export function StoryReader({
             onPress={onBack}
             style={styles.backButton}
           >
-            <Text style={{ color: colors.accent, fontSize: 16 }}>‹ Back</Text>
+            <ChevronLeft size={26} color={colors.accent} strokeWidth={2.5} />
           </Pressable>
           <Text style={[styles.headerTitle, { color: colors.label }]} numberOfLines={1}>
             {story.title}
