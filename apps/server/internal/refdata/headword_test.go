@@ -32,16 +32,16 @@ var headwordCases = []struct {
 		want: "そこ",
 	},
 	{
-		name: "uk on a later sense does not hide the kanji (居る)",
+		name: "uk on a later sense does not hide the kanji (会う)",
 		entry: refdata.JMdictEntry{
-			Kanji:    []refdata.JMdictKanji{{Text: "居る"}},
-			Readings: []refdata.JMdictReading{{Text: "いる"}},
+			Kanji:    []refdata.JMdictKanji{{Text: "会う"}},
+			Readings: []refdata.JMdictReading{{Text: "あう"}},
 			Senses: []refdata.JMdictSense{
-				{Glosses: []string{"to be"}},
-				{Misc: []string{"uk"}, Glosses: []string{"to be -ing"}},
+				{Glosses: []string{"to meet"}},
+				{Misc: []string{"uk"}, Glosses: []string{"to have an encounter"}},
 			},
 		},
-		want: "居る",
+		want: "会う",
 	},
 	{
 		name: "rarely used kanji form is skipped for the next one",
