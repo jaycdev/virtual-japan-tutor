@@ -359,6 +359,22 @@ function hasClass(testID: string, classToken: string): boolean {
   return false;
 }
 
+/** The value the rendered atomic CSS rule (react-native-web's r-* classes)
+ * gives `property` for a class starting with `classPrefix`, or null. */
+function cssValue(el: HTMLElement, classPrefix: string, property: string): string | null {
+  for (const cls of Array.from(el.classList)) {
+    if (!cls.startsWith(classPrefix)) continue;
+    for (const style of Array.from(document.querySelectorAll("style"))) {
+      for (const rule of Array.from((style as HTMLStyleElement).sheet?.cssRules ?? [])) {
+        const r = rule as CSSStyleRule;
+        const value = r.selectorText === `.${cls}` ? r.style.getPropertyValue(property) : "";
+        if (value) return value;
+      }
+    }
+  }
+  return null;
+}
+
 /** Finger down at (x, y) and held past the Lookup threshold. */
 async function pressAndHold(sentence: number, index: number, x = 300, y = 300) {
   fireEvent.mouseDown(token(sentence, index), { clientX: x, clientY: y });
@@ -404,9 +420,11 @@ describe("Story reader layout and Story text size (issue #45)", () => {
     expect(column.style.width).toBe("840px");
     expect(hasClass("story-column", "text-center")).toBe(true);
     expect(hasClass("story-column", "font-serif")).toBe(true);
-    // The panel box is 7 story-text lines tall and never depends on content.
+    // The panel box is 7 story-text lines tall, as wide as the column, and
+    // never depends on content.
     const panel = screen.getByTestId("reading-panel");
     expect(panel.style.height).toBe("147px");
+    expect(panel.style.width).toBe("840px");
 
     fireEvent.mouseDown(token(0, 0), { clientX: 300, clientY: 300 });
     expect(screen.getByTestId("reading-panel").style.height).toBe("147px");
@@ -423,6 +441,7 @@ describe("Story reader layout and Story text size (issue #45)", () => {
     });
     expect(screen.getByTestId("story-column").style.width).toBe("1120px"); // 40 x 28
     expect(screen.getByTestId("reading-panel").style.height).toBe("196px"); // 7 x 28
+    expect(screen.getByTestId("reading-panel").style.width).toBe("1120px");
     expect(hasClass("furigana-1-2", "text-furigana-xl")).toBe(true);
 
     act(() => {
@@ -430,6 +449,7 @@ describe("Story reader layout and Story text size (issue #45)", () => {
     });
     expect(screen.getByTestId("story-column").style.width).toBe("720px"); // 40 x 18
     expect(screen.getByTestId("reading-panel").style.height).toBe("126px"); // 7 x 18
+    expect(screen.getByTestId("reading-panel").style.width).toBe("720px");
     expect(hasClass("furigana-1-2", "text-furigana-s")).toBe(true);
   });
 
@@ -788,33 +808,35 @@ describe("Reading Panel placement, modes and scroll lock (review fixes)", () => 
     expect(within(panel).queryByText("Word meaning")).toBeNull();
   });
 
-  it("the panel is one fixed-height container in both modes", async () => {
+  it("the panel is one fixed-size container in both modes, and its content scrolls", async () => {
     const { client } = fakeApi();
     await openStory(client);
 
-    // Read the height off what react-native-web rendered (r-* class CSS):
-    // one fixed dp constant, the same in sentence-mode and word-mode.
-    const panelHeight = () => {
+    // Both edges are the saved Story text size, written straight into the
+    // style prop — the same value on web and Android, with no post-paint DOM
+    // write to keep them in step.
+    const box = () => {
       const el = screen.getByTestId("reading-panel");
-      for (const cls of Array.from(el.classList)) {
-        if (!cls.startsWith("r-")) continue;
-        for (const style of Array.from(document.querySelectorAll("style"))) {
-          for (const rule of Array.from((style as HTMLStyleElement).sheet?.cssRules ?? [])) {
-            const r = rule as CSSStyleRule;
-            if (r.selectorText === `.${cls}` && r.style.getPropertyValue("height")) {
-              return r.style.getPropertyValue("height");
-            }
-          }
-        }
-      }
-      return undefined;
+      return { height: el.style.height, width: el.style.width };
     };
-    const sentenceModeHeight = panelHeight();
-    expect(sentenceModeHeight).toBe("147px");
+    const sentenceMode = box();
+    expect(sentenceMode.height).toBe("147px"); // 7 x the default M size (21px)
+    // The panel is as wide as the column of story text it sits above.
+    expect(sentenceMode.width).toBe(screen.getByTestId("story-column").style.width);
 
     fireEvent.mouseDown(token(0, 0), { clientX: 300, clientY: 300 });
-    expect(panelHeight()).toBe(sentenceModeHeight);
+    expect(box()).toEqual(sentenceMode); // word-mode: the same box
+
+    // Nothing inside is clipped without a way to reach it: whatever the mode,
+    // the panel's content sits in a scroll container.
+    const panelScroll = () => screen.getByTestId("panel-scroll");
+    expect(cssValue(panelScroll(), "r-overflowY", "overflow-y")).toBe("auto");
     fireEvent.mouseUp(token(0, 0), { clientX: 300, clientY: 300 });
+
+    await pressAndHold(0, 0);
+    expect(cssValue(panelScroll(), "r-overflowY", "overflow-y")).toBe("auto");
+    releaseAt(0, 0, 5, 5);
+    await waitFor(() => expect(screen.queryByLabelText("Lookup menu")).toBeNull());
   });
 
   it("the story stays scrollable through a press-and-swipe, and freezes only once the menu is up", async () => {
@@ -824,19 +846,8 @@ describe("Reading Panel placement, modes and scroll lock (review fixes)", () => 
     // RNW implements scrollEnabled by flipping the scroll container's own
     // overflow (auto ↔ hidden) — that is what the browser uses to decide who
     // pans, so read it off the rendered CSS rather than component props.
-    const scrollable = () => {
-      const el = screen.getByTestId("story-scroll");
-      for (const cls of Array.from(el.classList)) {
-        if (!cls.startsWith("r-overflowY")) continue;
-        for (const style of Array.from(document.querySelectorAll("style"))) {
-          for (const rule of Array.from((style as HTMLStyleElement).sheet?.cssRules ?? [])) {
-            const r = rule as CSSStyleRule;
-            if (r.selectorText === `.${cls}`) return r.style.getPropertyValue("overflow-y") === "auto";
-          }
-        }
-      }
-      return false;
-    };
+    const scrollable = () =>
+      cssValue(screen.getByTestId("story-scroll"), "r-overflowY", "overflow-y") === "auto";
     expect(scrollable()).toBe(true);
 
     // Pressing a token primes the hold but must NOT freeze the story

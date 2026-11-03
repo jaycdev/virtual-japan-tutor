@@ -2,11 +2,9 @@ import type { Story, StoryGrammarSpan } from "@vjt/api-client";
 import type { ReadingSettingsView } from "@vjt/core";
 import { useState } from "react";
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { useEffect, useRef } from "react";
 
 import { useStoryTextSize } from "../storysize/index.tsx";
 import { coveringSpan } from "./holdMenu.ts";
-import type { MeasurableNode } from "./holdMenu.ts";
 import { countGlosses, firstGlosses, JlptBadge } from "./parts.tsx";
 import { PitchGraph } from "./PitchGraph.tsx";
 import { TokenWords } from "./StoryText.tsx";
@@ -15,8 +13,11 @@ import type { EntryLookup } from "./useEntryLookup.ts";
 /**
  * The Reading Panel (issues #14, #45): ONE fixed box above the story that
  * never moves as the story scrolls and never resizes as lookups come and go.
- * Its height is seven lines of the current Story text size — it scales with
- * the saved size, but never with content. Inside the box:
+ * Both of its edges come from the saved Story text size — it is as wide as the
+ * 40-character column below it and seven lines of that size tall — and it
+ * scales with the size, never with content. Whatever is inside rides in one
+ * scroll container, so a sentence or a gloss list longer than the box is
+ * scrolled, not clipped. Inside the box:
  *
  *   sentence-mode (idle): the selected sentence (with furigana) and its
  *     Sentence Translation;
@@ -57,24 +58,10 @@ export function ReadingPanel({
   /** Reports Weak Signals when a blurred Sentence Translation is revealed. */
   onUnblur: (sentenceIdx: number) => void;
 }) {
-  const { fontSizePx } = useStoryTextSize();
+  const { fontSizePx, columnWidthPx } = useStoryTextSize();
   const blur = reading.state.status === "ready" ? reading.state.settings.blurTranslation : true;
   const sen = selected !== null ? story.sentences[selected] : null;
   const [blurError, setBlurError] = useState<string | null>(null);
-
-  // The fixed height has two proofs on web: the StyleSheet height (7 lines at
-  // the default size) lands in an atomic CSS rule, and the CURRENT size rides
-  // on the element's inline style, which the browser lets win. RNW otherwise
-  // keeps a height either as a class or inline — never both — so the inline
-  // copy is written here once the size changes. (Android takes it from the
-  // style prop instead; there is no CSSOM to speak of.)
-  const panelRef = useRef<MeasurableNode | null>(null);
-  useEffect(() => {
-    const el = panelRef.current as unknown as HTMLElement | null;
-    if (el && typeof el.style?.setProperty === "function") {
-      el.style.height = `${PANEL_LINES * fontSizePx}px`;
-    }
-  }, [fontSizePx]);
 
   // A failed save leaves the stored preference — and the screen — as they
   // were; the only change is the message that says the click did not stick.
@@ -89,79 +76,93 @@ export function ReadingPanel({
 
   return (
     <View
-      ref={(node) => {
-        panelRef.current = node;
-      }}
       testID="reading-panel"
       accessibilityLabel="Reading Panel"
       className="bg-card border-border"
-      style={Platform.OS === "web" ? styles.panel : [styles.panel, { height: PANEL_LINES * fontSizePx }]}
+      // Both edges are the saved Story text size talking: as wide as the
+      // 40-character column it sits above, and PANEL_LINES lines of that size
+      // tall. Neither depends on what is showing, so the story below the panel
+      // never shifts as lookups come and go (review on #45).
+      style={[styles.panel, { height: PANEL_LINES * fontSizePx, width: columnWidthPx }]}
     >
-      {looked ? (
-        <View accessibilityLabel="Lookup row" style={styles.wordMode}>
-          {/* Fixed label, outside the conditional content: it keeps its slot
-              so the box never shifts as lookups come and go. */}
-          <Text className="text-muted-foreground" style={styles.lookupLabel}>
-            Word meaning
-          </Text>
-          <LookupRow story={story} looked={looked} lookup={lookup} />
-        </View>
-      ) : (
-        <View style={styles.sentenceMode}>
-          <ScrollView style={styles.sentenceBox}>
+      {/* Everything inside rides in one scroll container: a long sentence or a
+          long list of glosses is reached by scrolling, never cut off in
+          silence. */}
+      <ScrollView testID="panel-scroll" style={styles.body}>
+        {looked ? (
+          <View accessibilityLabel="Lookup row" style={styles.wordMode}>
+            {/* Fixed label, outside the conditional content: it keeps its slot
+                so the box never shifts as lookups come and go. */}
+            <Text className="text-caption text-muted-foreground" style={styles.lookupLabel}>
+              Word meaning
+            </Text>
+            <LookupRow story={story} looked={looked} lookup={lookup} />
+          </View>
+        ) : (
+          <View style={styles.sentenceMode}>
             {sen ? (
-              <Text className="text-foreground" style={styles.panelSentence}>
+              // The selected sentence at the same size the story is set to, so
+              // the panel reads as the same text, quoted.
+              <Text
+                className="text-foreground"
+                style={{
+                  fontSize: fontSizePx,
+                  lineHeight: Math.round(fontSizePx * 1.4),
+                  padding: 8,
+                  paddingBottom: 4,
+                }}
+              >
                 {sen.tokens.map((tok, j) => (
                   <TokenWords key={j} token={tok} />
                 ))}
               </Text>
             ) : (
-              <Text className="text-muted-foreground" style={{ fontSize: 14 }}>
+              <Text className="text-small text-muted-foreground" style={styles.hint}>
                 Tap a word or punctuation to select its sentence.
               </Text>
             )}
-          </ScrollView>
-          {reading.state.status === "error" ? (
-            <Text className="text-muted-foreground" style={{ fontSize: 13 }}>
-              (reading settings unavailable — {reading.state.message})
-            </Text>
-          ) : null}
-        </View>
-      )}
-
-      {/* The Sentence Translation row keeps its slot in BOTH modes: the panel
-          never rearranges while a Lookup is up. */}
-      {sen ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Sentence Translation"
-          accessibilityHint={blur ? "Tap to show the translation" : "Tap to hide the translation"}
-          onPress={() => void toggleBlur()}
-          // The blur is the row's own inline style: web applies a real CSS
-          // filter; Android (no filter support) hides the text outright.
-          style={
-            blur
-              ? Platform.OS === "web"
-                ? [styles.translationRow, { filter: "blur(5px)" }]
-                : [styles.translationRow, { opacity: 0 }]
-              : styles.translationRow
-          }
-        >
-          <Text className="text-muted-foreground" style={styles.translation}>
-            {sen.en}
+          </View>
+        )}
+        {reading.state.status === "error" ? (
+          <Text className="text-small text-muted-foreground" style={styles.note}>
+            (reading settings unavailable — {reading.state.message})
           </Text>
-        </Pressable>
-      ) : null}
-      {sen && blur ? (
-        <Text testID="translation-hidden-note" className="text-muted-foreground" style={styles.blurNote}>
-          Translation hidden — tap to show
-        </Text>
-      ) : null}
-      {blurError ? (
-        <Text accessibilityRole="alert" className="text-destructive" style={{ fontSize: 14, paddingHorizontal: 12 }}>
-          Could not save that — {blurError}
-        </Text>
-      ) : null}
+        ) : null}
+
+        {/* The Sentence Translation row keeps its slot in BOTH modes: the panel
+            never rearranges while a Lookup is up. */}
+        {sen ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Sentence Translation"
+            accessibilityHint={blur ? "Tap to show the translation" : "Tap to hide the translation"}
+            onPress={() => void toggleBlur()}
+            // The blur is the row's own inline style: web applies a real CSS
+            // filter; Android (no filter support) hides the text outright.
+            style={
+              blur
+                ? Platform.OS === "web"
+                  ? [styles.translationRow, { filter: "blur(5px)" }]
+                  : [styles.translationRow, { opacity: 0 }]
+                : styles.translationRow
+            }
+          >
+            <Text className="text-small text-muted-foreground" style={styles.translation}>
+              {sen.en}
+            </Text>
+          </Pressable>
+        ) : null}
+        {sen && blur ? (
+          <Text testID="translation-hidden-note" className="text-caption text-muted-foreground" style={styles.blurNote}>
+            Translation hidden — tap to show
+          </Text>
+        ) : null}
+        {blurError ? (
+          <Text accessibilityRole="alert" className="text-small text-destructive" style={styles.note}>
+            Could not save that — {blurError}
+          </Text>
+        ) : null}
+      </ScrollView>
     </View>
   );
 }
@@ -239,26 +240,27 @@ function GrammarGloss({ span }: { span: StoryGrammarSpan }) {
 
 const styles = StyleSheet.create({
   panel: {
-    // One fixed height for both modes (the inline style scales it by the
-    // Story text size): lookups and long sentences can never resize the
-    // panel, so the story below it never shifts.
-    height: 147, // 7 × the default M size (21px)
+    // The inline style sets the size from the saved Story text size: 40
+    // characters wide (the column below) and PANEL_LINES lines tall. One fixed
+    // box for both modes, so lookups and long sentences can never resize it
+    // and the story under it never shifts.
+    alignSelf: "center",
+    maxWidth: "100%",
     borderRadius: 12,
     borderWidth: 1,
-    marginHorizontal: 16,
     marginTop: 12,
-    overflow: "hidden",
     flexDirection: "column",
   },
+  // The one scroll container inside the fixed box.
+  body: { flex: 1 },
   wordMode: {
-    flex: 1,
     paddingHorizontal: 12,
     paddingVertical: 10,
     gap: 6,
   },
-  sentenceMode: { flex: 1, paddingHorizontal: 4, paddingTop: 8 },
-  sentenceBox: { flex: 1 },
-  panelSentence: { fontSize: 18, lineHeight: 28, padding: 8, paddingBottom: 4 },
+  sentenceMode: { paddingHorizontal: 4, paddingTop: 8 },
+  hint: { padding: 8 },
+  note: { paddingHorizontal: 12, paddingBottom: 6 },
   translationRow: { paddingVertical: 6, paddingHorizontal: 12 },
   translation: { fontSize: 14, fontStyle: "italic" },
   blurNote: { fontSize: 12, paddingHorizontal: 12, paddingBottom: 8 },
