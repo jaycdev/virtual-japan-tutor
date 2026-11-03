@@ -5,8 +5,8 @@ import { storyTextSizeStorage } from "./storage.ts";
 import { STORY_TEXT_SIZE_STORAGE_KEY } from "./store.ts";
 
 const secure = vi.hoisted(() => ({
-  getItemAsync: vi.fn<() => Promise<string | null>>(),
-  setItemAsync: vi.fn<() => Promise<void>>(),
+  getItemAsync: vi.fn<(key: string) => Promise<string | null>>(),
+  setItemAsync: vi.fn<(key: string, value: string) => Promise<void>>(),
 }));
 
 vi.mock("expo-secure-store", () => ({

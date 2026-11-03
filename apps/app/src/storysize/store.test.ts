@@ -1,4 +1,4 @@
-import * as fs from "node:fs";
+import { readFileSync } from "node:fs";
 import * as path from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -51,7 +51,7 @@ describe("the Story text size scale", () => {
     // JS sizes the column, the panel and the furigana off these numbers; the
     // text itself comes from CSS. A drift between the two is a layout bug,
     // so the test that catches it lives here.
-    const css = fs.readFileSync(path.join(__dirname, "../../global.css"), "utf8");
+    const css = readFileSync(path.join(__dirname, "../../global.css"), "utf8");
     for (const size of STORY_TEXT_SIZES) {
       const match = css.match(new RegExp(`--text-story-${size.toLowerCase()}:\\s*(\\d+(?:\\.\\d+)?)px`));
       expect(match, `--text-story-${size} missing from global.css`).not.toBeNull();
