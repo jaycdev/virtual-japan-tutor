@@ -222,16 +222,16 @@ function LookupRow({
   const more = countGlosses(entry) > glosses.length;
   return (
     <View testID="panel-lookup" style={styles.lookupContent}>
-      <Text className="text-pitch" style={{ fontSize: 16, fontWeight: "600" }}>
+      <Text className="text-body text-pitch" style={styles.lookupWord}>
         {token.surface}
       </Text>
       {token.reading && token.reading !== token.surface ? (
-        <Text className="text-focus" style={{ fontSize: 15 }}>
+        <Text className="text-body text-focus">
           {token.reading}
         </Text>
       ) : null}
       {glosses.map((gloss, i) => (
-        <Text key={i} className="text-foreground" style={{ fontSize: 14 }}>
+        <Text key={i} className="text-small text-foreground">
           {gloss}
           {more && i === glosses.length - 1 ? "…" : ""}
         </Text>
@@ -247,10 +247,10 @@ function LookupRow({
 function GrammarGloss({ span }: { span: StoryGrammarSpan }) {
   return (
     <View testID="panel-lookup" style={styles.lookupContent}>
-      <Text className="text-pitch" style={{ fontSize: 16, fontWeight: "600" }}>
+      <Text className="text-body text-pitch" style={styles.lookupWord}>
         {span.pattern}
       </Text>
-      <Text className="text-foreground" style={{ fontSize: 14 }}>
+      <Text className="text-small text-foreground">
         {span.meaning}
       </Text>
       <View style={styles.lookupRight}>{span.jlptLevel ? <JlptBadge level={span.jlptLevel} /> : null}</View>
@@ -285,9 +285,10 @@ const styles = StyleSheet.create({
   errorText: { flex: 1, flexShrink: 1 },
   retry: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
   translationRow: { paddingVertical: 6, paddingHorizontal: 12 },
-  translation: { fontSize: 14, fontStyle: "italic" },
-  blurNote: { fontSize: 12, paddingHorizontal: 12, paddingBottom: 8 },
-  lookupLabel: { fontSize: 12, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.4 },
+  translation: { fontStyle: "italic" },
+  blurNote: { paddingHorizontal: 12, paddingBottom: 8 },
+  lookupLabel: { fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.4 },
+  lookupWord: { fontWeight: "600" },
   lookupContent: { flexDirection: "row", alignItems: "center", gap: 10, flexWrap: "wrap" },
   lookupRight: { marginLeft: "auto", flexDirection: "row", alignItems: "center", gap: 8 },
 });

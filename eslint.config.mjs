@@ -35,6 +35,37 @@ const noHardcodedColor = {
   },
 };
 
+// #45 design rule, same reasoning as the colour gate: the type steps are part
+// of the single source too (the --text-* tokens). A numeric fontSize in a
+// reader component is a size no token sweep can follow, so it fails at review
+// time. Sizes that come from the Learner's saved Story text size
+// (`fontSizePx`) are not literals and pass.
+const noInlineFontSize = {
+  meta: {
+    type: "problem",
+    schema: [],
+    messages: {
+      noFontSize:
+        "Inline font size. Type steps live in apps/app/global.css (design tokens); use a text-* class, or the saved Story text size from useStoryTextSize.",
+    },
+  },
+  create(context) {
+    return {
+      Property(node) {
+        const key = node.key;
+        if ((key.type !== "Identifier" && key.type !== "Literal") || String(key.name ?? key.value) !== "fontSize") return;
+        const value = node.value;
+        if (value.type === "Literal" && typeof value.value === "number") context.report({ node, messageId: "noFontSize" });
+        else if (value.type === "ConditionalExpression") {
+          for (const branch of [value.consequent, value.alternate]) {
+            if (branch.type === "Literal" && typeof branch.value === "number") context.report({ node, messageId: "noFontSize" });
+          }
+        }
+      },
+    };
+  },
+};
+
 export default tseslint.config(
   {
     ignores: [
@@ -53,7 +84,10 @@ export default tseslint.config(
   {
     files: ["**/*.{ts,tsx}"],
     languageOptions: { globals: { ...globals.browser, ...globals.node } },
-    plugins: { "react-hooks": reactHooks, vjt: { rules: { "no-hardcoded-color": noHardcodedColor } } },
+    plugins: {
+      "react-hooks": reactHooks,
+      vjt: { rules: { "no-hardcoded-color": noHardcodedColor, "no-inline-font-size": noInlineFontSize } },
+    },
     rules: {
       ...reactHooks.configs.recommended.rules,
     },
@@ -63,6 +97,13 @@ export default tseslint.config(
     // redesigned (#43); apps/web is the legacy client, porting is not planned.
     files: ["apps/app/**/*.{ts,tsx}"],
     rules: { "vjt/no-hardcoded-color": "error" },
+  },
+  {
+    // The Story reader (#45) sets type through the token scale - text-caption /
+    // -small / -body / -title-sm - or through the Learner's saved Story text
+    // size, never through a number in a style object.
+    files: ["apps/app/src/reader/**/*.tsx"],
+    rules: { "vjt/no-inline-font-size": "error" },
   },
   {
     // Legacy JS-styled surface (see the note above): gate stays green today,

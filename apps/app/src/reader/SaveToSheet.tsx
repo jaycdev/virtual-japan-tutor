@@ -1,5 +1,5 @@
 import type { ItemList } from "@vjt/api-client";
-import { X } from "lucide-react-native";
+import { Icon } from "../components/ui/icon";
 import * as DialogPrimitives from "@rn-primitives/dialog";
 import { useState } from "react";
 import {
@@ -72,7 +72,7 @@ export function SaveToSheet({
           >
             <View style={styles.head}>
               <DialogPrimitives.Title asChild>
-                <Text className="text-foreground" style={styles.title}>
+                <Text className="text-title-sm text-foreground" style={styles.title}>
                   Save to…
                 </Text>
               </DialogPrimitives.Title>
@@ -84,16 +84,16 @@ export function SaveToSheet({
                 hitSlop={8}
                 style={styles.close}
               >
-                <X size={20} strokeWidth={2.5} className="text-muted-foreground" />
+                <Icon name="close" size="md" strokeWidth={2.5} className="text-muted-foreground" />
               </Pressable>
             </View>
             <DialogPrimitives.Description asChild>
-              <Text className="text-muted-foreground" style={styles.subtitle}>
+              <Text className="text-caption text-muted-foreground" style={styles.subtitle}>
                 Save the word or pattern to one of your lists.
               </Text>
             </DialogPrimitives.Description>
             {error ? (
-              <Text accessibilityRole="alert" className="text-destructive" style={styles.error}>
+              <Text accessibilityRole="alert" className="text-small text-destructive" style={styles.error}>
                 Could not save — {error}
               </Text>
             ) : null}
@@ -108,10 +108,10 @@ export function SaveToSheet({
                   style={styles.listRow}
                   className="border-b border-border"
                 >
-                  <Text className="text-foreground" style={styles.listName}>
+                  <Text className="text-body text-foreground">
                     {list.name}
                   </Text>
-                  {list.id === defaultListId ? <Text className="text-muted-foreground" style={styles.defaultTag}>default</Text> : null}
+                  {list.id === defaultListId ? <Text className="text-caption text-muted-foreground">default</Text> : null}
                 </Pressable>
               ))}
             </ScrollView>
@@ -120,7 +120,7 @@ export function SaveToSheet({
                 value={name}
                 onChangeText={setName}
                 placeholder="New list name"
-                className="text-foreground placeholder:text-muted-foreground bg-background border border-border"
+                className="text-body text-foreground placeholder:text-muted-foreground bg-background border border-border"
                 style={styles.input}
               />
               <Pressable
@@ -132,7 +132,7 @@ export function SaveToSheet({
                 style={styles.createButton}
                 className="bg-primary"
               >
-                <Text className="text-primary-foreground" style={styles.createLabel}>
+                <Text className="text-body text-primary-foreground">
                   Create
                 </Text>
               </Pressable>
@@ -177,10 +177,10 @@ const styles = StyleSheet.create({
     paddingBottom: 18,
   },
   head: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingBottom: 8 },
-  title: { fontSize: 17, fontWeight: "600" },
+  title: { fontWeight: "600" },
   close: { marginLeft: "auto", width: 22, height: 22, alignItems: "center", justifyContent: "center" },
-  subtitle: { fontSize: 13, marginBottom: 8, paddingHorizontal: 16 },
-  error: { fontSize: 14, marginBottom: 8, paddingHorizontal: 16 },
+  subtitle: { marginBottom: 8, paddingHorizontal: 16 },
+  error: { marginBottom: 8, paddingHorizontal: 16 },
   list: { maxHeight: 260 },
   listRow: {
     minHeight: 44,
@@ -189,10 +189,8 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 16,
   },
-  listName: { fontSize: 16 },
-  defaultTag: { fontSize: 13 },
   create: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingTop: 12 },
-  input: { flex: 1, minHeight: 44, borderRadius: 8, paddingHorizontal: 10, fontSize: 15 },
+  input: { flex: 1, minHeight: 44, borderRadius: 8, paddingHorizontal: 10 },
   createButton: {
     minHeight: 44,
     borderRadius: 8,
@@ -200,5 +198,4 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  createLabel: { fontSize: 15 },
 });

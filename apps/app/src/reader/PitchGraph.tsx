@@ -55,7 +55,7 @@ export function PitchGraph({
           <Circle key={`dot-${i}`} cx={d.x} cy={d.y} r={4} fill="currentColor" />
         ))}
       </Svg>
-      <Text className="text-muted-foreground" style={{ fontSize: withCaption ? 13 : 11 }}>
+      <Text className={withCaption ? "text-small text-muted-foreground" : "text-caption text-muted-foreground"}>
         {withCaption
           ? pitch.heiban
             ? "heiban (flat)"

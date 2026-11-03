@@ -1,8 +1,8 @@
 import type { DictionaryEntry, StoryGrammarSpan } from "@vjt/api-client";
-import { X } from "lucide-react-native";
 import * as DialogPrimitives from "@rn-primitives/dialog";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
+import { Icon } from "../components/ui/icon";
 import { JlptBadge } from "./parts.tsx";
 import { PitchGraph } from "./PitchGraph.tsx";
 
@@ -52,18 +52,18 @@ function WindowCard({
         >
           <View style={styles.head}>
             <DialogPrimitives.Title asChild>
-              <Text className="text-foreground" style={styles.title}>
+              <Text className="text-title-sm text-foreground" style={styles.title}>
                 {title}
               </Text>
             </DialogPrimitives.Title>
             {reading && reading !== title ? (
-              <Text className="text-muted-foreground" style={{ fontSize: 16 }}>
+              <Text className="text-body text-muted-foreground">
                 {reading}
               </Text>
             ) : null}
             {jlpt ? <JlptBadge level={jlpt} /> : null}
             <Pressable accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} hitSlop={8} style={styles.close}>
-              <X size={20} strokeWidth={2.5} className="text-muted-foreground" />
+              <Icon name="close" size="md" strokeWidth={2.5} className="text-muted-foreground" />
             </Pressable>
           </View>
           <ScrollView style={styles.body}>{children}</ScrollView>
@@ -94,7 +94,7 @@ export function DictionaryWindow({
       {entry.pitch ? (
         <View style={styles.pitchRow}>
           <PitchGraph pitch={entry.pitch} />
-          <Text className="text-muted-foreground" style={{ fontSize: 13 }}>
+          <Text className="text-caption text-muted-foreground">
             {entry.pitch.heiban ? "heiban (flat)" : `downstep after mora ${entry.pitch.downstepAfterMora}`}
             {entry.pitch.tag ? ` — ${entry.pitch.tag}` : ""}
           </Text>
@@ -102,11 +102,11 @@ export function DictionaryWindow({
       ) : null}
       {entry.senses.map((sense, i) => (
         <View key={i} style={styles.sense}>
-          <Text className="text-muted-foreground" style={{ fontSize: 13 }}>
+          <Text className="text-caption text-muted-foreground">
             {sense.partsOfSpeech.join(", ")}
           </Text>
           {sense.glosses.map((gloss, j) => (
-            <Text key={j} className="text-foreground" style={{ fontSize: 16 }}>
+            <Text key={j} className="text-body text-foreground">
               {gloss}
             </Text>
           ))}
@@ -127,7 +127,7 @@ export function GrammarWindow({
 }) {
   return (
     <WindowCard testID="grammar-window" title={span.pattern} jlpt={span.jlptLevel} narrow={narrow} onClose={onClose}>
-      <Text className="text-foreground" style={styles.senseMeaning}>
+      <Text className="text-body text-foreground" style={styles.senseMeaning}>
         {span.meaning}
       </Text>
     </WindowCard>
@@ -167,11 +167,11 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 0,
     borderBottomRightRadius: 0,
   },
-  title: { fontSize: 20, fontWeight: "600" },
+  title: { fontWeight: "600" },
   head: { flexDirection: "row", alignItems: "center", gap: 8, padding: 14, flexWrap: "wrap" },
   close: { marginLeft: "auto", width: 22, height: 22, alignItems: "center", justifyContent: "center" },
   body: { paddingHorizontal: 14, paddingBottom: 14 },
   pitchRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
   sense: { marginBottom: 10 },
-  senseMeaning: { fontSize: 16, marginBottom: 8 },
+  senseMeaning: { marginBottom: 8 },
 });
