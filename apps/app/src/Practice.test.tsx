@@ -177,7 +177,9 @@ describe('mobile Practice', () => {
     // B1: while Exercise 1's feedback is up, the progress line still names it.
     expect(screen.getByText('Exercise 1 of 2')).toBeTruthy();
     expect(screen.queryByText('Exercise 2 of 2')).toBeNull();
-    expect(screen.getByRole('button', { name: 'learn ← correct' })).toBeTruthy();
+    // S1: the option keeps its plain label; the feedback line carries the truth.
+    expect(screen.getByRole('button', { name: 'learn' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /←/ })).toBeNull();
     expect(screen.getByRole('button', { name: 'Continue' })).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
@@ -220,8 +222,9 @@ describe('mobile Practice', () => {
     // water is the right answer for the second exercise, so tree is the wrong pick.
     fireEvent.click(screen.getByRole('button', { name: 'tree' }));
 
+    // S1: a miss names the right answer in the feedback line, not in a marker.
     await waitFor(() => {
-      expect(screen.getByText('Not quite')).toBeTruthy();
+      expect(screen.getByText('Not quite. Correct answer: water')).toBeTruthy();
     });
     // The session is done but the final exercise stays visible until Continue.
     expect(screen.queryByText(/Session complete/)).toBeNull();
@@ -229,14 +232,20 @@ describe('mobile Practice', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
     await waitFor(() => {
-      expect(screen.getByText('Session complete — 1 of 2 correct.')).toBeTruthy();
+      expect(screen.getByText('Session complete')).toBeTruthy();
     });
+    // P2: the heading and the score line are separate, and the score line
+    // counts the exercises (S2).
+    expect(screen.getByText(/1 of 2 correct - 2 exercises from your Focus Set\./)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Practice again' })).toBeTruthy();
     // The summary lists the items needing another look (#46): the missed
-    // exercise's prompt, its item kind, and a fresh start.
+    // exercise's sentence, the option that was right, and the kind in words
+    // a Learner would recognise — not the raw API token.
     expect(screen.getByText('Needs another look')).toBeTruthy();
     expect(screen.getByText('水')).toBeTruthy();
-    expect(screen.getByText('kanji')).toBeTruthy();
+    expect(screen.getByText('Correct answer: water')).toBeTruthy();
+    expect(screen.getByText('Kanji')).toBeTruthy();
+    expect(screen.queryByText('kanji')).toBeNull();
   });
 
   it('an empty Focus Set gets one clear next step, not a stuck session', async () => {

@@ -264,7 +264,7 @@ function ActivePractice({
               className={feedback.correct ? "text-success" : "text-destructive"}
             />
             <Text className={feedback.correct ? "text-body font-semibold text-success" : "text-body font-semibold text-destructive"}>
-              {feedback.correct ? "Correct" : "Not quite"}
+              {feedbackLine(current, feedback)}
             </Text>
           </View>
         ) : null}
@@ -272,12 +272,10 @@ function ActivePractice({
           {current.options.map((opt) => {
             const chosen = feedback !== null && feedback.chosenOptionId === opt.id;
             const right = feedback !== null && feedback.correctOptionId === opt.id;
-            const mark = !feedback ? "" : right ? " ← correct" : chosen ? " ← your answer" : "";
             return (
               <OptionButton
                 key={opt.id}
                 label={opt.text}
-                mark={mark}
                 state={feedback === null ? "open" : right ? "correct" : chosen ? "wrong" : "dim"}
                 disabled={locked}
                 onPress={() => onAnswer(current.id, opt.id)}
@@ -297,16 +295,23 @@ function ActivePractice({
   );
 }
 
+/**
+ * The feedback line. A miss names the right answer outright — a marker on the
+ * option list alone was too easy to miss (#46 review S1).
+ */
+function feedbackLine(current: ExerciseView, feedback: NonNullable<ExerciseView["feedback"]>): string {
+  if (feedback.correct) return "Correct";
+  const answer = current.options.find((opt) => opt.id === feedback.correctOptionId)?.text;
+  return answer ? `Not quite. Correct answer: ${answer}` : "Not quite";
+}
+
 function OptionButton({
   label,
-  mark,
   state,
   disabled,
   onPress,
 }: {
   label: string;
-  /** The " ← correct" / " ← your answer" marker once the answer has landed. */
-  mark: string;
   state: "open" | "correct" | "wrong" | "dim";
   disabled: boolean;
   onPress: () => void;
@@ -322,7 +327,7 @@ function OptionButton({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${label}${mark}`}
+      accessibilityLabel={label}
       accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
@@ -331,36 +336,58 @@ function OptionButton({
       {state === "correct" ? <Icon name="circle-check" size="sm" className="text-success" /> : null}
       {state === "wrong" ? <Icon name="circle-x" size="sm" className="text-destructive" /> : null}
       <Text className={text}>{label}</Text>
-      {mark ? <Text className="text-small text-muted-foreground">{mark}</Text> : null}
     </Pressable>
   );
+}
+
+/** itemKind as Learner-facing copy, not the API's raw token. */
+function humanKind(kind: string): string {
+  const words: Record<string, string> = {
+    kanji: "Kanji",
+    kana: "Kana",
+    grammar: "Grammar point",
+    vocabulary: "Word",
+    phrase: "Phrase",
+  };
+  return words[kind] ?? kind.charAt(0).toUpperCase() + kind.slice(1);
 }
 
 function PracticeResults({ practice, onAgain }: { practice: PracticeView; onAgain: () => void }) {
   const exercises = practice.session?.exercises ?? [];
   const items = practice.results?.items ?? [];
-  const again = items.filter((item) => !item.correct);
+  // Index the misses by position so the row can quote the exercise's own
+  // prompt and the option that was right, rather than the raw cloze (#46 review S2).
+  const again = items.map((item, index) => ({ item, index })).filter(({ item }) => !item.correct);
+  const totalExercises = exercises.length;
   return (
     <Card>
-      <Text className="text-title font-semibold text-foreground">
-        Session complete — {practice.results?.correct ?? 0} of {practice.results?.total ?? 0} correct.
+      <Text className="text-title font-semibold text-foreground">Session complete</Text>
+      <Text className="text-body text-muted-foreground">
+        {practice.results?.correct ?? 0} of {practice.results?.total ?? 0} correct -{" "}
+        {totalExercises} exercise{totalExercises === 1 ? "" : "s"} from your Focus Set.
       </Text>
       {again.length > 0 ? (
         <View className="gap-3">
           <Text className="text-small text-muted-foreground">Needs another look</Text>
-          {again.map((item) => {
-            const i = items.indexOf(item);
+          {again.map(({ item, index }) => {
+            const exercise = practice.exercises[index];
+            const answer = exercise?.options.find((opt) => opt.id === exercise.feedback?.correctOptionId)?.text;
             return (
               <View
-                key={`${item.itemKind}:${item.itemRef}:${i}`}
-                testID={`practice-review-${i}`}
+                key={`${item.itemKind}:${item.itemRef}:${index}`}
+                testID={`practice-review-${index}`}
                 className="flex-row flex-wrap items-center gap-3 border-b border-border pb-3"
               >
                 <Icon name="circle-x" size="sm" className="text-destructive" />
-                <Text className="flex-1 text-body text-foreground" numberOfLines={2}>
-                  {exercises[i]?.prompt ?? item.itemRef}
-                </Text>
-                <Text className="text-caption text-muted-foreground">{item.itemKind}</Text>
+                <View className="min-w-40 flex-1 gap-1">
+                  <Text className="text-body text-foreground" numberOfLines={2}>
+                    {exercise?.prompt ?? item.itemRef}
+                  </Text>
+                  {answer ? (
+                    <Text className="text-small text-foreground">Correct answer: {answer}</Text>
+                  ) : null}
+                </View>
+                <Text className="text-caption text-muted-foreground">{humanKind(item.itemKind)}</Text>
               </View>
             );
           })}
