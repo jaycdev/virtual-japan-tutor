@@ -5,7 +5,8 @@
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@spike/trial": ["./trial/index.ts"]
     }
   },
   "include": ["**/*.ts", "**/*.tsx"],
