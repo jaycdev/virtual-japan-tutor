@@ -17,7 +17,7 @@ declare function require(id: string): unknown;
 // inside the roots (ThemeProvider / useFonts), which paint nothing until the
 // saved theme and the bundled fonts are in place.
 if (process.env.EXPO_PUBLIC_SHOWCASE === "1") {
-  const { Showcase } = require("@dev/showcase") as typeof import("./showcase/index.ts");
+  const { Showcase } = require("@dev/showcase") as typeof import("./showcase/index.tsx");
   registerRootComponent(Showcase);
 } else {
   registerRootComponent(App);

@@ -6,7 +6,7 @@
     "noEmit": true,
     "paths": {
       "@/*": ["./*"],
-      "@dev/showcase": ["./showcase/index.ts"]
+      "@dev/showcase": ["./showcase/index.tsx"]
     }
   },
   "include": ["**/*.ts", "**/*.tsx"],

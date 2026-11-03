@@ -18,10 +18,9 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Text } from '@/components/ui/text';
+import { useTheme } from '@/src/theme/index.tsx';
 import { PortalHost } from '@rn-primitives/portal';
-import { useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
-import { Uniwind } from 'uniwind';
 
 import { KanaSample } from './kana-sample';
 
@@ -41,12 +40,9 @@ import { KanaSample } from './kana-sample';
  * `className="text-title text-foreground"`.
  */
 export function Showcase() {
-  const [mode, setMode] = useState<'system' | 'light' | 'dark'>('system');
-
-  const setTheme = (next: 'system' | 'light' | 'dark') => {
-    setMode(next);
-    Uniwind.setTheme(next);
-  };
+  // The pills drive the real theme store (same path #50's settings UI will
+  // use), so choices persist across launches and boot applies them pre-paint.
+  const { preference: mode, setPreference: setTheme } = useTheme();
 
   return (
     <>
