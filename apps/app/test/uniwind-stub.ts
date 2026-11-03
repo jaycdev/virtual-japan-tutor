@@ -6,9 +6,12 @@ export function withUniwind<T>(component: T, mappings?: unknown): T {
   return component;
 }
 
+/** Tracks every `setTheme` call so tests can assert when the theme is applied. */
+export const setThemeCalls: string[] = [];
+
 export const Uniwind = {
   setTheme: (theme: string): void => {
-    void theme;
+    setThemeCalls.push(theme);
   },
   currentTheme: "light" as string,
   hasAdaptiveThemes: true,
