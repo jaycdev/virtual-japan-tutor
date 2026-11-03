@@ -40,6 +40,18 @@ export function practiceSeedForStory(storyId: string): number {
   return hash;
 }
 
+/**
+ * Cloze prompts break mid-token at narrow widths, stranding "＿＿＿。" on a
+ * line of its own (#46 review P3). U+2060 WORD JOINER is zero-width and
+ * forbids a break where it sits: one glues the blank to its punctuation, the
+ * other ties the token to the word before it.
+ */
+export function displayPrompt(prompt: string): string {
+  return prompt
+    .replace(/([＿_]+)[\s\u2060]*([。、．.!?！？])/gu, "$1\u2060$2")
+    .replace(/(\s)([＿_])/gu, "$1\u2060$2");
+}
+
 export function Practice({
   client,
   seed,
@@ -255,7 +267,7 @@ function ActivePractice({
       />
       <Card>
         <Text className="text-small text-muted-foreground">{current.instruction}</Text>
-        <Text className="text-display text-foreground font-serif">{current.prompt}</Text>
+        <Text className="text-display text-foreground font-serif">{displayPrompt(current.prompt)}</Text>
         {feedback ? (
           <View accessibilityRole="status" className="flex-row flex-wrap items-center gap-2">
             <Icon
@@ -385,7 +397,7 @@ function PracticeResults({ practice, onAgain }: { practice: PracticeView; onAgai
                 <Icon name="circle-x" size="sm" className="text-destructive" />
                 <View className="min-w-40 flex-1 gap-1">
                   <Text className="text-body text-foreground" numberOfLines={2}>
-                    {exercise?.prompt ?? item.itemRef}
+                    {exercise ? displayPrompt(exercise.prompt) : item.itemRef}
                   </Text>
                   {answer ? (
                     <Text className="text-small text-foreground">Correct answer: {answer}</Text>

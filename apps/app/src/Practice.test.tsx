@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
-import { Practice, practiceSeedForStory } from './Practice.tsx';
+import { Practice, displayPrompt, practiceSeedForStory } from './Practice.tsx';
 import { createApiClient } from '@vjt/api-client';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -381,7 +381,18 @@ describe('mobile Practice', () => {
     expect(startCalls()[1]?.body).toEqual({ seed });
   });
 
-  it('practiceSeedForStory is deterministic, non-negative, and specific to the Story', () => {    expect(practiceSeedForStory('st-1')).toBe(practiceSeedForStory('st-1'));
+  it('cloze blanks stay glued to their punctuation at narrow widths (#46 review P3)', () => {
+    const joined = displayPrompt('みせに いきました ＿＿＿。');
+    // U+2060 WORD JOINER forbids a line break where it sits: the full stop
+    // stays on the blank, and the blank stays with the word before it.
+    expect(joined).toContain('＿＿＿\u2060。');
+    expect(joined).toContain(' \u2060＿＿＿');
+    // Prompts without a blank are untouched.
+    expect(displayPrompt('学校')).toBe('学校');
+  });
+
+  it('practiceSeedForStory is deterministic, non-negative, and specific to the Story', () => {
+    expect(practiceSeedForStory('st-1')).toBe(practiceSeedForStory('st-1'));
     expect(practiceSeedForStory('st-1')).not.toBe(practiceSeedForStory('st-2'));
     expect(Number.isSafeInteger(practiceSeedForStory('st-1'))).toBe(true);
     expect(practiceSeedForStory('st-1')).toBeGreaterThanOrEqual(0);
