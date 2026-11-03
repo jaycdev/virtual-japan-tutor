@@ -1,13 +1,26 @@
-import { Text, View } from "react-native";
+import { router, type Href } from "expo-router";
 
-// Today (#44 placeholder, built out in #47): the signed-in landing route.
-export default function TodayScreen() {
+import { Today } from "../src/Today.tsx";
+import { useSession } from "../src/session.tsx";
+
+// Today (#47), the landing route: the app opens here on Android and web. The
+// chrome (#44) already mounts this route inside the Shell, so the tab bar or
+// sidebar is around it and its own ScrollView handles the rest.
+//
+// Navigation stays with the router: the Story card pushes the reader
+// (/stories/:id, the same route the Stories screen uses), the Practice CTA
+// goes to /practice, and the two ways out of an empty state go to Stories and
+// the Item Lists section — the screens where the Learner can actually act.
+export default function TodayRoute() {
+  const { client } = useSession();
   return (
-    <View className="flex-1 gap-4 bg-background p-4">
-      <Text className="text-title font-semibold text-foreground">Today</Text>
-      <Text className="text-body text-muted-foreground">
-        Your daily story and review queue will appear here.
-      </Text>
-    </View>
+    <Today
+      client={client}
+      onOpenStory={(storyId) => router.push(`/stories/${storyId}` as Href)}
+      onOpenPractice={() => router.push("/practice" as Href)}
+      onOpenStories={() => router.push("/stories" as Href)}
+      onOpenWordLists={() => router.push("/settings/lists" as Href)}
+      onOpenMarumoriSettings={() => router.push("/settings/marumori" as Href)}
+    />
   );
 }
