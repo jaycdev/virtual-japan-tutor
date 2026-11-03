@@ -473,7 +473,7 @@ describe('Today', () => {
 
     // 01:02Z is 10:02 in Tokyo: the line is the Learner’s clock, not UTC.
     await waitFor(() => {
-      expect(screen.getByText('November 4, 10:02')).toBeTruthy();
+      expect(screen.getByText('Last sync succeeded November 4, 10:02.')).toBeTruthy();
     });
     expect(screen.getByText('7 new items, 2 level changes, 400 linked to reference data.')).toBeTruthy();
   });
@@ -508,7 +508,7 @@ describe('Today', () => {
     // Wait for the section to settle (the marumori read to land): Sync now is
     // disabled until then, and a click on a disabled button goes nowhere.
     await waitFor(() => {
-      expect(screen.getByText('November 4, 10:02')).toBeTruthy();
+      expect(screen.getByText('Last sync succeeded November 4, 10:02.')).toBeTruthy();
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'Sync now' }));
@@ -517,12 +517,37 @@ describe('Today', () => {
       expect(posts.some((post) => post.path === '/marumori/sync')).toBe(true);
     });
     await waitFor(() => {
-      expect(screen.getByText('Sync finished.')).toBeTruthy();
+      expect(screen.getByText('Sync succeeded.')).toBeTruthy();
     });
-    // The status is re-read afterwards, so the line shows the new run.
+    // sync() re-reads the status itself, so the card shows the fresh state
+    // without the screen asking for it a second time (issue #47 review S3).
     await waitFor(() => {
-      expect(gets.filter((call) => call === 'GET /marumori').length).toBeGreaterThan(1);
+      expect(gets.filter((call) => call === 'GET /marumori').length).toBe(2);
     });
+  });
+
+  it('reports a failed sync run with the server’s reason', async () => {
+    // The POST answers 200 with a failed run in the body: the card must say
+    // why, in the server’s Learner-facing words, not just "Sync finished."
+    // (issue #47 review S1).
+    fixture.syncRun = syncRun({
+      id: 'run-4',
+      status: 'failed',
+      error: 'MaruMori rejected the key.',
+      counts: null,
+    });
+
+    renderToday();
+    await waitFor(() => {
+      expect(screen.getByText('Last sync succeeded November 4, 10:02.')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sync now' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('MaruMori rejected the key.')).toBeTruthy();
+    });
+    expect(screen.queryByText('Sync succeeded.')).toBeNull();
   });
 
   it('points at the MaruMori settings, and keeps Sync off, while nothing is linked', async () => {

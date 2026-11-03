@@ -414,10 +414,17 @@ function SyncCard({
     void marumori.sync().then((outcome) => {
       setSyncing(false);
       if ("status" in outcome && outcome.status === "error") {
+        // The call itself failed (network, auth): the hook's own words.
         setSyncNote(outcome.message);
+      } else if (outcome.status === "failed") {
+        // The run ran and failed: the server's Learner-facing reason, which
+        // is more useful than anything the screen could invent (issue #47
+        // review S1).
+        setSyncNote(outcome.error ?? "Sync failed.");
       } else {
-        setSyncNote("Sync finished.");
-        marumori.reload();
+        // sync() already re-read the status on success, so the Last Sync line
+        // under this note is the fresh one without a second reload (S3).
+        setSyncNote("Sync succeeded.");
       }
     });
   };
@@ -495,8 +502,10 @@ function SyncLine({
   }
   return (
     <View className="gap-2">
+      {/* Explicit about what the timestamp is (issue #47 review polish): a
+          bare clock time does not read as "this sync worked". */}
       <Text className="text-body text-foreground">
-        {formatInstant(lastSync.finishedAt ?? lastSync.startedAt, timezone)}
+        {`Last sync succeeded ${formatInstant(lastSync.finishedAt ?? lastSync.startedAt, timezone)}.`}
       </Text>
       <Text className="text-small text-muted-foreground">{syncResultLine(lastSync)}</Text>
     </View>
