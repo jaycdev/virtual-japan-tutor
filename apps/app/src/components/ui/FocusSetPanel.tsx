@@ -3,7 +3,7 @@ import type { FocusSetView } from "@vjt/core";
 import { useEffect, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 
-import { EmptyState, InlineError, Skeleton } from "../../state/states.tsx";
+import { EmptyState, InlineError, SkeletonBar } from "../../state/states.tsx";
 
 /**
  * The Focus Set panel: one list with the states and "show all" behaviour the
@@ -188,7 +188,13 @@ export function FocusSetPanel({
         These are the items Practice builds a session from.
       </Text>
       {focus.loading ? (
-        <Skeleton lines={3} lineHeight={24} />
+        // A row of chip-shaped bars, the shape the settled panel shows
+        // (issue #47 review S7).
+        <View className="flex-row flex-wrap gap-2">
+          <SkeletonBar width={88} height={30} />
+          <SkeletonBar width={104} height={30} />
+          <SkeletonBar width={72} height={30} />
+        </View>
       ) : focus.error ? (
         // An InlineError with a Retry in place of the content that failed
         // (plan §5), not a message the Learner cannot act on.
@@ -196,6 +202,7 @@ export function FocusSetPanel({
       ) : items.length === 0 ? (
         // A one-line explanation and one action, not the old raw "No items."
         <EmptyState
+          compact
           message="No items in your Focus Set yet"
           actionLabel="Open your word lists"
           onAction={onOpenWordLists}

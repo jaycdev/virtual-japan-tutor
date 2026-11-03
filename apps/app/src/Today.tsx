@@ -21,7 +21,7 @@ import {
   FOCUS_CHIPS_MAX,
   type FocusLabelResolver,
 } from "./components/ui/FocusSetPanel.tsx";
-import { EmptyState, InlineError, ProgressBar, Skeleton, SkeletonBar } from "./state/states.tsx";
+import { EmptyState, InlineError, ProgressBar, SkeletonBar } from "./state/states.tsx";
 
 /**
  * Today (issue #47), the signed-in landing screen on Android and web. Plan 4.4
@@ -292,7 +292,14 @@ function TodayStoryCard({
       </Text>
 
       {today.status === "loading" ? (
-        <Skeleton lines={2} lineHeight={24} />
+        // Shaped like the settled card: a story-title bar, a shorter meta
+        // line, and the button block (issue #47 review S7) - so nothing
+        // jumps when the story lands.
+        <View className="gap-3">
+          <SkeletonBar width="70%" height={24} />
+          <SkeletonBar width="45%" height={14} />
+          <SkeletonBar width={96} height={44} />
+        </View>
       ) : today.status === "story" ? (
         <View className="gap-3">
           <Text className="text-title font-semibold text-foreground">{today.story.title}</Text>
@@ -335,6 +342,7 @@ function TodayStoryCard({
         </View>
       ) : (
         <EmptyState
+          compact
           message="No story yet — the tutor writes one for you every day."
           actionLabel="Generate a story"
           onAction={onOpenStories}
@@ -394,7 +402,12 @@ function PracticeCard({
         Practice
       </Text>
       {focus.loading && items === null ? (
-        <Skeleton lines={2} lineHeight={24} />
+        // Shaped like the settled card: the waiting line and the Start button
+        // block (issue #47 review S7).
+        <View className="gap-3">
+          <SkeletonBar width="55%" height={20} />
+          <SkeletonBar width={96} height={44} />
+        </View>
       ) : focus.error ? (
         <InlineError message={focus.error} onRetry={focus.retry} />
       ) : (
@@ -489,7 +502,12 @@ function SyncCard({
       </View>
 
       {marumori.state.status === "loading" ? (
-        <Skeleton lines={1} lineHeight={24} />
+        // Shaped like the settled Last Sync line: a timestamp line and the
+        // shorter counts line (issue #47 review S7).
+        <View className="gap-2">
+          <SkeletonBar width="60%" height={20} />
+          <SkeletonBar width="80%" height={14} />
+        </View>
       ) : marumori.state.status === "error" ? (
         <InlineError message={marumori.state.message} onRetry={marumori.reload} />
       ) : !isConnected(marumori) ? (

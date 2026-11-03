@@ -57,18 +57,25 @@ export function Skeleton({
 /**
  * Nothing to show yet: one calm line and exactly one action (issue #44 spec —
  * EmptyState never grows a paragraph or two buttons).
+ *
+ * `compact` drops the 24 px of padding for the common case of an EmptyState
+ * already sitting inside a Card, which brings its own 20 px of it — the two
+ * stacks read as one oversized margin (issue #47 review S8).
  */
 export function EmptyState({
   message,
   actionLabel,
   onAction,
+  compact = false,
 }: {
   message: string;
   actionLabel?: string;
   onAction?: () => void;
+  /** For use inside a card or other already-padded surface. */
+  compact?: boolean;
 }) {
   return (
-    <View className="flex-1 items-center justify-center gap-3 p-6">
+    <View className={`${compact ? "" : "p-6 "}flex-1 items-center justify-center gap-3`}>
       <Text className="text-center text-body text-muted-foreground">{message}</Text>
       {actionLabel && onAction ? (
         <Pressable
