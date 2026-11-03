@@ -2,7 +2,7 @@
   "name": "@vjt/app",
   "version": "0.0.0",
   "private": true,
-  "main": "index.ts",
+  "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
@@ -41,6 +41,7 @@
   },
   "devDependencies": {
     "@testing-library/react": "catalog:",
+    "@testing-library/user-event": "^14.6.8",
     "@types/react": "catalog:",
     "jsdom": "catalog:",
     "react-dom": "catalog:",

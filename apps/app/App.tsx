@@ -1,60 +1,55 @@
-import { createApiClient, type ApiClient } from "@vjt/api-client";
-import { useAuth, type Auth, type TokenStorage } from "@vjt/core";
+// App shell bootstrapping for the expo-router tree (#44).
+//
+// app/_layout.tsx renders <App> around the router's <Slot/>. Everything that
+// must exist once for the whole tree lives here: the theme, the bundled fonts,
+// the server address hydrated from the secure store, and the auth state. The
+// router tree only mounts once signed in; the signed-out, loading, and
+// unreachable states replace the whole tree (Login / splash / error), exactly
+// as the pre-router shell did.
+import { useEffect, useState } from "react";
+import { Pressable, Text, View } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
 import { useFonts } from "expo-font";
 import { StatusBar } from "expo-status-bar";
-import { useEffect, useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
-import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { normalizeServerUrl, resolveApiBaseUrl } from "./src/config.ts";
+import { Login } from "./src/Login.tsx";
+import { AuthProvider, useSession } from "./src/session.tsx";
+import { resolveApiBaseUrl } from "./src/config.ts";
 import { appFonts } from "./src/fonts";
-import { Practice } from "./src/Practice.tsx";
 import { secureStoreServerUrl, type ServerUrlStorage } from "./src/serverUrlStorage.ts";
-import { SettingsHome } from "./src/SettingsHome.tsx";
-import { Stories } from "./src/Stories.tsx";
 import { ThemeProvider } from "./src/theme/index.tsx";
-import { MIN_TOUCH, useColors } from "./src/theme.ts";
-import { secureStoreTokenStorage } from "./src/tokenStorage.ts";
-import { ErrorText, Field, LinkButton, Muted, PrimaryButton, Screen, Scroll, Title } from "./src/ui.tsx";
-
-/**
- * Virtual Japan Tutor on Android (issue #13): Login → Practice | Settings.
- *
- * Navigation is state-driven (bottom tab state plus a Settings section
- * state), mirroring the web App's conditional rendering — no router
- * dependency, every screen reachable from tests. The server address loads
- * from the secure store before anything else; `key={serverUrl}` rebuilds the
- * API client (openapi-fetch cannot change a client's base URL) and re-runs
- * session restoration whenever the Learner edits it in Settings → Server.
- */
+import { secureStoreTokenStorage, type TokenStorage } from "./src/tokenStorage.ts";
 
 // One adapter pair for the whole app: the secure store is a process singleton,
-// so module scope is honest and keeps the Root props referentially stable.
+// so module scope is honest and keeps Root's defaults referentially stable.
 const tokenStorage = secureStoreTokenStorage(SecureStore);
 const urlStorage = secureStoreServerUrl(SecureStore);
 
-export default function App() {
+export default function App({ children }: { children: React.ReactNode }) {
   return (
     <ThemeProvider>
-      <Root tokenStorage={tokenStorage} urlStorage={urlStorage} />
+      <AppBootstrapped tokenStorage={tokenStorage} urlStorage={urlStorage}>
+        {children}
+      </AppBootstrapped>
     </ThemeProvider>
   );
 }
 
 /**
- * The whole app under a given storage pair, so tests substitute fakes for the
- * native secure store (and a stateful fake `fetch` for the API) without any
- * module mocking. `App` above is only the production wiring.
+ * The same shell over injected storage (tests substitute fakes for the native
+ * secure store without any module mocking).
  */
-export function Root({
+export function AppBootstrapped({
   tokenStorage,
   urlStorage,
   fetchOverride,
+  children,
 }: {
   tokenStorage: TokenStorage;
   urlStorage: ServerUrlStorage;
   fetchOverride?: typeof globalThis.fetch;
+  children: React.ReactNode;
 }) {
   // Noto JP first (a no-op map on web, where global.css @font-face does it):
   // the first frame must not flicker through the system font.
@@ -73,281 +68,98 @@ export function Root({
     };
   }, [urlStorage]);
 
-  if (!serverUrl) return null;
-
   const changeServerUrl = async (url: string) => {
     await urlStorage.set(url);
     if (url !== serverUrl) {
       // The session token was minted by the old host: forget it before the
-      // remounted tree starts talking to the new one, so its bearer token is
+      // re-keyed tree starts talking to the new one, so its bearer token is
       // never sent to a different server. The Learner signs in again there.
       await tokenStorage.clear();
     }
     setServerUrl(url);
   };
 
+  if (!serverUrl) return null;
+
   return (
     <SafeAreaProvider>
-      <Workspace
+      {/* key: a new address means a new ApiClient and a fresh session check. */}
+      <AuthProvider
         key={serverUrl}
         serverUrl={serverUrl}
         tokenStorage={tokenStorage}
         fetchOverride={fetchOverride}
-        onChangeServerUrl={changeServerUrl}
-      />
+        changeServerUrl={changeServerUrl}
+      >
+        <AuthGate serverUrl={serverUrl} onChangeServerUrl={changeServerUrl}>
+          {children}
+        </AuthGate>
+      </AuthProvider>
       <StatusBar style="auto" />
     </SafeAreaProvider>
   );
 }
 
-function Workspace({
+function AuthGate({
   serverUrl,
-  tokenStorage,
-  fetchOverride,
   onChangeServerUrl,
+  children,
 }: {
   serverUrl: string;
-  tokenStorage: TokenStorage;
-  fetchOverride?: typeof globalThis.fetch;
   onChangeServerUrl: (url: string) => Promise<void>;
+  children: React.ReactNode;
 }) {
-  // One client per server address, stable across renders (useAuth requires it).
-  const client = useMemo(
-    () => createApiClient({ baseUrl: serverUrl, ...(fetchOverride ? { fetch: fetchOverride } : {}) }),
-    [serverUrl, fetchOverride],
-  );
-  const auth = useAuth(client, tokenStorage);
+  const auth = useSession();
 
   if (auth.state.status === "loading") {
     return (
-      <Screen>
-        <View style={styles.center}>
-          <Muted text="Loading…" />
-        </View>
-      </Screen>
+      <View className="flex-1 items-center justify-center bg-background">
+        <View className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground" />
+      </View>
     );
   }
   if (auth.state.status === "error") {
     return (
-      <Screen>
-        <Scroll>
-          <Title text="Virtual Japan Tutor" />
-          <ErrorText text={`Cannot reach the server: ${auth.state.message}`} />
-          <Muted text={`Server address: ${serverUrl}`} />
-          <PrimaryButton label="Retry" onPress={auth.retry} />
-          <ChangeServer serverUrl={serverUrl} onSave={onChangeServerUrl} note="Change the server address" />
-        </Scroll>
-      </Screen>
+      <View className="flex-1 items-center justify-center gap-4 bg-background p-6">
+        <View className="w-full max-w-[380px] gap-3 rounded-2xl bg-card p-6 shadow-md">
+          <View className="items-center gap-1">
+            <Text className="text-display font-serif text-primary" allowFontScaling={false}>
+              読
+            </Text>
+            <Text className="text-title-sm font-semibold text-foreground">Virtual Japan Tutor</Text>
+          </View>
+          <Text className="text-small text-destructive" accessibilityRole="alert">
+            Cannot reach the server: {auth.state.message}
+          </Text>
+          <Text className="text-caption text-muted-foreground">Server address: {serverUrl}</Text>
+          <RetryButton onPress={auth.retry} />
+        </View>
+      </View>
     );
   }
   if (auth.state.status === "signedOut") {
     return (
-      <Screen>
-        <Scroll>
-          <Title text="Virtual Japan Tutor" />
-          <LoginForm auth={auth} error={auth.state.error} />
-          <ChangeServer serverUrl={serverUrl} onSave={onChangeServerUrl} note="Change server" />
-        </Scroll>
-      </Screen>
+      <Login
+        busy={auth.busy}
+        error={auth.state.error}
+        serverUrl={serverUrl}
+        onLogin={(username, password) => void auth.login(username, password)}
+        onSaveServerUrl={onChangeServerUrl}
+      />
     );
   }
-  return (
-    <Shell
-      client={client}
-      username={auth.state.user.username}
-      serverUrl={serverUrl}
-      onLogout={() => void auth.logout()}
-      onChangeServerUrl={onChangeServerUrl}
-    />
-  );
+  return <>{children}</>;
 }
 
-function LoginForm({ auth, error }: { auth: Auth; error: string | undefined }) {
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-
-  const submit = () => {
-    if (auth.busy || !username || !password) return;
-    void auth.login(username, password);
-  };
-
+function RetryButton({ onPress }: { onPress: () => void }) {
   return (
-    <>
-      <Field
-        label="Username"
-        value={username}
-        onChangeText={setUsername}
-        onSubmit={submit}
-        autoFocus
-      />
-      <Field
-        label="Password"
-        value={password}
-        onChangeText={setPassword}
-        onSubmit={submit}
-        secure
-      />
-      {error ? <ErrorText text={error} /> : null}
-      <PrimaryButton label="Log in" onPress={submit} disabled={auth.busy || !username || !password} />
-    </>
-  );
-}
-
-/** Inline editor for the server address (login screen, unreachable screen). */
-function ChangeServer({
-  serverUrl,
-  onSave,
-  note,
-}: {
-  serverUrl: string;
-  onSave: (url: string) => Promise<void>;
-  note: string;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [url, setUrl] = useState(serverUrl);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | undefined>();
-
-  const save = async () => {
-    const next = normalizeServerUrl(url);
-    if (!next) {
-      setError("Enter the full address, like http://192.168.1.10:8080");
-      return;
-    }
-    setBusy(true);
-    setError(undefined);
-    try {
-      await onSave(next);
-      setEditing(false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save the address");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  if (!editing) {
-    return (
-      <>
-        <Muted text={`Server: ${serverUrl}`} />
-        <LinkButton label={note} onPress={() => { setUrl(serverUrl); setError(undefined); setEditing(true); }} />
-      </>
-    );
-  }
-  return (
-    <>
-      <Field
-        label="Server address"
-        value={url}
-        onChangeText={setUrl}
-        keyboardType="url"
-        disabled={busy}
-      />
-      {error ? <ErrorText text={error} /> : null}
-      <PrimaryButton
-        label="Save server"
-        onPress={() => void save()}
-        disabled={busy}
-      />
-      <LinkButton label="Cancel" onPress={() => setEditing(false)} />
-    </>
-  );
-}
-
-type Tab = "practice" | "stories" | "settings";
-
-function Shell({
-  client,
-  username,
-  serverUrl,
-  onLogout,
-  onChangeServerUrl,
-}: {
-  client: ApiClient;
-  username: string;
-  serverUrl: string;
-  onLogout: () => void;
-  onChangeServerUrl: (url: string) => Promise<void>;
-}) {
-  const [tab, setTab] = useState<Tab>("practice");
-  return (
-    <View style={styles.shell}>
-      <View style={styles.fill}>
-        {tab === "practice" ? (
-          <Screen>
-            <Scroll>
-              <Title text="Practice" />
-              <Practice client={client} />
-            </Scroll>
-          </Screen>
-        ) : tab === "stories" ? (
-          // No outer Scroll: the reader is a fixed layout (text area, Reading
-          // Panel) with its own scrolling; the library scrolls itself.
-          <Screen>
-            <Stories client={client} />
-          </Screen>
-        ) : (
-          <SettingsHome
-            client={client}
-            username={username}
-            onLogout={onLogout}
-            serverUrl={serverUrl}
-            onSaveServerUrl={onChangeServerUrl}
-          />
-        )}
-      </View>
-      <TabBar tab={tab} onSelect={setTab} />
-    </View>
-  );
-}
-
-function TabBar({ tab, onSelect }: { tab: Tab; onSelect: (tab: Tab) => void }) {
-  const colors = useColors();
-  const insets = useSafeAreaInsets();
-  const tabs: { id: Tab; label: string }[] = [
-    { id: "practice", label: "Practice" },
-    { id: "stories", label: "Stories" },
-    { id: "settings", label: "Settings" },
-  ];
-  return (
-    <View
-      style={[
-        styles.tabBar,
-        {
-          borderTopColor: colors.separator,
-          backgroundColor: colors.card,
-          paddingBottom: insets.bottom,
-        },
-      ]}
+    <Pressable
+      className="min-h-12 items-center justify-center rounded-lg bg-primary"
+      accessibilityRole="button"
+      accessibilityLabel="Retry"
+      onPress={onPress}
     >
-      {tabs.map((t) => (
-        <Pressable
-          key={t.id}
-          accessibilityRole="tab"
-          accessibilityLabel={t.label}
-          accessibilityState={{ selected: tab === t.id }}
-          onPress={() => onSelect(t.id)}
-          style={styles.tab}
-        >
-          <Text
-            style={{
-              color: tab === t.id ? colors.accent : colors.subtle,
-              fontSize: 15,
-              fontWeight: tab === t.id ? "600" : "400",
-            }}
-          >
-            {t.label}
-          </Text>
-        </Pressable>
-      ))}
-    </View>
+      <Text className="text-body font-semibold text-primary-foreground">Retry</Text>
+    </Pressable>
   );
 }
-
-const styles = StyleSheet.create({
-  shell: { flex: 1 },
-  fill: { flex: 1 },
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  tabBar: { flexDirection: "row", borderTopWidth: 1 },
-  tab: { flex: 1, minHeight: MIN_TOUCH, alignItems: "center", justifyContent: "center" },
-});

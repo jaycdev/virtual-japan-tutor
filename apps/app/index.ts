@@ -1,7 +1,5 @@
 import { registerRootComponent } from "expo";
 
-import App from "./App.tsx";
-
 // File-local so it does not shadow Expo's typed asset require elsewhere.
 declare function require(id: string): unknown;
 
@@ -20,5 +18,9 @@ if (process.env.EXPO_PUBLIC_SHOWCASE === "1") {
   const { Showcase } = require("@dev/showcase") as typeof import("./showcase/index.tsx");
   registerRootComponent(Showcase);
 } else {
-  registerRootComponent(App);
+  // #44: expo-router's classic entry self-registers the root component and
+  // pulls in the Metro require.context over app/. Require it (rather than
+  // importing at the top) so the showcase branch never drags the router graph
+  // into the bundle and registration stays synchronous.
+  require("expo-router/entry");
 }
