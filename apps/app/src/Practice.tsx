@@ -331,11 +331,13 @@ function OptionButton({
       accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
-      className={`min-h-11 flex-row flex-wrap items-center justify-center gap-2 rounded-md border bg-card px-4 active:opacity-80 ${border}${state === "dim" ? " opacity-50" : ""}`}
+      // One row, equal padding top and bottom, content centred (S4): the old
+      // flex-wrap let an option's line sit lopsided inside the box.
+      className={`min-h-11 flex-row items-center justify-center gap-2 rounded-md border bg-card px-4 py-3 active:opacity-80 ${border}${state === "dim" ? " opacity-50" : ""}`}
     >
       {state === "correct" ? <Icon name="circle-check" size="sm" className="text-success" /> : null}
       {state === "wrong" ? <Icon name="circle-x" size="sm" className="text-destructive" /> : null}
-      <Text className={text}>{label}</Text>
+      <Text className={`${text} leading-none`}>{label}</Text>
     </Pressable>
   );
 }
