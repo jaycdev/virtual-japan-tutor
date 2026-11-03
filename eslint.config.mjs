@@ -56,8 +56,13 @@ export default tseslint.config(
     plugins: { "react-hooks": reactHooks, vjt: { rules: { "no-hardcoded-color": noHardcodedColor } } },
     rules: {
       ...reactHooks.configs.recommended.rules,
-      "vjt/no-hardcoded-color": "error",
     },
+  },
+  {
+    // The colour gate scopes to the Expo app: apps/app is the surface being
+    // redesigned (#43); apps/web is the legacy client, porting is not planned.
+    files: ["apps/app/**/*.{ts,tsx}"],
+    rules: { "vjt/no-hardcoded-color": "error" },
   },
   {
     // Legacy JS-styled surface (see the note above): gate stays green today,
