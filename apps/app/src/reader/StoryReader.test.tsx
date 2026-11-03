@@ -79,7 +79,8 @@ const MISE_ENTRY = {
 function fakeApi(
   opts: {
     blurTranslation?: boolean;
-    failReadingPut?: boolean;
+    /** `true` fails every PUT /reading-settings; a number fails that many. */
+    failReadingPut?: boolean | number;
     noToday?: boolean;
     /** How POST /stories/generate answers; GET /stories/generation follows it. */
     genOutcome?: "ready" | "running" | "failed";
@@ -169,6 +170,9 @@ function fakeApi(
   const requests: { method: string; path: string; body: unknown }[] = [];
   const settings = { furiganaThresholdSrsLevel: 3, preferredGenre: "", preferredTheme: "" };
   const readingSettings = { blurTranslation: opts.blurTranslation ?? true, lookupHoldMs: HOLD_MS };
+  // How many PUT /reading-settings still have to fail before one works.
+  let readingPutFailures =
+    opts.failReadingPut === true ? Number.POSITIVE_INFINITY : Number(opts.failReadingPut ?? 0);
 
   // On-demand generation (#33/#34): the run lives "on the server"; GET hands out
   // snapshots, and "running" turns ready after two polls so the bar can move.
@@ -227,7 +231,10 @@ function fakeApi(
     if (pathname === "/story-settings" && request.method === "GET") return json(200, settings);
     if (pathname === "/reading-settings" && request.method === "GET") return json(200, readingSettings);
     if (pathname === "/reading-settings" && request.method === "PUT") {
-      if (opts.failReadingPut) return json(500, { code: "internal", message: "server exploded" });
+      if (readingPutFailures > 0) {
+        readingPutFailures -= 1;
+        return json(500, { code: "internal", message: "server exploded" });
+      }
       Object.assign(readingSettings, body as Partial<typeof readingSettings>);
       return json(200, readingSettings);
     }
@@ -762,6 +769,32 @@ describe("Reading Panel (mobile)", () => {
     expect(await screen.findByRole("alert")).toBeTruthy();
     expect(screen.getByText(/server exploded/)).toBeTruthy();
     expect(screen.getByText("Translation hidden — tap to show")).toBeTruthy();
+    // The message is not the whole answer: an explicit Retry sits beside it.
+    expect(screen.getByTestId("blur-retry")).toBeTruthy();
+  });
+
+  it("Retry after a failed blur save sends the save again and clears the message", async () => {
+    const { client, requests } = fakeApi({ failReadingPut: 1 });
+    await openStory(client);
+
+    fireEvent.mouseDown(token(0, 0), { clientX: 300, clientY: 300 });
+    fireEvent.mouseUp(token(0, 0), { clientX: 300, clientY: 300 });
+    fireEvent.click(await screen.findByLabelText("Sentence Translation"));
+    expect(await screen.findByRole("alert")).toBeTruthy();
+
+    const puts = () => requests.filter((r) => r.method === "PUT" && r.path === "/reading-settings").length;
+    const before = puts();
+    fireEvent.click(screen.getByTestId("blur-retry"));
+
+    await waitFor(() => expect(puts()).toBe(before + 1));
+    // The retry clears the failure the moment it starts, and this one worked:
+    // the note goes away and the preference is saved.
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    await waitFor(() => expect(screen.queryByText("Translation hidden — tap to show")).toBeNull());
+    expect(requests.filter((r) => r.method === "PUT" && r.path === "/reading-settings").at(-1)?.body).toEqual({
+      blurTranslation: false,
+      lookupHoldMs: HOLD_MS,
+    });
   });
 });
 

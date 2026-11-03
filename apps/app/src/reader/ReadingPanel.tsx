@@ -64,10 +64,14 @@ export function ReadingPanel({
   const [blurError, setBlurError] = useState<string | null>(null);
 
   // A failed save leaves the stored preference — and the screen — as they
-  // were; the only change is the message that says the click did not stick.
-  // A *successful* reveal is a Weak Signal for the sentence's Focus Set
-  // items (issue #12): the Learner reached for the answer.
+  // were; what changes is the message that says the click did not stick, and
+  // the Retry that sends the same save again (review on #45). A *successful*
+  // reveal is a Weak Signal for the sentence's Focus Set items (issue #12):
+  // the Learner reached for the answer.
   const toggleBlur = async () => {
+    // Any attempt retires the previous failure, whether it comes from the row
+    // or from Retry: the message never outlives the save it was about.
+    setBlurError(null);
     const revealing = blur;
     const res = await reading.setBlurTranslation(!blur);
     setBlurError(res.ok ? null : res.message);
@@ -158,9 +162,25 @@ export function ReadingPanel({
           </Text>
         ) : null}
         {blurError ? (
-          <Text accessibilityRole="alert" className="text-small text-destructive" style={styles.note}>
-            Could not save that — {blurError}
-          </Text>
+          // The message says the reveal did not stick; the button beside it is
+          // the explicit way to send that same save again, so the Learner
+          // does not have to work out that tapping the blurred row again is
+          // what a retry means.
+          <View style={styles.errorRow}>
+            <Text accessibilityRole="alert" className="text-small text-destructive" style={styles.errorText}>
+              Could not save that — {blurError}
+            </Text>
+            <Pressable
+              testID="blur-retry"
+              accessibilityRole="button"
+              accessibilityLabel="Retry saving the translation setting"
+              onPress={() => void toggleBlur()}
+              className="border-border"
+              style={styles.retry}
+            >
+              <Text className="text-small text-foreground">Retry</Text>
+            </Pressable>
+          </View>
         ) : null}
       </ScrollView>
     </View>
@@ -261,6 +281,9 @@ const styles = StyleSheet.create({
   sentenceMode: { paddingHorizontal: 4, paddingTop: 8 },
   hint: { padding: 8 },
   note: { paddingHorizontal: 12, paddingBottom: 6 },
+  errorRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 12, paddingBottom: 8 },
+  errorText: { flex: 1, flexShrink: 1 },
+  retry: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
   translationRow: { paddingVertical: 6, paddingHorizontal: 12 },
   translation: { fontSize: 14, fontStyle: "italic" },
   blurNote: { fontSize: 12, paddingHorizontal: 12, paddingBottom: 8 },
