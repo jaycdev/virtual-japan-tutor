@@ -275,6 +275,104 @@ describe('mobile Practice', () => {
     await waitFor(() => {
       expect(screen.getByText('your Focus Set is empty')).toBeTruthy();
     });
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Start a practice session' })).toBeTruthy();
+  });
+
+  it('a failed answer shows an inline Retry that re-posts the choice', async () => {
+    renderPractice();
+    fireEvent.click(screen.getByRole('button', { name: 'Start a practice session' }));
+    await waitFor(() => {
+      expect(screen.getByText('Exercise 1 of 2')).toBeTruthy();
+    });
+
+    fetchMock.mockImplementationOnce(async () =>
+      jsonResponse({ message: 'practice is having trouble' }, 500),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'learn' }));
+
+    // B3: the failure lands in the active card with an explicit Retry, and the
+    // exercise is still open (no feedback was recorded).
+    await waitFor(() => {
+      expect(screen.getByText('practice is having trouble')).toBeTruthy();
+    });
+    expect(screen.queryByText('Correct')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+
+    // Two answer POSTs reached the server (the one-off stub that failed did
+    // not go through the recorder, so the recorded one is the re-post). Inspect
+    // the calls without re-constructing the Requests — their bodies are spent.
+    const answerPosts = fetchMock.mock.calls.filter(([input, init]) => {
+      const url = input instanceof Request ? input.url : typeof input === 'string' ? input : String(input);
+      const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
+      return method === 'POST' && url.includes('/answers');
+    });
+    await waitFor(() => {
+      expect(answerPosts).toHaveLength(2);
+    });
+    expect(postCalls('/answers')[0]?.body).toEqual({ exerciseId: 'ex-1', optionId: 'o-learn' });
+    await waitFor(() => {
+      expect(screen.getByText('Correct')).toBeTruthy();
+    });
+    expect(screen.queryByText('practice is having trouble')).toBeNull();
+  });
+
+  it('a failed session refresh keeps the feedback and Continue retries the GET', async () => {
+    // The answer POST succeeds but the follow-up session GET fails, then
+    // recovers: the card must stay usable (B3), not loop the answered exercise.
+    let refreshAttempts = 0;
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init);
+      const path = new URL(request.url).pathname;
+      if (request.method === 'POST' && path === '/practice/sessions') {
+        posts.push({ path, body: await request.json() });
+        session = freshSession();
+        return jsonResponse(session);
+      }
+      if (request.method === 'POST' && path === '/practice/sessions/practice-1/answers') {
+        const body = (await request.json()) as { exerciseId: string; optionId: string };
+        posts.push({ path, body });
+        const ex = session.exercises.find((e) => e.id === body.exerciseId)!;
+        ex.answered = true;
+        ex.chosenOptionId = body.optionId;
+        ex.correctOptionId = 'o-learn';
+        ex.correct = true;
+        return jsonResponse({ correct: true, correctOptionId: 'o-learn' });
+      }
+      if (request.method === 'GET' && path === '/practice/sessions/practice-1') {
+        refreshAttempts += 1;
+        if (refreshAttempts === 1) return jsonResponse({ message: 'sync hiccup' }, 500);
+        return jsonResponse(session);
+      }
+      return jsonResponse({ message: `stub: unexpected ${request.method} ${path}` }, 500);
+    });
+
+    renderPractice();
+    fireEvent.click(screen.getByRole('button', { name: 'Start a practice session' }));
+    await waitFor(() => {
+      expect(screen.getByText('Exercise 1 of 2')).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'learn' }));
+
+    // Feedback from the local record, the refresh failure named beside it.
+    await waitFor(() => {
+      expect(screen.getByText('sync hiccup')).toBeTruthy();
+    });
+    expect(screen.getByText('Correct')).toBeTruthy();
+    expect(refreshAttempts).toBe(1);
+
+    // Continue while out of step retries the GET first — one tap, and with the
+    // session back in step it advances (B3).
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() => {
+      expect(refreshAttempts).toBe(2);
+    });
+    await waitFor(() => {
+      expect(screen.getByText('Exercise 2 of 2')).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(screen.queryByText('sync hiccup')).toBeNull();
+    });
   });
 });

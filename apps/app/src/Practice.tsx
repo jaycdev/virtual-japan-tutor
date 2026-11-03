@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { Icon } from "./components/ui/icon.tsx";
-import { ProgressBar, Skeleton } from "./state/states.tsx";
+import { EmptyState, InlineError, ProgressBar, Skeleton } from "./state/states.tsx";
 
 /**
  * Practice Sessions (issue #9; rebuilt on the new design for issue #46): one
@@ -39,6 +39,9 @@ export function Practice({ client, seed }: { client: ApiClient; seed?: number })
   // what was right — even after the last answer flips the session to done;
   // Continue is what moves on to the results.
   const [shownId, setShownId] = useState<string | null>(null);
+  // The answer the Learner last tried, so the InlineError's Retry can re-post
+  // it when the answer POST failed (#46 review B3).
+  const lastAttempt = useRef<{ exerciseId: string; optionId: string } | null>(null);
 
   // Deep-linked from a Story footer (#46): no Start tap — the session begins
   // immediately, seeded from the Story so the link is reproducible. The ref
@@ -49,6 +52,33 @@ export function Practice({ client, seed }: { client: ApiClient; seed?: number })
     autoStarted.current = true;
     void practice.start(seed);
   }, [practice, seed]);
+
+  // Retry inside the active card (B3): if the shown exercise already has
+  // feedback the answer landed and it was the session refresh that failed, so
+  // re-GET the session; otherwise the answer POST itself failed and the last
+  // choice is re-posted.
+  const retryActive = (exerciseId: string) => {
+    const answered = practice.exercises.find((ex) => ex.id === exerciseId)?.feedback;
+    const attempt = lastAttempt.current;
+    if (answered || !attempt) {
+      void practice.refresh();
+    } else {
+      void practice.answer(attempt.exerciseId, attempt.optionId);
+    }
+  };
+
+  // Continue while the session is out of step (the refresh after the answer
+  // failed): retry the GET first and advance only once the server agrees, so
+  // the Learner never advances onto a half-synced session (#46 review B3).
+  const onContinue = () => {
+    if (practice.error) {
+      void practice.refresh().then((ok) => {
+        if (ok) setShownId(null);
+      });
+      return;
+    }
+    setShownId(null);
+  };
 
   return (
     <ScrollView
@@ -70,7 +100,8 @@ export function Practice({ client, seed }: { client: ApiClient; seed?: number })
               <ActivePractice
                 practice={practice}
                 current={shown}
-                onContinue={() => setShownId(null)}
+                onContinue={onContinue}
+                onRetry={() => retryActive(shown.id)}
                 onAnswer={() => undefined}
               />
             ) : (
@@ -84,9 +115,11 @@ export function Practice({ client, seed }: { client: ApiClient; seed?: number })
               <ActivePractice
                 practice={practice}
                 current={shown}
-                onContinue={() => setShownId(null)}
+                onContinue={onContinue}
+                onRetry={() => retryActive(shown.id)}
                 onAnswer={(exerciseId, optionId) => {
                   setShownId(exerciseId);
+                  lastAttempt.current = { exerciseId, optionId };
                   void practice.answer(exerciseId, optionId);
                 }}
               />
@@ -113,9 +146,7 @@ function StartPractice({ practice }: { practice: PracticeView }) {
   return (
     <Card>
       {practice.error ? (
-        <Text accessibilityRole="alert" role="alert" className="text-body text-destructive">
-          {practice.error}
-        </Text>
+        <InlineError message={practice.error} onRetry={() => void practice.start()} />
       ) : null}
       <Text className="text-body text-muted-foreground">
         A session is about twenty exercises drawn from your Focus Set — recognition and grammar
@@ -139,11 +170,13 @@ function ActivePractice({
   practice,
   current,
   onContinue,
+  onRetry,
   onAnswer,
 }: {
   practice: PracticeView;
   current: ExerciseView;
   onContinue: () => void;
+  onRetry: () => void;
   onAnswer: (exerciseId: string, optionId: string) => void;
 }) {
   const answeredCount = practice.exercises.filter((ex) => ex.answered).length;
@@ -199,6 +232,10 @@ function ActivePractice({
             );
           })}
         </View>
+        {/* A failed answer POST or failed session refresh surfaces in place
+            with an explicit Retry (plan §5), not as a silent stuck card
+            (#46 review B3). */}
+        {practice.error ? <InlineError message={practice.error} onRetry={onRetry} /> : null}
         {settled ? (
           <PrimaryAction label="Continue" icon="chevron-right" onPress={onContinue} />
         ) : null}
