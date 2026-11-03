@@ -181,6 +181,12 @@ describe('mobile Practice', () => {
     expect(screen.getByRole('button', { name: 'learn' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /←/ })).toBeNull();
     expect(screen.getByRole('button', { name: 'Continue' })).toBeTruthy();
+    // S5: the verdict announces itself politely...
+    expect(screen.getByRole('status').getAttribute('aria-live')).toBe('polite');
+    // ...and focus lands on Continue, the control that advances the session.
+    await waitFor(() => {
+      expect(document.activeElement?.getAttribute('aria-label')).toBe('Continue');
+    });
 
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 

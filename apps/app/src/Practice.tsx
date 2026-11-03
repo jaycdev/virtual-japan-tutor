@@ -1,7 +1,7 @@
 import type { ApiClient } from "@vjt/api-client";
 import { usePractice, type ExerciseView, type PracticeView } from "@vjt/core";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useRef, useState, type ReactNode, type Ref } from "react";
+import { Pressable, ScrollView, StyleSheet, Text, View, type ViewInstance } from "react-native";
 
 import { Icon } from "./components/ui/icon.tsx";
 import { EmptyState, InlineError, ProgressBar, Skeleton } from "./state/states.tsx";
@@ -256,6 +256,16 @@ function ActivePractice({
   // a double-click cannot post the same answer twice.
   const settled = feedback !== null;
   const locked = settled || practice.pending;
+  // S5: when an answer lands, focus moves to Continue — a screen-reader user
+  // is left at the control that advances without hunting for it. Only the
+  // not-settled→settled transition fires, so a page that reloads onto already
+  // answered content does not steal focus on load.
+  const continueRef = useRef<ViewInstance | null>(null);
+  const wasSettled = useRef(false);
+  useEffect(() => {
+    if (settled && !wasSettled.current) continueRef.current?.focus();
+    wasSettled.current = settled;
+  }, [settled]);
   return (
     <View className="gap-4">
       <ProgressBar
@@ -269,7 +279,15 @@ function ActivePractice({
         <Text className="text-small text-muted-foreground">{current.instruction}</Text>
         <Text className="text-display text-foreground font-serif">{displayPrompt(current.prompt)}</Text>
         {feedback ? (
-          <View accessibilityRole="status" className="flex-row flex-wrap items-center gap-2">
+          <View
+            // The verdict appears on its own: a polite live region announces
+            // it without interrupting, on both hosts (S5).
+            accessibilityRole="status"
+            accessibilityLiveRegion="polite"
+            role="status"
+            aria-live="polite"
+            className="flex-row flex-wrap items-center gap-2"
+          >
             <Icon
               name={feedback.correct ? "circle-check" : "circle-x"}
               size="sm"
@@ -300,7 +318,7 @@ function ActivePractice({
             (#46 review B3). */}
         {practice.error ? <InlineError message={practice.error} onRetry={onRetry} /> : null}
         {settled ? (
-          <PrimaryAction label="Continue" icon="chevron-right" onPress={onContinue} />
+          <PrimaryAction label="Continue" icon="chevron-right" onPress={onContinue} innerRef={continueRef} />
         ) : null}
       </Card>
     </View>
@@ -421,13 +439,17 @@ function PrimaryAction({
   label,
   icon,
   onPress,
+  innerRef,
 }: {
   label: string;
   icon?: "chevron-right";
   onPress: () => void;
+  /** Lets a caller focus this control when it appears (S5). */
+  innerRef?: Ref<ViewInstance>;
 }) {
   return (
     <Pressable
+      ref={innerRef}
       accessibilityRole="button"
       accessibilityLabel={label}
       onPress={onPress}
