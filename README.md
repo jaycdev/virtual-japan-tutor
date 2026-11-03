@@ -76,7 +76,7 @@ account from step 1. The web app is built into the server image and served by th
 nothing else to deploy and no CORS or proxy setup. `http://localhost:8080/health` is the API health check.
 
 **Android**: there is no prebuilt APK yet. Build and install it from source
-(`pnpm --filter @vjt/mobile android` with a device or emulator attached; see [Development](#development)).
+(`pnpm --filter @vjt/app android` with a device or emulator attached; see [Development](#development)).
 The app asks for your server address on first launch and can change it in Settings. Release builds block plain
 `http://` addresses, so put the server behind HTTPS if you use the app away from a debug build.
 ### 5. Set up your account
@@ -101,9 +101,9 @@ add or confirm an AI Provider, and choose your starting level. To add accounts l
 | `api/openapi.yaml`    | OpenAPI spec: the single source of truth for the HTTP API               |
 | `apps/server`         | Go server (std `net/http`, pgx, goose migrations)                       |
 | `apps/web`            | Vite + React + TypeScript                                               |
-| `apps/mobile`         | Expo + TypeScript (Android)                                             |
+| `apps/app`            | Expo + TypeScript (Android and web)                                     |
 | `packages/api-client` | `@vjt/api-client`: TS types + client generated from the spec            |
-| `packages/core`       | `@vjt/core`: UI-agnostic hooks/state shared by web and mobile           |
+| `packages/core`       | `@vjt/core`: UI-agnostic hooks/state shared by the web and Expo apps    |
 
 ### Prerequisites
 
@@ -276,7 +276,7 @@ cd apps/server && WEB_DIR=../web/dist DATABASE_URL=... SECRETS_KEY=... go run ./
 different origin, and the server sends no CORS headers, so a browser blocks those calls. Use the build above
 until CORS is added.
 
-Mobile: `pnpm --filter @vjt/mobile android` (set `EXPO_PUBLIC_API_URL`; defaults to `http://10.0.2.2:8080`, the
+Android: `pnpm --filter @vjt/app android` (set `EXPO_PUBLIC_API_URL`; defaults to `http://10.0.2.2:8080`, the
 host as seen from the Android emulator).
 
 Packages `@vjt/api-client` and `@vjt/core` are consumed from their built `dist/`, so run `pnpm build`

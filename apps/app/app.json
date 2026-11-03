@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "Virtual Japan Tutor",
+    "slug": "virtual-japan-tutor",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "platforms": [
+      "android",
+      "web"
+    ],
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png"
+    },
+    "android": {
+      "package": "com.jaycdev.virtualjapantutor",
+      "adaptiveIcon": {
+        "backgroundColor": "#FAF7F0",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "plugins": [
+      "expo-font",
+      "expo-router"
+    ]
+  }
+}

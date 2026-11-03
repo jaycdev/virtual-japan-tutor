@@ -9,7 +9,7 @@
 !.npmrc
 !tsconfig.base.json
 !apps/web
-!apps/mobile/package.json
+!apps/app/package.json
 !packages/api-client
 !packages/core
 
