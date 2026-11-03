@@ -56,7 +56,7 @@ export function SaveToSheet({
           name" TextInput — above the on-screen keyboard (Android padding
           behaviour). Manual checklist: open Save to… with the keyboard up
           on a device and confirm the input and Create button stay visible. */}
-      <KeyboardAvoidingView style={styles.backdrop} behavior="padding">
+      <KeyboardAvoidingView style={styles.backdrop} className="bg-backdrop" behavior="padding">
         <View style={[styles.sheet, { backgroundColor: colors.card, borderTopColor: colors.separator }]}>
           <View style={styles.head}>
             <Text style={{ color: colors.label, fontSize: 17, fontWeight: "600" }}>Save to…</Text>
@@ -120,7 +120,7 @@ export function SaveToSheet({
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
+  backdrop: { flex: 1, justifyContent: "flex-end" },
   sheet: { borderTopWidth: 1, borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingTop: 8, paddingBottom: 18 },
   head: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingBottom: 8 },
   close: { marginLeft: "auto", width: MIN_TOUCH / 2, height: MIN_TOUCH / 2, alignItems: "center", justifyContent: "center" },

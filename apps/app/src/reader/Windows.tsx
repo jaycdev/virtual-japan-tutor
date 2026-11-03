@@ -30,7 +30,7 @@ function WindowCard({
   const colors = useColors();
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.backdrop}>
+      <View style={styles.backdrop} className="bg-backdrop">
         <View
           testID={testID}
           accessibilityLabel={testID === "dictionary-window" ? "Dictionary Entry window" : "Grammar Point window"}
@@ -100,7 +100,7 @@ export function GrammarWindow({ span, onClose }: { span: StoryGrammarSpan; onClo
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", alignItems: "center", justifyContent: "center" },
+  backdrop: { flex: 1, alignItems: "center", justifyContent: "center" },
   card: {
     width: "88%",
     maxHeight: "70%",
