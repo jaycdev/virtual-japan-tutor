@@ -173,6 +173,9 @@ describe('mobile Practice', () => {
     await waitFor(() => {
       expect(screen.getByText('Correct')).toBeTruthy();
     });
+    // B1: while Exercise 1's feedback is up, the progress line still names it.
+    expect(screen.getByText('Exercise 1 of 2')).toBeTruthy();
+    expect(screen.queryByText('Exercise 2 of 2')).toBeNull();
     expect(screen.getByRole('button', { name: 'learn ← correct' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Continue' })).toBeTruthy();
 

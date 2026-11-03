@@ -149,6 +149,11 @@ function ActivePractice({
   const answeredCount = practice.exercises.filter((ex) => ex.answered).length;
   const skipped = practice.session?.skipped ?? 0;
   const feedback = current.feedback;
+  // The label names the exercise on screen, not "one past the answered count":
+  // the card keeps showing an answered exercise while its feedback is up, and
+  // the count-based label read "Exercise 2 of 2" over Exercise 1's feedback
+  // (#46 review B1).
+  const position = practice.exercises.findIndex((ex) => ex.id === current.id) + 1;
   // Settled once the answer landed; pending covers the request in flight, so
   // a double-click cannot post the same answer twice.
   const settled = feedback !== null;
@@ -158,7 +163,7 @@ function ActivePractice({
       <ProgressBar
         value={practice.target ? answeredCount / practice.target : 0}
         label={
-          `Exercise ${Math.min(answeredCount + 1, practice.target)} of ${practice.target}` +
+          `Exercise ${Math.max(1, position)} of ${practice.target}` +
           (skipped > 0 ? ` (${skipped} Focus Set item${skipped === 1 ? "" : "s"} without content, skipped)` : "")
         }
       />
