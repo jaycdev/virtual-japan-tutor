@@ -1,5 +1,11 @@
 # Trial results - issue #42 spike (Uniwind + React Native Reusables)
 
+> Historical record. #43 removed the trial code (`trial/`, `@spike/trial`,
+> `EXPO_PUBLIC_TRIAL`) and rebuilt these findings as product foundations:
+> `global.css`, `src/theme/`, `src/fonts*`, `scripts/subset-fonts.mjs` and the
+> dev-only `showcase/` (flag `EXPO_PUBLIC_SHOWCASE=1`, alias `@dev/showcase`).
+> The commands near the bottom still work with those names swapped.
+
 Throwaway spike on this branch (`issue/42-uniwind-rnr-trial`, based on
 `origin/integration/issues-42-51` @ `4aeaaff`). Nothing here is production
 code: the trial screen lives in `trial/` and is mounted only when

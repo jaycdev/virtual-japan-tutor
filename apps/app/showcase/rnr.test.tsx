@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Text } from "@/components/ui/text";
 
-// Issue #42 spike: prove the vitest + react-native-web harness can render a
+// Issue #43: prove the vitest + react-native-web harness can render a
 // real React Native Reusables component (copied into components/ui by the
 // RNR CLI, Uniwind flavour). The stubs in vitest.config.mts stand in for the
 // native-only hosts (reanimated, screens, Uniwind itself); the component and

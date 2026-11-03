@@ -1,20 +1,21 @@
-// #42 spike: Uniwind must be the outermost Metro wrapper.
+// #43: Uniwind must be the outermost Metro wrapper (learned in the #42 spike).
 const path = require("node:path");
 const { getDefaultConfig } = require("expo/metro-config");
 const { withUniwindConfig } = require("uniwind/metro");
 
 const config = getDefaultConfig(__dirname);
 
-// The spike screen is env-gated in index.ts, but Metro resolves every static
-// require/import at build time, so the flag check alone would still ship the
-// trial modules and 23.5 MB of subset TTFs when the flag is off. This alias
-// swaps the whole trial folder for a one-line stub unless EXPO_PUBLIC_TRIAL=1.
+// The showcase screen is env-gated in index.ts, but Metro resolves every
+// static require/import at build time, so the flag check alone would still
+// ship the showcase modules and the bundled Noto JP fonts when the flag is
+// off. This alias swaps the whole showcase folder for a one-line stub unless
+// EXPO_PUBLIC_SHOWCASE=1.
 config.resolver.extraNodeModules = {
   ...config.resolver.extraNodeModules,
-  "@spike/trial":
-    process.env.EXPO_PUBLIC_TRIAL === "1"
-      ? path.resolve(__dirname, "trial")
-      : path.resolve(__dirname, "trial-off"),
+  "@dev/showcase":
+    process.env.EXPO_PUBLIC_SHOWCASE === "1"
+      ? path.resolve(__dirname, "showcase")
+      : path.resolve(__dirname, "showcase-off"),
 };
 
 module.exports = withUniwindConfig(config, {
