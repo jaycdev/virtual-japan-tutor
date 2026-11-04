@@ -1,22 +1,36 @@
-// The Grammar Catalogue (ui-plan 4.6, /grammar): every Grammar Point grouped under
-// its JLPT Level, with search kept in ?q= so a shared or reloaded URL reopens the
-// same search. From 1024 px a sticky level index jumps between groups, and "/"
-// focuses search from anywhere outside a field. Opening a point and pressing Back
-// returns here with the same search and scroll position.
+// The Grammar Catalogue (ui-plan 4.6, /grammar). The URL is the source of truth
+// for what the Learner is looking at: `?q=` the search, `?level=` the JLPT Level
+// filter, `?page=` the page. Every change to them replaces the history entry and
+// keeps the others, so a reload, a shared link or the sidebar Grammar link all
+// reopen the same view. The level index always lists N5 to N1 and filters the
+// catalogue server-side. "/" focuses search from anywhere outside a field.
+// Opening a point and pressing Back returns here with the same view and scroll.
 import type { ApiClient, GrammarPointSummary } from "@vjt/api-client";
-import { useGrammar } from "@vjt/core";
+import { useGrammar, type GrammarLevelFilter } from "@vjt/core";
 import { ChevronRight, Search, X } from "lucide-react";
-import { useEffect, useRef, useState, type MouseEvent, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { Link, useLocation, useSearchParams } from "react-router";
 
 import { EmptyState, ErrorState } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { exampleCountLabel, groupByLevel, knowledgeOf, readBrowse, saveBrowse, SEARCH_DEBOUNCE_MS, type GrammarKnowledge } from "../grammar/model.ts";
+import {
+  exampleCountLabel,
+  groupByLevel,
+  LEVEL_ORDER,
+  offsetForPage,
+  PAGE_SIZE,
+  parseLevel,
+  parsePage,
+  readBrowse,
+  saveBrowse,
+  SEARCH_DEBOUNCE_MS,
+  statusOf,
+} from "../grammar/model.ts";
 import { useSession } from "../session/session.tsx";
 
 /** Route module: the catalogue reads the session's client. */
@@ -31,30 +45,75 @@ function isEditable(target: EventTarget | null): boolean {
   return target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
 }
 
+/** The level index's choices: every level, and "All levels" (no filter). */
+const LEVEL_CHOICES: GrammarLevelFilter[] = ["all", ...LEVEL_ORDER];
+
 export function GrammarCatalogue({ client }: { client: ApiClient }) {
   const location = useLocation();
   const [params, setParams] = useSearchParams();
   const urlQuery = params.get("q") ?? "";
-  // Read once per visit: where the Learner left this entry, if they came back to it.
+  const urlLevel = parseLevel(params.get("level"));
+  const urlOffset = offsetForPage(parsePage(params.get("page")));
+  // Read once per visit: the scroll position the Learner left this entry at, if any.
   const [restored] = useState(() => readBrowse(location.key));
 
-  const grammar = useGrammar(client, { query: urlQuery, offset: restored?.offset ?? 0 });
-  const { state, filter, setQuery, setOffset, reload } = grammar;
+  const grammar = useGrammar(client, { query: urlQuery, offset: urlOffset, level: urlLevel });
+  const { state, filter, setQuery, setLevel, setOffset, reload } = grammar;
 
   // The typed term is local until the debounce fires: the catalogue re-reads on
   // every change of query, and one request per keystroke is noise.
   const [term, setTerm] = useState(urlQuery);
+  // The URL changed from outside this screen (the sidebar link, Back, a typed
+  // address): adopt it, during render, as React recommends for state that follows
+  // a prop. Our own writes already match the screen, so they change nothing.
+  const [seenUrlQuery, setSeenUrlQuery] = useState(urlQuery);
+  if (urlQuery !== seenUrlQuery) {
+    setSeenUrlQuery(urlQuery);
+    if (urlQuery !== filter.query) {
+      setQuery(urlQuery);
+      setTerm(urlQuery);
+    }
+  }
   const searchRef = useRef<HTMLInputElement>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
   const pendingScroll = useRef<number | null>(restored?.scrollY ?? null);
+  const focusResults = useRef(false);
 
+  /** Set URL params by replacing the entry, keeping the ones not named. null or "" removes one. */
+  const writeParams = useCallback(
+    (patch: Record<string, string | null>) => {
+      setParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          for (const [key, value] of Object.entries(patch)) {
+            if (value === null || value === "") next.delete(key);
+            else next.set(key, value);
+          }
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setParams],
+  );
+
+  // Typed search: settle, then write ?q= and re-read. A new search starts at page one.
   useEffect(() => {
     if (term === filter.query) return;
     const timer = window.setTimeout(() => {
-      setParams(term === "" ? {} : { q: term }, { replace: true });
+      writeParams({ q: term, page: null });
       setQuery(term);
     }, SEARCH_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
-  }, [term, filter.query, setQuery, setParams]);
+  }, [term, filter.query, setQuery, writeParams]);
+
+  useEffect(() => {
+    if (urlLevel !== filter.level) setLevel(urlLevel);
+  }, [urlLevel, filter.level, setLevel]);
+
+  useEffect(() => {
+    if (urlOffset !== filter.offset) setOffset(urlOffset);
+  }, [urlOffset, filter.offset, setOffset]);
 
   // Back lands at the scroll position the Learner left, once the list has rows.
   useEffect(() => {
@@ -63,10 +122,18 @@ export function GrammarCatalogue({ client }: { client: ApiClient }) {
     pendingScroll.current = null;
   }, [state.status]);
 
-  // "/" focuses search, unless the Learner is typing in a field already.
+  // After a level is chosen, focus moves to the results heading (the list changed under the Learner).
+  useEffect(() => {
+    if (state.status !== "ready" || !focusResults.current) return;
+    focusResults.current = false;
+    resultsRef.current?.querySelector<HTMLElement>("h2")?.focus({ preventScroll: true });
+  }, [state]);
+
+  // "/" focuses search, unless the Learner is typing (or composing) in a field.
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.key !== "/" || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (event.isComposing || event.defaultPrevented) return;
       if (isEditable(event.target)) return;
       event.preventDefault();
       searchRef.current?.focus();
@@ -75,10 +142,23 @@ export function GrammarCatalogue({ client }: { client: ApiClient }) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  const remember = () => saveBrowse({ key: location.key, offset: filter.offset, scrollY: window.scrollY });
+  const chooseLevel = (level: GrammarLevelFilter) => {
+    focusResults.current = true;
+    writeParams({ level: level === "all" ? null : level, page: null });
+    setLevel(level);
+  };
+
+  const choosePage = (offset: number) => {
+    setOffset(offset);
+    writeParams({ page: offset === 0 ? null : String(offset / PAGE_SIZE + 1) });
+    window.scrollTo({ top: 0 });
+  };
+
+  const remember = () => saveBrowse({ key: location.key, scrollY: window.scrollY });
 
   const groups = state.status === "ready" ? groupByLevel(state.page.items) : [];
-  const showIndex = groups.length > 0;
+  const searching = filter.query !== "";
+  const levelChosen = filter.level !== "all";
 
   return (
     <div className="flex flex-col gap-6">
@@ -87,10 +167,10 @@ export function GrammarCatalogue({ client }: { client: ApiClient }) {
         <SearchField inputRef={searchRef} term={term} onTermChange={setTerm} />
       </div>
 
-      <div className={showIndex ? "lg:grid lg:grid-cols-[8rem_minmax(0,1fr)] lg:items-start lg:gap-8" : undefined}>
-        {showIndex ? <LevelIndex levels={groups.map((group) => group.level)} /> : null}
+      <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[8rem_minmax(0,1fr)] lg:items-start lg:gap-8">
+        <LevelIndex current={filter.level} onChoose={chooseLevel} />
 
-        <div className="flex min-w-0 flex-col gap-6">
+        <div ref={resultsRef} className="flex min-w-0 flex-col gap-6">
           {state.status === "loading" ? (
             // Shaped like the settled page, so nothing jumps when the points land.
             <div className="flex flex-col gap-6" aria-busy="true" data-testid="grammar-list-skeleton">
@@ -100,9 +180,7 @@ export function GrammarCatalogue({ client }: { client: ApiClient }) {
           ) : state.status === "error" ? (
             <ErrorState message={`Cannot load grammar points: ${state.message}`} onRetry={reload} />
           ) : state.page.items.length === 0 ? (
-            filter.query === "" ? (
-              <EmptyState message="No grammar points yet — a MaruMori sync fills this catalogue." />
-            ) : (
+            searching ? (
               <EmptyState
                 message={`Nothing matches “${filter.query}” — try another word.`}
                 action={
@@ -111,6 +189,17 @@ export function GrammarCatalogue({ client }: { client: ApiClient }) {
                   </Button>
                 }
               />
+            ) : levelChosen ? (
+              <EmptyState
+                message={`No ${filter.level} Grammar Points in the catalogue.`}
+                action={
+                  <Button variant="outline" onClick={() => chooseLevel("all")}>
+                    Show all levels
+                  </Button>
+                }
+              />
+            ) : (
+              <EmptyState message="No grammar points yet — a MaruMori sync fills this catalogue." />
             )
           ) : (
             <>
@@ -123,10 +212,7 @@ export function GrammarCatalogue({ client }: { client: ApiClient }) {
                   shown={state.page.items.length}
                   limit={state.page.limit}
                   total={state.page.total}
-                  onOffset={(next) => {
-                    setOffset(next);
-                    window.scrollTo({ top: 0 });
-                  }}
+                  onOffset={choosePage}
                 />
               ) : (
                 // One page of results: a single count line says all a pager would.
@@ -190,28 +276,38 @@ function SearchField({
   );
 }
 
-/** The sticky jump index, from 1024 px (the sidebar breakpoint). Links scroll to the group in place. */
-function LevelIndex({ levels }: { levels: string[] }) {
-  function jump(event: MouseEvent<HTMLAnchorElement>, level: string) {
-    // No hash in the URL: a hash entry would add a history step and break Back.
-    event.preventDefault();
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    document.getElementById(levelId(level))?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
-  }
+/**
+ * The JLPT Level filter: All levels, then N5 to N1, always. Choosing one filters
+ * the catalogue server-side (`?level=`). Beside the results from 1024 px, above
+ * them below that. The chosen one carries aria-current and an active style.
+ */
+function LevelIndex({
+  current,
+  onChoose,
+}: {
+  current: GrammarLevelFilter;
+  onChoose: (level: GrammarLevelFilter) => void;
+}) {
   return (
-    <nav aria-label="JLPT Levels" className="hidden lg:sticky lg:top-6 lg:block lg:self-start">
-      <ul className="flex flex-col gap-1">
-        {levels.map((level) => (
-          <li key={level}>
-            <a
-              href={`#${levelId(level)}`}
-              onClick={(event) => jump(event, level)}
-              className="block rounded-md px-3 py-2 text-body font-semibold text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-            >
-              {level}
-            </a>
-          </li>
-        ))}
+    <nav aria-label="JLPT Levels" className="lg:sticky lg:top-6 lg:self-start">
+      <ul className="flex flex-wrap gap-1 lg:flex-col">
+        {LEVEL_CHOICES.map((level) => {
+          const active = level === current;
+          return (
+            <li key={level}>
+              <button
+                type="button"
+                aria-current={active ? "true" : undefined}
+                onClick={() => onChoose(level)}
+                className={`min-h-11 rounded-md px-3 text-body font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring lg:w-full lg:text-left ${
+                  active ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                }`}
+              >
+                {level === "all" ? "All levels" : level}
+              </button>
+            </li>
+          );
+        })}
       </ul>
     </nav>
   );
@@ -233,16 +329,22 @@ function LevelGroup({
   return (
     <section id={levelId(level)} aria-labelledby={`${levelId(level)}-heading`} className="scroll-mt-6">
       <Card>
-        <h2 id={`${levelId(level)}-heading`} className="text-title-sm font-semibold text-foreground">
-          {level}
-        </h2>
-        <ul className="flex flex-col divide-y divide-border">
-          {points.map((point) => (
-            <li key={point.id}>
-              <PointRow point={point} onOpen={onOpen} />
-            </li>
-          ))}
-        </ul>
+        <CardContent className="flex flex-col gap-4">
+          <h2
+            id={`${levelId(level)}-heading`}
+            tabIndex={-1}
+            className="text-title-sm font-semibold text-foreground outline-none"
+          >
+            {level}
+          </h2>
+          <ul className="flex flex-col divide-y divide-border">
+            {points.map((point) => (
+              <li key={point.id}>
+                <PointRow point={point} onOpen={onOpen} />
+              </li>
+            ))}
+          </ul>
+        </CardContent>
       </Card>
     </section>
   );
@@ -250,15 +352,16 @@ function LevelGroup({
 
 function PointRow({ point, onOpen }: { point: GrammarPointSummary; onOpen: () => void }) {
   // The label replaces the row's text for a screen reader, so it carries the
-  // badge and the example count too.
-  const knowledge = knowledgeOf(point);
-  const status = knowledge === undefined ? "Not recorded" : knowledge === "seeded" ? "Seeded" : "Observed";
+  // status (when there is one) and the example count too.
+  const status = statusOf(point);
+  const statusText = status === undefined ? undefined : statusLabel(status);
   const count = exampleCountLabel(point.exampleCount);
   return (
     <Link
       to={`/grammar/${point.id}`}
+      state={{ from: "grammar" }}
       onClick={onOpen}
-      aria-label={`${point.pattern}, ${point.meaning}, ${status}, ${count}`}
+      aria-label={[point.pattern, point.meaning, statusText, count].filter(Boolean).join(", ")}
       className="-mx-2 flex items-center gap-4 rounded-md px-2 py-3 hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
     >
       <span className="flex min-w-0 flex-1 flex-col gap-1">
@@ -266,7 +369,7 @@ function PointRow({ point, onOpen }: { point: GrammarPointSummary; onOpen: () =>
         <span className="text-small text-muted-foreground">{point.meaning}</span>
       </span>
       <span className="flex shrink-0 flex-col items-end gap-1">
-        <SourceBadge knowledge={knowledge} />
+        {status === undefined ? null : <StatusMark status={status} />}
         <span className="text-caption text-muted-foreground">{count}</span>
       </span>
       <ChevronRight aria-hidden="true" className="size-5 shrink-0 text-muted-foreground" />
@@ -274,29 +377,33 @@ function PointRow({ point, onOpen }: { point: GrammarPointSummary; onOpen: () =>
   );
 }
 
-/**
- * Seeded and Observed as a quiet pill (a point should not read as a traffic
- * light). "Not known" is a caption, not a badge: there is no fact to show.
- */
-function SourceBadge({ knowledge }: { knowledge: GrammarKnowledge | undefined }) {
-  if (knowledge === undefined) return <span className="text-caption text-muted-foreground">Not recorded</span>;
-  return <Badge>{knowledge === "seeded" ? "Seeded" : "Observed"}</Badge>;
+function statusLabel(status: "seeded" | "observed" | "notKnown"): string {
+  if (status === "seeded") return "Seeded";
+  if (status === "observed") return "Observed";
+  return "Not known";
 }
 
-/** A level group in placeholder bars, shaped like the settled group (ui-plan 5). */
+/** Seeded and Observed as a quiet pill; "Not known" as a caption, since there is no fact to badge. */
+function StatusMark({ status }: { status: "seeded" | "observed" | "notKnown" }) {
+  if (status === "notKnown") return <span className="text-caption text-muted-foreground">Not known</span>;
+  return <Badge variant="secondary">{statusLabel(status)}</Badge>;
+}
+
 function LevelGroupSkeleton() {
   return (
     <Card>
-      <Skeleton className="h-6 w-12" />
-      {[0, 1, 2].map((i) => (
-        <div key={i} className="flex items-center gap-4 py-3">
-          <div className="flex flex-1 flex-col gap-2">
-            <Skeleton className="h-4 w-2/5" />
-            <Skeleton className="h-3.5 w-3/5" />
+      <CardContent className="flex flex-col gap-4">
+        <Skeleton className="h-6 w-12" />
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="flex items-center gap-4 py-3">
+            <div className="flex flex-1 flex-col gap-2">
+              <Skeleton className="h-4 w-2/5" />
+              <Skeleton className="h-3.5 w-3/5" />
+            </div>
+            <Skeleton className="h-4 w-16" />
           </div>
-          <Skeleton className="h-4 w-16" />
-        </div>
-      ))}
+        ))}
+      </CardContent>
     </Card>
   );
 }

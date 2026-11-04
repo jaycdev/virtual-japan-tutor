@@ -9,10 +9,10 @@ import { GrammarCatalogue } from "./GrammarPage.tsx";
 
 /**
  * The Grammar Catalogue (ui-plan 4.6). The stub is the catalogue API the way the
- * Go server behaves: `q` (case-insensitive over pattern and meaning), `level`
- * and offset/limit are server-side, so the stub filters and slices rather than
- * the screen. A `source` on a point is present here only to exercise the badge;
- * the real list endpoint does not send it yet (API follow-up #65).
+ * Go server behaves: `q` (case-insensitive over pattern and meaning), `level` and
+ * offset/limit are all server-side, so the stub filters and slices rather than
+ * the screen. A `source` on a point is present only to exercise the status; the
+ * real list endpoint does not send it yet (API follow-up #65).
  */
 
 interface SummaryFixture {
@@ -23,7 +23,7 @@ interface SummaryFixture {
   meaning: string;
   hasExplanation: boolean;
   exampleCount: number;
-  source?: "seeded" | "observed" | "marumori";
+  source?: string | null;
 }
 
 function summary(
@@ -33,14 +33,14 @@ function summary(
   pattern: string,
   meaning: string,
   exampleCount: number,
-  source?: SummaryFixture["source"],
+  source?: string | null,
 ): SummaryFixture {
   const s: SummaryFixture = { id, jlptLevel, catalogueNumber, pattern, meaning, hasExplanation: true, exampleCount };
-  if (source) s.source = source;
+  if (source !== undefined) s.source = source;
   return s;
 }
 
-/** Out of level order on purpose: the screen must order the groups itself. */
+/** Out of level order on purpose: the screen must order the groups itself. N2 and N1 are absent. */
 const POINTS: SummaryFixture[] = [
   summary(3, "N4", 1, "〜てくる", "come to do something", 2),
   summary(1, "N5", 1, "〜てしまう", "end up doing something", 1, "seeded"),
@@ -48,6 +48,9 @@ const POINTS: SummaryFixture[] = [
   summary(2, "N5", 2, "〜たい", "want to do something", 0, "marumori"),
   summary(4, "N4", 5, "〜たら", "if, when (conditional)", 3, "observed"),
 ];
+
+/** The same catalogue with no `source` at all, as the real list API sends it today. */
+const UNSOURCED: SummaryFixture[] = POINTS.map(({ source: _source, ...rest }) => rest);
 
 /** Three levels of 40 points: a catalogue that needs paging (120 in all). */
 const MANY_POINTS: SummaryFixture[] = ["N5", "N4", "N3"].flatMap((level, l) =>
@@ -114,7 +117,7 @@ function DetailRoute({ client }: { client: ApiClient }) {
 }
 
 /** The app's two Grammar routes on a memory router, with an extra field to test the "/" key. */
-function renderCatalogue(fixture: Fixture, requests: string[], path = "/grammar") {
+function renderCatalogue(fixture: Fixture, requests: string[], entries: Array<string | Partial<{ pathname: string; search: string; state: unknown }>> = ["/grammar"]) {
   const client = createApiClient({ baseUrl: "http://api.test", fetch: stubFetch(fixture, requests) });
   const router = createMemoryRouter(
     [
@@ -128,13 +131,14 @@ function renderCatalogue(fixture: Fixture, requests: string[], path = "/grammar"
         children: [
           { path: "/grammar", element: <GrammarCatalogue client={client} /> },
           { path: "/grammar/:grammarId", element: <DetailRoute client={client} /> },
+          { path: "/practice", element: <p>Practice page</p> },
         ],
       },
     ],
-    { initialEntries: [path] },
+    { initialEntries: entries },
   );
-  render(<RouterProvider router={router} />);
-  return { router };
+  const view = render(<RouterProvider router={router} />);
+  return { router, unmount: view.unmount };
 }
 
 describe("Grammar Catalogue", () => {
@@ -145,8 +149,9 @@ describe("Grammar Catalogue", () => {
     fixture = { status: 200, points: POINTS };
     requests = [];
     window.scrollTo = vi.fn() as unknown as typeof window.scrollTo;
-    // jsdom has no layout; the level index scrolls a group into view.
+    // jsdom has no layout; focusing a heading and scrolling are checked, not measured.
     Element.prototype.scrollIntoView = vi.fn();
+    window.sessionStorage.clear();
   });
 
   it("groups the page under its JLPT levels, easiest first", async () => {
@@ -159,15 +164,87 @@ describe("Grammar Catalogue", () => {
     expect(within(screen.getByRole("region", { name: "N3" })).getByText("〜わけだ")).toBeTruthy();
   });
 
-  it("shows the level index from the sticky sidebar and jumps to a group without a hash in the URL", async () => {
-    const { router } = renderCatalogue(fixture, requests);
+  it("always lists All levels and N5 to N1 in the index, even the levels this page does not have", async () => {
+    renderCatalogue(fixture, requests);
     await screen.findByText("〜てしまう");
 
     const index = screen.getByRole("navigation", { name: "JLPT Levels" });
-    const n3 = within(index).getByRole("link", { name: "N3" });
-    fireEvent.click(n3);
-    expect(router.state.location.hash).toBe("");
-    expect(n3.getAttribute("href")).toBe("#grammar-level-N3");
+    const labels = within(index).getAllByRole("button").map((b) => b.textContent);
+    expect(labels).toEqual(["All levels", "N5", "N4", "N3", "N2", "N1"]);
+    // The level with no points on this page is still there, and marks the current view.
+    expect(within(index).getByRole("button", { name: "All levels" }).getAttribute("aria-current")).toBe("true");
+  });
+
+  it("filters to a level chosen from the index, on the server, and keeps it in ?level=", async () => {
+    const user = userEvent.setup();
+    const { router } = renderCatalogue(fixture, requests);
+    await screen.findByText("〜てしまう");
+
+    await user.click(within(screen.getByRole("navigation", { name: "JLPT Levels" })).getByRole("button", { name: "N4" }));
+    await waitFor(() => expect(screen.queryByText("〜てしまう")).toBeNull());
+    expect(screen.getByText("〜たら")).toBeTruthy();
+    expect(screen.getByText("〜てくる")).toBeTruthy();
+    expect(requests.some((r) => r.includes("level=N4"))).toBe(true);
+    expect(router.state.location.search).toBe("?level=N4");
+    expect(within(screen.getByRole("navigation", { name: "JLPT Levels" })).getByRole("button", { name: "N4" }).getAttribute("aria-current")).toBe("true");
+  });
+
+  it("says so, with a way out, when the chosen level has no points", async () => {
+    const user = userEvent.setup();
+    renderCatalogue(fixture, requests);
+    await screen.findByText("〜てしまう");
+
+    await user.click(within(screen.getByRole("navigation", { name: "JLPT Levels" })).getByRole("button", { name: "N1" }));
+    await screen.findByText("No N1 Grammar Points in the catalogue.");
+
+    await user.click(screen.getByRole("button", { name: "Show all levels" }));
+    await screen.findByText("〜てしまう");
+    expect(screen.getByRole("navigation", { name: "JLPT Levels" }).querySelector('[aria-current="true"]')?.textContent).toBe("All levels");
+  });
+
+  it("moves focus to the results heading after a level is chosen", async () => {
+    const user = userEvent.setup();
+    renderCatalogue(fixture, requests);
+    await screen.findByText("〜てしまう");
+
+    await user.click(within(screen.getByRole("navigation", { name: "JLPT Levels" })).getByRole("button", { name: "N5" }));
+    await waitFor(() => expect(document.activeElement?.textContent).toBe("N5"));
+    expect(document.activeElement?.tagName).toBe("H2");
+  });
+
+  it("seeds the level filter from ?level= on arrival, in one request", async () => {
+    renderCatalogue(fixture, requests, ["/grammar?level=N5"]);
+    await screen.findByText("〜てしまう");
+
+    const reads = requests.filter((r) => r.startsWith("GET /grammar/points"));
+    expect(reads).toHaveLength(1);
+    expect(reads[0]).toContain("level=N5");
+    expect(screen.queryByText("〜たら")).toBeNull();
+  });
+
+  it("shows no status at all while the summary carries no source (#65)", async () => {
+    fixture.points = UNSOURCED;
+    renderCatalogue(fixture, requests);
+    await screen.findByText("〜てしまう");
+
+    expect(screen.queryByText("Seeded")).toBeNull();
+    expect(screen.queryByText("Observed")).toBeNull();
+    expect(screen.queryByText("Not known")).toBeNull();
+    expect(screen.queryByText("Not recorded")).toBeNull();
+    // The row's accessible name carries no status either.
+    expect(screen.getByRole("link", { name: "〜てしまう, end up doing something, 1 example" })).toBeTruthy();
+  });
+
+  it("shows Seeded, Observed and Not known once the source is sent", async () => {
+    fixture.points = [...POINTS, summary(6, "N5", 9, "〜ぞ", "emphatic sentence ender", 0, "something-new")];
+    renderCatalogue(fixture, requests);
+    await screen.findByText("〜てしまう");
+
+    const n5 = screen.getByRole("region", { name: "N5" });
+    expect(within(n5).getByText("Seeded")).toBeTruthy();
+    expect(within(n5).getByText("Observed")).toBeTruthy();
+    expect(within(n5).getByText("Not known")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "〜てしまう, end up doing something, Seeded, 1 example" })).toBeTruthy();
   });
 
   it("searches case-insensitively through the meaning, and keeps the term in the URL", async () => {
@@ -180,15 +257,29 @@ describe("Grammar Catalogue", () => {
     await waitFor(() => expect(router.state.location.search).toBe("?q=END+UP"));
   });
 
-  it("says where each point came from: Seeded, Observed, or Not recorded when the summary has no source", async () => {
-    renderCatalogue(fixture, requests);
+  it("follows the URL when the Grammar link is clicked mid-search: the box clears and the list unfilters (review: URL sync)", async () => {
+    const { router } = renderCatalogue(fixture, requests, ["/grammar?q=zzzz"]);
+    // The search from the URL is applied on arrival.
+    await screen.findByText(/Nothing matches “zzzz”/);
+    expect((screen.getByLabelText("Search grammar") as HTMLInputElement).value).toBe("zzzz");
+
+    // The sidebar's Grammar link: same route, no search.
+    await router.navigate("/grammar");
+
+    await waitFor(() => expect((screen.getByLabelText("Search grammar") as HTMLInputElement).value).toBe(""));
+    await screen.findByText("〜てしまう");
+    expect(screen.queryByText(/Nothing matches/)).toBeNull();
+    expect(screen.getByText("〜たい")).toBeTruthy();
+  });
+
+  it("also follows a changed ?q= from outside, not only a cleared one", async () => {
+    const { router } = renderCatalogue(fixture, requests, ["/grammar?q=end"]);
     await screen.findByText("〜てしまう");
 
-    const n5 = screen.getByRole("region", { name: "N5" });
-    expect(within(n5).getByText("Seeded")).toBeTruthy();
-    expect(within(n5).getByText("Observed")).toBeTruthy();
-    // 〜てくる has no source at all, which is what the real list sends today.
-    expect(screen.getAllByText("Not recorded")).toHaveLength(1);
+    await router.navigate("/grammar?q=conditional");
+    await waitFor(() => expect((screen.getByLabelText("Search grammar") as HTMLInputElement).value).toBe("conditional"));
+    await screen.findByText("〜たら");
+    expect(screen.queryByText("〜てしまう")).toBeNull();
   });
 
   it("holds a skeleton shaped like the page while the catalogue loads, then fills it", async () => {
@@ -223,6 +314,7 @@ describe("Grammar Catalogue", () => {
     fireEvent.change(screen.getByLabelText("Search grammar"), { target: { value: "zzzz" } });
     await screen.findByText(/Nothing matches “zzzz”/);
 
+    // A string name matches the whole accessible name, so this is not "Clear search term".
     await user.click(screen.getByRole("button", { name: "Clear search" }));
     await screen.findByText("〜たら");
   });
@@ -236,19 +328,49 @@ describe("Grammar Catalogue", () => {
     expect(screen.queryByRole("button", { name: "Next" })).toBeNull();
   });
 
-  it("pages Previous and Next over the whole catalogue", async () => {
+  it("pages Previous and Next, keeping the page in ?page= with replace, not push", async () => {
     fixture.points = MANY_POINTS;
     const user = userEvent.setup();
-    renderCatalogue(fixture, requests);
+    const { router } = renderCatalogue(fixture, requests);
     await screen.findByText("1–50 of 120");
     expect(screen.getByRole("button", { name: "Previous" })).toHaveProperty("disabled", true);
 
     await user.click(screen.getByRole("button", { name: "Next" }));
     await screen.findByText("51–100 of 120");
+    expect(router.state.location.search).toBe("?page=2");
+    expect(router.state.historyAction).toBe("REPLACE");
     expect(window.scrollTo).toHaveBeenCalledWith({ top: 0 });
 
     await user.click(screen.getByRole("button", { name: "Previous" }));
     await screen.findByText("1–50 of 120");
+    expect(router.state.location.search).toBe("");
+  });
+
+  it("seeds the page from ?page= on arrival", async () => {
+    fixture.points = MANY_POINTS;
+    renderCatalogue(fixture, requests, ["/grammar?page=3"]);
+    await screen.findByText("101–120 of 120");
+    expect(requests.some((r) => r.includes("offset=100"))).toBe(true);
+  });
+
+  it("keeps the search and the page together in the URL, and a new search starts at page one", async () => {
+    fixture.points = MANY_POINTS;
+    const user = userEvent.setup();
+    // Every point's meaning contains "pattern", so this search spans all 120 and pages.
+    const { router } = renderCatalogue(fixture, requests, ["/grammar?q=pattern&page=2"]);
+    await screen.findByText("51–100 of 120");
+    expect(requests.some((r) => r.includes("q=pattern") && r.includes("offset=50"))).toBe(true);
+
+    // Paging within the search keeps q and moves page.
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByText("101–120 of 120");
+    const onPageThree = new URLSearchParams(router.state.location.search);
+    expect(onPageThree.get("q")).toBe("pattern");
+    expect(onPageThree.get("page")).toBe("3");
+
+    // A new search drops the page and starts at page one.
+    fireEvent.change(screen.getByLabelText("Search grammar"), { target: { value: "pattern 1" } });
+    await waitFor(() => expect(router.state.location.search).toBe("?q=pattern+1"));
   });
 
   it("sends one search for a burst of keystrokes", async () => {
@@ -264,6 +386,17 @@ describe("Grammar Catalogue", () => {
     expect(requests.filter((r) => r.includes("q="))).toHaveLength(1);
   });
 
+  it("drops the pending search when the screen goes away mid-debounce", async () => {
+    const { unmount } = renderCatalogue(fixture, requests);
+    await screen.findByText("〜てしまう");
+
+    fireEvent.change(screen.getByLabelText("Search grammar"), { target: { value: "end" } });
+    unmount(); // leave before the debounce deadline passes
+
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    expect(requests.filter((r) => r.includes("q="))).toHaveLength(0);
+  });
+
   it("moves to search with the / key from outside a field, but not while typing in one", async () => {
     renderCatalogue(fixture, requests);
     await screen.findByText("〜てしまう");
@@ -277,16 +410,34 @@ describe("Grammar Catalogue", () => {
     expect(document.activeElement).toBe(other);
   });
 
-  it("opens a point as a link to its own page, with its status and count in the label", async () => {
+  it("ignores / while an IME is composing, and when something else already handled the key", async () => {
+    renderCatalogue(fixture, requests);
+    await screen.findByText("〜てしまう");
+    const search = screen.getByLabelText("Search grammar");
+
+    fireEvent.keyDown(document.body, { key: "/", isComposing: true });
+    expect(document.activeElement).not.toBe(search);
+
+    const handled = (event: Event) => event.preventDefault();
+    document.body.addEventListener("keydown", handled);
+    try {
+      fireEvent.keyDown(document.body, { key: "/" });
+      expect(document.activeElement).not.toBe(search);
+    } finally {
+      document.body.removeEventListener("keydown", handled);
+    }
+  });
+
+  it("opens a point as a link to its own page, marked as opened from the catalogue", async () => {
     const { router } = renderCatalogue(fixture, requests);
     await screen.findByText("〜てしまう");
 
-    const row = screen.getByRole("link", { name: "〜てしまう, end up doing something, Seeded, 1 example" });
-    fireEvent.click(row);
+    fireEvent.click(screen.getByRole("link", { name: "〜てしまう, end up doing something, Seeded, 1 example" }));
     await waitFor(() => expect(router.state.location.pathname).toBe("/grammar/1"));
+    expect(router.state.location.state).toEqual({ from: "grammar" });
   });
 
-  it("returns from a point with the same search and page, and the same scroll position", async () => {
+  it("returns from a point with the same search, page and scroll position", async () => {
     fixture.points = MANY_POINTS;
     const user = userEvent.setup();
     Object.defineProperty(window, "scrollY", { value: 300, configurable: true });
@@ -300,11 +451,12 @@ describe("Grammar Catalogue", () => {
       if (!firstRow) throw new Error("no catalogue row on page two");
       await user.click(firstRow);
       await waitFor(() => expect(router.state.location.pathname).toMatch(/^\/grammar\/\d+$/));
-      await screen.findByRole("heading", { name: "〜たら" });
+      await screen.findByRole("heading", { name: /〜たら/ });
 
       await user.click(screen.getByRole("button", { name: "Back to grammar" }));
       await screen.findByText("51–100 of 120");
       expect(router.state.location.pathname).toBe("/grammar");
+      expect(router.state.location.search).toBe("?page=2");
       expect(window.scrollTo).toHaveBeenLastCalledWith({ top: 300 });
     } finally {
       Reflect.deleteProperty(window, "scrollY");
