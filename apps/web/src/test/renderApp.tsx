@@ -19,11 +19,13 @@ export interface HarnessOptions {
   startingLevelConfigured?: boolean;
   /** Start signed in (the default) or signed out. */
   signedIn?: boolean;
+  /** Replaces the GET /starting-level answer, e.g. to hold it open or fail it. */
+  startingLevelReply?: () => Promise<Response>;
 }
 
 export function renderAppAt(path: string, options: HarnessOptions = {}) {
   const router = createMemoryRouter(appRoutes, { initialEntries: [path] });
-  const { startingLevelConfigured = true, signedIn = true } = options;
+  const { startingLevelConfigured = true, signedIn = true, startingLevelReply } = options;
 
   function Harness({ children }: { children: ReactNode }) {
     const [state, setState] = useState<AuthState>(signedIn ? { status: "signedIn", user: TEST_USER } : { status: "signedOut" });
@@ -36,6 +38,7 @@ export function renderAppAt(path: string, options: HarnessOptions = {}) {
           baseUrl: "http://api.test",
           fetch: async (req) => {
             if (new URL(req.url).pathname === "/starting-level") {
+              if (startingLevelReply) return startingLevelReply();
               return Response.json({ id: TEST_USER.id, username: TEST_USER.username, configured: startingLevelConfigured });
             }
             return Response.json({ message: "not found" }, { status: 404 });
@@ -51,6 +54,7 @@ export function renderAppAt(path: string, options: HarnessOptions = {}) {
         client,
         retry: () => undefined,
         endedByChoice,
+        clearEndedByChoice: () => setEndedByChoice(false),
         login: async (username, password) => {
           setEndedByChoice(false);
           setBusy(true);

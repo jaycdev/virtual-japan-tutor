@@ -11,10 +11,16 @@ import { ErrorState, SkeletonLines } from "../components/states";
 
 /**
  * The auth state plus the client it talks through. `endedByChoice` is true from
- * the moment the Learner pressed Log out until they log in again: the guard
- * then sends them to a plain /login, not back to the page they left (`next`).
+ * the moment the Learner pressed Log out until the login page has been shown (it
+ * calls `clearEndedByChoice`). While it is set, the guard sends the Learner to a
+ * plain /login rather than back to the page they left (`next`). Once cleared, a
+ * later signed-out visit to a deep link remembers `next` again.
  */
-export type Session = Auth & { client: ApiClient; endedByChoice: boolean };
+export type Session = Auth & {
+  client: ApiClient;
+  endedByChoice: boolean;
+  clearEndedByChoice: () => void;
+};
 
 export const SessionContext = createContext<Session | null>(null);
 
@@ -41,13 +47,20 @@ export function SessionProvider({
   );
   const logout = useCallback(async () => {
     setEndedByChoice(true);
-    await logoutRaw();
+    try {
+      await logoutRaw();
+    } catch (err) {
+      // The sign-out did not happen: do not leave the next visit forgetting `next`.
+      setEndedByChoice(false);
+      throw err;
+    }
   }, [logoutRaw]);
+  const clearEndedByChoice = useCallback(() => setEndedByChoice(false), []);
 
   const { state, busy, retry } = auth;
   const session = useMemo<Session>(
-    () => ({ state, busy, login, logout, retry, client, endedByChoice }),
-    [state, busy, login, logout, retry, client, endedByChoice],
+    () => ({ state, busy, login, logout, retry, client, endedByChoice, clearEndedByChoice }),
+    [state, busy, login, logout, retry, client, endedByChoice, clearEndedByChoice],
   );
   return <SessionContext.Provider value={session}>{children}</SessionContext.Provider>;
 }

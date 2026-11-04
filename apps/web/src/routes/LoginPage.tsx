@@ -1,7 +1,7 @@
 // Login (ui-plan 4.2): the wordmark, Username and Password, and errors inline.
 // The API is on this origin, so there is no server field. The auth machine is
 // @vjt/core's useAuth (through the session); this file is presentation only.
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Navigate, useSearchParams } from "react-router";
 
 import { Button } from "@/components/ui/button";
@@ -11,18 +11,27 @@ import { useSession } from "../session/session.tsx";
 import { safeNextPath } from "./nextPath.ts";
 import { Wordmark } from "../shell/Wordmark.tsx";
 
+const ERROR_ID = "login-error";
+
 export function Component() {
-  const { state, busy, login } = useSession();
+  const { state, busy, login, endedByChoice, clearEndedByChoice } = useSession();
   const [params] = useSearchParams();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
 
   const next = safeNextPath(params.get("next"), window.location.origin);
 
+  // The Learner has reached the login page after logging out: the "no next" rule
+  // has done its job, so the next signed-out visit may remember `next` again.
+  useEffect(() => {
+    if (endedByChoice) clearEndedByChoice();
+  }, [endedByChoice, clearEndedByChoice]);
+
   // Already signed in (or just signed in): go where the Learner was headed.
   if (state.status === "signedIn") return <Navigate to={next} replace />;
 
   const error = state.status === "signedOut" ? state.error : undefined;
+  const describedBy = error ? ERROR_ID : undefined;
   const canSubmit = !busy && username !== "" && password !== "";
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
@@ -55,6 +64,8 @@ export function Component() {
                 disabled={busy}
                 required
                 autoFocus
+                aria-invalid={error ? true : undefined}
+                aria-describedby={describedBy}
               />
             </div>
             <div className="flex flex-col gap-1.5">
@@ -68,12 +79,14 @@ export function Component() {
                 onChange={(event) => setPassword(event.target.value)}
                 disabled={busy}
                 required
+                aria-invalid={error ? true : undefined}
+                aria-describedby={describedBy}
               />
             </div>
           </div>
 
           {error ? (
-            <p role="alert" className="text-small text-destructive">
+            <p id={ERROR_ID} role="alert" className="text-small text-destructive">
               {error}
             </p>
           ) : null}
