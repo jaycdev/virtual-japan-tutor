@@ -154,6 +154,11 @@ function stubApi(options: { startingLevelConfigured?: boolean; failStartingLevel
       return jsonResponse(200, { size: 0, items: [] });
     if (path === "/grammar/points")
       return jsonResponse(200, { items: [], total: 0, limit: 50, offset: 0 });
+    // A point detail read (the fresh-deep-link Back test): a 404, so the
+    // screen sits in its error state — the catch-all below would pass shapeless
+    // JSON to useGrammarPoint and the ready body would crash on it.
+    if (path.startsWith("/grammar/points/") && request.method === "GET")
+      return jsonResponse(404, { error: { code: "not_found", message: "No such grammar point." } });
     if (path === "/marumori")
       return jsonResponse(200, { connected: false, lastSync: null, lastFailure: null, counts: null });
     if (path === "/health") return jsonResponse(200, { status: "ok", database: "connected" });
@@ -300,6 +305,19 @@ it("Back from a fresh-tab settings deep link returns to the hub", async () => {
   await screen.findByLabelText("Lookup hold before a Weak Signal (ms, 0–10000)");
   await user.click(await screen.findByRole("button", { name: "Back" }));
   await screen.findByText("Starting Level"); // the hub, not a dead end
+});
+
+it("Back from a fresh-tab grammar deep link returns to the catalogue", async () => {
+  stubApi();
+  renderApp("/grammar/12"); // deep link in a fresh tab: nothing to pop
+  setViewport(NARROW);
+  const user = await userEvent.setup();
+
+  // The Back row renders in every state (loading, error, ready), so its press
+  // is what the test drives; where the point itself lands is the screen's own
+  // (GrammarPoint.test.tsx).
+  await user.click(await screen.findByRole("button", { name: "Back to grammar" }));
+  await screen.findByLabelText("Search grammar"); // the catalogue, not a dead end
 });
 
 it("browser Back from a tab does not walk through the visited tabs", async () => {

@@ -15,7 +15,10 @@ export default function GrammarPointRoute() {
     <GrammarPoint
       client={client}
       pointId={Number.isInteger(pointId) && pointId > 0 ? pointId : undefined}
-      onBack={() => router.back()}
+      // A fresh-tab deep link has no history to pop: Back then replaces to the
+      // grammar catalogue rather than stranding the Learner (the pattern
+      // stories/[id].tsx and settings/[section].tsx already use).
+      onBack={() => (router.canGoBack() ? router.back() : router.replace("/grammar"))}
     />
   );
 }
