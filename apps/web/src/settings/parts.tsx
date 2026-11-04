@@ -3,16 +3,24 @@
 // to their field; save state is announced. Controls are shadcn/ui or native
 // elements with the same tokens, so keyboard and screen-reader behaviour is the
 // browser's own.
-import type { ComponentProps, ReactNode } from "react";
+import type { ComponentProps, ReactNode, Ref } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 
-/** A section's own heading below the page title. */
-export function Subheading({ children }: { children: ReactNode }) {
-  return <h2 className="text-title-sm font-semibold text-foreground">{children}</h2>;
+/**
+ * A section's own heading below the page title. Focusable (tabIndex -1) so a
+ * control that unmounts on click (a detail opening, a confirm dismissing) can
+ * move focus here instead of dropping it to <body> (issue #81 review).
+ */
+export function Subheading({ children, ref }: { children: ReactNode; ref?: Ref<HTMLHeadingElement> }) {
+  return (
+    <h2 ref={ref} tabIndex={-1} className="text-title-sm font-semibold text-foreground focus:outline-none">
+      {children}
+    </h2>
+  );
 }
 
 /** Explanatory text for a section (secondary text, ui-plan 2.4 `small`). */

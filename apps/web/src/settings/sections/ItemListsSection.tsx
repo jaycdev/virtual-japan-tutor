@@ -12,7 +12,7 @@ import {
   type ItemKind,
   type ItemListsView,
 } from "@vjt/core";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { ErrorState, SkeletonLines } from "../../components/states.tsx";
@@ -23,6 +23,10 @@ export function ItemListsSection() {
   const { client } = useSession();
   const lists = useItemLists(client);
   const [openId, setOpenId] = useState<string | null>(null);
+  // Once a detail has been opened, the master only reappears through "Back to
+  // all lists", which unmounts itself and would drop focus: the master's
+  // heading takes it instead. A first load (no detail opened) takes nothing.
+  const [detailOpened, setDetailOpened] = useState(false);
 
   if (lists.state.status === "loading") return <SkeletonLines lines={3} />;
   if (lists.state.status === "error") {
@@ -40,7 +44,16 @@ export function ItemListsSection() {
       />
     );
   }
-  return <ListsMaster lists={lists} onOpen={setOpenId} />;
+  return (
+    <ListsMaster
+      lists={lists}
+      backFocus={detailOpened}
+      onOpen={(id) => {
+        setDetailOpened(true);
+        setOpenId(id);
+      }}
+    />
+  );
 }
 
 /** Runs a write, returns whether it worked and shows the message when it did not. */
@@ -61,10 +74,25 @@ function useAction() {
   return { busy, error, setError, run };
 }
 
-function ListsMaster({ lists, onOpen }: { lists: ItemListsView; onOpen: (id: string) => void }) {
+function ListsMaster({
+  lists,
+  onOpen,
+  backFocus,
+}: {
+  lists: ItemListsView;
+  onOpen: (id: string) => void;
+  backFocus: boolean;
+}) {
   const { busy, error, run } = useAction();
   const [name, setName] = useState("");
   const state = lists.state.status === "ready" ? lists.state : null;
+  const headingRef = useRef<HTMLHeadingElement>(null);
+
+  // This mount replaced a detail ("Back to all lists" unmounted itself): the
+  // heading takes the lost focus. A first load does not steal focus.
+  useEffect(() => {
+    if (backFocus) headingRef.current?.focus();
+  }, [backFocus]);
 
   const addList = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -81,6 +109,7 @@ function ListsMaster({ lists, onOpen }: { lists: ItemListsView; onOpen: (id: str
         your stories’ Focus Sets. Choose a list to manage its items.
       </Note>
 
+      <Subheading ref={headingRef}>Your lists</Subheading>
       {state && state.lists.length === 0 ? <p className="text-body text-muted-foreground">No lists yet.</p> : null}
       {state && state.lists.length > 0 ? (
         <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
@@ -145,6 +174,21 @@ function ListDetail({
   const [added, setAdded] = useState(false);
   const { listItems } = lists;
 
+  // Focus stays with the Learner when controls unmount: the "Manage" button that
+  // opened this detail is gone (mount), and Rename/Save swap the name heading for
+  // a field and back (renaming), and a member's "Remove" button removes its own
+  // row. Each hands focus to the nearest stable heading instead of to <body>.
+  const nameRef = useRef<HTMLHeadingElement>(null);
+  const itemsRef = useRef<HTMLHeadingElement>(null);
+  const wasRenaming = useRef(false);
+  useEffect(() => {
+    nameRef.current?.focus();
+  }, []);
+  useEffect(() => {
+    if (wasRenaming.current && !renaming) nameRef.current?.focus();
+    wasRenaming.current = renaming;
+  }, [renaming]);
+
   const reread = async () => {
     const res = await listItems(list.id);
     setMembers(res.ok ? { rows: res.members ?? [] } : { rows: null, error: res.message });
@@ -176,6 +220,9 @@ function ListDetail({
 
   const removeMember = async (member: ItemListMember) => {
     if (await run(() => lists.removeFromList(list.id, { itemKind: member.itemKind, itemRef: member.itemRef }))) {
+      // The row's Remove button is about to unmount with the row: take focus to
+      // the Items heading before it goes.
+      itemsRef.current?.focus();
       void reread();
     }
   };
@@ -223,7 +270,7 @@ function ListDetail({
         </form>
       ) : (
         <div className="flex flex-col gap-3">
-          <Subheading>{list.name}</Subheading>
+          <Subheading ref={nameRef}>{list.name}</Subheading>
           <SwitchField
             id="list-boosting"
             label="Boosting"
@@ -276,7 +323,7 @@ function ListDetail({
       )}
 
       <div className="flex flex-col gap-3">
-        <Subheading>Items ({list.itemCount})</Subheading>
+        <Subheading ref={itemsRef}>Items ({list.itemCount})</Subheading>
         {members.error ? (
           <ErrorState message={members.error} onRetry={() => void reread()} />
         ) : members.rows === null ? (

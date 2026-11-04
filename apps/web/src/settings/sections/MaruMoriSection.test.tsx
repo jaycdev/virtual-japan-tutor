@@ -85,5 +85,7 @@ describe("Settings › MaruMori", () => {
     expect(await screen.findByText("Not connected.")).toBeTruthy();
     const saved = await screen.findByText("The MaruMori key was removed.");
     expect(saved.getAttribute("role")).toBe("status");
+    // The confirm buttons unmounted with the click: the heading holds focus (issue #81 review).
+    await waitFor(() => expect(document.activeElement?.textContent).toBe("API key"));
   });
 });

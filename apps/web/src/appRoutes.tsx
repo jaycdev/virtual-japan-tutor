@@ -87,10 +87,12 @@ export const appRoutes: RouteObject[] = [
                 lazy: () => import("./routes/GrammarPointPage.tsx"),
               },
               // /settings is the hub (narrow) or Appearance (wide); both routes share one module.
-              { path: "settings", handle: { title: "Settings" } satisfies RouteHandle, lazy: () => import("./routes/SettingsPage.tsx") },
+              // shellFocus: false — the page marks its own heading so switching sections
+              // keeps the rail immediately before the content in the tab order.
+              { path: "settings", handle: { title: "Settings", shellFocus: false } satisfies RouteHandle, lazy: () => import("./routes/SettingsPage.tsx") },
               {
                 path: "settings/:section",
-                handle: { title: "Settings" } satisfies RouteHandle,
+                handle: { title: "Settings", shellFocus: false } satisfies RouteHandle,
                 lazy: () => import("./routes/SettingsPage.tsx"),
               },
               { path: "setup", handle: { title: "Set up" } satisfies RouteHandle, lazy: () => import("./routes/SetupPage.tsx") },

@@ -71,7 +71,7 @@ export function StartingLevelSection({ registerSave }: { registerSave?: StepSave
       </p>
       <form className="flex flex-col gap-4" onSubmit={(event) => void submit(event)}>
         <ChoiceGroup
-          legend="Starting Level"
+          legend="Choose your level"
           options={STARTING_LEVELS.map((l) => ({ value: l, label: l }))}
           value={selected}
           onChange={setChoice}

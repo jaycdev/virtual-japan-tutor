@@ -37,7 +37,7 @@ export function Component() {
   if (section && !found && !isFocus) {
     return (
       <section className="flex flex-col gap-4">
-        <h1 className="text-title font-semibold text-foreground">Settings</h1>
+        <h1 tabIndex={-1} data-page-focus className="text-title font-semibold text-foreground">Settings</h1>
         <EmptyState
           message="That settings section doesn’t exist."
           action={
@@ -54,7 +54,7 @@ export function Component() {
   if (!section) {
     return (
       <section className="flex flex-col gap-6">
-        <h1 className="text-title font-semibold text-foreground">Settings</h1>
+        <h1 tabIndex={-1} data-page-focus className="text-title font-semibold text-foreground">Settings</h1>
         <SectionList current={null} />
       </section>
     );
@@ -72,7 +72,9 @@ export function Component() {
             <Link to="/settings">← Settings</Link>
           </Button>
         </div>
-        <h1 tabIndex={-1} className="text-title font-semibold text-foreground">
+        {/* data-page-focus: the shell focuses this heading after a section switch
+            (handle `shellFocus: false`), so Tab reaches the content directly. */}
+        <h1 tabIndex={-1} data-page-focus className="text-title font-semibold text-foreground focus:outline-none">
           {isFocus ? FOCUS_DEEP_LINK.title : found?.title}
         </h1>
         <SectionContent section={isFocus ? FOCUS_DEEP_LINK.id : (section as SettingsSection)} />

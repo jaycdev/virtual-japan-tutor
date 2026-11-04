@@ -120,9 +120,18 @@ export function SetupWizard({ onFinish }: { onFinish: () => void }) {
       </section>
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
-        <Button type="button" variant="ghost" onClick={onFinish} disabled={busy}>
-          Skip setup
-        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Back keeps the step state (the Learner's half-typed step is still there)
+              and stays inside /setup (issue #81 review). */}
+          {step > 0 ? (
+            <Button type="button" variant="outline" onClick={() => goTo(step - 1)} disabled={busy}>
+              Back
+            </Button>
+          ) : null}
+          <Button type="button" variant="ghost" onClick={onFinish} disabled={busy}>
+            Skip setup
+          </Button>
+        </div>
         <div className="flex flex-wrap items-center gap-3">
           {last ? null : (
             <Button type="button" variant="outline" onClick={() => goTo(step + 1)} disabled={busy}>

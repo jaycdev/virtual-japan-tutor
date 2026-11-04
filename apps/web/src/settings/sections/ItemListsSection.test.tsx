@@ -3,6 +3,7 @@
 // delete, and membership. The mobile "Close Item Lists" and back-button checks do
 // not exist on the web, where "Back to all lists" plays that part.
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
 import { renderAppAt } from "../../test/renderApp.tsx";
@@ -121,5 +122,68 @@ describe("Settings › Item Lists", () => {
     expect(await screen.findByText("Added.")).toBeTruthy();
     const kind = await screen.findByRole("group", { name: "Kind" });
     expect(within(kind).getByRole("button", { name: "Word" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("lets a Kanji reference be typed as the character itself", async () => {
+    const state = renderLists();
+    await master();
+    fireEvent.click(screen.getByRole("button", { name: /Food.*Manage/ }));
+
+    const field = screen.getByLabelText("Reference (dictionary entry sequence or grammar point id)") as HTMLInputElement;
+    // Word refs are ids: a numeric keyboard. Kanji refs are characters: not.
+    expect(field.getAttribute("inputmode")).toBe("numeric");
+    fireEvent.click(screen.getByRole("button", { name: "Kanji" }));
+    expect(field.getAttribute("inputmode")).not.toBe("numeric");
+    expect(screen.getByText("For a Kanji, type the character itself.")).toBeTruthy();
+
+    fireEvent.change(field, { target: { value: "水" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add to list" }));
+
+    await waitFor(() => {
+      const post = state.writes.find((w) => w.method === "POST" && w.path === "/item-lists/food/items");
+      expect(post?.body).toEqual({ itemKind: "kanji", itemRef: "水" });
+    });
+  });
+
+  it("renames through an inline edit", async () => {
+    const state = renderLists();
+    await master();
+    fireEvent.click(screen.getByRole("button", { name: /Food.*Manage/ }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Rename" }));
+    const input = screen.getByLabelText("New name") as HTMLInputElement;
+    expect(input.value).toBe("Food");
+    fireEvent.change(input, { target: { value: "Drinks" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+
+    await waitFor(() => {
+      const put = state.writes.find((w) => w.method === "PUT" && w.path === "/item-lists/food");
+      expect(put?.body).toEqual({ name: "Drinks" });
+    });
+    expect(await screen.findByRole("heading", { name: "Drinks", level: 2 })).toBeTruthy();
+  });
+
+  it("keeps focus on a heading as the detail opens, renames, removes a member, and closes", async () => {
+    // Every one of these clicks unmounts the control that was focused; the
+    // nearest stable heading takes focus so Tab keeps going from there (issue #81 review).
+    const user = userEvent.setup();
+    renderLists();
+    await master();
+
+    await user.click(screen.getByRole("button", { name: /Food.*Manage/ }));
+    await waitFor(() => expect(document.activeElement?.textContent).toBe("Food"));
+
+    await user.click(screen.getByRole("button", { name: "Rename" }));
+    await user.type(screen.getByLabelText("New name"), "s");
+    await user.click(screen.getByRole("button", { name: "Save name" }));
+    await waitFor(() => expect(document.activeElement?.textContent).toBe("Foods"));
+
+    await user.click(screen.getByRole("button", { name: "Back to all lists" }));
+    await waitFor(() => expect(document.activeElement?.textContent).toBe("Your lists"));
+
+    await user.click(screen.getByRole("button", { name: /Saved.*Manage/ }));
+    await screen.findByText("食べる");
+    await user.click(screen.getByRole("button", { name: "Remove 食べる" }));
+    await waitFor(() => expect(document.activeElement?.textContent).toMatch(/^Items/));
   });
 });

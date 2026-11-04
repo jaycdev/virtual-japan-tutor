@@ -1,7 +1,7 @@
 // MaruMori (issue #6; ported from apps/mobile MaruMoriSettings): connect with an
 // API key, Sync now, and see the recent Syncs. The key is write-only: a saved key
 // shows as "set" with Replace, and is never put back into a field.
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { syncOutcomeText, syncRunText, useMarumori, type StepSaveOutcome, type StepSaveRegistrar } from "@vjt/core";
 
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,9 @@ export function MaruMoriSection({ registerSave }: { registerSave?: StepSaveRegis
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [syncResult, setSyncResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [showRuns, setShowRuns] = useState(false);
+  // Removing the key unmounts the confirm buttons it was standing on; the
+  // heading takes focus instead (issue #81 review).
+  const keyHeadingRef = useRef<HTMLHeadingElement>(null);
 
   const busy = save.kind === "saving";
 
@@ -62,6 +65,7 @@ export function MaruMoriSection({ registerSave }: { registerSave?: StepSaveRegis
     setConfirmRemove(false);
     setSave({ kind: "saving" });
     const res = await maru.removeKey();
+    keyHeadingRef.current?.focus();
     setSave(res.ok ? { kind: "saved", message: "The MaruMori key was removed." } : { kind: "error", message: res.message });
   };
 
@@ -103,15 +107,20 @@ export function MaruMoriSection({ registerSave }: { registerSave?: StepSaveRegis
       </div>
 
       <div className="flex flex-col gap-4">
-        <Subheading>API key</Subheading>
+        <Subheading ref={keyHeadingRef}>API key</Subheading>
         {connected && !replacing ? (
-          <dl className="flex flex-wrap items-center gap-6">
-            <Fact label="MaruMori API key">set</Fact>
-            <div className="flex gap-2">
-              <Button type="button" variant="outline" disabled={busy} onClick={() => setReplacing(true)}>
-                Replace
-              </Button>
-            </div>
+          // The Replace button lives inside the dd: a bare <div> child of <dl> is not
+          // valid markup (issue #81 review), and "Saved key" keeps the label from
+          // repeating the heading above.
+          <dl className="flex flex-col gap-2">
+            <Fact label="Saved key">
+              <span className="flex flex-wrap items-center gap-3">
+                set
+                <Button type="button" variant="outline" disabled={busy} onClick={() => setReplacing(true)}>
+                  Replace
+                </Button>
+              </span>
+            </Fact>
           </dl>
         ) : null}
         {keyInputVisible ? (

@@ -87,7 +87,7 @@ describe("Settings › AI Providers", () => {
     fireEvent.click(screen.getByRole("button", { name: "Edit llama3" }));
 
     expect(await screen.findByText("Edit llama3", { selector: "h2" })).toBeTruthy();
-    expect(screen.getByText("set")).toBeTruthy();
+    expect(screen.getByText("API key set")).toBeTruthy();
     expect(screen.queryByLabelText("New API key")).toBeNull();
 
     fireEvent.click(screen.getByRole("switch", { name: "Remove the saved key" }));
@@ -99,6 +99,27 @@ describe("Settings › AI Providers", () => {
       expect(patch?.body).toEqual({ name: "llama3", baseUrl: "http://localhost:11434", model: "llama3", apiKey: null });
     });
     expect(await screen.findByText("Provider saved.")).toBeTruthy();
+  });
+
+  it("edits without a key field, keeping the stored key", async () => {
+    // Ported from apps/mobile AiProvidersSettings.test.tsx: the key field is
+    // write-only, so an edit that never touches it must not mention apiKey.
+    const state = renderAi({ providers: [{ ...LLAMA, hasApiKey: true }] });
+    await screen.findByRole("button", { name: "Edit llama3" });
+    fireEvent.click(screen.getByRole("button", { name: "Edit llama3" }));
+
+    expect(await screen.findByText("API key set")).toBeTruthy();
+    expect(screen.queryByLabelText("New API key")).toBeNull();
+    fireEvent.change(screen.getByLabelText("Model"), { target: { value: "llama3:latest" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => {
+      const patch = state.writes.find((w) => w.method === "PATCH" && w.path === "/ai-providers/p-1");
+      expect(patch?.body).toEqual({ name: "llama3", baseUrl: "http://localhost:11434", model: "llama3:latest" });
+    });
+    const patchBody = JSON.stringify(state.writes.find((w) => w.method === "PATCH")?.body ?? "");
+    expect(patchBody).not.toContain("apiKey");
+    expect(await screen.findByText("llama3:latest at http://localhost:11434 · Key saved")).toBeTruthy();
   });
 
   it("tests a connection and shows the answer with its latency", async () => {

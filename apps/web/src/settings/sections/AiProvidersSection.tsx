@@ -18,10 +18,9 @@ import {
   type StepSaveOutcome,
   type StepSaveRegistrar,
 } from "@vjt/core";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import { ErrorState, SkeletonLines } from "../../components/states.tsx";
 import { useSession } from "../../session/session.tsx";
 import { Note, SaveStatus, SectionBody, Subheading, SwitchField, TextField, type SaveState } from "../parts.tsx";
@@ -38,6 +37,8 @@ export function AiProvidersSection({ registerSave }: { registerSave?: StepSaveRe
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
   const [results, setResults] = useState<Record<string, AiProviderTestResult>>({});
+  // Deleting a provider unmounts its confirm buttons: focus goes here (issue #81 review).
+  const providersRef = useRef<HTMLHeadingElement>(null);
 
   const busy = save.kind === "saving";
 
@@ -70,9 +71,18 @@ export function AiProvidersSection({ registerSave }: { registerSave?: StepSaveRe
   };
 
   // Re-registered after every render, so the wizard submits what the Learner last typed.
+  // A touched-but-incomplete form is refused here too: the wizard's Finish must not
+  // bypass canSubmitProviderForm (issue #81 review).
   useEffect(() => {
     if (!registerSave) return;
-    registerSave(async () => (isProviderFormTouched(form) ? submit() : "nothing"));
+    registerSave(async () => {
+      if (!isProviderFormTouched(form)) return "nothing" as const;
+      if (!canSubmitProviderForm(form)) {
+        setSave({ kind: "error", message: "Fill in the name, base URL and model, or leave the step." });
+        return "blocked" as const;
+      }
+      return submit();
+    });
     return () => registerSave(null);
   });
 
@@ -106,6 +116,9 @@ export function AiProvidersSection({ registerSave }: { registerSave?: StepSaveRe
     setConfirmingDelete(null);
     setSave({ kind: "saving" });
     const res = await settings.remove(provider.id);
+    // The confirm buttons unmount either way; the Providers heading takes the
+    // focus the clicked button leaves behind (issue #81 review).
+    providersRef.current?.focus();
     if (res.ok) {
       setSave({ kind: "saved", message: "Provider deleted." });
       if (editing?.id === provider.id) stopEdit();
@@ -123,7 +136,7 @@ export function AiProvidersSection({ registerSave }: { registerSave?: StepSaveRe
   return (
     <SectionBody>
       <div className="flex flex-col gap-3">
-        <Subheading>Providers</Subheading>
+        <Subheading ref={providersRef}>Providers</Subheading>
         {providers.length === 0 ? (
           <p className="text-body text-muted-foreground">No providers yet. Add an OpenAI-compatible endpoint below.</p>
         ) : (
@@ -181,6 +194,7 @@ export function AiProvidersSection({ registerSave }: { registerSave?: StepSaveRe
         <TextField
           id="ai-name"
           label="Name"
+          required
           value={form.name}
           disabled={busy}
           onChange={(event) => setForm({ ...form, name: event.target.value })}
@@ -205,10 +219,11 @@ export function AiProvidersSection({ registerSave }: { registerSave?: StepSaveRe
         />
 
         <div className="flex flex-col gap-3">
-          <Label>API key</Label>
+          {/* No bare "API key" label: the field is "New API key", and the saved-key
+              line names itself (issue #81 review). */}
           {keyIsSet && !replacingKey && !form.removeKey ? (
             <div className="flex flex-wrap items-center gap-3">
-              <span className="text-body text-foreground">set</span>
+              <span className="text-body text-foreground">API key set</span>
               <Button type="button" variant="outline" disabled={busy} onClick={() => setReplacingKey(true)}>
                 Replace
               </Button>

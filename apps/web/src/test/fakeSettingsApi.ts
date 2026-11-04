@@ -44,7 +44,7 @@ export interface FakeState {
   marumori: { connected: boolean; counts?: { kanji: number; vocabulary: number; vocabularyLinkRate: number; lastSyncAt: string } };
   providers: FakeProvider[];
   tasks: { task: "story" | "grammar_content"; providerId: string | null }[];
-  health: { status: "ok" | "degraded"; database: "ok" | "unreachable" };
+  health: { status: "ok" | "degraded"; database: "connected" | "unreachable" };
   focusSet: { items: { kind: "kanji" | "vocabulary" | "grammar"; itemRef: string; srsLevel: number | null }[]; size: number; fail?: boolean };
   /** Headwords for GET /dictionary/entries/{entSeq}, keyed by entSeq. */
   entries: Record<string, { headword: string; reading: string }>;
@@ -74,7 +74,7 @@ export function freshState(overrides: Partial<FakeState> = {}): FakeState {
       { task: "story", providerId: null },
       { task: "grammar_content", providerId: null },
     ],
-    health: { status: "ok", database: "ok" },
+    health: { status: "ok", database: "connected" },
     focusSet: { items: [], size: 12 },
     entries: {},
     grammarPoints: {},

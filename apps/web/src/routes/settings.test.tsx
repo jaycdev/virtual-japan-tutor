@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { STORY_TEXT_SIZE_STORAGE_KEY } from "../storysize/store.ts";
 import { THEME_STORAGE_KEY } from "../theme/store.ts";
 import { currentLocation, renderAppAt } from "../test/renderApp.tsx";
+import { fakeSettingsApi, freshState } from "../test/fakeSettingsApi.ts";
 import { stubViewport } from "../test/viewport.ts";
 
 afterEach(() => stubViewport(false));
@@ -54,6 +55,35 @@ describe("Settings layout", () => {
     expect(await screen.findByText("That settings section doesn’t exist.")).toBeTruthy();
     await userEvent.setup().click(screen.getByRole("link", { name: "Back to Settings" }));
     await waitFor(() => expect(currentLocation(router)).toBe("/settings"));
+  });
+
+  it("opens the deep links other pages send the Learner to", async () => {
+    // FocusGlance's "See all" sends /settings/focus; the Practice summary sends
+    // /settings/lists; the Settings hub's MaruMori card sends /settings/marumori.
+    renderAppAt("/settings/focus", { api: fakeSettingsApi(freshState()) });
+    expect(await screen.findByRole("heading", { name: "Today’s Focus Set" })).toBeTruthy();
+
+    renderAppAt("/settings/marumori", { api: fakeSettingsApi(freshState()) });
+    expect(await screen.findByRole("heading", { name: "MaruMori" })).toBeTruthy();
+  });
+
+  it("focuses the section heading when the rail switches sections, and Tab reaches the content", async () => {
+    // The rail sits inside <main>; focusing <main> after a switch would put the
+    // next Tab back at the top of the rail. The page marks its heading instead.
+    stubViewport(true);
+    const user = userEvent.setup();
+    renderAppAt("/settings/appearance", { api: fakeSettingsApi(freshState()) });
+    await screen.findByRole("heading", { name: "Appearance" });
+
+    const listsLink = within(screen.getByRole("navigation", { name: "Settings sections" }))
+      .getByRole("link", { name: /Item Lists/ });
+    listsLink.focus();
+    await user.keyboard("{Enter}");
+
+    const heading = await screen.findByRole("heading", { name: "Item Lists" });
+    await waitFor(() => expect(document.activeElement).toBe(heading));
+    await user.tab();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: /Saved/ }));
   });
 });
 
