@@ -180,7 +180,7 @@ describe("Today's Story pinned above the Library (issue #48)", () => {
     renderStories(client);
 
     const today = await screen.findByTestId("today-card");
-    expect(within(today).getByTestId("today-story-title").textContent).toBe("がっこうの 一日");
+    expect((await within(today).findByTestId("today-story-title")).textContent).toBe("がっこうの 一日");
     expect(within(today).getByTestId("today-story-meta").textContent).toContain("Diary · Automatic · Nov 1, 2026");
     expect(within(today).getByRole("button", { name: "Open today's story" })).toBeTruthy();
 
@@ -210,7 +210,7 @@ describe("Today's Story pinned above the Library (issue #48)", () => {
   it("explains when there is no Automatic Story yet, and Check again asks again", async () => {
     const { client, requests } = fakeApi({ noToday: true });
     const today = within(await renderStories(client).findByTestId("today-card"));
-    expect(today.getByText(/No Story for today yet/)).toBeTruthy();
+    expect(await today.findByText(/No Story for today yet/)).toBeTruthy();
 
     fireEvent.click(today.getByTestId("today-check-again"));
     await waitFor(() =>
