@@ -116,7 +116,7 @@ describe('mobile AiProvidersSettings', () => {
       baseUrl: 'http://localhost',
       fetch: fetchMock as unknown as typeof fetch,
     });
-    return render(<AiProvidersSettings client={client} onBack={() => {}} />);
+    return render(<AiProvidersSettings client={client} />);
   }
 
   async function waitForLoaded() {

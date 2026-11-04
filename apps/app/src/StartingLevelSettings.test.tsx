@@ -47,7 +47,7 @@ describe('mobile StartingLevelSettings', () => {
       baseUrl: 'http://localhost',
       fetch: fetchMock as unknown as typeof fetch,
     });
-    return render(<StartingLevelSettings client={client} onBack={() => {}} />);
+    return render(<StartingLevelSettings client={client} />);
   }
 
   it('shows the stored level with all five choices', async () => {

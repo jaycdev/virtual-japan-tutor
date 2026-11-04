@@ -66,7 +66,7 @@ describe('mobile MaruMoriSettings', () => {
       baseUrl: 'http://localhost',
       fetch: fetchMock as unknown as typeof fetch,
     });
-    return render(<MaruMoriSettings client={client} onBack={() => {}} />);
+    return render(<MaruMoriSettings client={client} />);
   }
 
   async function waitForDisconnected() {
@@ -100,6 +100,30 @@ describe('mobile MaruMoriSettings', () => {
     expect(put?.body).toEqual({ apiKey: 'mkmk_2024_key' });
     expect((screen.getByLabelText('MaruMori API key') as HTMLInputElement).value).toBe('');
     expect(screen.getByText(/Known kanji: 2419/)).toBeTruthy();
+  });
+
+  it('keeps a typed key masked and never echoes it back as text', async () => {
+    renderApp();
+    await waitForDisconnected();
+
+    const input = screen.getByLabelText('MaruMori API key') as HTMLInputElement;
+    expect(input.type).toBe('password');
+
+    fireEvent.change(input, { target: { value: 'mkmk_2024_secret_token_value' } });
+
+    // The value lives inside the masked control but is never rendered as
+    // readable text anywhere on screen.
+    expect(input.value).toBe('mkmk_2024_secret_token_value');
+    expect(input.type).toBe('password');
+    expect(document.body.textContent).not.toContain('mkmk_2024_secret_token_value');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save key' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Connected to MaruMori')).toBeTruthy();
+    });
+    const put = writes.find((w) => w.method === 'PUT');
+    expect(put?.body).toEqual({ apiKey: 'mkmk_2024_secret_token_value' });
   });
 
   it('shows a validation error inline and keeps the draft', async () => {
