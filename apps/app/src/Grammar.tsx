@@ -115,16 +115,25 @@ export function Grammar({
                 onOpenPoint={onOpenPoint}
               />
             ))}
-            <Pager
-              offset={state.page.offset}
-              shown={state.page.items.length}
-              limit={state.page.limit}
-              total={state.page.total}
-              onOffset={(next) => {
-                browsePosition = { term: filter.query, offset: next };
-                setOffset(next);
-              }}
-            />
+            {state.page.total > state.page.limit ? (
+              <Pager
+                offset={state.page.offset}
+                shown={state.page.items.length}
+                limit={state.page.limit}
+                total={state.page.total}
+                onOffset={(next) => {
+                  browsePosition = { term: filter.query, offset: next };
+                  setOffset(next);
+                }}
+              />
+            ) : (
+              // #49 review S5: with one page of results the Previous/Next pair
+              // is dead UI — two disabled buttons and a "1–1 of 1" caption.
+              // One quiet count line says everything the pager had to say.
+              <Text className="text-caption text-muted-foreground">
+                {`${state.page.total} Grammar Point${state.page.total === 1 ? "" : "s"}`}
+              </Text>
+            )}
           </>
         )}
       </View>

@@ -200,6 +200,15 @@ describe("Grammar catalogue", () => {
     await waitFor(() => expect(screen.getByText("〜わけだ")).toBeTruthy());
   });
 
+  it("shows a plain count instead of a dead pager when the results fit one page (#49 review S5)", async () => {
+    renderGrammar();
+    await waitFor(() => expect(screen.getByText("〜てしまう")).toBeTruthy());
+
+    expect(screen.getByText("5 Grammar Points")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Previous" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Next" })).toBeNull();
+  });
+
   it("pages Previous and Next over the whole catalogue", async () => {
     fixture.points = MANY_POINTS;
     renderGrammar();
