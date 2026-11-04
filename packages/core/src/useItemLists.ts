@@ -8,6 +8,7 @@ import type {
 } from "@vjt/api-client";
 import { useCallback, useEffect, useState } from "react";
 import type { ActionResult } from "./useAiSettings.ts";
+import { FAILED, UNREACHABLE } from "./errors.ts";
 
 /**
  * The Learner's Item Lists (issue #12) — named groups of Words, Kanji and
@@ -57,8 +58,6 @@ export interface ItemListsView {
   reload(): void;
 }
 
-const UNREACHABLE = "Cannot reach the server";
-const FAILED = "Request failed";
 
 function message(error: { message?: string } | undefined, status: number): string {
   return error?.message ?? `${FAILED} (${status})`;

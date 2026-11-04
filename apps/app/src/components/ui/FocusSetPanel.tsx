@@ -155,7 +155,7 @@ export function FocusSetPanel({
   client: ApiClient;
   /** Lookup for one chip's label; defaults to the two catalogue endpoints. */
   resolveLabel?: FocusLabelResolver;
-  /** Empty-state action: take the Learner to their word lists. */
+  /** Empty-state action: take the Learner to their Item Lists. */
   onOpenWordLists?: () => void;
   /** Cap on the chips shown before "See all" (the Today glance passes 8). */
   max?: number;
@@ -214,7 +214,7 @@ export function FocusSetPanel({
         <EmptyState
           compact
           message="No items in your Focus Set yet"
-          actionLabel="Open your word lists"
+          actionLabel="Open your Item Lists"
           onAction={onOpenWordLists}
         />
       ) : (

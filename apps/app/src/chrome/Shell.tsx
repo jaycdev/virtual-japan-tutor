@@ -15,6 +15,9 @@ export const SIDEBAR_BREAKPOINT = 1024;
  * Below this viewport width, reader overlays (the Lookup menu, the word
  * windows, the Save to… sheet) take their bottom-sheet form; at/above it the
  * Lookup menu anchors to its token and the windows are centred cards.
+ * This is the overlays' own split (ui-plan.md §4.1), deliberately separate
+ * from SIDEBAR_BREAKPOINT above: between 640 and 1024 the chrome is a tab
+ * bar while the overlays are already the wide form.
  */
 export const OVERLAY_BREAKPOINT = 640;
 

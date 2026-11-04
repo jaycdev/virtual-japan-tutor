@@ -1,4 +1,4 @@
-import type { ApiClient, MaruMoriSyncRun, Story, StoryGenerationProgress } from "@vjt/api-client";
+import type { ApiClient, MaruMoriSyncRun, Story } from "@vjt/api-client";
 import {
   useFocusSet,
   useMarumori,
@@ -17,6 +17,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } fr
 import { Card } from "./components/ui/Card.tsx";
 import { createFocusLabelResolver, FocusSetPanel, FOCUS_CHIPS_MAX } from "./components/ui/FocusSetPanel.tsx";
 import { EmptyState, InlineError, ProgressBar, SkeletonBar } from "./state/states.tsx";
+import { stageLabel } from "./stories-parts.tsx";
 
 /**
  * Today (issue #47), the signed-in landing screen on Android and web. Plan 4.4
@@ -282,7 +283,7 @@ function TodayStoryCard({
         accessibilityRole="header"
         className="text-title-sm font-semibold text-foreground"
       >
-        Today’s story
+        Today’s Story
       </Text>
 
       {today.status === "loading" ? (
@@ -309,14 +310,14 @@ function TodayStoryCard({
               the story on screen is not the newest thing happening. */}
           {generation.status === "running" ? (
             <Text className="text-caption text-muted-foreground">
-              A newer story is being written.
+              A newer Story is being written.
             </Text>
           ) : null}
         </View>
       ) : running ? (
         <View className="gap-3">
           <Text className="text-body text-muted-foreground">
-            A new story is on its way — you can leave and come back.
+            A new Story is on its way — you can leave and come back.
           </Text>
           <ProgressBar
             value={(running.percent ?? 0) / 100}
@@ -324,21 +325,21 @@ function TodayStoryCard({
           />
         </View>
       ) : today.status === "error" ? (
-        <InlineError message={`Cannot load today’s story: ${today.message}`} onRetry={onReloadToday} />
+        <InlineError message={`Cannot load today’s Story: ${today.message}`} onRetry={onReloadToday} />
       ) : generation.status === "failed" ? (
         // The run failed rather than the read: the line is the server's own,
         // and the way to try again is the Generate box on Stories.
         <View className="gap-3">
           <Text className="text-body text-destructive">
-            {generation.progress?.message ?? "Couldn’t write a story for you."}
+            {generation.progress?.message ?? "Couldn’t write a Story for you."}
           </Text>
-          <ActionButton label="Generate a story" onPress={onOpenStories} />
+          <ActionButton label="Generate a Story" onPress={onOpenStories} />
         </View>
       ) : (
         <EmptyState
           compact
-          message="No story yet — the tutor writes one for you every day."
-          actionLabel="Generate a story"
+          message="No Story yet — the tutor writes one for you every day."
+          actionLabel="Generate a Story"
           onAction={onOpenStories}
         />
       )}
@@ -355,24 +356,6 @@ function storyMeta(story: Story): string {
   const length = `${sentences} sentence${sentences === 1 ? "" : "s"}`;
   const genre = story.genre?.trim();
   return genre ? `${genre} · ${length}` : length;
-}
-
-/** The generation stage in Learner's words, same as the Stories screen's. */
-function stageLabel(progress: StoryGenerationProgress): string {
-  switch (progress.stage) {
-    case "preparing":
-      return "Preparing…";
-    case "writing":
-      return progress.attempt != null && progress.maxAttempts != null
-        ? `Writing… attempt ${progress.attempt} of ${progress.maxAttempts}`
-        : "Writing…";
-    case "checking":
-      return "Checking it fits your vocabulary…";
-    case "saving":
-      return "Saving…";
-    default:
-      return "Writing…";
-  }
 }
 
 /**
@@ -427,7 +410,7 @@ function PracticeCard({
           {items?.length === 0 ? (
             <Text className="text-caption text-muted-foreground">
               A session is built from your Focus Set, so there is nothing to practise until a Sync
-              or a story adds items.
+              or a Story adds items.
             </Text>
           ) : null}
         </View>

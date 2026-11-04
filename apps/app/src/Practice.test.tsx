@@ -276,7 +276,7 @@ describe('mobile Practice', () => {
     expect(screen.queryByText('The next exercise is on its way…')).toBeNull();
     // One action, and it goes somewhere useful.
     expect(screen.getAllByRole('button')).toHaveLength(1);
-    fireEvent.click(screen.getByRole('button', { name: 'Open your word lists' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open your Item Lists' }));
     expect(openLists).toHaveBeenCalledTimes(1);
   });
 

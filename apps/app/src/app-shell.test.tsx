@@ -154,6 +154,11 @@ function stubApi(options: { startingLevelConfigured?: boolean; failStartingLevel
       return jsonResponse(200, { size: 0, items: [] });
     if (path === "/grammar/points")
       return jsonResponse(200, { items: [], total: 0, limit: 50, offset: 0 });
+    // A point detail read (the fresh-deep-link Back test): a 404, so the
+    // screen sits in its error state — the catch-all below would pass shapeless
+    // JSON to useGrammarPoint and the ready body would crash on it.
+    if (path.startsWith("/grammar/points/") && request.method === "GET")
+      return jsonResponse(404, { error: { code: "not_found", message: "No such grammar point." } });
     if (path === "/marumori")
       return jsonResponse(200, { connected: false, lastSync: null, lastFailure: null, counts: null });
     if (path === "/health") return jsonResponse(200, { status: "ok", database: "connected" });
@@ -223,7 +228,7 @@ it("signed-in narrow viewport shows the tab bar with five destinations", async (
   await user.click(screen.getByRole("tab", { name: "Today" }));
   // Today is a real screen now (#47): its Story card section stands in for the
   // old placeholder as the "we are back on Today" signal.
-  await screen.findByText("Today’s story");
+  await screen.findByText("Today’s Story");
 });
 
 it("opening a settings section pushes it and Back returns to the hub", async () => {
@@ -300,6 +305,19 @@ it("Back from a fresh-tab settings deep link returns to the hub", async () => {
   await screen.findByLabelText("Lookup hold before a Weak Signal (ms, 0–10000)");
   await user.click(await screen.findByRole("button", { name: "Back" }));
   await screen.findByText("Starting Level"); // the hub, not a dead end
+});
+
+it("Back from a fresh-tab grammar deep link returns to the catalogue", async () => {
+  stubApi();
+  renderApp("/grammar/12"); // deep link in a fresh tab: nothing to pop
+  setViewport(NARROW);
+  const user = await userEvent.setup();
+
+  // The Back row renders in every state (loading, error, ready), so its press
+  // is what the test drives; where the point itself lands is the screen's own
+  // (GrammarPoint.test.tsx).
+  await user.click(await screen.findByRole("button", { name: "Back to grammar" }));
+  await screen.findByLabelText("Search grammar"); // the catalogue, not a dead end
 });
 
 it("browser Back from a tab does not walk through the visited tabs", async () => {
@@ -450,7 +468,7 @@ describe("first-run setup (#50)", () => {
     await screen.findByRole("button", { name: "Save level" });
 
     await fireEvent.click(screen.getByRole("button", { name: "Skip setup" }));
-    await screen.findByText("Today’s story");
+    await screen.findByText("Today’s Story");
 
     // Sign out through the hub's account card…
     await fireEvent.click(screen.getByRole("tab", { name: "Settings" }));
@@ -479,7 +497,7 @@ describe("first-run setup (#50)", () => {
     await screen.findByRole("button", { name: "Add provider" }); // step 3: AI Providers
 
     await fireEvent.click(screen.getByRole("button", { name: "Finish" }));
-    await screen.findByText("Today’s story");
+    await screen.findByText("Today’s Story");
 
     // Skipping never half-saves: the wizard issued no PUT/POST the whole way
     // (the sign-in POST itself is not the wizard's).
@@ -544,7 +562,7 @@ describe("first-run setup (#50)", () => {
     renderApp("/");
     await signedIn();
 
-    await screen.findByText("Today’s story");
+    await screen.findByText("Today’s Story");
     expect(screen.queryByText(/Step \d of 3/)).toBeNull();
   });
 
@@ -558,7 +576,7 @@ describe("first-run setup (#50)", () => {
     renderApp("/");
 
     await logIn();
-    await screen.findByText("Today’s story");
+    await screen.findByText("Today’s Story");
     expect(screen.queryByText(/Step \d of 3/)).toBeNull();
     // The flag is marked, so the next launch does not even ask the server.
     expect(localStorage.getItem("vjt.setupSeen")).toBe("yes");
@@ -570,7 +588,7 @@ describe("first-run setup (#50)", () => {
     stubApi();
     renderApp("/setup");
 
-    await screen.findByText("Today’s story");
+    await screen.findByText("Today’s Story");
     expect(screen.queryByText(/Step \d of 3/)).toBeNull();
   });
 });

@@ -128,7 +128,7 @@ Built in this order. Each one counts as done only when it passes section 6.
   - Furigana: stacked above the word in `furigana`, shown according to the Furigana Threshold.
   - Selected sentence: `selected-sentence` background.
 - **Lookup:** hover on web, press and hold on Android. The word's context menu (Dictionary Entry, Save to Item List) uses RNR Popover or Dropdown Menu next to the word.
-- **Dictionary Entry, grammar details and Save to Item List** open as bottom sheets on narrow screens and centred dialogs on wide screens.
+- **Dictionary Entry, grammar details and Save to Item List** open as bottom sheets below the overlay breakpoint (640 px viewport) and centred dialogs at or above it. That breakpoint is the overlay rule's own — deliberately separate from the chrome's sidebar breakpoint (1024 px, section 3): at 700 px the chrome is still a tab bar but the overlays are centred dialogs, and below 640 px sheets pin the actions to the thumb.
 - **Pitch graph** is SVG wrapped with `withUniwind`, so it uses `pitch` in both themes.
 - **Footer:** Mark as Read (and undo), Practice this Story, and next or previous Story, with icons.
 

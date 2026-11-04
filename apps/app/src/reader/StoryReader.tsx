@@ -102,7 +102,7 @@ export function StoryReader({
   const reading = useReadingSettings(client);
   const lists = useItemLists(client);
   const lookup = useEntryLookup(client);
-  const { fontSizePx, columnWidthPx } = useStoryTextSize();
+  const { fontSizePx, lineHeightPx, columnWidthPx } = useStoryTextSize();
 
   const [selected, setSelected] = useState<number | null>(null);
   // The token whose sentence background is lit (issue #45: the mark belongs to
@@ -684,6 +684,7 @@ export function StoryReader({
               webHandlers={webHandlers}
               onSelect={selectSentence}
               fontSizePx={fontSizePx}
+              lineHeightPx={lineHeightPx}
             />
           ))}
         </View>

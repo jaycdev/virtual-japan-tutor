@@ -8,6 +8,7 @@ import type {
   ApiClient,
 } from "@vjt/api-client";
 import { useCallback, useEffect, useState } from "react";
+import { FAILED, UNREACHABLE } from "./errors.ts";
 
 export type AiSettingsState =
   | { status: "loading" }
@@ -33,8 +34,6 @@ export interface AiSettings {
   assign(task: AiTask, providerId: string | null): Promise<ActionResult>;
 }
 
-const UNREACHABLE = "Cannot reach the server";
-const FAILED = "Request failed";
 
 /** Runs a request; maps a thrown network error and an API error body to an ActionResult. */
 async function act(

@@ -28,6 +28,19 @@ export const STORY_TEXT_SIZE_PX: Record<StoryTextSize, number> = {
 };
 
 /**
+ * Line height as a multiple of the text size, per size. This MUST mirror the
+ * unitless `--line-height` values under the web story styles in global.css
+ * (a test asserts it); JS needs the numbers because every Story token carries
+ * its own Text style, and a style sheet cannot reach those spans on Android.
+ */
+export const STORY_TEXT_LINE_HEIGHT_RATIO: Record<StoryTextSize, number> = {
+  S: 2.0,
+  M: 2.1,
+  L: 2.2,
+  XL: 2.2,
+};
+
+/**
  * The text column: ~40 characters of Story text wide (plan 4.1). A CJK
  * character's advance is one em, so 40 characters is 40 × the story font
  * size.
