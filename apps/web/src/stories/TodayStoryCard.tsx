@@ -52,7 +52,18 @@ export function TodayStoryCard({
   const justWritten = readyStoryId !== null && (phase.kind !== "story" || phase.story.id !== readyStoryId);
 
   return (
-    <Card className="gap-4 px-6" aria-labelledby="today-story-heading" data-testid="today-story-card">
+    <Card
+      className={
+        phase.kind === "story"
+          // The Story phase wears a stretched link from its Open button across
+          // the whole card (plan 4.5): the card is the way in, so it lights up
+          // like one. Other phases have no link to stretch.
+          ? "relative gap-4 px-6 transition-shadow hover:shadow-md focus-within:shadow-md"
+          : "gap-4 px-6"
+      }
+      aria-labelledby="today-story-heading"
+      data-testid="today-story-card"
+    >
       <h2 id="today-story-heading" className="text-title-sm font-semibold text-foreground">
         Today’s Story
       </h2>
@@ -142,12 +153,18 @@ function StoryBody({
       {unreadFrom ? <p className="text-small text-muted-foreground">{`Still unread from ${unreadFrom}.`}</p> : null}
       <div className="flex flex-wrap gap-2">
         <Button asChild>
-          <Link to={`/stories/${story.id}`} aria-label={`${story.readAt ? "Read again" : "Open"} today’s Story: ${story.title}`}>
+          <Link
+            to={`/stories/${story.id}`}
+            aria-label={`${story.readAt ? "Read again" : "Open"} today’s Story: ${story.title}`}
+            className="after:absolute after:inset-0 after:content-['']"
+          >
             {story.readAt ? "Read again" : "Open"}
           </Link>
         </Button>
         {justWritten ? (
-          <Button asChild variant="outline">
+          // Above the stretched Open link, so this deliberate choice keeps its
+          // own click: it goes to the just-written Story, not the one on card.
+          <Button asChild variant="outline" className="relative z-10">
             <Link to={`/stories/${justWritten}`} onClick={onOpenReady}>
               Ready, read now
             </Link>

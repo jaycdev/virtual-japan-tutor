@@ -11,9 +11,8 @@
 import type { ApiClient, GenerateStoryRequest, Story } from "@vjt/api-client";
 import {
   genreLabel,
-  originLabel,
   stageLabel,
-  storyDate,
+  storyCardMeta,
   useStory,
   useStoryGeneration,
 } from "@vjt/core";
@@ -40,6 +39,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { EmptyState, ErrorState, ProgressStatus, SkeletonLines } from "@/components/states";
 import { cn } from "@/lib/utils";
+import { useMinuteClock } from "@/lib/useMinuteClock";
 import { TodayStoryCard } from "./TodayStoryCard.tsx";
 
 /** Page size of the Library's pager; the server's default is the same. */
@@ -57,6 +57,10 @@ export interface StoriesProps {
 export function Stories({ client, generationPollMs }: StoriesProps) {
   const view = useStory(client, LIBRARY_PAGE_SIZE);
   const gen = useStoryGeneration(client, generationPollMs ?? 1500);
+  // The shared minute clock (the same hook Today uses): the pinned card's
+  // "still unread" hint needs the time, and a fresh `new Date()` per render
+  // would age the card against a clock that never ticks.
+  const now = useMinuteClock();
 
   const [params, setParams] = useSearchParams();
   // The filters live in the URL (?filter=unread&genre=travel): a reload, a Back
@@ -125,13 +129,23 @@ export function Stories({ client, generationPollMs }: StoriesProps) {
   );
 
   function setFilter(key: "filter" | "genre", value: string | null) {
-    // The live URL, not this render's snapshot: two filter changes fired
-    // quicker than React commits must compose, never resurrect a filter the
-    // previous change removed (a stale `params` closure used to do exactly that).
-    const next = new URLSearchParams(window.location.search);
-    if (value === null) next.delete(key);
-    else next.set(key, value);
-    setParams(next, { replace: true });
+    // Composed from the router's own latest params (the updater's prev), never
+    // from window.location — the router owns the URL, and a memory router's
+    // never reaches the window's. Two changes fired quicker than React commits
+    // still stack instead of resurrecting a filter the previous one removed.
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (value === null) next.delete(key);
+        else next.set(key, value);
+        return next;
+      },
+      { replace: true },
+    );
+  }
+
+  function clearFilters() {
+    setParams(new URLSearchParams(), { replace: true });
   }
 
   function chooseLayout(next: "grid" | "list") {
@@ -180,7 +194,7 @@ export function Stories({ client, generationPollMs }: StoriesProps) {
           variant="stories"
           today={view.today}
           generation={gen.generation}
-          now={new Date()}
+          now={now}
           timezone={view.settings.status === "ready" ? view.settings.settings.timezone : undefined}
           onReloadToday={view.reloadToday}
           onGenerate={openGenerate}
@@ -305,7 +319,7 @@ export function Stories({ client, generationPollMs }: StoriesProps) {
                 action={
                   <Button
                     variant="outline"
-                    onClick={() => setParams(new URLSearchParams(), { replace: true })}
+                    onClick={clearFilters}
                   >
                     Clear filters
                   </Button>
@@ -437,9 +451,12 @@ function FilterChip({ label, active, onPress }: { label: string; active: boolean
 }
 
 /**
- * A Library card: the Story Title links to the Reader, the English translation
- * stays hidden until revealed, and the menu carries Mark Read and Delete. The
- * rating lives in the Reader — the Library does not ask again.
+ * A Library card: the whole card is the way in — the Story Title carries a
+ * stretched link (`after:inset-0` over the card) to the Reader, and the two
+ * other controls sit above it (`relative z-10`) so they keep their own clicks.
+ * The English translation stays hidden until revealed, and the menu carries
+ * Mark Read and Delete. The rating lives in the Reader — the Library does not
+ * ask again.
  */
 function StoryCard({
   story,
@@ -457,12 +474,15 @@ function StoryCard({
   onAskDelete: () => void;
 }) {
   return (
-    <Card className="gap-2 px-6" data-testid={`story-card-${story.id}`}>
+    <Card
+      className="relative gap-2 px-6 transition-shadow hover:shadow-md focus-within:shadow-md"
+      data-testid={`story-card-${story.id}`}
+    >
       <div className="flex items-center gap-2">
         <Link
           to={`/stories/${story.id}`}
           aria-label={`Open story: ${story.title}`}
-          className="min-w-0 flex-1 text-body font-semibold text-foreground hover:underline"
+          className="min-w-0 flex-1 text-body font-semibold text-foreground hover:underline after:absolute after:inset-0 after:content-['']"
           data-testid={`story-open-${story.id}`}
         >
           {story.title}
@@ -479,6 +499,7 @@ function StoryCard({
               variant="ghost"
               size="icon"
               aria-label={`Actions for ${story.title}`}
+              className="relative z-10"
               data-testid={`story-menu-${story.id}`}
             >
               <MoreHorizontal />
@@ -503,7 +524,7 @@ function StoryCard({
           onClick={onToggleReveal}
           aria-expanded={revealed}
           aria-label={revealed ? undefined : "Show title translation"}
-          className="self-start text-left text-small text-muted-foreground hover:underline"
+          className="relative z-10 self-start text-left text-small text-muted-foreground hover:underline"
           data-testid={`title-translation-${story.id}`}
         >
           {revealed ? story.titleEn : "Title translation hidden — click to show"}
@@ -511,7 +532,7 @@ function StoryCard({
       ) : null}
 
       <p className="text-caption text-muted-foreground" data-testid={`story-meta-${story.id}`}>
-        {`${genreLabel(story.genre) || "Story"} · ${originLabel(story)} · ${storyDate(story.createdAt)}`}
+        {storyCardMeta(story)}
       </p>
     </Card>
   );
