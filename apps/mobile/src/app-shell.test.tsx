@@ -21,7 +21,7 @@ import * as grammarDetailRoute from "../app/grammar/[id].tsx";
 import * as settingsHomeRoute from "../app/settings/index.tsx";
 import * as settingsSectionRoute from "../app/settings/[section].tsx";
 import * as setupRoute from "../app/setup.tsx";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -483,6 +483,10 @@ describe("first-run setup (#50)", () => {
     await screen.findByText("The step could not be saved. Fix it and try again, or skip this step.");
     expect(screen.queryByLabelText("MaruMori API key")).toBeNull();
 
+    // The note and the re-enabled Skip commit together, but react-native-web
+    // reads a Pressable's disabled flag in a passive effect: a press that lands
+    // before that flush is dropped. Let the pending effects run first.
+    await act(async () => {});
     await fireEvent.click(screen.getByRole("button", { name: "Skip this step" }));
     await screen.findByLabelText("MaruMori API key"); // step 2
     expect(
