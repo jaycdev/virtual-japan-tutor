@@ -6,7 +6,7 @@ import type { Plugin, ProxyOptions } from "vite";
 import { defineConfig } from "vitest/config";
 
 import { themeBootstrapScript } from "./src/theme/bootstrap.ts";
-import { retryReporter } from "./src/test/retryReporter.ts";
+import { repoPath, retryReporter } from "./src/test/retryReporter.ts";
 import { API_PREFIXES } from "./api-prefixes.ts";
 
 // The Go server mounts the API at the root of its origin (api/openapi.yaml) and
@@ -76,6 +76,12 @@ export default defineConfig({
     // must outlast that or a timed-out wait cannot report its own error.
     testTimeout: 15_000,
     retry: process.env.CI ? 1 : 0,
-    reporters: process.env.CI ? ["default", "github-actions", retryReporter()] : ["default"],
+    reporters: process.env.CI
+      ? [
+          "default",
+          ["github-actions", { onWritePath: repoPath }],
+          retryReporter({ githubActions: process.env.GITHUB_ACTIONS === "true" }),
+        ]
+      : ["default"],
   },
 });
