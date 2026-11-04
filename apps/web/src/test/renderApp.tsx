@@ -21,11 +21,13 @@ export interface HarnessOptions {
   signedIn?: boolean;
   /** Replaces the GET /starting-level answer, e.g. to hold it open or fail it. */
   startingLevelReply?: () => Promise<Response>;
+  /** Replaces the whole fetch stub (see test/fakeApi.ts for the stateful one). */
+  fetchOverride?: (req: Request) => Promise<Response>;
 }
 
 export function renderAppAt(path: string, options: HarnessOptions = {}) {
   const router = createMemoryRouter(appRoutes, { initialEntries: [path] });
-  const { startingLevelConfigured = true, signedIn = true, startingLevelReply } = options;
+  const { startingLevelConfigured = true, signedIn = true, startingLevelReply, fetchOverride } = options;
 
   function Harness({ children }: { children: ReactNode }) {
     const [state, setState] = useState<AuthState>(signedIn ? { status: "signedIn", user: TEST_USER } : { status: "signedOut" });
@@ -37,6 +39,7 @@ export function renderAppAt(path: string, options: HarnessOptions = {}) {
         createApiClient({
           baseUrl: "http://api.test",
           fetch: async (req) => {
+            if (fetchOverride) return fetchOverride(req);
             if (new URL(req.url).pathname === "/starting-level") {
               if (startingLevelReply) return startingLevelReply();
               return Response.json({ id: TEST_USER.id, username: TEST_USER.username, configured: startingLevelConfigured });
