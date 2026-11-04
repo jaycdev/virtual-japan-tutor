@@ -17,6 +17,37 @@ if (!window.matchMedia) {
     }) as unknown as MediaQueryList;
 }
 
+// jsdom has no PointerEvent, and Radix menus read pointer properties off the
+// event user-event dispatches; without this the trigger never opens.
+if (!("PointerEvent" in globalThis)) {
+  class PointerEventPolyfill extends MouseEvent {
+    readonly pointerId: number;
+    readonly pointerType: string;
+    readonly isPrimary: boolean;
+    constructor(type: string, params: PointerEventInit = {}) {
+      super(type, params);
+      this.pointerId = params.pointerId ?? 0;
+      this.pointerType = params.pointerType ?? "mouse";
+      this.isPrimary = params.isPrimary ?? true;
+    }
+  }
+  (globalThis as Record<string, unknown>).PointerEvent = PointerEventPolyfill;
+}
+
+// Radix dialogs guard their focus handling with pointer capture, which jsdom
+// does not implement.
+type PointerCapturePatch = {
+  hasPointerCapture: (pointerId: number) => boolean;
+  setPointerCapture: (pointerId: number) => void;
+  releasePointerCapture: (pointerId: number) => void;
+};
+if (!("hasPointerCapture" in HTMLElement.prototype)) {
+  const proto = HTMLElement.prototype as unknown as PointerCapturePatch;
+  proto.hasPointerCapture = () => false;
+  proto.setPointerCapture = () => undefined;
+  proto.releasePointerCapture = () => undefined;
+}
+
 afterEach(() => {
   cleanup();
   window.localStorage.clear();
