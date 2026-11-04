@@ -1,4 +1,4 @@
-import type { ApiClient, MaruMoriSyncRun, Story, StoryGenerationProgress } from "@vjt/api-client";
+import type { ApiClient, MaruMoriSyncRun, Story } from "@vjt/api-client";
 import {
   useFocusSet,
   useMarumori,
@@ -17,6 +17,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } fr
 import { Card } from "./components/ui/Card.tsx";
 import { createFocusLabelResolver, FocusSetPanel, FOCUS_CHIPS_MAX } from "./components/ui/FocusSetPanel.tsx";
 import { EmptyState, InlineError, ProgressBar, SkeletonBar } from "./state/states.tsx";
+import { stageLabel } from "./stories-parts.tsx";
 
 /**
  * Today (issue #47), the signed-in landing screen on Android and web. Plan 4.4
@@ -355,24 +356,6 @@ function storyMeta(story: Story): string {
   const length = `${sentences} sentence${sentences === 1 ? "" : "s"}`;
   const genre = story.genre?.trim();
   return genre ? `${genre} · ${length}` : length;
-}
-
-/** The generation stage in Learner's words, same as the Stories screen's. */
-function stageLabel(progress: StoryGenerationProgress): string {
-  switch (progress.stage) {
-    case "preparing":
-      return "Preparing…";
-    case "writing":
-      return progress.attempt != null && progress.maxAttempts != null
-        ? `Writing… attempt ${progress.attempt} of ${progress.maxAttempts}`
-        : "Writing…";
-    case "checking":
-      return "Checking it fits your vocabulary…";
-    case "saving":
-      return "Saving…";
-    default:
-      return "Writing…";
-  }
 }
 
 /**
