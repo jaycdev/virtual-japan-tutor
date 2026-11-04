@@ -43,7 +43,10 @@ export function Card({
   return (
     <View
       testID={testID}
-      className={`${cardFillClass(fill, Platform.OS)}rounded-lg ${
+      // overflow-hidden: unpadded content (Row lists) paints edge-to-edge,
+      // and its separators and press highlights would square off the card's
+      // rounded corners without it (review S6).
+      className={`overflow-hidden ${cardFillClass(fill, Platform.OS)}rounded-lg ${
         pinned ? "border-2 border-primary" : "border border-border"
       } bg-card ${padded ? "gap-3 p-5" : ""}`}
     >
