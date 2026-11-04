@@ -386,6 +386,37 @@ describe("Practice (web)", () => {
     expect(startCalls()[1]?.body).toEqual({ seed });
   });
 
+  it("keeps each cloze blank whole in a nowrap span, apart from the text around it", async () => {
+    fetchMock.mockImplementationOnce(async () =>
+      jsonResponse({
+        id: "practice-1",
+        state: "active",
+        targetSize: 1,
+        skipped: 0,
+        exercises: [
+          {
+            id: "ex-1",
+            kind: "grammar",
+            instruction: "Which pattern completes the sentence?",
+            prompt: "みせに いきました ＿＿＿。",
+            options: [{ id: "o-a", text: "ました" }],
+            answered: false,
+          },
+        ],
+      }),
+    );
+    renderPractice();
+    startSession();
+
+    await waitFor(() => {
+      expect(screen.getByText("Exercise 1 of 1")).toBeTruthy();
+    });
+    // The span holds the blank alone; displayPrompt's word joiners sit in the text around it.
+    const blank = document.querySelector("p[lang='ja'] span.whitespace-nowrap");
+    expect(blank?.textContent).toBe("＿＿＿");
+    expect(document.querySelector("p[lang='ja']")?.textContent).toBe("みせに いきました ⁠＿＿＿⁠。");
+  });
+
   it("cloze blanks stay glued to their punctuation at narrow widths", () => {
     const joined = displayPrompt("みせに いきました ＿＿＿。");
     // U+2060 WORD JOINER forbids a line break where it sits.

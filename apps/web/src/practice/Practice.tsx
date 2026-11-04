@@ -127,6 +127,30 @@ export function Practice({ client, seed }: { client: ApiClient; seed?: number })
   );
 }
 
+/**
+ * A prompt with its cloze blank kept whole. displayPrompt glues the blank to
+ * its punctuation; here each run of blanks is also a nowrap span, because a
+ * browser may otherwise break a long blank between two underscores at narrow
+ * widths (checked at 390 px).
+ */
+function PromptText({ text }: { text: string }) {
+  return (
+    <>
+      {displayPrompt(text)
+        .split(/([＿_]+)/u)
+        .map((part, index) =>
+          index % 2 === 1 ? (
+            <span key={index} className="whitespace-nowrap">
+              {part}
+            </span>
+          ) : (
+            part
+          ),
+        )}
+    </>
+  );
+}
+
 /** The one card shape shared by the start, exercise, empty and results states (ui-plan 4.3). */
 function PracticeCard({ children }: { children: ReactNode }) {
   return <div className="flex flex-col gap-5 rounded-lg border border-border bg-card p-6">{children}</div>;
@@ -291,7 +315,7 @@ function ActivePractice({
             {current.instruction}
           </p>
           <p lang="ja" className="font-serif text-display text-foreground">
-            {displayPrompt(current.prompt)}
+            <PromptText text={current.prompt} />
           </p>
         </div>
         <div role="group" aria-labelledby={promptId} onKeyDown={onGroupKeyDown} className="flex flex-col gap-2">
@@ -459,7 +483,6 @@ function PracticeResults({ practice, onAgain }: { practice: PracticeView; onAgai
             {again.map(({ item, index }) => {
               const exercise = practice.exercises[index];
               const answer = exercise?.options.find((opt) => opt.id === exercise.feedback?.correctOptionId)?.text;
-              const prompt = exercise ? displayPrompt(exercise.prompt) : item.itemRef;
               return (
                 <li
                   key={`${item.itemKind}:${item.itemRef}:${index}`}
@@ -470,9 +493,9 @@ function PracticeResults({ practice, onAgain }: { practice: PracticeView; onAgai
                     <Link
                       to={destinationForItem(item.itemKind, item.itemRef)}
                       lang="ja"
-                      className="font-serif text-body text-foreground underline-offset-4 hover:underline"
+                      className="font-serif text-body text-primary underline-offset-4 hover:underline"
                     >
-                      {prompt}
+                      <PromptText text={exercise ? exercise.prompt : item.itemRef} />
                     </Link>
                     {answer ? <span className="text-small text-foreground">Correct answer: {answer}</span> : null}
                   </div>
