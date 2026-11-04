@@ -2,6 +2,7 @@
    run `pnpm generate` and commit the result. */
 
 :root {
+  color-scheme: light;
   --radius: 10px;
   --background: #faf7f0;
   --foreground: #1f1d1a;
@@ -34,6 +35,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   --background: #15161a;
   --foreground: #e9e5db;
   --card: #1d1e23;

@@ -59,11 +59,14 @@ export function renderWebCss(): string {
   return [
     HEADER,
     `:root {`,
+    // Native form controls and scrollbars follow the theme.
+    `  color-scheme: light;`,
     `  --radius: ${px(radius.base)};`,
     ...rootVars,
     `}`,
     ``,
     `.dark {`,
+    `  color-scheme: dark;`,
     ...darkVars,
     `}`,
     ``,
