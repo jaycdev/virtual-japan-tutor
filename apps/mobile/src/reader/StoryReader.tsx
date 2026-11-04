@@ -1,5 +1,21 @@
 import type { ApiClient, Story, WeakSignalRequest } from "@vjt/api-client";
-import { type StoryView, useReadingSettings, useItemLists } from "@vjt/core";
+import {
+  coveringSpan,
+  holdSignal,
+  IDLE,
+  menuOptions,
+  optionAt,
+  reduceHold,
+  saveableItem,
+  useEntryLookup,
+  useItemLists,
+  useReadingSettings,
+  type MeasurableNode,
+  type MenuOptionId,
+  type Rect,
+  type StoryView,
+  type TokenRef,
+} from "@vjt/core";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import {
   Pressable,
@@ -20,20 +36,6 @@ import { StoryParagraph, type TokenHandlers } from "./StoryText.tsx";
 import { SaveToSheet } from "./SaveToSheet.tsx";
 import { TokenMenu } from "./TokenMenu.tsx";
 import { DictionaryWindow, GrammarWindow } from "./Windows.tsx";
-import { useEntryLookup } from "./useEntryLookup.ts";
-import {
-  coveringSpan,
-  holdSignal,
-  IDLE,
-  menuOptions,
-  optionAt,
-  reduceHold,
-  saveableItem,
-  type MeasurableNode,
-  type MenuOptionId,
-  type Rect,
-  type TokenRef,
-} from "./holdMenu.ts";
 
 /**
  * The mobile Story reader (issues #14, #45): a fixed Reading Panel sits above

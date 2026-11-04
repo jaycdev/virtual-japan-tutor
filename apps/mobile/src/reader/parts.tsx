@@ -1,4 +1,4 @@
-import type { DictionaryEntry, StoryRating } from "@vjt/api-client";
+import type { StoryRating } from "@vjt/api-client";
 import type { StoryView } from "@vjt/core";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
@@ -19,21 +19,6 @@ export function JlptBadge({ level }: { level: string }) {
       </Text>
     </View>
   );
-}
-
-export function countGlosses(entry: DictionaryEntry): number {
-  return entry.senses.reduce((n, s) => n + s.glosses.length, 0);
-}
-
-export function firstGlosses(entry: DictionaryEntry, n: number): string[] {
-  const out: string[] = [];
-  for (const sense of entry.senses) {
-    for (const g of sense.glosses) {
-      out.push(g);
-      if (out.length >= n) return out;
-    }
-  }
-  return out;
 }
 
 /**

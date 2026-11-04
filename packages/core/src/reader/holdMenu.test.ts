@@ -111,13 +111,13 @@ describe("menuOptions", () => {
       ["save", false],
       ["saveTo", false],
     ]);
-    expect(opts[0].hint).toBe("This word did not match a dictionary entry");
+    expect(opts[0]?.hint).toBe("This word did not match a dictionary entry");
   });
 
   it("a Grammar Span token adds Grammar and keeps Dictionary reachable", () => {
     const opts = menuOptions(token(), span(), true, "Saved");
     expect(opts.map((o) => o.id)).toEqual(["dictionary", "grammar", "save", "saveTo"]);
-    expect(opts[1].hint).toBe("～てしまう: completing something; unfortunately doing");
+    expect(opts[1]?.hint).toBe("～てしまう: completing something; unfortunately doing");
   });
 
   it("a span token without its own entry can still save the Grammar Point", () => {
