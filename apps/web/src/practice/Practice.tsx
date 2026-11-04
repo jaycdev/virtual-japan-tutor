@@ -122,6 +122,13 @@ export function Practice({ client, seed }: { client: ApiClient; seed?: number })
   return (
     <section className="mx-auto flex w-full max-w-[35rem] flex-col gap-6">
       <h1 className="text-title font-semibold text-foreground">Practice</h1>
+      {/* Always mounted: only its text changes, so a screen reader announces
+          the starting status without a new live region appearing. No role=status
+          here: the app shell's route announcer is one, and the two must not be
+          confused (aria-live alone is enough for a persistent region). */}
+      <p data-testid="practice-status" aria-live="polite" className="text-body text-muted-foreground">
+        {practice.state === "starting" ? "Building your session from the Focus Set…" : ""}
+      </p>
       {body}
     </section>
   );
@@ -156,6 +163,13 @@ function PracticeCard({ children }: { children: ReactNode }) {
   return <div className="flex flex-col gap-5 rounded-lg border border-border bg-card p-6">{children}</div>;
 }
 
+/**
+ * Where the Practice key shortcuts must not reach: text entry, and any dialog,
+ * sheet or menu (the Radix dialog behind the 390 px nav sheet, for one).
+ */
+const BLOCKED_KEY_TARGETS =
+  'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]';
+
 function StartPractice({ error, onStart }: { error: string | null; onStart: () => void }) {
   return (
     <PracticeCard>
@@ -171,12 +185,14 @@ function StartPractice({ error, onStart }: { error: string | null; onStart: () =
   );
 }
 
+/**
+ * The starting skeleton. Its status line lives in the screen's persistent live
+ * region (see Practice), so the text changes in a region that is already in the
+ * DOM rather than a new role=status appearing with its text.
+ */
 function StartingCard() {
   return (
     <PracticeCard>
-      <p role="status" className="text-body text-muted-foreground">
-        Building your session from the Focus Set…
-      </p>
       <SkeletonLines lines={4} />
     </PracticeCard>
   );
@@ -229,23 +245,41 @@ function ActivePractice({
 
   const continueRef = useRef<HTMLButtonElement | null>(null);
   const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
-  const promptId = useId();
+  const instructionId = useId();
+  const promptTextId = useId();
 
   // Focus follows the session: the first option of each new Exercise, and
-  // Continue once an answer lands. Keyed on the exercise and the settled flag,
-  // so a retry or a refresh does not move focus.
+  // Continue once an answer lands. Continue moves on the next frame, after the
+  // verdict text is in the live region, so a screen reader does not drop the
+  // status when focus moves. Keyed on the exercise and the settled flag, so a
+  // retry or a refresh does not move focus.
   useEffect(() => {
-    if (settled) continueRef.current?.focus();
-    else optionRefs.current[0]?.focus();
+    if (!settled) {
+      optionRefs.current[0]?.focus();
+      return;
+    }
+    const frame = requestAnimationFrame(() => continueRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
   }, [current.id, settled]);
 
-  // Enter and the number keys belong to the screen while an exercise is up.
+  // Enter and the number keys are the screen's while an exercise is up, but
+  // only from places they belong to: the body, an option, or Continue. A key
+  // typed in an input, in a dialog or sheet, or on a link or button elsewhere
+  // on the page (the sidebar, Log out, an ErrorState Retry) is left alone.
   // Enter submits the focused option, or continues once settled. The handler
-  // calls preventDefault, so the keypress cannot also click the button that
-  // focus has just moved to (which would skip past the feedback).
+  // calls preventDefault, so the keypress cannot also click the button focus has
+  // just moved to (which would skip past the feedback).
   useEffect(() => {
+    function keyIsOurs(target: EventTarget | null): boolean {
+      if (target === document.body) return true;
+      if (!(target instanceof Element)) return false;
+      if (target.closest(BLOCKED_KEY_TARGETS)) return false;
+      return target === continueRef.current || optionRefs.current.includes(target as HTMLButtonElement);
+    }
+
     function onKeyDown(event: KeyboardEvent) {
       if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
+      if (!keyIsOurs(event.target)) return;
       if (settled) {
         if (event.key === "Enter" && !event.repeat && !practice.pending) {
           event.preventDefault();
@@ -255,7 +289,7 @@ function ActivePractice({
       }
       if (practice.pending) return;
       if (event.key === "Enter") {
-        const focused = optionRefs.current.findIndex((el) => el !== null && el === document.activeElement);
+        const focused = optionRefs.current.findIndex((el) => el !== null && el === event.target);
         const option = focused >= 0 ? current.options[focused] : undefined;
         if (option) {
           event.preventDefault();
@@ -311,14 +345,21 @@ function ActivePractice({
       </div>
       <PracticeCard>
         <div className="flex flex-col gap-3">
-          <p id={promptId} className="text-small text-muted-foreground">
+          <p id={instructionId} className="text-small text-muted-foreground">
             {current.instruction}
           </p>
-          <p lang="ja" className="font-serif text-display text-foreground">
+          <p id={promptTextId} lang="ja" className="font-serif text-display text-foreground">
             <PromptText text={current.prompt} />
           </p>
         </div>
-        <div role="group" aria-labelledby={promptId} onKeyDown={onGroupKeyDown} className="flex flex-col gap-2">
+        {/* Named by the instruction and the prompt together, so the group reads
+            "What does this mean? 学", not just the instruction. */}
+        <div
+          role="group"
+          aria-labelledby={`${instructionId} ${promptTextId}`}
+          onKeyDown={onGroupKeyDown}
+          className="flex flex-col gap-2"
+        >
           {current.options.map((opt, index) => {
             const chosen = feedback !== null && feedback.chosenOptionId === opt.id;
             const right = feedback !== null && feedback.correctOptionId === opt.id;
@@ -342,15 +383,20 @@ function ActivePractice({
         {/* The verdict is a polite live region that is always mounted, so the
             screen reader announces it as the text arrives. The min height keeps
             the card from jumping when feedback appears. */}
-        <div role="status" aria-live="polite" className="flex min-h-6 flex-wrap items-center gap-2">
+        <div role="status" aria-live="polite" className="flex min-h-6 flex-nowrap items-start gap-2">
           {feedback ? (
             <>
               {feedback.correct ? (
-                <CircleCheck aria-hidden="true" className="size-5 shrink-0 text-success" />
+                <CircleCheck aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-success" />
               ) : (
-                <CircleX aria-hidden="true" className="size-5 shrink-0 text-destructive" />
+                <CircleX aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-destructive" />
               )}
-              <span className={cn("text-body font-semibold", feedback.correct ? "text-success" : "text-destructive")}>
+              <span
+                className={cn(
+                  "min-w-0 text-body font-semibold",
+                  feedback.correct ? "text-success" : "text-destructive",
+                )}
+              >
                 {feedbackLine(current, feedback)}
               </span>
             </>
@@ -441,13 +487,19 @@ function humanKind(kind: string): string {
 }
 
 /**
- * Where a session item's detail lives. Grammar Points have a route (/grammar/:id,
- * ui-plan 4.6). Words and Kanji have no route of their own on web yet: their
- * Dictionary Entry opens from the Story reader's Lookup, so the closest page that
- * shows them is the Item Lists.
+ * Where a session item's detail lives, and the label that says so. THIS IS THE
+ * ONE PLACE TO CHANGE when a web Dictionary Entry route exists: return it for
+ * vocabulary and kanji here (today a Dictionary Entry opens from the reader's
+ * Lookup, so there is no route to link to, and the Item Lists is the closest page).
+ *
+ * Grammar: /grammar/:grammarId takes the Grammar Catalogue point id as text (PR
+ * #86's parsePointId), and the grammar itemRef is that same id, so it links as is.
  */
-export function destinationForItem(itemKind: string, itemRef: string): string {
-  return itemKind === "grammar" ? `/grammar/${encodeURIComponent(itemRef)}` : "/settings/lists";
+export function destinationForItem(itemKind: string, itemRef: string): { to: string; label: string } {
+  if (itemKind === "grammar") {
+    return { to: `/grammar/${encodeURIComponent(itemRef)}`, label: "Open Grammar Point" };
+  }
+  return { to: "/settings/lists", label: "Open Item Lists" };
 }
 
 function PracticeResults({ practice, onAgain }: { practice: PracticeView; onAgain: () => void }) {
@@ -483,6 +535,7 @@ function PracticeResults({ practice, onAgain }: { practice: PracticeView; onAgai
             {again.map(({ item, index }) => {
               const exercise = practice.exercises[index];
               const answer = exercise?.options.find((opt) => opt.id === exercise.feedback?.correctOptionId)?.text;
+              const destination = destinationForItem(item.itemKind, item.itemRef);
               return (
                 <li
                   key={`${item.itemKind}:${item.itemRef}:${index}`}
@@ -490,14 +543,18 @@ function PracticeResults({ practice, onAgain }: { practice: PracticeView; onAgai
                 >
                   <CircleX aria-hidden="true" className="mt-1 size-5 shrink-0 text-destructive" />
                   <div className="flex min-w-0 flex-1 flex-col gap-1">
-                    <Link
-                      to={destinationForItem(item.itemKind, item.itemRef)}
-                      lang="ja"
-                      className="font-serif text-body text-primary underline-offset-4 hover:underline"
-                    >
-                      <PromptText text={exercise ? exercise.prompt : item.itemRef} />
-                    </Link>
                     {answer ? <span className="text-small text-foreground">Correct answer: {answer}</span> : null}
+                    {/* The link's name is its prompt and where it goes ("…。 Open
+                        Grammar Point"), so a screen reader hears the destination. */}
+                    <Link
+                      to={destination.to}
+                      className="group flex min-w-0 flex-col gap-0.5 text-primary underline-offset-4"
+                    >
+                      <span lang="ja" className="font-serif text-body group-hover:underline">
+                        <PromptText text={exercise ? exercise.prompt : item.itemRef} />
+                      </span>
+                      <span className="text-small group-hover:underline">{destination.label}</span>
+                    </Link>
                   </div>
                   <span className="text-caption text-muted-foreground">{humanKind(item.itemKind)}</span>
                 </li>

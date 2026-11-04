@@ -191,7 +191,8 @@ describe("Practice (web)", () => {
     expect(screen.getByRole("button", { name: "learn" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Continue" })).toBeTruthy();
     // The verdict announces itself politely...
-    expect(screen.getByRole("status").getAttribute("aria-live")).toBe("polite");
+    const verdict = screen.getByText("Correct").closest('[role="status"]');
+    expect(verdict?.getAttribute("aria-live")).toBe("polite");
     // ...and focus lands on Continue, the control that advances the session.
     await waitFor(() => {
       expect(document.activeElement?.textContent).toBe("Continue");
@@ -615,7 +616,10 @@ describe("Practice (web)", () => {
     });
     const grammarLink = screen.getByRole("link", { name: /これは本/ });
     expect(grammarLink.getAttribute("href")).toBe("/grammar/gp-42");
-    expect(destinationForItem("vocabulary", "1234")).toBe("/settings/lists");
+    // The name says where the link goes, not just what it is.
+    expect(grammarLink.textContent).toMatch(/Open Grammar Point$/);
+    expect(destinationForItem("grammar", "gp-42")).toEqual({ to: "/grammar/gp-42", label: "Open Grammar Point" });
+    expect(destinationForItem("vocabulary", "1234")).toEqual({ to: "/settings/lists", label: "Open Item Lists" });
   });
 
   describe("keyboard", () => {
@@ -636,8 +640,10 @@ describe("Practice (web)", () => {
       await waitFor(() => {
         expect(screen.getByText("Correct")).toBeTruthy();
       });
-      // The answer moves focus to Continue, and Enter advances.
-      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Continue" }));
+      // The answer moves focus to Continue (on the next frame), and Enter advances.
+      await waitFor(() => {
+        expect(document.activeElement).toBe(screen.getByRole("button", { name: "Continue" }));
+      });
       await user.keyboard("{Enter}");
 
       await waitFor(() => {
@@ -662,7 +668,7 @@ describe("Practice (web)", () => {
       // The miss link is the first thing Tab reaches, then Practice again:
       // both work from the keyboard.
       await user.tab();
-      expect(document.activeElement).toBe(screen.getByRole("link", { name: "水" }));
+      expect(document.activeElement).toBe(screen.getByRole("link", { name: /^水/ }));
       await user.tab();
       expect(document.activeElement).toBe(screen.getByRole("button", { name: "Practice again" }));
       await user.keyboard("{Enter}");
