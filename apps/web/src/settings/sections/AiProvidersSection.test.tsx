@@ -53,6 +53,7 @@ describe("Settings › AI Providers", () => {
 
     // The Story generation row's own llama3 chip: the first of the two.
     const storyChip = screen.getAllByRole("button", { name: "llama3" })[0];
+    if (!storyChip) throw new Error("Expected a llama3 chip on the Story generation row.");
     fireEvent.click(storyChip);
     await waitFor(() => {
       const put = state.writes.find((w) => w.method === "PUT" && w.path === "/ai-tasks/story");
