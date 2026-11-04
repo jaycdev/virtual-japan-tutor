@@ -1,6 +1,6 @@
 import type { Story, StoryGenerationProgress, StorySuggestions } from "@vjt/api-client";
 import type { StoryGenerationState, StoryLibraryState } from "@vjt/core";
-import { genreLabel, originLabel, stageLabel, storyDate } from "@vjt/core";
+import { genreLabel, originLabel, stageLabel, storyCardMeta, storyDate } from "@vjt/core";
 import * as DialogPrimitives from "@rn-primitives/dialog";
 import * as DropdownMenuPrimitive from "@rn-primitives/dropdown-menu";
 import { useState, type ReactNode } from "react";
@@ -152,7 +152,7 @@ export function StoryCard({
       ) : null}
 
       <Text className="text-caption text-muted-foreground" testID={`story-meta-${story.id}`}>
-        {`${genreLabel(story.genre) || "Story"} · ${originLabel(story)} · ${storyDate(story.createdAt)}`}
+        {storyCardMeta(story)}
       </Text>
     </Card>
   );
