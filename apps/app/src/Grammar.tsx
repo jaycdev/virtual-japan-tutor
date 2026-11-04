@@ -31,6 +31,20 @@ const SEARCH_DEBOUNCE_MS = 300;
 /** The plan's ordering of level sections, easiest first. */
 const LEVEL_ORDER: GrammarJLPTLevel[] = ["N5", "N4", "N3", "N2", "N1"];
 
+/**
+ * Where the Learner had got to in the catalogue — the search term and the page
+ * — kept for the app session so opening a point and pressing Back lands on the
+ * same view, not page one of an unfiltered list (#49 review S3). Module state,
+ * not component state: the route remounts this screen on Back, and a screen
+ * that stays mounted keeps its own state anyway.
+ */
+let browsePosition: { term: string; offset: number } = { term: "", offset: 0 };
+
+/** Test seam: each test starts from a fresh catalogue view. */
+export function resetGrammarBrowsePosition(): void {
+  browsePosition = { term: "", offset: 0 };
+}
+
 export function Grammar({
   client,
   onOpenPoint,
@@ -39,15 +53,20 @@ export function Grammar({
   /** Opens a point's detail (the router route passes router.push to /grammar/:id). */
   onOpenPoint: (pointId: number) => void;
 }) {
-  const grammar = useGrammar(client);
+  const grammar = useGrammar(client, { query: browsePosition.term, offset: browsePosition.offset });
   const { state, filter, setQuery, setOffset, reload } = grammar;
 
   // The typed term is local until the debounce fires: useGrammar re-reads the
   // page the instant query changes, and one request per keystroke is noise.
-  const [term, setTerm] = useState("");
+  // The settled term and page also go into browsePosition, so a return from a
+  // detail screen reopens the same view (S3).
+  const [term, setTerm] = useState(browsePosition.term);
   useEffect(() => {
     if (term === filter.query) return;
-    const timer = setTimeout(() => setQuery(term), SEARCH_DEBOUNCE_MS);
+    const timer = setTimeout(() => {
+      browsePosition = { term, offset: 0 };
+      setQuery(term);
+    }, SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [term, filter.query, setQuery]);
 
@@ -101,7 +120,10 @@ export function Grammar({
               shown={state.page.items.length}
               limit={state.page.limit}
               total={state.page.total}
-              onOffset={setOffset}
+              onOffset={(next) => {
+                browsePosition = { term: filter.query, offset: next };
+                setOffset(next);
+              }}
             />
           </>
         )}

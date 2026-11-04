@@ -2,7 +2,7 @@ import { createApiClient, type ApiClient } from "@vjt/api-client";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { Grammar, groupByLevel } from "./Grammar.tsx";
+import { Grammar, groupByLevel, resetGrammarBrowsePosition } from "./Grammar.tsx";
 
 /**
  * Grammar Catalogue (#49). The stub is the catalogue API the way the Go server
@@ -82,6 +82,7 @@ describe("Grammar catalogue", () => {
     fixture = { status: 200, points: POINTS, holdList: false };
     gets = [];
     releaseList = null;
+    resetGrammarBrowsePosition();
     fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const request = new Request(input);
       const url = new URL(request.url);
@@ -237,6 +238,46 @@ describe("Grammar catalogue", () => {
     expect(
       screen.getByRole("button", { name: "〜たい, want to do something, Observed, 0 examples" }),
     ).toBeTruthy();
+  });
+
+  it("keeps the search term across a detail visit and Back (#49 review S3)", async () => {
+    renderGrammar();
+    await waitFor(() => expect(screen.getByText("〜てしまう")).toBeTruthy());
+    fireEvent.change(screen.getByLabelText("Search grammar"), { target: { value: "conditional" } });
+    await waitFor(() => expect(screen.queryByText("〜たい")).toBeNull());
+    expect(screen.getByText("〜たら")).toBeTruthy();
+
+    // Open a point, come Back: the screen unmounts and mounts again.
+    const callsBefore = gets.length;
+    cleanup();
+    renderGrammar();
+
+    await waitFor(() =>
+      expect((screen.getByLabelText("Search grammar") as HTMLInputElement).value).toBe("conditional"),
+    );
+    // One restored read, and it carries the term — no unfiltered page one, and
+    // the debounce does not fire a second read on top of the restored filter.
+    expect(gets.slice(callsBefore).filter((c) => c.startsWith("GET /grammar/points"))).toEqual([
+      expect.stringContaining("q=conditional"),
+    ]);
+    expect(screen.getByText("〜たら")).toBeTruthy();
+  });
+
+  it("keeps the page across a detail visit and Back (#49 review S3)", async () => {
+    fixture.points = MANY_POINTS;
+    renderGrammar();
+    await waitFor(() => expect(screen.getByText("1–50 of 120")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(gets.some((c) => c.includes("offset=50"))).toBe(true));
+
+    const callsBefore = gets.length;
+    cleanup();
+    renderGrammar();
+
+    await waitFor(() => expect(screen.getByText("51–100 of 120")).toBeTruthy());
+    expect(gets.slice(callsBefore).filter((c) => c.startsWith("GET /grammar/points"))).toEqual([
+      expect.stringContaining("offset=50"),
+    ]);
   });
 });
 
