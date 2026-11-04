@@ -51,7 +51,7 @@ func newPracticeEnv(t *testing.T) *practiceEnv {
 func newPracticeEnvWith(t *testing.T, mopts func(*mastery.Options), popts func(*practice.Options)) *practiceEnv {
 	t.Helper()
 	clock := authtest.NewFakeClock()
-	authSvc := auth.NewService(authtest.NewMemStore(), auth.Options{TTL: time.Hour, Now: clock.Now})
+	authSvc := auth.NewService(authtest.NewMemStore(), auth.Options{TTL: time.Hour, Now: clock.Now, PasswordParams: authtest.FastPasswordParams})
 	alice, err := authSvc.CreateUser(context.Background(), "alice", password)
 	if err != nil {
 		t.Fatal(err)

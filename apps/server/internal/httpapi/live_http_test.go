@@ -32,7 +32,7 @@ import (
 func liveMarumoriEnv(t *testing.T, pool *pgxpool.Pool) (*marumoriEnv, *liveup.Recorder) {
 	t.Helper()
 	up := liveup.Client(t)
-	authSvc := auth.NewService(auth.NewPostgresStore(pool), auth.Options{TTL: time.Hour})
+	authSvc := auth.NewService(auth.NewPostgresStore(pool), auth.Options{TTL: time.Hour, PasswordParams: authtest.FastPasswordParams})
 	alice, err := authSvc.CreateUser(context.Background(), "alice", password)
 	if err != nil {
 		t.Fatal(err)

@@ -91,6 +91,9 @@ type Options struct {
 	MaxTracked int
 	// LockBase is the first lockout; each further failure doubles it up to LockMax.
 	LockBase, LockMax time.Duration
+	// PasswordParams is the argon2id cost for new hashes. Any zero field selects the
+	// production default for that field; tests set cheaper values. Stored hashes keep their own costs.
+	PasswordParams PasswordParams
 }
 
 // Service implements login, session authentication and user creation.
@@ -127,6 +130,16 @@ func NewService(store Store, opts Options) *Service {
 	}
 	if opts.LockMax <= 0 {
 		opts.LockMax = DefaultLockMax
+	}
+	// Per field, so a partly filled value can never reach argon2 with a zero (it panics).
+	if opts.PasswordParams.MemoryKiB == 0 {
+		opts.PasswordParams.MemoryKiB = defaultPasswordParams.MemoryKiB
+	}
+	if opts.PasswordParams.Time == 0 {
+		opts.PasswordParams.Time = defaultPasswordParams.Time
+	}
+	if opts.PasswordParams.Threads == 0 {
+		opts.PasswordParams.Threads = defaultPasswordParams.Threads
 	}
 	return &Service{store: store, opts: opts, failures: map[string]*failureState{}}
 }
@@ -209,7 +222,7 @@ func (s *Service) CreateUser(ctx context.Context, username, password string) (Us
 	if err := validateCredentials(username, password); err != nil {
 		return User{}, err
 	}
-	hash, err := HashPassword(password)
+	hash, err := hashPassword(password, s.opts.PasswordParams)
 	if err != nil {
 		return User{}, err
 	}
@@ -222,7 +235,7 @@ func (s *Service) Bootstrap(ctx context.Context, username, password string) (boo
 	if err := validateCredentials(username, password); err != nil {
 		return false, err
 	}
-	hash, err := HashPassword(password)
+	hash, err := hashPassword(password, s.opts.PasswordParams)
 	if err != nil {
 		return false, err
 	}
@@ -258,7 +271,7 @@ func (s *Service) dummy() string {
 	s.dummyOnce.Do(func() {
 		var junk [16]byte
 		_, _ = rand.Read(junk[:])
-		s.dummyHash, _ = HashPassword(base64.RawStdEncoding.EncodeToString(junk[:]))
+		s.dummyHash, _ = hashPassword(base64.RawStdEncoding.EncodeToString(junk[:]), s.opts.PasswordParams)
 	})
 	return s.dummyHash
 }

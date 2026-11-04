@@ -53,7 +53,7 @@ func newAI(t *testing.T) *aiprovider.Service {
 func newEnv(t *testing.T, db httpapi.Pinger) env {
 	t.Helper()
 	clock := authtest.NewFakeClock()
-	svc := auth.NewService(authtest.NewMemStore(), auth.Options{TTL: time.Hour, Now: clock.Now})
+	svc := auth.NewService(authtest.NewMemStore(), auth.Options{TTL: time.Hour, Now: clock.Now, PasswordParams: authtest.FastPasswordParams})
 	for _, name := range []string{"alice", "bob"} {
 		if _, err := svc.CreateUser(context.Background(), name, password); err != nil {
 			t.Fatal(err)

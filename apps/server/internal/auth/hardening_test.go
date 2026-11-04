@@ -13,8 +13,14 @@ import (
 
 func fixtureWith(t *testing.T, opts auth.Options) (*auth.Service, *authtest.FakeClock) {
 	t.Helper()
+	return fixtureWithParams(t, opts, authtest.FastPasswordParams)
+}
+
+// fixtureWithParams takes the zero PasswordParams for production argon2id cost.
+func fixtureWithParams(t *testing.T, opts auth.Options, params auth.PasswordParams) (*auth.Service, *authtest.FakeClock) {
+	t.Helper()
 	clock := authtest.NewFakeClock()
-	opts.TTL, opts.Now = sessionTTL, clock.Now
+	opts.TTL, opts.Now, opts.PasswordParams = sessionTTL, clock.Now, params
 	svc := auth.NewService(authtest.NewMemStore(), opts)
 	if _, err := svc.CreateUser(context.Background(), "Alice", goodPassword); err != nil {
 		t.Fatal(err)
@@ -130,7 +136,7 @@ func TestAFloodOfFreshUsernamesDoesNotGrowMemoryOrFreeARealLockout(t *testing.T)
 // Neither path may spend a password hash on an over-length password: the unknown-user
 // path used to run the dummy hash while the known-user path returned early.
 func TestOverLengthPasswordCostsNeitherPathAHash(t *testing.T) {
-	svc, clock := fixtureWith(t, auth.Options{})
+	svc, clock := fixtureWithParams(t, auth.Options{}, auth.PasswordParams{}) // production cost: timed
 	ctx := context.Background()
 	timeLogin := func(user, pass string) time.Duration {
 		clock.Advance(time.Hour) // forget earlier failures

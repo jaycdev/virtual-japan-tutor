@@ -14,7 +14,7 @@ import (
 
 func bodyCapEnv(t *testing.T, opts ...httpapi.Option) env {
 	t.Helper()
-	svc := auth.NewService(authtest.NewMemStore(), auth.Options{TTL: time.Hour})
+	svc := auth.NewService(authtest.NewMemStore(), auth.Options{TTL: time.Hour, PasswordParams: authtest.FastPasswordParams})
 	if _, err := svc.CreateUser(context.Background(), "alice", password); err != nil {
 		t.Fatal(err)
 	}

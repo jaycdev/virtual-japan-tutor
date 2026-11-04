@@ -61,7 +61,7 @@ func newMarumoriEnvWith(t *testing.T, up marumorisync.Upstream) *marumoriEnv {
 func newMarumoriEnvWithStores(t *testing.T, up marumorisync.Upstream, authStore auth.Store, syncStore marumorisync.Store) *marumoriEnv {
 	t.Helper()
 	clock := authtest.NewFakeClock()
-	authSvc := auth.NewService(authStore, auth.Options{TTL: time.Hour, Now: clock.Now})
+	authSvc := auth.NewService(authStore, auth.Options{TTL: time.Hour, Now: clock.Now, PasswordParams: authtest.FastPasswordParams})
 	alice, err := authSvc.CreateUser(context.Background(), "alice", password)
 	if err != nil {
 		t.Fatal(err)
