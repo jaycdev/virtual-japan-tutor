@@ -6,6 +6,7 @@ import type { Plugin, ProxyOptions } from "vite";
 import { defineConfig } from "vitest/config";
 
 import { themeBootstrapScript } from "./src/theme/bootstrap.ts";
+import { API_PREFIXES } from "./api-prefixes.ts";
 
 // The Go server mounts the API at the root of its origin (api/openapi.yaml) and
 // also serves this build from the same origin. In development Vite proxies those
@@ -13,26 +14,6 @@ import { themeBootstrapScript } from "./src/theme/bootstrap.ts";
 // points the proxy at another host (for example a server running on a remote
 // Docker VM); it defaults to the local dev server on :8080.
 const API_ORIGIN = process.env.VJT_API_ORIGIN ?? "http://localhost:8080";
-
-// Every top-level API path in api/openapi.yaml. Keep in sync when a route is added.
-const API_PREFIXES = [
-  "health",
-  "auth",
-  "me",
-  "grammar",
-  "ai-providers",
-  "ai-tasks",
-  "marumori",
-  "starting-level",
-  "focus-set",
-  "practice",
-  "stories",
-  "story-settings",
-  "reading-settings",
-  "item-lists",
-  "weak-signals",
-  "dictionary",
-];
 
 // A browser page load is for the app, not the API, even on a path that is also an
 // API prefix ("/stories/12" reloaded). The Go server makes the same call
