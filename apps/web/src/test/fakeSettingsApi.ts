@@ -45,6 +45,13 @@ export interface FakeState {
   providers: FakeProvider[];
   tasks: { task: "story" | "grammar_content"; providerId: string | null }[];
   health: { status: "ok" | "degraded"; database: "ok" | "unreachable" };
+  focusSet: { items: { kind: "kanji" | "vocabulary" | "grammar"; itemRef: string; srsLevel: number | null }[]; size: number; fail?: boolean };
+  /** Headwords for GET /dictionary/entries/{entSeq}, keyed by entSeq. */
+  entries: Record<string, { headword: string; reading: string }>;
+  /** Patterns for GET /grammar/points/{id}, keyed by point id. */
+  grammarPoints: Record<string, string>;
+  storySuggestions: { genres: string[]; themes: string[] };
+  grammarReview: { marumoriId: string; pattern: string | null; jlptLevel: string | null; matchedPointId: string | null }[];
   /** A write to this "METHOD path" answers 422 with the message, once. */
   failNext: Record<string, string>;
   writes: FakeWrite[];
@@ -68,6 +75,11 @@ export function freshState(overrides: Partial<FakeState> = {}): FakeState {
       { task: "grammar_content", providerId: null },
     ],
     health: { status: "ok", database: "ok" },
+    focusSet: { items: [], size: 12 },
+    entries: {},
+    grammarPoints: {},
+    storySuggestions: { genres: [], themes: [] },
+    grammarReview: [],
     failNext: {},
     writes: [],
     ...overrides,
@@ -114,7 +126,7 @@ export function fakeSettingsApi(state: FakeState) {
       }
       return json({ configured: state.level.configured, level: state.level.level });
     }
-    if (path === "/grammar/review") return json([]);
+    if (path === "/grammar/review") return json(state.grammarReview);
 
     // MaruMori
     if (path === "/marumori" && method === "GET") {
@@ -246,6 +258,24 @@ export function fakeSettingsApi(state: FakeState) {
     if (path === "/health") {
       return json(state.health, state.health.status === "ok" ? 200 : 503);
     }
+
+    // Focus Set and the label lookups the chips make
+    if (path === "/focus-set" && method === "GET") {
+      if (state.focusSet.fail) return json({ message: "focus set down" }, 500);
+      return json({ items: state.focusSet.items, size: state.focusSet.size });
+    }
+    const entryMatch = path.match(/^\/dictionary\/entries\/([^/]+)$/);
+    if (entryMatch?.[1] && method === "GET") {
+      const entry = state.entries[entryMatch[1]];
+      return entry ? json({ found: true, ...entry }) : json({ found: false });
+    }
+    const pointMatch = path.match(/^\/grammar\/points\/([^/]+)$/);
+    if (pointMatch?.[1] && method === "GET") {
+      const pattern = state.grammarPoints[pointMatch[1]];
+      return pattern ? json({ id: pointMatch[1], pattern }) : json({ message: "not found" }, 404);
+    }
+    if (path === "/stories/suggestions" && method === "GET") return json(state.storySuggestions);
+    if (path === "/stories/generation" && method === "GET") return json({ status: "idle", percent: 0 });
 
     return undefined;
   };

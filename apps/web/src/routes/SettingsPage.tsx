@@ -14,21 +14,27 @@ import { AiProvidersSection } from "../settings/sections/AiProvidersSection.tsx"
 import { AppearanceSection } from "../settings/sections/AppearanceSection.tsx";
 import { ItemListsSection } from "../settings/sections/ItemListsSection.tsx";
 import { MaruMoriSection } from "../settings/sections/MaruMoriSection.tsx";
+import { FocusSetSection } from "../settings/sections/FocusSetSection.tsx";
 import { ReadingSection } from "../settings/sections/ReadingSection.tsx";
 import { ServerSection } from "../settings/sections/ServerSection.tsx";
 import { StartingLevelSection } from "../settings/sections/StartingLevelSection.tsx";
 import { StoriesSection } from "../settings/sections/StoriesSection.tsx";
 import { useWideLayout } from "../settings/useWideLayout.ts";
 
+// Today's "See all" deep link. The full Focus Set is not one of the eight hub
+// sections (ui-plan 4.4), so this route exists without a list entry.
+const FOCUS_DEEP_LINK = { id: "focus", title: "Today’s Focus Set" } as const;
+
 export function Component() {
   const { section } = useParams();
   const wide = useWideLayout();
   const found = findSettingsSection(section);
+  const isFocus = section === FOCUS_DEEP_LINK.id;
 
   // Wide: /settings is not a page of its own, so it lands on Appearance.
   if (!section && wide) return <Navigate to="/settings/appearance" replace />;
 
-  if (section && !found) {
+  if (section && !found && !isFocus) {
     return (
       <section className="flex flex-col gap-4">
         <h1 className="text-title font-semibold text-foreground">Settings</h1>
@@ -67,9 +73,9 @@ export function Component() {
           </Button>
         </div>
         <h1 tabIndex={-1} className="text-title font-semibold text-foreground">
-          {found?.title}
+          {isFocus ? FOCUS_DEEP_LINK.title : found?.title}
         </h1>
-        <SectionContent section={section as SettingsSection} />
+        <SectionContent section={isFocus ? FOCUS_DEEP_LINK.id : (section as SettingsSection)} />
       </section>
     </div>
   );
@@ -103,7 +109,7 @@ function SectionList({ current }: { current: SettingsSection | null }) {
   );
 }
 
-function SectionContent({ section }: { section: SettingsSection }) {
+function SectionContent({ section }: { section: SettingsSection | typeof FOCUS_DEEP_LINK.id }) {
   switch (section) {
     case "appearance":
       return <AppearanceSection />;
@@ -121,5 +127,7 @@ function SectionContent({ section }: { section: SettingsSection }) {
       return <AiProvidersSection />;
     case "server":
       return <ServerSection />;
+    case "focus":
+      return <FocusSetSection />;
   }
 }
