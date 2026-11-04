@@ -4,6 +4,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Practice, displayPrompt, practiceSeedForStory } from './Practice.tsx';
 import { createApiClient } from '@vjt/api-client';
 
+import { flushPressConfig } from '../test/press-config.ts';
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -163,6 +165,7 @@ describe('mobile Practice', () => {
       expect(screen.getByText('Exercise 1 of 2')).toBeTruthy();
     });
 
+    await flushPressConfig();
     fireEvent.click(screen.getByRole('button', { name: 'learn' }));
 
     await waitFor(() => {
@@ -188,6 +191,7 @@ describe('mobile Practice', () => {
       expect(document.activeElement?.getAttribute('aria-label')).toBe('Continue');
     });
 
+    await flushPressConfig();
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
     await waitFor(() => {
@@ -204,6 +208,7 @@ describe('mobile Practice', () => {
       expect(screen.getByText('Exercise 1 of 2')).toBeTruthy();
     });
 
+    await flushPressConfig();
     fireEvent.click(screen.getByRole('button', { name: 'learn' }));
     fireEvent.click(screen.getByRole('button', { name: 'learn' }));
 
@@ -220,10 +225,12 @@ describe('mobile Practice', () => {
       expect(screen.getByText('Exercise 1 of 2')).toBeTruthy();
     });
 
+    await flushPressConfig();
     fireEvent.click(screen.getByRole('button', { name: 'learn' }));
     await waitFor(() => {
       expect(screen.getByText('Correct')).toBeTruthy();
     });
+    await flushPressConfig();
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     // water is the right answer for the second exercise, so tree is the wrong pick.
     fireEvent.click(screen.getByRole('button', { name: 'tree' }));
@@ -235,6 +242,7 @@ describe('mobile Practice', () => {
     // The session is done but the final exercise stays visible until Continue.
     expect(screen.queryByText(/Session complete/)).toBeNull();
 
+    await flushPressConfig();
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
     await waitFor(() => {
@@ -361,23 +369,28 @@ describe('mobile Practice', () => {
     await waitFor(() => {
       expect(screen.getByText('Exercise 1 of 2')).toBeTruthy();
     });
+    await flushPressConfig();
     fireEvent.click(screen.getByRole('button', { name: 'learn' }));
     await waitFor(() => {
       expect(screen.getByText('Correct')).toBeTruthy();
     });
+    await flushPressConfig();
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     await waitFor(() => {
       expect(screen.getByText('Exercise 2 of 2')).toBeTruthy();
     });
+    await flushPressConfig();
     fireEvent.click(screen.getByRole('button', { name: 'water' }));
     await waitFor(() => {
       expect(screen.getByText('Correct')).toBeTruthy();
     });
+    await flushPressConfig();
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Practice again' })).toBeTruthy();
     });
+    await flushPressConfig();
     fireEvent.click(screen.getByRole('button', { name: 'Practice again' }));
 
     await waitFor(() => {
@@ -429,6 +442,7 @@ describe('mobile Practice', () => {
     fetchMock.mockImplementationOnce(async () =>
       jsonResponse({ message: 'practice is having trouble' }, 500),
     );
+    await flushPressConfig();
     fireEvent.click(screen.getByRole('button', { name: 'learn' }));
 
     // B3: the failure lands in the active card with an explicit Retry, and the
@@ -438,6 +452,7 @@ describe('mobile Practice', () => {
     });
     expect(screen.queryByText('Correct')).toBeNull();
 
+    await flushPressConfig();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
 
     // Two answer POSTs reached the server (the one-off stub that failed did
@@ -493,6 +508,7 @@ describe('mobile Practice', () => {
     await waitFor(() => {
       expect(screen.getByText('Exercise 1 of 2')).toBeTruthy();
     });
+    await flushPressConfig();
     fireEvent.click(screen.getByRole('button', { name: 'learn' }));
 
     // Feedback from the local record, the refresh failure named beside it.
@@ -504,6 +520,7 @@ describe('mobile Practice', () => {
 
     // Continue while out of step retries the GET first — one tap, and with the
     // session back in step it advances (B3).
+    await flushPressConfig();
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     await waitFor(() => {
       expect(refreshAttempts).toBe(2);

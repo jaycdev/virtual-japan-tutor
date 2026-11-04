@@ -1,5 +1,9 @@
-import { cleanup } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
 import { afterEach } from "vitest";
+
+// Loaded CI runners can take far longer than the 1000 ms default to render a
+// screen; a wait that is already satisfied still returns immediately.
+configure({ asyncUtilTimeout: 5000 });
 
 // jsdom has no matchMedia; the theme code asks it for prefers-color-scheme.
 // Tests that need a specific answer replace it with their own stub.

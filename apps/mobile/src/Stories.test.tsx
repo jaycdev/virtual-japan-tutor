@@ -4,6 +4,7 @@ import { PortalHost } from "@rn-primitives/portal";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { flushPressConfig } from "../test/press-config.ts";
 import { Stories } from "./Stories.tsx";
 
 /**
@@ -41,6 +42,8 @@ function fakeApi(
     todayDiffers?: boolean;
     /** How POST /stories/generate answers; GET /stories/generation follows it. */
     genOutcome?: "ready" | "running" | "failed";
+    /** A "running" run stays running until the test calls finishRun(). */
+    holdRunning?: boolean;
     /** PUT/DELETE /stories/:id/read answer 500. */
     failRead?: boolean;
     /** DELETE /stories/st-1 answers 500. */
@@ -131,7 +134,7 @@ function fakeApi(
       return new Response(null, { status: 204 });
     }
     if (url.pathname === "/stories/generation" && request.method === "GET") {
-      if (generation.status === "running" && ++genPolls >= 2) {
+      if (generation.status === "running" && !opts.holdRunning && ++genPolls >= 2) {
         generation = { status: "ready", stage: "saving", attempt: 1, maxAttempts: 2, percent: 100, storyId: "st-1" };
       }
       return json(200, generation);
@@ -160,7 +163,13 @@ function fakeApi(
     return json(404, { code: "not_found", message: "not found" });
   });
   const client = createApiClient({ baseUrl: "http://127.0.0.1:8787", fetch: fetchImpl });
-  return { client, requests };
+  return {
+    client,
+    requests,
+    finishRun: () => {
+      generation = { status: "ready", stage: "saving", attempt: 1, maxAttempts: 2, percent: 100, storyId: "st-1" };
+    },
+  };
 }
 
 function renderStories(client: ApiClient, opts: { generationPollMs?: number } = {}) {
@@ -180,7 +189,7 @@ describe("Today's Story pinned above the Library (issue #48)", () => {
     renderStories(client);
 
     const today = await screen.findByTestId("today-card");
-    expect(within(today).getByTestId("today-story-title").textContent).toBe("がっこうの 一日");
+    expect((await within(today).findByTestId("today-story-title")).textContent).toBe("がっこうの 一日");
     expect(within(today).getByTestId("today-story-meta").textContent).toContain("Diary · Automatic · Nov 1, 2026");
     expect(within(today).getByRole("button", { name: "Open today's story" })).toBeTruthy();
 
@@ -210,7 +219,7 @@ describe("Today's Story pinned above the Library (issue #48)", () => {
   it("explains when there is no Automatic Story yet, and Check again asks again", async () => {
     const { client, requests } = fakeApi({ noToday: true });
     const today = within(await renderStories(client).findByTestId("today-card"));
-    expect(today.getByText(/No Story for today yet/)).toBeTruthy();
+    expect(await today.findByText(/No Story for today yet/)).toBeTruthy();
 
     fireEvent.click(today.getByTestId("today-check-again"));
     await waitFor(() =>
@@ -230,6 +239,7 @@ describe("Today's Story pinned above the Library (issue #48)", () => {
     const { onOpenStory } = renderStories(api.client);
     await screen.findByTestId("today-open");
 
+    await flushPressConfig();
     fireEvent.click(screen.getByTestId("today-generate"));
     fireEvent.click(await screen.findByTestId("generate-confirm"));
 
@@ -243,7 +253,7 @@ describe("Today's Story pinned above the Library (issue #48)", () => {
     fireEvent.click(ready);
     await waitFor(() => expect(onOpenStory).toHaveBeenCalledWith("st-1"));
     // Opening spends the offer: the card's own Open is the same Story now.
-    expect(screen.queryByTestId("today-ready")).toBeNull();
+    await waitFor(() => expect(screen.queryByTestId("today-ready")).toBeNull());
   });
 
   it("a spent ready offer does not come back on a fresh mount with the same snapshot", async () => {
@@ -251,6 +261,7 @@ describe("Today's Story pinned above the Library (issue #48)", () => {
     const first = renderStories(api.client);
     await first.findByTestId("today-open");
 
+    await flushPressConfig();
     fireEvent.click(screen.getByTestId("today-generate"));
     fireEvent.click(await screen.findByTestId("generate-confirm"));
     const ready = await screen.findByTestId("today-ready");
@@ -281,11 +292,13 @@ describe("The Library list, pager and states", () => {
     expect((await screen.findByTestId("library-page-summary")).textContent).toBe("1–2 of 3");
     expect(screen.getByTestId("pager-newer").getAttribute("aria-disabled")).toBe("true");
 
+    await flushPressConfig();
     fireEvent.click(screen.getByTestId("pager-older"));
     await screen.findByTestId("story-card-st-3");
     expect(screen.getByTestId("library-page-summary").textContent).toBe("3–3 of 3");
     expect(screen.getByTestId("pager-older").getAttribute("aria-disabled")).toBe("true");
 
+    await flushPressConfig();
     fireEvent.click(screen.getByTestId("pager-newer"));
     await screen.findByTestId("story-card-st-1");
   });
@@ -474,6 +487,7 @@ describe("On-demand Generate dialog", () => {
     renderStories(api.client);
     await screen.findByTestId("today-card");
 
+    await flushPressConfig();
     fireEvent.click(screen.getByTestId("today-generate"));
     const dialog = await screen.findByTestId("generate-dialog");
 
@@ -496,13 +510,13 @@ describe("On-demand Generate dialog", () => {
   });
 
   it("a bare run starts with an empty body, the bar follows the snapshots, and finishing refreshes the page", async () => {
-    const api = fakeApi({ genOutcome: "running" });
-    // Poll slowly enough that the running snapshot is still on screen when the
-    // test looks for it — 30 ms flips to ready between assertion ticks under
-    // the full-suite CPU load (flake seen in turbo runs).
+    // The run is held in "running" until the test finishes it, so the snapshot
+    // stays on screen however long the runner takes (timed polls raced the test).
+    const api = fakeApi({ genOutcome: "running", holdRunning: true });
     renderStories(api.client, { generationPollMs: 250 });
     await screen.findByTestId("today-card");
 
+    await flushPressConfig();
     fireEvent.click(screen.getByTestId("today-generate"));
     fireEvent.click(await screen.findByTestId("generate-confirm"));
     await waitFor(() =>
@@ -522,7 +536,8 @@ describe("On-demand Generate dialog", () => {
     await waitFor(() => expect(screen.queryByTestId("generate-dialog")).toBeNull());
     expect(screen.getByTestId("generation-progress")).toBeTruthy();
 
-    // The run finishes on its polls; both halves of the page refetch.
+    // The run finishes; both halves of the page refetch.
+    api.finishRun();
     await waitFor(() =>
       expect(requestsCount(api, "/stories/today")).toBeGreaterThanOrEqual(2),
     );
@@ -534,6 +549,7 @@ describe("On-demand Generate dialog", () => {
     renderStories(api.client);
     await screen.findByTestId("today-card");
 
+    await flushPressConfig();
     fireEvent.click(screen.getByTestId("today-generate"));
     fireEvent.click(await screen.findByTestId("generate-confirm"));
 
@@ -548,6 +564,7 @@ describe("On-demand Generate dialog", () => {
     renderStories(fakeApi({ staleFailed: true }).client);
     await screen.findByTestId("today-card");
 
+    await flushPressConfig();
     fireEvent.click(screen.getByTestId("today-generate"));
     const dialog = await screen.findByTestId("generate-dialog");
     expect(within(dialog).queryByTestId("generate-error")).toBeNull();
@@ -561,6 +578,7 @@ describe("On-demand Generate dialog", () => {
     renderStories(api.client);
     await screen.findByTestId("today-card");
 
+    await flushPressConfig();
     fireEvent.click(screen.getByTestId("today-generate"));
     fireEvent.click(await screen.findByTestId("generate-confirm"));
 

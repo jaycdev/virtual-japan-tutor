@@ -5,6 +5,11 @@
 // Node's resolver itself so both paths land on react-native-web.
 import { resolve } from "node:path";
 import nodeModule from "node:module";
+import { configure } from "@testing-library/react";
+
+// Loaded CI runners can take far longer than the 1000 ms default to render a
+// screen; a wait that is already satisfied still returns immediately.
+configure({ asyncUtilTimeout: 5000 });
 
 // SDK 58 compiles `process.env.EXPO_OS` away at bundle time; vitest leaves it
 // undefined, which sends expo-router down its native DOM-event bridge (and

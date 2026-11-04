@@ -102,7 +102,7 @@ describe('mobile MaruMoriSettings', () => {
     expect(put?.url).toContain('/marumori/key');
     expect(put?.body).toEqual({ apiKey: 'mkmk_2024_key' });
     expect((screen.getByLabelText('MaruMori API key') as HTMLInputElement).value).toBe('');
-    expect(screen.getByText(/Known kanji: 2419/)).toBeTruthy();
+    expect(await screen.findByText(/Known kanji: 2419/)).toBeTruthy();
     // P5: Last Sync reads as a date, not the raw ISO stamp from the wire.
     expect(
       screen.getByText(`Last Sync ${formatInstant('2026-11-01T20:12:00Z', undefined)}`),

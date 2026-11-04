@@ -303,7 +303,7 @@ describe('mobile ItemListsSettings', () => {
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Saved' })).toBeTruthy();
     });
-    expect(screen.queryByRole('button', { name: 'Textbook ch. 1' })).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Textbook ch. 1' })).toBeNull());
   });
 
   it('pops an open list back to the master view on hardware Back', async () => {

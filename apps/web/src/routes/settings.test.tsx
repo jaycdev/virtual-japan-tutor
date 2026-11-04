@@ -83,7 +83,7 @@ describe("Settings layout", () => {
     const heading = await screen.findByRole("heading", { name: "Item Lists" });
     await waitFor(() => expect(document.activeElement).toBe(heading));
     await user.tab();
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: /Saved/ }));
+    expect(document.activeElement).toBe(await screen.findByRole("button", { name: /Saved/ }));
   });
 });
 
