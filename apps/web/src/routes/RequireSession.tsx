@@ -3,11 +3,10 @@
 // app, held behind the first-run check on the landing page. Loading and
 // server-unreachable states never get this far: the SessionBoundary above the
 // router shows them.
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { Navigate, Outlet, useLocation, useNavigate } from "react-router";
 import { decideLandingSetup } from "@vjt/core";
 
-import { SkeletonLines } from "../components/states.tsx";
 import { localKeyValueStore } from "../storage.ts";
 import { useSession } from "../session/session.tsx";
 import { loginPathFor } from "./nextPath.ts";
@@ -17,6 +16,17 @@ import { loginPathFor } from "./nextPath.ts";
  * (the check is advisory: a slow server must not hold the Learner on a skeleton).
  */
 export const LANDING_CHECK_TIMEOUT_MS = 3000;
+
+const LandingHoldContext = createContext(false);
+
+/**
+ * True while the landing page must not render yet (the first-run check is pending,
+ * or /setup is on its way). The shell stays mounted and shows a skeleton in place
+ * of the page, so the sidebar and focus stay where they are.
+ */
+export function useLandingHold(): boolean {
+  return useContext(LandingHoldContext);
+}
 
 export function RequireSession() {
   const { state, endedByChoice } = useSession();
@@ -44,10 +54,10 @@ type Gate = { kind: "pending" } | { kind: "redirecting"; key: string } | { kind:
 
 /**
  * The first-run redirect (ui-plan 4.7, #50) without a flash. On the landing page
- * the Today screen is replaced by a skeleton until GET /starting-level has
- * answered: a Learner with no Starting Level goes to /setup, anyone else sees
- * the page. Errors and the timeout fall through to the page. The state lives in
- * React state (not only a ref) so the gate re-renders when the decision lands.
+ * the page is held (see useLandingHold) until GET /starting-level has answered: a
+ * Learner with no Starting Level goes to /setup, anyone else sees the page. Errors
+ * and the timeout fall through to the page. The state lives in React state (not
+ * only a ref) so the gate re-renders when the decision lands.
  */
 function LandingGate({ children }: { children: ReactNode }) {
   const { client } = useSession();
@@ -84,14 +94,5 @@ function LandingGate({ children }: { children: ReactNode }) {
       });
   }, [holding, gate.kind, client, navigate, key]);
 
-  if (holding) {
-    return (
-      <div className="flex min-h-dvh items-center justify-center bg-background p-6" aria-busy="true" data-gate="first-run">
-        <div className="w-full max-w-sm">
-          <SkeletonLines lines={3} />
-        </div>
-      </div>
-    );
-  }
-  return <>{children}</>;
+  return <LandingHoldContext.Provider value={holding}>{children}</LandingHoldContext.Provider>;
 }

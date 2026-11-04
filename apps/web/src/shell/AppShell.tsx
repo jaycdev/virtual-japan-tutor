@@ -9,6 +9,8 @@ import { Outlet, useLocation } from "react-router";
 
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
+import { SkeletonLines } from "../components/states.tsx";
+import { useLandingHold } from "../routes/RequireSession.tsx";
 import { documentTitle, useRouteTitle } from "../routeTitle.ts";
 import { SideNavContent } from "./SideNav.tsx";
 import { Wordmark } from "./Wordmark.tsx";
@@ -18,6 +20,7 @@ const WIDE_QUERY = "(min-width: 1024px)";
 
 export function AppShell() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const holding = useLandingHold();
   const { pathname } = useLocation();
   const title = useRouteTitle();
   const mainRef = useRef<HTMLElement>(null);
@@ -92,7 +95,14 @@ export function AppShell() {
           tabIndex={-1}
           className="mx-auto w-full max-w-[960px] flex-1 px-4 py-6 focus:outline-none sm:px-6 lg:px-8"
         >
-          <Outlet />
+          {holding ? (
+            // The first-run check is still answering: a skeleton, not Today (ui-plan 5).
+            <div data-gate="first-run" aria-busy="true">
+              <SkeletonLines lines={3} />
+            </div>
+          ) : (
+            <Outlet />
+          )}
         </main>
       </div>
     </div>
