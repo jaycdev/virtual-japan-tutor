@@ -13,10 +13,10 @@ import { normalizeServerUrl } from "./config.ts";
  * The server connection (#50, split by platform):
  *
  * - Android has no same-origin default, so the API base URL stays editable
- *   here and persists in the device's secure store. Saving rebuilds the API
- *   client and re-runs the session check, so an unreachable address shows
- *   its error right away and a corrected one reconnects without an app
- *   restart.
+ *   here and persists in the device's secure store. Saving first probes
+ *   the candidate's /health (review S1): an unreachable address explains
+ *   itself and the old address stays; only a server that answers gets
+ *   committed, rebuilt into a fresh ApiClient, and re-checked.
  * - Web builds serve from the server itself: the address is the page's
  *   origin, fixed at build time, so there is no address field to edit —
  *   only the health check.
@@ -25,6 +25,30 @@ import { normalizeServerUrl } from "./config.ts";
  * mount; "Check again" bumps the inner component's key so a fresh mount
  * fetches again.
  */
+/**
+ * Pre-commit reachability check for a candidate address (review S1): one
+ * GET /health through the PLAIN global fetch — the ApiClient still points
+ * at the OLD server, so the probe cannot go through it. Any 2xx counts as
+ * "this is a Virtual Japan Tutor server"; degraded included, because the
+ * address itself was right. A network failure, timeout or non-2xx answer
+ * returns the message to show, and the current address stays.
+ */
+const PROBE_TIMEOUT_MS = 5000;
+
+async function probeServerHealth(baseUrl: string): Promise<string | undefined> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${baseUrl}/health`, { signal: controller.signal });
+    if (response.ok) return undefined;
+    return `That address answered ${response.status} instead of a healthy /health. It does not look like a Virtual Japan Tutor server — the current address is still in use.`;
+  } catch {
+    return "That address did not answer. Check the host and port — the current address is still in use.";
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export function ServerSettings({
   client,
   currentUrl,
@@ -48,6 +72,16 @@ export function ServerSettings({
     }
     setBusy(true);
     setError(undefined);
+    // Review S1: probe the candidate BEFORE committing. Saving rebuilds the
+    // session against the new address — a typo silently signed the Learner
+    // out and bounced them to Login with no explanation. A failed probe
+    // keeps the old address in place.
+    const probeFailure = await probeServerHealth(next);
+    if (probeFailure) {
+      setError(probeFailure);
+      setBusy(false);
+      return;
+    }
     try {
       await onSave(next);
       setUrl(next);
@@ -84,6 +118,10 @@ export function ServerSettings({
             placeholder="http://192.168.1.10:8080"
             disabled={busy}
           />
+          {/* Review S1: saving is a sign-out, not a silent switch — say so. */}
+          <Text className="text-small text-muted-foreground">
+            Saving signs you out and reconnects the app to that server.
+          </Text>
           <ActionButton label="Save server" onPress={() => void save()} filled disabled={busy} />
           {error && <InlineError message={error} />}
           <LinkButton

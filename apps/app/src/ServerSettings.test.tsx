@@ -30,6 +30,21 @@ function healthFetch() {
   });
 }
 
+/**
+ * The save flow probes the CANDIDATE address with the plain global fetch
+ * (the client still points at the old server), so tests stub the global.
+ * `answer` decides what the probe returns; the default is a healthy server.
+ */
+function stubProbe(answer?: (url: URL) => Promise<Response>) {
+  const mock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (answer) return answer(url);
+    return jsonResponse({ status: 'ok', database: 'connected' });
+  });
+  vi.stubGlobal('fetch', mock);
+  return mock;
+}
+
 describe('mobile ServerSettings (web)', () => {
   // jsdom + react-native-web: Platform.OS === 'web', the shipped web build.
   it('shows the health check and no address editor', async () => {
@@ -57,9 +72,13 @@ describe('mobile ServerSettings (Android)', () => {
     // The address editor only exists where there is no same-origin default.
     (Platform as { OS: string }).OS = 'android';
     healthBody = { status: 'ok', database: 'connected' };
+    // Saves probe the candidate first; default: it answers healthy, so the
+    // happy path reaches onSave.
+    stubProbe();
   });
   afterEach(() => {
     (Platform as { OS: string }).OS = realOS;
+    vi.unstubAllGlobals();
   });
 
   it('shows the current URL and saves a normalized override', async () => {
@@ -67,6 +86,7 @@ describe('mobile ServerSettings (Android)', () => {
     const onSave = vi.fn(async (url: string) => {
       saved.push(url);
     });
+    const probe = stubProbe();
     const client = makeClient(healthFetch());
     render(<ServerSettings client={client} currentUrl="http://10.0.2.2:8080" onSave={onSave} />);
 
@@ -80,10 +100,54 @@ describe('mobile ServerSettings (Android)', () => {
     await waitFor(() => {
       expect(saved).toEqual(['http://192.168.1.50:8080']);
     });
+    // The probe was aimed at the candidate, not the current address (S1).
+    expect(probe.mock.calls.map((call) => String(call[0]))).toContain(
+      'http://192.168.1.50:8080/health',
+    );
     // No "saved" banner: on a real URL change this screen unmounts when the
     // tree rebuilds against the new address, so any success message here would
     // fire post-unmount or lie when the address did not actually change.
     expect(screen.queryByText(/Saved/)).toBeNull();
+  });
+
+  it('a candidate that does not answer is refused and the current address stays (S1)', async () => {
+    const onSave = vi.fn(async () => {});
+    stubProbe(async () => {
+      throw new TypeError('fetch failed'); // connection refused, DNS miss, abort…
+    });
+    const client = makeClient(healthFetch());
+    render(<ServerSettings client={client} currentUrl="http://10.0.2.2:8080" onSave={onSave} />);
+
+    fireEvent.change(screen.getByLabelText('Server address'), {
+      target: { value: 'http://192.168.1.50:8080' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save server' }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/That address did not answer\. Check the host and port/),
+      ).toBeTruthy();
+    });
+    expect(onSave).not.toHaveBeenCalled();
+    // Still on the old address, field untouched, and the app says so.
+    expect(screen.getByText('Currently: http://10.0.2.2:8080')).toBeTruthy();
+  });
+
+  it('a candidate that answers but is not the app is refused too (S1)', async () => {
+    const onSave = vi.fn(async () => {});
+    stubProbe(async () => jsonResponse({ message: 'nope' }, 404));
+    const client = makeClient(healthFetch());
+    render(<ServerSettings client={client} currentUrl="http://10.0.2.2:8080" onSave={onSave} />);
+
+    fireEvent.change(screen.getByLabelText('Server address'), {
+      target: { value: 'http://192.168.1.50:8080' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save server' }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/answered 404 instead of a healthy \/health/)).toBeTruthy();
+    });
+    expect(onSave).not.toHaveBeenCalled();
   });
 
   it('rejects an invalid URL without saving', async () => {
