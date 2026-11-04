@@ -83,8 +83,12 @@
     @apply bg-background font-sans text-foreground antialiased;
   }
 
-  /* Visible focus everywhere, in the ring token (ui-plan 1, 2.2). */
-  :focus-visible {
+  /* Focus rings (ui-plan 1, 2.2) come from the components: the ring utilities
+     (ring-2 ring-ring) draw them on buttons, inputs, nav links and the sheet close.
+     Only a bare interactive element with no ring class gets the outline here, so
+     nothing shows two rings. :where keeps this rule at zero specificity, so the
+     focus:outline-none utilities (the <main> landmark) still win. */
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible:not([class*="ring"]) {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
   }
