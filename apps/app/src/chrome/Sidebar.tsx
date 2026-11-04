@@ -1,12 +1,15 @@
 import { Pressable, Text, View } from "react-native";
+import { useCSSVariable } from "uniwind";
 
-import { MIN_TOUCH, useColors } from "../theme.ts";
+import { MIN_TOUCH } from "../touch.ts";
 import { DESTINATIONS, type Destination } from "./destinations.ts";
 
 /**
  * Left sidebar for wide screens (≥1024 px, issue #44): the 読 wordmark, the
  * five destinations, and the signed-in Learner with Log out at the foot.
- * About 240 px (w-60) and never overlapping the content column.
+ * About 240 px (w-60) and never overlapping the content column. Icon strokes
+ * get the design tokens through useCSSVariable, as in TabBar (Uniwind
+ * classNames do not reach SVG colour on native).
  */
 export function Sidebar({
   active,
@@ -19,7 +22,8 @@ export function Sidebar({
   onSelect: (destination: Destination) => void;
   onLogout: () => void;
 }) {
-  const colors = useColors();
+  const accent = useCSSVariable("--color-primary") ?? undefined;
+  const subtle = useCSSVariable("--color-muted-foreground") ?? undefined;
   return (
     <View className="w-60 justify-between border-r border-border bg-card">
       <View className="gap-6 p-4">
@@ -48,7 +52,7 @@ export function Sidebar({
                 }`}
                 style={{ minHeight: MIN_TOUCH }}
               >
-                <Icon size={20} color={selected ? colors.accent : colors.subtle} />
+                <Icon size={20} color={selected ? accent : subtle} />
                 <Text
                   className={
                     selected

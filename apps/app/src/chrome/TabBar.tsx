@@ -1,15 +1,17 @@
 import { Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useCSSVariable } from "uniwind";
 
-import { MIN_TOUCH, useColors } from "../theme.ts";
+import { MIN_TOUCH } from "../touch.ts";
 import { DESTINATIONS, type Destination } from "./destinations.ts";
 
 /**
  * Bottom tab bar for narrow screens (<1024 px, issue #44): five destinations
  * as labelled icons. Rendered as accessibilityRole="tab" so screen readers
  * announce selection; the Shell hides it while a Story reader route is open.
- * Icon strokes take the JS theme palette (useColors) — Uniwind classNames do
- * not reach SVG colour.
+ * Icon strokes take the design tokens resolved at runtime — Uniwind classNames
+ * do not reach SVG colour on native, so the icons get the same token-safe
+ * route Icon and SwitchRow use (TRIAL_RESULTS §4, via useCSSVariable).
  */
 export function TabBar({
   active,
@@ -18,7 +20,8 @@ export function TabBar({
   active: string;
   onSelect: (destination: Destination) => void;
 }) {
-  const colors = useColors();
+  const accent = useCSSVariable("--color-primary") ?? undefined;
+  const subtle = useCSSVariable("--color-muted-foreground") ?? undefined;
   const insets = useSafeAreaInsets();
   return (
     <View className="flex-row border-t border-border bg-card" style={{ paddingBottom: insets.bottom }}>
@@ -38,7 +41,7 @@ export function TabBar({
             className="flex-1 items-center justify-center gap-1 active:bg-accent"
             style={{ minHeight: MIN_TOUCH }}
           >
-            <Icon size={22} color={selected ? colors.accent : colors.subtle} />
+            <Icon size={22} color={selected ? accent : subtle} />
             <Text
               className={
                 selected

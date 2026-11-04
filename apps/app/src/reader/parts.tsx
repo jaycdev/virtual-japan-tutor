@@ -3,7 +3,7 @@ import type { StoryView } from "@vjt/core";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { Icon } from "../components/ui/icon";
-import { MIN_TOUCH } from "../theme";
+import { MIN_TOUCH } from "../touch";
 
 /**
  * Small shared pieces of the mobile reader: the JLPT badge, the gloss helpers

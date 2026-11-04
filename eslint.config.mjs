@@ -7,10 +7,10 @@ import tseslint from "typescript-eslint";
 // (palette, type, fonts). Hex colour literals in app code silently break
 // light/dark parity, so this inline rule fails them at review time. CSS
 // colours never reach JS here: components style via Uniwind classNames that
-// reference the custom properties. The legacy allowlist block below is the
-// pre-#43 surface that still styles from JS (theme.ts and the screens built
-// in issues #34-#41); each ported screen drops off it, and #51 deletes the
-// block once the last one is gone.
+// reference the custom properties, and components that take colour VALUES
+// (icons, switches) resolve the tokens at runtime with useCSSVariable. The
+// pre-#43 allowlist for the legacy JS palette (theme.ts / ui.tsx) went away
+// with #51: nothing in apps/app styles from hex literals any more.
 const HEX_COLOR = /#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})(?![0-9a-zA-Z])/;
 
 const noHardcodedColor = {
@@ -93,8 +93,8 @@ export default tseslint.config(
     },
   },
   {
-    // The colour gate scopes to the Expo app: apps/app is the surface being
-    // redesigned (#43); apps/web is the legacy client, porting is not planned.
+    // The colour gate scopes to the Expo app: since #51 apps/app is the only
+    // client, and every surface in it styles through the design tokens.
     files: ["apps/app/**/*.{ts,tsx}"],
     rules: { "vjt/no-hardcoded-color": "error" },
   },
@@ -105,15 +105,6 @@ export default tseslint.config(
     // a number in a style object.
     files: ["apps/app/src/**/*.tsx"],
     rules: { "vjt/no-inline-font-size": "error" },
-  },
-  {
-    // Legacy JS-styled surface (see the note above): gate stays green today,
-    // shrinks as #45..#50 port screens onto the Uniwind tokens. ui.tsx is the
-    // shared surface those legacy screens use; it comes off with the last one
-    // in #51. The Story reader (#45) and the rebuilt Stories page (#48) style
-    // through the design tokens and are not listed.
-    files: ["apps/app/src/theme.ts", "apps/app/src/ui.tsx"],
-    rules: { "vjt/no-hardcoded-color": "off", "vjt/no-inline-font-size": "off" },
   },
   {
     // `_`-prefixed arguments/variables document a signature while staying
