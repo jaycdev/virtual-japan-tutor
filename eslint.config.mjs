@@ -3,14 +3,14 @@ import reactHooks from "eslint-plugin-react-hooks";
 import globals from "globals";
 import tseslint from "typescript-eslint";
 
-// #43 design rule: apps/app/global.css is the single source of colours
-// (palette, type, fonts). Hex colour literals in app code silently break
+// #43 design rule: packages/design is the single source of colours (palette,
+// type, fonts; ADR-0010). Hex colour literals in app code silently break
 // light/dark parity, so this inline rule fails them at review time. CSS
-// colours never reach JS here: components style via Uniwind classNames that
-// reference the custom properties, and components that take colour VALUES
-// (icons, switches) resolve the tokens at runtime with useCSSVariable. The
-// pre-#43 allowlist for the legacy JS palette (theme.ts / ui.tsx) went away
-// with #51: nothing in apps/app styles from hex literals any more.
+// colours never reach JS here: components style via classNames that reference
+// the custom properties (Uniwind on mobile, Tailwind on web), and components
+// that take colour VALUES (icons, switches) resolve the tokens at runtime with
+// useCSSVariable. packages/design is the only exception, since it holds the
+// hex values that generate web.css and native.css.
 const HEX_COLOR = /#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})(?![0-9a-zA-Z])/;
 
 const noHardcodedColor = {
@@ -19,7 +19,7 @@ const noHardcodedColor = {
     schema: [],
     messages: {
       noColor:
-        "Hardcoded colour literal. Colours live in apps/app/global.css (design tokens); use Uniwind classNames or var(--color-*) instead.",
+        "Hardcoded colour literal. Colours live in packages/design (design tokens); use a token classname or var(--color-*) instead.",
     },
   },
   create(context) {
@@ -46,7 +46,7 @@ const noInlineFontSize = {
     schema: [],
     messages: {
       noFontSize:
-        "Inline font size. Type steps live in apps/app/global.css (design tokens); use a text-* class, or the saved Story text size from useStoryTextSize.",
+        "Inline font size. Type steps live in packages/design (design tokens); use a text-* class, or the saved Story text size from useStoryTextSize.",
     },
   },
   create(context) {
@@ -93,9 +93,11 @@ export default tseslint.config(
     },
   },
   {
-    // The colour gate scopes to the Expo app: since #51 apps/app is the only
-    // client, and every surface in it styles through the design tokens.
-    files: ["apps/app/**/*.{ts,tsx}"],
+    // The colour gate covers every TS file in the repo (apps and packages)
+    // except packages/design, which owns the hex values and generates the CSS
+    // from them. A new client, such as apps/web, is covered from day one.
+    files: ["**/*.{ts,tsx}"],
+    ignores: ["packages/design/**"],
     rules: { "vjt/no-hardcoded-color": "error" },
   },
   {
