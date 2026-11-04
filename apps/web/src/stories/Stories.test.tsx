@@ -103,7 +103,7 @@ describe("Stories page", () => {
     expect(within(dialog).getByText(/猫の一日/)).toBeTruthy();
     await userEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(api.calls.some((c) => c.method === "DELETE" && c.path === "/stories/a")).toBe(true));
-    expect(screen.queryByTestId("story-card-a")).toBeNull();
+    await waitFor(() => expect(screen.queryByTestId("story-card-a")).toBeNull());
   });
 
   it("keeps the Story when the delete is refused", async () => {
@@ -116,6 +116,7 @@ describe("Stories page", () => {
     api.rejectDeletes = true;
     await userEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(api.calls.some((c) => c.method === "DELETE" && c.path === "/stories/a")).toBe(true));
+    expect(await within(dialog).findByRole("alert")).toBeTruthy();
     expect(screen.queryByTestId("story-card-a")).toBeTruthy();
     expect(within(dialog).getByText(/猫の一日/)).toBeTruthy();
   });
@@ -235,7 +236,7 @@ describe("Stories page", () => {
     await userEvent.click(await screen.findByRole("menuitem", { name: "Mark unread" }));
     await waitFor(() => expect(api.calls.some((c) => c.method === "DELETE" && c.path === "/stories/a/read")).toBe(true));
     expect(await screen.findByTestId("story-card-a")).toBeTruthy();
-    expect(screen.queryByTestId("story-read-a")).toBeNull();
+    await waitFor(() => expect(screen.queryByTestId("story-read-a")).toBeNull());
   });
 
   it("a failed run started here keeps the dialog open, says so, and can be tried again", async () => {
