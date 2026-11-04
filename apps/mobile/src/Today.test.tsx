@@ -426,6 +426,10 @@ describe('Today', () => {
     expect(screen.getByText('学')).toBeTruthy();
     expect(screen.queryByText('空')).toBeNull();
 
+    // The See-all button is disabled={focus.loading} in FocusSetPanel, and
+    // react-native-web only picks that up in a passive effect: flush before the
+    // click or it can race the effect and go nowhere.
+    await flushPressConfig();
     fireEvent.click(screen.getByRole('button', { name: 'Show all 11 Focus Set items' }));
     await waitFor(() => {
       expect(screen.getByText('空')).toBeTruthy();

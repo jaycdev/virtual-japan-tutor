@@ -232,7 +232,12 @@ describe('mobile Practice', () => {
     });
     await flushPressConfig();
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    // water is the right answer for the second exercise, so tree is the wrong pick.
+    // The fixtures give both exercises' second option the id `o-tree`, so
+    // advancing from ex-1 to ex-2 reuses the same Pressable, and its
+    // disabled={locked} flips false with a config react-native-web only
+    // applies in a passive effect; without the flush this click can race it.
+    // (water is the right answer for the second exercise, so tree is the wrong pick.)
+    await flushPressConfig();
     fireEvent.click(screen.getByRole('button', { name: 'tree' }));
 
     // S1: a miss names the right answer in the feedback line, not in a marker.
