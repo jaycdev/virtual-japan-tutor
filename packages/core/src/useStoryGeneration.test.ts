@@ -50,7 +50,9 @@ function harness(routes: Routes = {}) {
   });
   const generationCalls = () =>
     fetchImpl.mock.calls.filter(([req]) => (req as Request).url.includes("/stories/generation"));
-  return { client, fetchImpl, posts, generationCalls };
+  // Replaces the queue, so the snapshot served from now on is this one.
+  const finish = (progress: StoryGenerationProgress) => queue.splice(0, queue.length, progress);
+  return { client, fetchImpl, posts, generationCalls, finish };
 }
 
 describe("useStoryGeneration", () => {
@@ -97,7 +99,7 @@ describe("useStoryGeneration", () => {
   it("Generate sends the Learner's genre and theme and tracks the run it starts", async () => {
     const h = harness({
       generate: { status: 202, body: running("preparing", 1, 5) },
-      generation: [{ status: "idle", percent: 0 }, running("writing", 1, 30), { status: "ready", percent: 100, storyId: "st-7" }],
+      generation: [{ status: "idle", percent: 0 }, running("writing", 1, 30)],
     });
     const { result } = renderHook(() => useStoryGeneration(h.client, POLL));
     await waitFor(() => expect(result.current.generation.status).toBe("idle"));
@@ -107,8 +109,10 @@ describe("useStoryGeneration", () => {
       expect(out.ok).toBe(true);
     });
     expect(h.posts[0]?.body).toMatchObject({ genre: "travel", theme: "a night train" });
+    // The run stays "running" until the test finishes it: a timed finish raced this check.
     expect(result.current.generation.status).toBe("running");
 
+    h.finish({ status: "ready", percent: 100, storyId: "st-7" });
     await waitFor(() => expect(result.current.generation.status).toBe("ready"));
     const ready = result.current.generation;
     expect(ready.status === "ready" && ready.progress.storyId).toBe("st-7");

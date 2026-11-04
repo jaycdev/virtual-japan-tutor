@@ -42,6 +42,8 @@ function fakeApi(
     todayDiffers?: boolean;
     /** How POST /stories/generate answers; GET /stories/generation follows it. */
     genOutcome?: "ready" | "running" | "failed";
+    /** A "running" run stays running until the test calls finishRun(). */
+    holdRunning?: boolean;
     /** PUT/DELETE /stories/:id/read answer 500. */
     failRead?: boolean;
     /** DELETE /stories/st-1 answers 500. */
@@ -132,7 +134,7 @@ function fakeApi(
       return new Response(null, { status: 204 });
     }
     if (url.pathname === "/stories/generation" && request.method === "GET") {
-      if (generation.status === "running" && ++genPolls >= 2) {
+      if (generation.status === "running" && !opts.holdRunning && ++genPolls >= 2) {
         generation = { status: "ready", stage: "saving", attempt: 1, maxAttempts: 2, percent: 100, storyId: "st-1" };
       }
       return json(200, generation);
@@ -161,7 +163,13 @@ function fakeApi(
     return json(404, { code: "not_found", message: "not found" });
   });
   const client = createApiClient({ baseUrl: "http://127.0.0.1:8787", fetch: fetchImpl });
-  return { client, requests };
+  return {
+    client,
+    requests,
+    finishRun: () => {
+      generation = { status: "ready", stage: "saving", attempt: 1, maxAttempts: 2, percent: 100, storyId: "st-1" };
+    },
+  };
 }
 
 function renderStories(client: ApiClient, opts: { generationPollMs?: number } = {}) {
@@ -502,10 +510,9 @@ describe("On-demand Generate dialog", () => {
   });
 
   it("a bare run starts with an empty body, the bar follows the snapshots, and finishing refreshes the page", async () => {
-    const api = fakeApi({ genOutcome: "running" });
-    // Poll slowly enough that the running snapshot is still on screen when the
-    // test looks for it — 30 ms flips to ready between assertion ticks under
-    // the full-suite CPU load (flake seen in turbo runs).
+    // The run is held in "running" until the test finishes it, so the snapshot
+    // stays on screen however long the runner takes (timed polls raced the test).
+    const api = fakeApi({ genOutcome: "running", holdRunning: true });
     renderStories(api.client, { generationPollMs: 250 });
     await screen.findByTestId("today-card");
 
@@ -529,7 +536,8 @@ describe("On-demand Generate dialog", () => {
     await waitFor(() => expect(screen.queryByTestId("generate-dialog")).toBeNull());
     expect(screen.getByTestId("generation-progress")).toBeTruthy();
 
-    // The run finishes on its polls; both halves of the page refetch.
+    // The run finishes; both halves of the page refetch.
+    api.finishRun();
     await waitFor(() =>
       expect(requestsCount(api, "/stories/today")).toBeGreaterThanOrEqual(2),
     );
