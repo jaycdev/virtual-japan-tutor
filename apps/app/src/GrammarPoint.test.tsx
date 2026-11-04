@@ -100,9 +100,13 @@ describe("Grammar point detail", () => {
   it("reads the explanation as prose and bullets, not raw markdown", async () => {
     renderPoint(DETAIL.id);
     await waitFor(() => expect(screen.getByText("Explanation")).toBeTruthy());
-    // **bold** renders as a bold run, "- " lines as bullets.
+    // **bold** renders as a bold run, "- " lines as bullets. The dot sits in
+    // its own column, so it is a separate text node from the line (#49 N1).
     expect(screen.getByText("て-form")).toBeTruthy();
-    expect(screen.getByText("• Something completed, often with regret")).toBeTruthy();
+    expect(screen.getByText("Something completed, often with regret")).toBeTruthy();
+    expect(screen.getByText("An unintended result")).toBeTruthy();
+    expect(screen.getAllByText("•")).toHaveLength(2);
+    expect(screen.queryByText(/^•\s/)).toBeNull();
     expect(screen.queryByText(/\*\*/)).toBeNull();
     expect(screen.queryByText(/^- /m)).toBeNull();
   });

@@ -212,11 +212,20 @@ export function ExplanationBody({ text }: { text: string }) {
         }
         return (
           <View key={i} className="gap-1.5">
-            {lines.map((line, j) => (
-              <Text key={j} className="font-serif text-body text-foreground">
-                {line.startsWith("- ") ? `• ${richLine(line.slice(2))}` : richLine(line)}
-              </Text>
-            ))}
+            {lines.map((line, j) => {
+              const bullet = line.startsWith("- ");
+              return (
+                // The dot gets its own column, so a wrapped line hangs under
+                // the text instead of under the dot (#49 review N1). Non-bullet
+                // lines keep the empty column so the block stays aligned.
+                <View key={j} className="flex-row">
+                  <Text className="w-4 font-serif text-body text-foreground">{bullet ? "•" : ""}</Text>
+                  <Text className="flex-1 font-serif text-body text-foreground">
+                    {bullet ? richLine(line.slice(2)) : richLine(line)}
+                  </Text>
+                </View>
+              );
+            })}
           </View>
         );
       })}
