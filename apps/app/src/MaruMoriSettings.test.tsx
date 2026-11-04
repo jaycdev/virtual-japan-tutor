@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { MaruMoriSettings } from './MaruMoriSettings.tsx';
+import { formatInstant } from './Today.tsx';
 import { createApiClient } from '@vjt/api-client';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -102,6 +103,11 @@ describe('mobile MaruMoriSettings', () => {
     expect(put?.body).toEqual({ apiKey: 'mkmk_2024_key' });
     expect((screen.getByLabelText('MaruMori API key') as HTMLInputElement).value).toBe('');
     expect(screen.getByText(/Known kanji: 2419/)).toBeTruthy();
+    // P5: Last Sync reads as a date, not the raw ISO stamp from the wire.
+    expect(
+      screen.getByText(`Last Sync ${formatInstant('2026-11-01T20:12:00Z', undefined)}`),
+    ).toBeTruthy();
+    expect(screen.queryByText(/2026-11-01T20:12:00Z/)).toBeNull();
   });
 
   it('keeps a typed key masked and never echoes it back as text', async () => {

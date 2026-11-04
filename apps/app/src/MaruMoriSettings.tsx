@@ -7,6 +7,7 @@ import { Card } from "./components/ui/Card.tsx";
 import { Field } from "./components/ui/Field.tsx";
 import { LinkButton } from "./components/ui/LinkButton.tsx";
 import { ActionButton } from "./stories-parts.tsx";
+import { formatInstant } from "./Today.tsx";
 import { InlineError, Skeleton, SkeletonBar } from "./state/states.tsx";
 import type { StepSaveHandle, StepSaveOutcome } from "./settingsSections.tsx";
 
@@ -141,7 +142,10 @@ export function MaruMoriSettings({
       )}
       {state.marumori.connected && state.marumori.counts?.lastSyncAt && (
         <Text className="text-small text-muted-foreground">
-          Last Sync {state.marumori.counts.lastSyncAt}
+          {/* P5: the raw ISO stamp read like a debug dump. Same humanising and
+              device-timezone fallback Today's sync lines use (formatInstant
+              with no Learner Timezone falls back to the device's). */}
+          Last Sync {formatInstant(state.marumori.counts.lastSyncAt, undefined)}
         </Text>
       )}
       {state.marumori.connected && state.marumori.lastFailure && (

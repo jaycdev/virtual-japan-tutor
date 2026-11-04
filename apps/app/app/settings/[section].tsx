@@ -48,7 +48,9 @@ export default function SettingsSectionRoute() {
   if (wide) {
     return (
       <View className="flex-1 flex-row">
-        <View className="w-80 shrink-0 pr-4">
+        {/* P1 (review): same 16 px top padding as the section pane, so the
+            menu and the section title start on one line. */}
+        <View className="w-80 shrink-0 p-4 pr-0">
           <SettingsSectionMenu
             active={found.id}
             onOpen={(next) => router.push(`/settings/${next}`)}

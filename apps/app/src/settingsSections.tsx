@@ -57,6 +57,14 @@ export function SectionHeading({ children }: { children: ReactNode }) {
     // heading inherits react-native-web's default near-black, which disappears
     // on the dark palette (#50 review B1). Colour class last — uniwind drops a
     // colour class that precedes the custom text-size class on native.
-    <Text className="mb-3 text-title-sm font-serif text-foreground">{children}</Text>
+    // accessibilityRole="header" is the safe spelling of a heading on both
+    // hosts (S7's verified set) — the section name reads as a heading to a
+    // screen reader, matching the wizard's step titles (S4).
+    <Text
+      accessibilityRole="header"
+      className="mb-3 text-title-sm font-serif text-foreground"
+    >
+      {children}
+    </Text>
   );
 }

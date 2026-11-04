@@ -23,7 +23,10 @@ export function LinkButton({
       accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
-      className="min-h-11 self-start justify-center rounded-md px-2 active:bg-accent"
+      // P3: no horizontal padding — a quiet button under a row label or a
+      // heading must sit on the same left edge as the text it follows; the
+      // 8 px inset used to leave it hanging in from everything above it.
+      className="min-h-11 self-start justify-center rounded-md active:bg-accent"
     >
       {/* uniwind drops a colour class that precedes a text-size class on native,
           so the size comes first here as everywhere else. */}

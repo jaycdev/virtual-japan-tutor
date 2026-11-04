@@ -390,9 +390,13 @@ it("wide screens show the hub and the open section side by side", async () => {
   renderApp("/settings");
   const user = await signedIn(WIDE);
 
-  await screen.findByText(
-    "Pick a settings section to change it. Changes apply as soon as you save.",
-  );
+  // P2: the wide hub opens Appearance in the right pane instead of a
+  // "pick a section" placeholder, and the Appearance row is the current one.
+  await screen.findByRole("heading", { name: "Appearance" });
+  await screen.findByText("Colour theme");
+  expect(
+    (screen.getByRole("button", { name: "Appearance" }) as HTMLElement).getAttribute("aria-current"),
+  ).toBe("page");
   await screen.findByRole("button", { name: "MaruMori" });
 
   await user.click(screen.getByRole("button", { name: "Reading" }));
