@@ -50,6 +50,10 @@ export interface FakeApiOptions {
   suggestions?: { genres: string[]; themes: string[] };
   /** A lopsided page: return only this many items per page while total stays at stories.length. */
   pageSize?: number;
+  /** GET /stories answers 500 until the test clears api.failStories (the Library error + Retry suite). */
+  failStories?: boolean;
+  /** GET /focus-set answers 500 until the test clears api.failFocus (the Focus Set error + Retry suite). */
+  failFocus?: boolean;
 }
 
 export interface FakeApi {
@@ -60,6 +64,10 @@ export interface FakeApi {
   calls: Call[];
   /** Flip to make DELETE /stories/{id} fail; tests use it to keep a delete honest. */
   rejectDeletes: boolean;
+  /** Flip to make GET /stories answer 500; Retry tests clear it to let the page land. */
+  failStories: boolean;
+  /** Flip to make GET /focus-set answer 500; the Focus Set Retry test clears it. */
+  failFocus: boolean;
   setGeneration(p: StoryGenerationProgress): void;
   setMarumori(s: MaruMoriStatus): void;
   /** Push a freshly written Story into the Library (what a finished run leaves behind). */
@@ -92,6 +100,8 @@ export function fakeApi(options: FakeApiOptions = {}): FakeApi {
     stories,
     calls,
     rejectDeletes: false,
+    failStories: options.failStories ?? false,
+    failFocus: options.failFocus ?? false,
     setGeneration: (p) => {
       generation = p;
     },
@@ -114,6 +124,7 @@ export function fakeApi(options: FakeApiOptions = {}): FakeApi {
       }
 
       if (req.method === "GET" && path === "/stories") {
+        if (api.failStories) return json({ message: "library read failed" }, 500);
         const limit = Number(url.searchParams.get("limit") ?? "20");
         const offset = Number(url.searchParams.get("offset") ?? "0");
         const slice = options.pageSize === undefined
@@ -157,7 +168,10 @@ export function fakeApi(options: FakeApiOptions = {}): FakeApi {
 
       if (req.method === "GET" && path === "/story-settings") return json(settings);
 
-      if (req.method === "GET" && path === "/focus-set") return json(focus);
+      if (req.method === "GET" && path === "/focus-set") {
+        if (api.failFocus) return json({ message: "focus read failed" }, 500);
+        return json(focus);
+      }
 
       const entryMatch = entryGroup(/^\/dictionary\/entries\/([^/]+)$/, path);
       if (entryMatch && req.method === "GET") {
