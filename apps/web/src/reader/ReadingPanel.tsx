@@ -59,7 +59,8 @@ export function ReadingPanel({
       aria-label="Reading Panel"
       data-testid="reading-panel"
       // A fixed height in the story text size, whatever the content: the text below never moves.
-      className="flex w-full flex-col overflow-hidden rounded-lg border border-border bg-card"
+      // One bottom border, not a frame (ui-plan 4.1).
+      className="flex w-full flex-col overflow-hidden border-b border-border bg-card"
       style={{ height: "calc(var(--story-text-size) * 8)" }}
     >
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-4">
