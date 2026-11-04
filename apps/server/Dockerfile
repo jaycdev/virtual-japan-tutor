@@ -27,12 +27,15 @@ COPY apps/app/package.json apps/app/
 COPY apps/server/package.json apps/server/
 COPY packages/api-client/package.json packages/api-client/
 COPY packages/core/package.json packages/core/
+COPY packages/design/package.json packages/design/
 RUN pnpm install --frozen-lockfile --filter "@vjt/app..."
 COPY apps/app apps/app
 COPY packages/api-client packages/api-client
 COPY packages/core packages/core
-# @vjt/api-client and @vjt/core are consumed from their built dist/, so build the dependencies
-# first; the export itself is web-only (the app's `build` script exports Android).
+COPY packages/design packages/design
+# The workspace packages @vjt/app depends on (api-client, core, design) are consumed from their
+# built dist/ (design also ships web.css and native.css), so build the dependencies first. The
+# export itself is web-only (the app's `build` script exports Android).
 RUN pnpm --filter "@vjt/app^..." build \
  && pnpm --filter @vjt/app run build:web
 
