@@ -27,8 +27,26 @@ describe("safeNextPath", () => {
     ["a path with a backslash", "/stories\\..\\admin"],
     ["the login page itself", "/login"],
     ["the login page with a query", "/login?next=/stories"],
+    ["a dot segment that normalises to //host", "/.//evil.example.com"],
+    ["a double dot segment that normalises to //host", "/..//evil.example.com"],
+    ["an encoded double dot that normalises to //host", "/%2e%2e//evil.example.com"],
+    ["a dot segment before a backslash host", "/./\\evil.example.com"],
   ])("falls back to the landing page for %s", (_label, raw) => {
     expect(safeNextPath(raw, ORIGIN)).toBe("/");
+  });
+
+  it("keeps a double-encoded slash as text, which is still this site's path", () => {
+    // %25 is a literal percent sign, so %252F%252F is the path text "%2F%2F": same origin, not a host.
+    expect(safeNextPath("/%252F%252Fevil.example.com", ORIGIN)).toBe("/%252F%252Fevil.example.com");
+  });
+
+  it("never returns a value that starts with // or /\\, whatever the parser does", () => {
+    for (const raw of ["/.//x", "/..//x", "/%2e%2e//x", "/%2e/%2e//x", "/a/..//x", "/./\\x"]) {
+      const out = safeNextPath(raw, ORIGIN);
+      expect(out.startsWith("//")).toBe(false);
+      expect(out.startsWith("/\\")).toBe(false);
+      expect(out.includes("\\")).toBe(false);
+    }
   });
 
   it("keeps an encoded slash inside the path rather than reading it as a host", () => {
