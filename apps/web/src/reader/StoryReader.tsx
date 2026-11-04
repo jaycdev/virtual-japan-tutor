@@ -49,6 +49,15 @@ function sameRef(a: TokenRef | null, b: TokenRef): boolean {
   return a !== null && a.sentence === b.sentence && a.index === b.index;
 }
 
+/** The TokenRef a word span's `data-token` attribute names, or null. */
+function tokenRefOf(el: Element | null | undefined): TokenRef | null {
+  const m = el?.getAttribute("data-token")?.match(/^(\d+)-(\d+)$/);
+  return m ? { sentence: Number(m[1]), index: Number(m[2]) } : null;
+}
+
+// How long the click of a press may take to consume that press's toggle mark.
+const TOGGLE_MARK_MS = 1000;
+
 export function StoryReader({ client, view, story }: { client: ApiClient; view: StoryView; story: Story }) {
   const navigate = useNavigate();
   const { size } = useStoryTextSize();
@@ -73,10 +82,15 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
   // The word the last overlay belongs to: focus goes back there when it closes.
   const lastWord = useRef<TokenRef | null>(null);
   const keepFocusOnMenuClose = useRef(false);
-  // The word marked at pointerdown when its already-open menu is about to be
-  // dismissed by that very press: the click that follows closes (toggles)
-  // instead of reopening (issue #77 review).
-  const wordToggle = useRef<TokenRef | null>(null);
+  // The word marked at a fresh press (mousedown, click count 1) when its
+  // already-open menu is about to be dismissed by that very press: the click
+  // that follows closes (toggles) instead of reopening (issue #77 review).
+  // The stamp keeps the mark to that one gesture: a press that drags away
+  // never clicks, and its mark must not swallow a later click on the word.
+  const wordToggle = useRef<{ ref: TokenRef; stamp: number } | null>(null);
+  // The moment the press rule last ran, taken inside that listener. The gate
+  // on a click's mark compares against this instead of reading a clock itself.
+  const pressStamp = useRef(0);
   // Each (item, reason) is reported once per open Story; the server keeps only the
   // Learner's Known Items, so this is fire-and-forget.
   const signaled = useRef<Set<string>>(new Set());
@@ -162,12 +176,21 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
 
   const activate = (ref: TokenRef, element: HTMLElement, source: "pointer" | "keyboard") => {
     // Re-pressing the word whose menu is open closes it — a toggle, not a
-    // close-and-reopen. A pointer press gets there first: Radix's dismiss has
-    // already closed the menu by the time the click runs, so the pointerdown
-    // capture (below) marks the word instead.
-    if (source === "pointer" && wordToggle.current && sameRef(wordToggle.current, ref)) {
+    // close-and-reopen. A pointer press gets there first: the press rule (the
+    // mousedown listener below) closed the menu at mousedown and marked the
+    // word with its own moment, so the click of that same press closes while
+    // a stale mark from a press that never clicked does not (issue #77 review).
+    const mark = wordToggle.current;
+    if (
+      source === "pointer" &&
+      mark !== null &&
+      sameRef(mark.ref, ref) &&
+      // The press rule stamps both `stamp` and `pressStamp` with the same
+      // clock; the click of that press follows within TOGGLE_MARK_MS of it.
+      pressStamp.current - mark.stamp <= TOGGLE_MARK_MS
+    ) {
       wordToggle.current = null;
-      closeMenu(); // a no-op when Radix's outside-dismiss already closed it
+      closeMenu(); // a no-op when the press already closed it
       return;
     }
     if (source === "keyboard" && menu && sameRef(menu.ref, ref)) {
@@ -236,6 +259,36 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
   })();
 
   const closeMenu = () => setMenu(null);
+
+  // Presses dismiss the menu on the reader's own rules, before any click runs
+  // (issue #77 review, measured in Chromium — the browser counts presses on a
+  // word in mousedown's `detail`):
+  //  - a press inside the menu itself: nothing, its rows answer their click;
+  //  - a fresh press (count 1) on the word that owns the menu: close it, and
+  //    mark the word so the click that follows never reopens it — a toggle;
+  //  - the second press of a double click (count 2) on that word: no press at
+  //    all, so the menu the first click opened stays open;
+  //  - any other press: close, like an ordinary outside click.
+  useEffect(() => {
+    if (menu === null) return;
+    const menuRef = menu.ref;
+    const onMouseDown = (event: MouseEvent) => {
+      const target = event.target as Element | null;
+      if (target?.closest?.('[data-slot="popover-content"]')) return;
+      const ref = tokenRefOf(target?.closest?.("[data-token]"));
+      if (ref !== null && sameRef(menuRef, ref)) {
+        if (event.detail > 1) return;
+        const stamp = Date.now();
+        pressStamp.current = stamp;
+        wordToggle.current = { ref: menuRef, stamp };
+        closeMenu();
+        return;
+      }
+      closeMenu();
+    };
+    document.addEventListener("mousedown", onMouseDown, true);
+    return () => document.removeEventListener("mousedown", onMouseDown, true);
+  }, [menu]);
 
   const saveInto = async (
     listId: string | null,
@@ -384,17 +437,6 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
     <div
       ref={rootRef}
       onKeyDown={onKeyDown}
-      onPointerDownCapture={(e) => {
-        // Runs before Radix's document-level dismiss: a press on the word that
-        // already owns the open menu is a toggle, so the click that follows
-        // must not reopen it (issue #77 review).
-        const el = (e.target as Element | null)?.closest?.("[data-token]");
-        const open = menu;
-        wordToggle.current =
-          open !== null && el?.getAttribute("data-token") === `${open.ref.sentence}-${open.ref.index}`
-            ? open.ref
-            : null;
-      }}
       data-testid="story-reader"
       className="story-column-width mx-auto flex flex-col gap-6"
     >
@@ -464,6 +506,12 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
           align="start"
           sideOffset={6}
           className="w-72"
+          // The menu closes on the reader's own rules, not Radix's automatic
+          // outside/focus dismiss (the effect above measures every press;
+          // issue #77 review). Escape still lands on onOpenChange.
+          onPointerDownOutside={(e) => e.preventDefault()}
+          onInteractOutside={(e) => e.preventDefault()}
+          onFocusOutside={(e) => e.preventDefault()}
           onCloseAutoFocus={(e) => {
             // A menu row that opened a dialog hands focus to the dialog instead.
             e.preventDefault();

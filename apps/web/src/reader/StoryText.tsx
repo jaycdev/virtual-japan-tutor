@@ -146,6 +146,9 @@ function Word({
     }
   };
   const onClick = (e: MouseEvent<HTMLSpanElement>) => {
+    // The second click of a double click is not a fresh press: one double
+    // click is exactly one toggle, never close-and-reopen (issue #77 review).
+    if (e.detail > 1) return;
     handlers.onTokenActivate(ref, e.currentTarget, "pointer");
   };
 

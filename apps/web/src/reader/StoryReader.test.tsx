@@ -532,15 +532,15 @@ describe("Story reader: failed lookups and gestures", () => {
 
     // Pressing the same word again closes the menu — a toggle — without spending
     // another request (issue #77 review).
-    fireEvent.pointerDown(word);
-    fireEvent.pointerUp(word);
+    fireEvent.mouseDown(word);
+    fireEvent.mouseUp(word);
     fireEvent.click(word);
     await waitFor(() => expect(screen.queryByRole("button", { name: "Save to…" })).toBeNull());
     expect(lookups()).toBe(2);
 
     // A further press opens it again with one more single attempt.
-    fireEvent.pointerDown(word);
-    fireEvent.pointerUp(word);
+    fireEvent.mouseDown(word);
+    fireEvent.mouseUp(word);
     fireEvent.click(word);
     await screen.findByRole("button", { name: "Save to…" });
     await waitFor(() => expect(lookups()).toBe(3));
@@ -551,11 +551,25 @@ describe("Story reader: failed lookups and gestures", () => {
     const word = token(container, 0, 0);
     fireEvent.click(word);
     await screen.findByRole("button", { name: "Dictionary" });
-    fireEvent.pointerDown(word); // what a real press does first, before Radix dismisses
-    fireEvent.pointerUp(word);
-    fireEvent.click(word);
+    fireEvent.mouseDown(word, { detail: 1 }); // a real press, before Radix dismisses
+    fireEvent.mouseUp(word);
+    fireEvent.click(word, { detail: 1 });
     await waitFor(() => expect(screen.queryByRole("button", { name: "Dictionary" })).toBeNull());
     expect(word.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("a double click is exactly one toggle: its second press never closes the menu", async () => {
+    const { container } = await renderReader();
+    const word = token(container, 0, 0);
+    fireEvent.mouseDown(word, { detail: 1 }); // the first press of the double click…
+    fireEvent.mouseUp(word);
+    fireEvent.click(word, { detail: 1 }); // …opens
+    await screen.findByRole("button", { name: "Dictionary" });
+    fireEvent.mouseDown(word, { detail: 2 }); // the browser counts the second press
+    fireEvent.mouseUp(word);
+    fireEvent.click(word, { detail: 2 }); // …and its click is dropped
+    await screen.findByRole("button", { name: "Dictionary" }); // the same menu, never close-and-reopen
+    expect(word.getAttribute("aria-expanded")).toBe("true");
   });
 
   it("a text selection swallows the pointer click, but Enter on the word still opens its menu", async () => {
