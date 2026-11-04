@@ -1,18 +1,27 @@
-// 10.0.2.2 is the host machine as seen from the Android emulator.
-const DEFAULT_API_URL = "http://10.0.2.2:8080";
+// The platform half of the fallback lives in platformDefault.ts (the Android
+// emulator address).
+import { platformApiDefault } from "./platformDefault.ts";
 
 /**
- * Resolve the API base URL for the client. Priority: an in-app override the Learner
- * saved (issue #11 server-connection requirement: mobile has no same-origin fallback),
- * then EXPO_PUBLIC_API_URL baked into the build, then the emulator default.
- * A stored value that no longer validates is treated as unset.
+ * Resolve the API base URL for the client. Precedence (#51 review B1):
+ *
+ *   1. an in-app override the Learner saved (issue #11: mobile has no
+ *      same-origin fallback); a stored value that no longer validates is
+ *      treated as unset;
+ *   2. EXPO_PUBLIC_API_URL baked into the build — the dev opt-in, for
+ *      pointing a dev build at the Go server;
+ *   3. the platform default: the host machine as seen from the emulator.
+ *
+ * `platformDefault` overrides step 3 so tests can pin either side of the
+ * split; callers omit it.
  */
 export function resolveApiBaseUrl(
   env: { EXPO_PUBLIC_API_URL?: string | undefined },
   storedUrl?: string | null,
+  platformDefault?: string,
 ): string {
   const stored = storedUrl ? normalizeServerUrl(storedUrl) : null;
-  const url = stored || env.EXPO_PUBLIC_API_URL || DEFAULT_API_URL;
+  const url = stored || env.EXPO_PUBLIC_API_URL || platformDefault || platformApiDefault();
   return url.replace(/\/+$/, "");
 }
 

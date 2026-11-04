@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { MaruMoriSettings } from './MaruMoriSettings.tsx';
+import { formatInstant } from './Today.tsx';
 import { createApiClient } from '@vjt/api-client';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -61,12 +62,14 @@ describe('mobile MaruMoriSettings', () => {
     });
   });
 
-  function renderApp() {
+  function renderApp(registerSave?: (
+    save: (() => Promise<'saved' | 'nothing' | 'blocked'>) | null,
+  ) => void) {
     const client = createApiClient({
       baseUrl: 'http://localhost',
       fetch: fetchMock as unknown as typeof fetch,
     });
-    return render(<MaruMoriSettings client={client} onBack={() => {}} />);
+    return render(<MaruMoriSettings client={client} registerSave={registerSave} />);
   }
 
   async function waitForDisconnected() {
@@ -100,6 +103,35 @@ describe('mobile MaruMoriSettings', () => {
     expect(put?.body).toEqual({ apiKey: 'mkmk_2024_key' });
     expect((screen.getByLabelText('MaruMori API key') as HTMLInputElement).value).toBe('');
     expect(screen.getByText(/Known kanji: 2419/)).toBeTruthy();
+    // P5: Last Sync reads as a date, not the raw ISO stamp from the wire.
+    expect(
+      screen.getByText(`Last Sync ${formatInstant('2026-11-01T20:12:00Z', undefined)}`),
+    ).toBeTruthy();
+    expect(screen.queryByText(/2026-11-01T20:12:00Z/)).toBeNull();
+  });
+
+  it('keeps a typed key masked and never echoes it back as text', async () => {
+    renderApp();
+    await waitForDisconnected();
+
+    const input = screen.getByLabelText('MaruMori API key') as HTMLInputElement;
+    expect(input.type).toBe('password');
+
+    fireEvent.change(input, { target: { value: 'mkmk_2024_secret_token_value' } });
+
+    // The value lives inside the masked control but is never rendered as
+    // readable text anywhere on screen.
+    expect(input.value).toBe('mkmk_2024_secret_token_value');
+    expect(input.type).toBe('password');
+    expect(document.body.textContent).not.toContain('mkmk_2024_secret_token_value');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save key' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Connected to MaruMori')).toBeTruthy();
+    });
+    const put = writes.find((w) => w.method === 'PUT');
+    expect(put?.body).toEqual({ apiKey: 'mkmk_2024_secret_token_value' });
   });
 
   it('shows a validation error inline and keeps the draft', async () => {
@@ -155,5 +187,29 @@ describe('mobile MaruMoriSettings', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Confirm remove' }));
 
     await waitForDisconnected();
+  });
+
+  it('the step save registered with the wizard connects a typed key, and reports nothing when none is typed (S2)', async () => {
+    let stepSave: (() => Promise<'saved' | 'nothing' | 'blocked'>) | null = null;
+    renderApp((save) => {
+      stepSave = save;
+    });
+    await waitForDisconnected();
+    expect(stepSave).toBeTruthy();
+
+    await expect(stepSave!()).resolves.toBe('nothing');
+    expect(writes.some((w) => w.method === 'PUT')).toBe(false);
+
+    fireEvent.change(screen.getByLabelText('MaruMori API key'), {
+      target: { value: 'mkmk_2024_key' },
+    });
+    await expect(stepSave!()).resolves.toBe('saved');
+    const put = writes.find((w) => w.method === 'PUT');
+    expect(put?.url).toContain('/marumori/key');
+    expect(put?.body).toEqual({ apiKey: 'mkmk_2024_key' });
+    // Same contract as Connect: the draft is cleared once it lands.
+    await waitFor(() => {
+      expect((screen.getByLabelText('MaruMori API key') as HTMLInputElement).value).toBe('');
+    });
   });
 });

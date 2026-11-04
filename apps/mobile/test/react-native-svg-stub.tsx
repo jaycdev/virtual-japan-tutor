@@ -15,7 +15,7 @@ function asViewProps(props: ViewProps & Record<string, unknown>): ViewProps {
   return kept as ViewProps;
 }
 
-export default function Svg(props: ViewProps & { width?: number | string; height?: number | string }) {
+export function Svg(props: ViewProps & { width?: number | string; height?: number | string }) {
   const { width, height, ...rest } = props;
   return <View accessibilityRole="image" {...asViewProps(rest)} style={{ width, height, ...rest.style }} />;
 }
@@ -27,3 +27,25 @@ export function Circle(props: ViewProps & Record<string, unknown>) {
 export function Line(props: ViewProps & Record<string, unknown>) {
   return <View {...asViewProps(props)} />;
 }
+
+export function Path(props: ViewProps & Record<string, unknown>) {
+  return <View {...asViewProps(props)} />;
+}
+
+export function Polygon(props: ViewProps & Record<string, unknown>) {
+  return <View {...asViewProps(props)} />;
+}
+
+export function Polyline(props: ViewProps & Record<string, unknown>) {
+  return <View {...asViewProps(props)} />;
+}
+
+export function Rect(props: ViewProps & Record<string, unknown>) {
+  return <View {...asViewProps(props)} />;
+}
+
+export function G(props: ViewProps & Record<string, unknown>) {
+  return <View {...asViewProps(props)} />;
+}
+
+export default Svg;

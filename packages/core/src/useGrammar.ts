@@ -7,6 +7,7 @@ import type {
 } from "@vjt/api-client";
 import { useCallback, useEffect, useState } from "react";
 import type { ActionResult } from "./useAiSettings.ts";
+import { FAILED, UNREACHABLE } from "./errors.ts";
 
 export type GrammarLevelFilter = GrammarJLPTLevel | "all";
 export type GrammarFilter = { level: GrammarLevelFilter; query: string; limit: number; offset: number };
@@ -43,8 +44,6 @@ export interface Grammar {
   regenerateExplanation(id: number): Promise<ActionResult>;
 }
 
-const UNREACHABLE = "Cannot reach the server";
-const FAILED = "Request failed";
 const DEFAULT_LIMIT = 50;
 
 function failure(error: { message?: string } | undefined, status: number): { ok: false; message: string } {
@@ -54,11 +53,17 @@ function failure(error: { message?: string } | undefined, status: number): { ok:
 /**
  * State and actions behind the grammar catalogue screen, shared by web and mobile.
  * `client` must be a stable reference and must already authenticate (see `useAuth`).
+ * `initial` starts the browse where the screen left it — the screen keeps the
+ * Learner's search term and page across list→detail→back (#49 review S3), and
+ * this is how they ride into the first read instead of refetching page one.
  */
-export function useGrammar(client: ApiClient): Grammar {
-  const [level, setLevelState] = useState<GrammarLevelFilter>("all");
-  const [query, setQueryState] = useState("");
-  const [offset, setOffsetState] = useState(0);
+export function useGrammar(
+  client: ApiClient,
+  initial?: { query?: string; offset?: number; level?: GrammarLevelFilter },
+): Grammar {
+  const [level, setLevelState] = useState<GrammarLevelFilter>(initial?.level ?? "all");
+  const [query, setQueryState] = useState(initial?.query ?? "");
+  const [offset, setOffsetState] = useState(Math.max(0, initial?.offset ?? 0));
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<GrammarListState>({ status: "loading" });
   const [detail, setDetail] = useState<GrammarDetailState>({ status: "idle" });

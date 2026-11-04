@@ -3,7 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" media="(prefers-color-scheme: light)" />
+    <link rel="icon" type="image/svg+xml" href="/favicon-dark.svg" media="(prefers-color-scheme: dark)" />
+    <!-- Only the sans latin-kana slice: the first paint of every page. Other slices download when a page renders them (ADR-0009). -->
+    <link rel="preload" href="/fonts/NotoSansJP400-latin-kana.woff2" as="font" type="font/woff2" crossorigin />
     <title>Virtual Japan Tutor</title>
+    <!-- Replaced at build and dev time by the theme bootstrap (src/theme/bootstrap.ts, vite.config.ts). It is a
+         classic script in <head>, so the saved theme is applied before the first paint. -->
+    <!--THEME_BOOTSTRAP-->
   </head>
   <body>
     <div id="root"></div>

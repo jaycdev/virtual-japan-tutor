@@ -1,0 +1,10 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "generate": {
+      "inputs": ["src/**", "scripts/**", "package.json"],
+      "outputs": ["web.css", "native.css"]
+    }
+  }
+}

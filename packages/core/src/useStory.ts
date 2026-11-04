@@ -8,6 +8,7 @@ import type {
 } from "@vjt/api-client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ActionResult } from "./useAiSettings.ts";
+import { FAILED, UNREACHABLE } from "./errors.ts";
 
 /**
  * State and actions behind the Story screens (issues #10, #31, #32), shared by
@@ -95,8 +96,6 @@ export interface StoryView {
   answer(position: number, optionIndex: number): Promise<void>;
 }
 
-const UNREACHABLE = "Cannot reach the server";
-const FAILED = "Request failed";
 const DEFAULT_LIMIT = 20;
 
 function message(error: { message?: string } | undefined, status: number): string {
@@ -165,6 +164,55 @@ export function useStorySettings(client: ApiClient): StorySettingsView {
   return { settings, saveSettings, reloadSettings };
 }
 
+/**
+ * Today's Story on its own (issue #47): the Today screen's card needs the
+ * newest Automatic Story without the library page `useStory` also loads. Same
+ * read, same rules — a 404 means the generator has not written one (yet), not
+ * that something failed.
+ */
+export async function fetchTodaysStory(client: ApiClient): Promise<TodaysStoryState> {
+  try {
+    const { data, error: err, response } = await client.GET("/stories/today");
+    if (data) return { status: "story", story: data };
+    if (response.status === 404) return { status: "none" };
+    return { status: "error", message: message(err, response.status) };
+  } catch {
+    return { status: "error", message: UNREACHABLE };
+  }
+}
+
+export interface TodaysStoryView {
+  today: TodaysStoryState;
+  /** Re-read: the empty state invites it, and a finished run ends on it. */
+  reloadToday(): void;
+}
+
+export function useTodaysStory(client: ApiClient): TodaysStoryView {
+  const [today, setToday] = useState<TodaysStoryState>({ status: "loading" });
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchTodaysStory(client).then((next) => {
+      if (!cancelled) setToday(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, attempt]);
+
+  const reloadToday = useCallback(() => {
+    // A manual reload flips the card to its loading state in place of the
+    // stale error, so pressing Retry visibly does something (issue #47
+    // review N7). The initial state is already loading, so the flip lives
+    // in this callback rather than in the effect.
+    setToday({ status: "loading" });
+    setAttempt((n) => n + 1);
+  }, []);
+
+  return { today, reloadToday };
+}
+
 export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
   const [offset, setOffset] = useState(0);
   const [attempt, setAttempt] = useState(0);
@@ -176,6 +224,11 @@ export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
   // re-creating them: an answer's response is only painted while the Story
   // it was asked about is still the open one.
   const openIdRef = useRef<string | null>(null);
+  // The Story the Learner last asked to open, before it has necessarily
+  // arrived: quick Previous/Next presses can land out of order, and a reply
+  // for a Story the Learner has already moved past must not paint, not fail,
+  // and not clear the newer request's pending state (issue #77 review).
+  const requestedIdRef = useRef<string | null>(null);
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -206,16 +259,7 @@ export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
   // Today's Story comes from storage, exactly like opening it: a 404 is the
   // "the generator has not written one (yet)" state, not a failure; anything
   // else is a real error the view can retry.
-  const fetchToday = useCallback(async (): Promise<TodaysStoryState> => {
-    try {
-      const { data, error: err, response } = await client.GET("/stories/today");
-      if (data) return { status: "story", story: data };
-      if (response.status === 404) return { status: "none" };
-      return { status: "error", message: message(err, response.status) };
-    } catch {
-      return { status: "error", message: UNREACHABLE };
-    }
-  }, [client]);
+  const fetchToday = useCallback(async (): Promise<TodaysStoryState> => fetchTodaysStory(client), [client]);
 
   useEffect(() => {
     let cancelled = false;
@@ -251,18 +295,23 @@ export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
 
   const openStory = useCallback(
     async (id: string) => {
+      requestedIdRef.current = id;
       setPending(true);
       setError(null);
       try {
         const { data, error: err, response } = await client.GET("/stories/{storyId}", {
           params: { path: { storyId: id } },
         });
+        // A reply that lands after the Learner moved on belongs to a Story they
+        // no longer want: it never paints, never errors, and never clears the
+        // newer request's pending flag.
+        if (requestedIdRef.current !== id) return;
         if (data) showStory(data);
         else setError(message(err, response.status));
       } catch {
-        setError(UNREACHABLE);
+        if (requestedIdRef.current === id) setError(UNREACHABLE);
       } finally {
-        setPending(false);
+        if (requestedIdRef.current === id) setPending(false);
       }
     },
     [client, showStory],
@@ -270,6 +319,7 @@ export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
 
   const close = useCallback(() => {
     openIdRef.current = null;
+    requestedIdRef.current = null;
     setStory(null);
     setOpen(false);
     setAnswers(new Map());

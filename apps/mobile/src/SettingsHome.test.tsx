@@ -1,57 +1,59 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 
-import { fakeBackHandler } from '../test/back-handler-fake.ts';
-import { setBackHandlerForTests } from './hardwareBack.ts';
-import { SettingsHome } from './SettingsHome.tsx';
+import { SettingsHome, type SettingsSection } from './SettingsHome.tsx';
 
 function renderHome() {
-  const noop = () => {};
-  return render(
+  const opened: SettingsSection[] = [];
+  render(
     <SettingsHome
-      client={undefined as never}
       username="learner"
-      onLogout={noop}
-      serverUrl="http://10.0.2.2:8080"
-      onSaveServerUrl={async () => {}}
+      onLogout={() => {}}
+      onOpenSection={(section) => opened.push(section)}
     />,
   );
+  return opened;
 }
 
 describe('mobile SettingsHome', () => {
-  afterEach(() => setBackHandlerForTests(undefined));
+  it('opens every settings section from the hub rows', () => {
+    const opened = renderHome();
 
-  it('opens every settings section from the home rows', () => {
-    renderHome();
-
+    // The plan's (A4.7) eight sections, in hub order. The grammar review
+    // list is not one of them: it lives inside Starting Level, read-only.
     for (const label of [
+      'Appearance',
+      'Reading',
+      'Stories',
+      'Item Lists',
+      'Starting Level',
       'MaruMori',
       'AI Providers',
-      'Starting Level',
-      'Stories',
-      'Reading',
-      'Item Lists',
       'Server',
     ]) {
       expect(screen.getByRole('button', { name: label })).toBeTruthy();
     }
     expect(screen.getByText('learner')).toBeTruthy();
+    // The server address is not hub text: it lives in the Server section.
+    expect(screen.queryByText('http://10.0.2.2:8080')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'AI Providers' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
-    expect(screen.getByRole('button', { name: 'Item Lists' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Item Lists' }));
+    expect(opened).toEqual(['ai', 'lists']);
   });
 
-  it('pops a section back to the hub on hardware Back, and stands down on the hub', () => {
-    const back = fakeBackHandler();
-    setBackHandlerForTests(back);
-    renderHome();
-
-    // On the hub no listener is attached, so Android's default (leave the app) stands.
-    expect(back.press()).toBe(false);
-
-    fireEvent.click(screen.getByRole('button', { name: 'AI Providers' }));
-    expect(back.press()).toBe(true);
-    expect(screen.getByRole('button', { name: 'Item Lists' })).toBeTruthy();
+  it('logs out from the Account card', () => {
+    let loggedOut = false;
+    render(
+      <SettingsHome
+        username="learner"
+        onLogout={() => {
+          loggedOut = true;
+        }}
+        onOpenSection={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Log out' }));
+    expect(loggedOut).toBe(true);
   });
 });

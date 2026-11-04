@@ -42,8 +42,20 @@ func site(t *testing.T) http.Handler {
 }
 
 func do(h http.Handler, method, target string) *httptest.ResponseRecorder {
+	return doAccept(h, method, target, "")
+}
+
+// browserAccept is what a navigation request carries; fetch/openapi-fetch and
+// curl/wget send `*/*` or nothing, modelled by the empty string.
+const browserAccept = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+
+func doAccept(h http.Handler, method, target, accept string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, target, nil)
+	if accept != "" {
+		req.Header.Set("Accept", accept)
+	}
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(method, target, nil))
+	h.ServeHTTP(rec, req)
 	return rec
 }
 
@@ -112,6 +124,143 @@ func TestAnythingElseGoesToTheAPI(t *testing.T) {
 		rec := do(h, tc.method, tc.target)
 		if rec.Header().Get("X-From") != "api" || rec.Code != http.StatusTeapot {
 			t.Errorf("%s %s = %d (X-From %q), want it handed to the API", tc.method, tc.target, rec.Code, rec.Header().Get("X-From"))
+		}
+	}
+}
+
+// TestDeepLinkServesTheAppShell is the fallback #51 added (flipping the #42
+// scratch test): reloading a client-side route like /stories/123 is a browser
+// navigation — GET with Accept: text/html and a path naming no file type —
+// so it gets index.html (the app shell, Cache-Control: no-cache like "/"),
+// and React Router restores the route from the URL.
+func TestDeepLinkServesTheAppShell(t *testing.T) {
+	h := site(t)
+	for _, tc := range []struct{ method, target string }{
+		{http.MethodGet, "/stories/123"},
+		{http.MethodGet, "/settings/appearance"},
+		{http.MethodGet, "/practice/session-7"},
+		{http.MethodHead, "/stories/123"},
+	} {
+		rec := doAccept(h, tc.method, tc.target, browserAccept)
+		if rec.Header().Get("X-From") != "" || rec.Code != http.StatusOK {
+			t.Errorf("%s %s = %d (X-From %q), want the app shell not the API",
+				tc.method, tc.target, rec.Code, rec.Header().Get("X-From"))
+			continue
+		}
+		if tc.method == http.MethodHead {
+			continue
+		}
+		if !strings.Contains(rec.Body.String(), "<title>app</title>") {
+			t.Errorf("%s %s body = %q, want index.html", tc.method, tc.target, rec.Body.String())
+		}
+		if got := rec.Header().Get("Cache-Control"); got != "no-cache" {
+			t.Errorf("%s %s Cache-Control = %q, want no-cache like the index at /", tc.method, tc.target, got)
+		}
+	}
+}
+
+// TestAppShapedAPICallsReachTheAPI: the app itself fetches JSON on paths that
+// look like its own routes (GET /stories/123). Those must stay API calls —
+// only text/html Accept turns a file miss into the app shell.
+func TestAppShapedAPICallsReachTheAPI(t *testing.T) {
+	h := site(t)
+	for _, tc := range []struct{ target, accept string }{
+		{"/stories/123", ""},    // fetch default: no/`*/*` Accept
+		{"/stories/123", "*/*"}, // curl/wget default
+		{"/stories/123", "application/json"},
+		{"/health", "*/*"}, // health checks: compose uses wget, same rule
+		{"/dictionary/entries/404-miss", "*/*"},
+	} {
+		rec := doAccept(h, http.MethodGet, tc.target, tc.accept)
+		if rec.Header().Get("X-From") != "api" || rec.Code != http.StatusTeapot {
+			t.Errorf("GET %s (Accept %q) = %d (X-From %q), want the API's answer",
+				tc.target, tc.accept, rec.Code, rec.Header().Get("X-From"))
+		}
+	}
+}
+
+// TestAssetMissesAreNotTheAppShell: a path naming a file type — e.g. a hashed
+// bundle URL cached from a superseded release — 404s (here: the API's 404)
+// even for a browser, instead of getting HTML where JS/CSS is expected.
+func TestAssetMissesAreNotTheAppShell(t *testing.T) {
+	h := site(t)
+	for _, target := range []string{
+		"/assets/index-deadbeef.js",
+		"/assets/vendor-react-deadbeef.js",
+		"/fonts/NotoSansJP400-missing.woff2",
+		"/no-such-page.json",
+	} {
+		rec := doAccept(h, http.MethodGet, target, browserAccept)
+		if rec.Header().Get("X-From") != "api" || rec.Code != http.StatusTeapot {
+			t.Errorf("GET %s = %d (X-From %q), want the API's 404, not index.html",
+				target, rec.Code, rec.Header().Get("X-From"))
+		}
+	}
+}
+
+// TestTrailingSlashDeepLinksServeTheAppShell (#51 review S3): React Router
+// accepts /stories/123/ style URLs and /stories/ is a page navigation like
+// /stories. fileName rejects trailing slashes before the disk lookup, so
+// without the slash-route path a browser got the API's JSON 404 where the
+// app shell belongs. API-shaped Accept on the very same URL must still
+// reach the API.
+func TestTrailingSlashDeepLinksServeTheAppShell(t *testing.T) {
+	h := site(t)
+	for _, target := range []string{"/stories/", "/stories/123/", "/settings/"} {
+		rec := doAccept(h, http.MethodGet, target, browserAccept)
+		if rec.Header().Get("X-From") != "" || rec.Code != http.StatusOK {
+			t.Errorf("GET %s = %d (X-From %q), want the app shell not the API",
+				target, rec.Code, rec.Header().Get("X-From"))
+			continue
+		}
+		if !strings.Contains(rec.Body.String(), "<title>app</title>") {
+			t.Errorf("GET %s body = %q, want index.html", target, rec.Body.String())
+		}
+	}
+	for _, accept := range []string{"", "*/*", "application/json"} {
+		rec := doAccept(h, http.MethodGet, "/stories/123/", accept)
+		if rec.Header().Get("X-From") != "api" || rec.Code != http.StatusTeapot {
+			t.Errorf(`GET /stories/123/ (Accept %q) = %d (X-From %q), want the API's answer`,
+				accept, rec.Code, rec.Header().Get("X-From"))
+		}
+	}
+	// Paths that name a file type keep 404ing through the API even with a
+	// trailing slash, and degenerate paths ("//") stay the API's too.
+	for _, target := range []string{"/no-such-page.json/", "//"} {
+		rec := doAccept(h, http.MethodGet, target, browserAccept)
+		if rec.Header().Get("X-From") != "api" || rec.Code != http.StatusTeapot {
+			t.Errorf("GET %s = %d (X-From %q), want the API's answer, not index.html",
+				target, rec.Code, rec.Header().Get("X-From"))
+		}
+	}
+}
+
+// TestVaryAcceptOnRouteMisses (#51 review S1): on a file miss for a path
+// that names no file type, the answer depends on the Accept header — app
+// shell for a browser, API JSON for */*. Both answers carry Vary: Accept so
+// a future URL-keyed cache cannot serve one where the other belongs. Real
+// files are Accept-blind and must NOT get the header.
+func TestVaryAcceptOnRouteMisses(t *testing.T) {
+	h := site(t)
+	for _, tc := range []struct{ method, target, accept, wantFrom string }{
+		{http.MethodGet, "/stories/123", browserAccept, ""},
+		{http.MethodGet, "/stories/123", "*/*", "api"},
+		{http.MethodHead, "/stories/123", browserAccept, ""},
+		{http.MethodGet, "/stories/", browserAccept, ""},
+		{http.MethodGet, "/stories/", "*/*", "api"},
+	} {
+		rec := doAccept(h, tc.method, tc.target, tc.accept)
+		if rec.Header().Get("X-From") != tc.wantFrom {
+			t.Errorf("%s %s (Accept %q): X-From = %q, want %q",
+				tc.method, tc.target, tc.accept, rec.Header().Get("X-From"), tc.wantFrom)
+		}
+		if got := rec.Header().Get("Vary"); got != "Accept" {
+			t.Errorf("%s %s (Accept %q): Vary = %q, want Accept", tc.method, tc.target, tc.accept, got)
+		}
+	}
+	for _, target := range []string{"/", "/assets/index-abc123.js", "/favicon.svg"} {
+		if got := do(h, http.MethodGet, target).Header().Get("Vary"); got != "" {
+			t.Errorf("GET %s: Vary = %q, want none (the answer does not depend on Accept)", target, got)
 		}
 	}
 }

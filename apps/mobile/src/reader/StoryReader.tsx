@@ -1,5 +1,21 @@
 import type { ApiClient, Story, WeakSignalRequest } from "@vjt/api-client";
-import { type StoryView, useItemLists, useReadingSettings } from "@vjt/core";
+import {
+  coveringSpan,
+  holdSignal,
+  IDLE,
+  menuOptions,
+  optionAt,
+  reduceHold,
+  saveableItem,
+  useEntryLookup,
+  useItemLists,
+  useReadingSettings,
+  type MeasurableNode,
+  type MenuOptionId,
+  type Rect,
+  type StoryView,
+  type TokenRef,
+} from "@vjt/core";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import {
   Pressable,
@@ -11,39 +27,30 @@ import {
   type NativeTouchEvent,
 } from "react-native";
 
-import { useHardwareBack } from "../hardwareBack.ts";
-import { MIN_TOUCH, useColors } from "../theme.ts";
+import { useHardwareBack } from "../useHardwareBack.ts";
+import { Icon } from "../components/ui/icon";
+import { useStoryTextSize } from "../storysize/index.tsx";
 import { RatingButtons } from "./parts.tsx";
 import { ReadingPanel, type LookedTarget } from "./ReadingPanel.tsx";
 import { StoryParagraph, type TokenHandlers } from "./StoryText.tsx";
 import { SaveToSheet } from "./SaveToSheet.tsx";
 import { TokenMenu } from "./TokenMenu.tsx";
 import { DictionaryWindow, GrammarWindow } from "./Windows.tsx";
-import { useEntryLookup } from "./useEntryLookup.ts";
-import {
-  coveringSpan,
-  holdSignal,
-  IDLE,
-  menuOptions,
-  optionAt,
-  reduceHold,
-  saveableItem,
-  type MeasurableNode,
-  type MenuOptionId,
-  type Rect,
-  type TokenRef,
-} from "./holdMenu.ts";
 
 /**
- * The mobile Story reader (issue #14): a fixed Reading Panel sits above the
- * story, which scrolls under it. Pressing a token selects its sentence,
- * switches the panel to word-mode for that word, and starts the hold timer.
- * The gesture itself runs on the pure holdMenu machine (reduceHold through
- * useReducer), so the machine's unit tests guard shipped code: a hold past
- * lookupHoldMs opens the Lookup Menu at the finger — that hold is the Weak
- * Signal — and lifting over a menu option runs it (Dictionary / Grammar open
- * centred windows, Save writes to the Default List, Save to… opens the bottom
- * sheet); anywhere else the release cancels.
+ * The mobile Story reader (issues #14, #45): a fixed Reading Panel sits above
+ * the story, which scrolls under it. The story itself is a centred serif
+ * column 40 characters wide at the saved Story text size. Pressing a token
+ * selects its sentence, switches the panel to word-mode for that word, and
+ * starts the hold timer. The gesture itself runs on the pure holdMenu machine
+ * (reduceHold through useReducer), so the machine's unit tests guard shipped
+ * code: a hold past lookupHoldMs opens the Lookup Menu at the finger — that
+ * hold is the Weak Signal — and lifting over a menu option runs it
+ * (Dictionary / Grammar open centred windows, Save writes to the Default
+ * List, Save to… opens the bottom sheet); anywhere else the release cancels.
+ *
+ * The Reading Panel's word-mode `looked` target follows the touch gesture, so
+ * the panel, the lookup cache and the menu all share one path.
  *
  * Scrolling vs. the gesture (issue #14 review): the story ScrollView is only
  * frozen while the Lookup Menu is up. A swipe that merely starts on text,
@@ -55,6 +62,12 @@ import {
  * checklist: verify swipe-to-scroll starting on text, and slide-and-release,
  * on a real Android device.)
  *
+ * The footer bar carries the per-Story actions (#45 moved them out of the
+ * header): mark read/unmark, the rating thumbs, "Practice this Story" (the
+ * host's practice queue), and Previous/Next story. Prev/Next walk the
+ * Library page the Learner is already on, newest-first, WITHOUT a fetch: the
+ * adjacent Story bodies ride in `view.library.page.items`.
+ *
  * Android Back unwinds one layer at a time: sheet, then window, then menu,
  * then back out to whichever view opened the Story (Today's Story or the
  * Library).
@@ -65,29 +78,36 @@ const sameRef = (a: TokenRef, b: TokenRef) => a.sentence === b.sentence && a.ind
 export function StoryReader({
   client,
   view,
-  story,
+  story: openStory,
   onBack,
+  onPractice,
   measure: measureProp,
-  screenSize,
 }: {
   client: ApiClient;
   view: StoryView;
   story: Story;
   onBack: () => void;
+  /** Queues the open Story for speaking practice (the route host owns the queue). */
+  onPractice?: (storyId: string) => void;
   /** Overrides the menu measuring (jsdom reports no geometry — tests inject rects). */
   measure?: (testID: string, node: MeasurableNode | null) => Rect | null;
-  /** Overrides the measured viewport for menu anchoring (same reason). */
-  screenSize?: { width: number; height: number };
 }) {
-  const colors = useColors();
   const reading = useReadingSettings(client);
   const lists = useItemLists(client);
   const lookup = useEntryLookup(client);
+  const { fontSizePx, lineHeightPx, columnWidthPx } = useStoryTextSize();
 
   const [selected, setSelected] = useState<number | null>(null);
+  // The token whose sentence background is lit (issue #45: the mark belongs to
+  // the tapped word, not to a paragraph-wide container).
+  const [selectedToken, setSelectedToken] = useState<TokenRef | null>(null);
   // The title's English translation reveals transiently in the header too
   // (issue #34 parity): never saved, never a Weak Signal.
   const [titleEnRevealed, setTitleEnRevealed] = useState(false);
+  // Prev/Next story walks the loaded Library page in place (#45): the shown
+  // Story is a local override until the route/view opens one for real.
+  const [navStory, setNavStory] = useState<Story | null>(null);
+  const story = navStory ?? openStory;
   // The whole press → hold → menu gesture is one reducer (holdMenu.reduceHold):
   // phase, token, finger point and press anchor. menu / looked (panel
   // word-mode) / the scroll freeze all DERIVE from it, and the timer's
@@ -102,11 +122,6 @@ export function StoryReader({
   const saveBusyRef = useRef(false);
   const [sheetError, setSheetError] = useState<string | null>(null);
   const [saveNote, setSaveNote] = useState<string | null>(null);
-  const [screen, setScreen] = useState({ width: 0, height: 0 });
-  // The reader view's window origin (see the menu-position effect): pageX/
-  // pageY arrive in window coordinates, but TokenMenu positions itself
-  // absolutely inside this view, which sits below the safe-area padding.
-  const [viewOrigin, setViewOrigin] = useState<{ x: number; y: number } | null>(null);
 
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelHold = () => {
@@ -155,7 +170,7 @@ export function StoryReader({
     reportSignals(signals);
   };
 
-  // --- state derived from the gesture reducer ------------------------------
+  // --- state derived from the gesture reducer -------------------------------
 
   const pressedToken =
     gesture.token !== null ? story.sentences[gesture.token.sentence]?.tokens[gesture.token.index] : undefined;
@@ -168,11 +183,12 @@ export function StoryReader({
   // The Reading Panel's word-mode follows the machine: the pressed token is
   // "looked at" from press until cancel (release, terminate, or Back).
   const looked: LookedTarget | null = useMemo(() => {
-    if (!gesture.token) return null;
-    const sen = story.sentences[gesture.token.sentence];
-    const tok = sen?.tokens[gesture.token.index];
+    const target = gesture.token;
+    if (!target) return null;
+    const sen = story.sentences[target.sentence];
+    const tok = sen?.tokens[target.index];
     if (!sen || !tok) return null;
-    return { ...gesture.token, kind: coveringSpan(sen, tok) ? "grammar" : "token" };
+    return { ...target, kind: coveringSpan(sen, tok) ? "grammar" : "token" };
   }, [gesture.token, story]);
 
   const menuOpen = gesture.phase === "menu";
@@ -217,6 +233,7 @@ export function StoryReader({
     const token = sen?.tokens[ref.index];
     if (!sen || !token) return;
     setSelected(ref.sentence);
+    setSelectedToken(ref);
     dispatch({ type: "press", token: ref, x: e.nativeEvent.pageX, y: e.nativeEvent.pageY });
     if (token.entSeq !== undefined) lookup.load(token.entSeq, token.surface, token.reading);
 
@@ -231,8 +248,8 @@ export function StoryReader({
       const g = gestureRef.current;
       if (g.phase !== "press" || !g.token || !sameRef(g.token, ref)) return; // released or stolen
       dispatch({ type: "holdElapsed" });
-      // The hold *is* the menu opening on mobile: one signal covers both,
-      // and unlinked words simply signal nothing.
+      // The hold *is* the menu opening: one signal covers both, and unlinked
+      // words simply signal nothing.
       const signal = holdSignal(token, coveringSpan(sen, token));
       if (signal) reportSignals([signal]);
     }, holdMs);
@@ -293,6 +310,13 @@ export function StoryReader({
     setSheetToken(ref);
   };
 
+  /** A tap on a menu row: close the menu, then run the option. */
+  const onMenuSelect = (option: MenuOptionId) => {
+    const g = gestureRef.current;
+    closeMenu();
+    if (g.token) runMenuOption(option, g.token);
+  };
+
   const saveInto = async (
     listId: string | null,
     item: { kind: "vocabulary" | "grammar"; ref: string },
@@ -332,7 +356,11 @@ export function StoryReader({
 
   const gestureRef = useRef(gesture);
   const openOptionsRef = useRef(openOptions);
-  const actionsRef = useRef({ grant: onTokenGrant, release: onTokenRelease, terminate: onTokenTerminate });
+  const actionsRef = useRef({
+    grant: onTokenGrant,
+    release: onTokenRelease,
+    terminate: onTokenTerminate,
+  });
   // The refs refresh after each commit (react-hooks forbids writing refs in
   // the render body). Every reader of them — the hold timer and the token
   // handlers — runs from a timer or a touch event, which always lands after
@@ -340,11 +368,15 @@ export function StoryReader({
   useEffect(() => {
     gestureRef.current = gesture;
     openOptionsRef.current = openOptions;
-    actionsRef.current = { grant: onTokenGrant, release: onTokenRelease, terminate: onTokenTerminate };
+    actionsRef.current = {
+      grant: onTokenGrant,
+      release: onTokenRelease,
+      terminate: onTokenTerminate,
+    };
   });
 
   // Handler objects are built ONCE per token (story is immutable while the
-  // reader is open): the same identity every render, so React.memo on
+  // reader shows it): the same identity every render, so React.memo on
   // StoryParagraph genuinely skips untouched paragraphs. The objects only
   // touch refs when an event fires, never during render (react-hooks/refs).
   const tokenHandlers = useMemo(() => {
@@ -396,9 +428,19 @@ export function StoryReader({
     setWindows((w) => w.slice(0, -1));
   };
 
+  // A Story change resets the per-Story state: the panel falls back to its idle row.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting per-Story state on Story change is the point
+    setSelected(null);
+    setSelectedToken(null);
+    setNavStory(null);
+    setWindows([]);
+    setSheetToken(null);
+  }, [openStory.id]);
+
   // Android Back unwinds one layer at a time, and only one listener is ever
   // attached (issue #13's pattern), so a press can never pop twice. The sheet
-  // and windows are Modals whose onRequestClose also fires on Back: on Android
+  // and windows are Dialogs whose onOpenChange also fires on Back: on Android
   // the dialog consumes the key press, so that path never reaches this
   // listener — the pairing is a deliberate double safety, not a double-pop.
   useHardwareBack(true, () => {
@@ -432,25 +474,28 @@ export function StoryReader({
   }, []);
   const measure = measureProp ?? defaultMeasure;
 
-  const rootViewRef = useRef<MeasurableNode | null>(null);
+  // --- footer: read, rating, practice, prev/next (issue #45) -----------------
+
+  const libraryItems = view.library.status === "ready" ? view.library.page.items : [];
+  const positionInLibrary = libraryItems.findIndex((item) => item.id === story.id);
+  // Newest-first: the Story before this one in the page is newer, the one
+  // after it older. The walk is local — adjacent bodies already arrived with
+  // the Library page — so flipping pages costs no request.
+  const navTo = (delta: number) => {
+    const target = positionInLibrary >= 0 ? libraryItems[positionInLibrary + delta] : undefined;
+    if (!target) return;
+    closeMenu();
+    setWindows([]);
+    setSheetToken(null);
+    setNavStory(target);
+  };
 
   return (
     <View
-      ref={(node) => {
-        rootViewRef.current = node;
-      }}
       style={styles.fill}
-      onLayout={(e) => {
-        setScreen({ width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height });
-        // The menu anchors on pageX/pageY (window coordinates) but positions
-        // itself inside this view — under the safe-area paddingTop. Anchor on
-        // view-local coordinates instead (issue #14 review, minor 4).
-        const r = measure("reader-view", rootViewRef.current);
-        setViewOrigin(r ? { x: r.x, y: r.y } : null);
-      }}
       accessibilityLabel="Story reader"
     >
-      <View style={[styles.header, { borderBottomColor: colors.separator }]}>
+      <View style={styles.header} className="border-b border-border">
         <View style={styles.headerRow}>
           <Pressable
             testID="back-to-stories"
@@ -459,25 +504,11 @@ export function StoryReader({
             onPress={onBack}
             style={styles.backButton}
           >
-            <Text style={{ color: colors.accent, fontSize: 16 }}>‹ Back</Text>
+            <Icon name="chevron-left" size="lg" strokeWidth={2.5} className="text-primary" />
           </Pressable>
-          <Text style={[styles.headerTitle, { color: colors.label }]} numberOfLines={1}>
+          <Text className="text-body text-foreground" style={styles.headerTitle} numberOfLines={1}>
             {story.title}
           </Text>
-          <Pressable
-            testID="reader-read-toggle"
-            accessibilityRole="button"
-            accessibilityLabel={story.readAt != null ? "Unmark read" : "Mark read"}
-            accessibilityState={{ disabled: view.pending }}
-            disabled={view.pending}
-            onPress={() => void (story.readAt != null ? view.clearRead(story.id) : view.setRead(story.id))}
-            style={styles.readToggle}
-          >
-            <Text style={{ color: story.readAt != null ? colors.accent : colors.subtle, fontSize: 15 }}>
-              {story.readAt != null ? "✓ Read" : "Read"}
-            </Text>
-          </Pressable>
-          <RatingButtons view={view} storyId={story.id} rating={story.rating} />
         </View>
         <View style={styles.headerMeta}>
           {story.titleEn ? (
@@ -489,29 +520,36 @@ export function StoryReader({
               onPress={() => setTitleEnRevealed((v) => !v)}
               style={styles.titleTranslation}
             >
-              {/* Same Android-safe trick as the Reading Panel: transparent text, no CSS blur. */}
-              <Text style={{ color: titleEnRevealed ? colors.subtle : "transparent", fontSize: 13 }} numberOfLines={1}>
+              {/* The translation text stays in the tree either way (issue #45):
+                  Android has no filter, so a hidden translation paints transparent. */}
+              <Text
+                className="text-small text-muted-foreground"
+                style={titleEnRevealed ? styles.titleEn : [styles.titleEn, { color: "transparent" }]}
+                numberOfLines={1}
+              >
                 {story.titleEn}
               </Text>
               {titleEnRevealed ? null : (
-                <Text style={{ color: colors.subtle, fontSize: 11 }}>Title translation hidden — tap to show</Text>
+                <Text className="text-caption text-muted-foreground">
+                  Title translation hidden — tap to show
+                </Text>
               )}
             </Pressable>
           ) : null}
-          <Text style={{ color: colors.subtle, fontSize: 12 }} numberOfLines={1}>
+          <Text className="text-caption text-muted-foreground" numberOfLines={1}>
             {`${story.genre} · ${story.origin === "on_demand" ? "On demand" : "Automatic"} · ${new Date(story.createdAt).toDateString()}`}
           </Text>
           {saveNote ? (
-            <Text testID="save-note" style={{ color: colors.subtle, fontSize: 13 }} numberOfLines={1}>
+            <Text testID="save-note" className="text-small text-muted-foreground" numberOfLines={1}>
               {saveNote}
             </Text>
           ) : null}
         </View>
       </View>
 
-      {/* The Reading Panel is the fixed area ABOVE the story (mirrors the web
-          reader, Stories.tsx): the story scrolls under it, and the panel's
-          one fixed box switches between sentence-mode and word-mode. */}
+      {/* The Reading Panel is the fixed area ABOVE the story: the story scrolls
+          under it, and the panel's one fixed box switches between sentence-mode
+          and word-mode. */}
       <ReadingPanel
         story={story}
         selected={selected}
@@ -527,24 +565,35 @@ export function StoryReader({
         scrollEnabled={scrollEnabled}
         accessibilityLabel="Story text"
       >
-        {story.sentences.map((sen, i) => (
-          <StoryParagraph
-            key={i}
-            sentence={sen}
-            sentenceIndex={i}
-            activeToken={looked !== null && looked.sentence === i ? looked : null}
-            handlers={tokenHandlers}
-            onSelect={selectSentence}
-          />
-        ))}
+        {/* 40 characters of the saved Story text size, centred serif (plan 4.1). */}
+        <View
+          testID="story-column"
+          className="text-center font-serif"
+          style={[styles.column, { width: columnWidthPx }]}
+        >
+          {story.sentences.map((sen, i) => (
+            <StoryParagraph
+              key={i}
+              sentence={sen}
+              sentenceIndex={i}
+              selectedToken={selectedToken}
+              handlers={tokenHandlers}
+              onSelect={selectSentence}
+              fontSizePx={fontSizePx}
+              lineHeightPx={lineHeightPx}
+            />
+          ))}
+        </View>
         {view.questions.length > 0 ? (
           <View style={styles.questions}>
-            <Text style={{ color: colors.subtle, fontSize: 13, fontWeight: "600", marginBottom: 6 }}>
+            <Text className="text-small text-muted-foreground" style={styles.questionHeading}>
               COMPREHENSION
             </Text>
             {view.questions.map((q) => (
               <View key={q.position} style={styles.question}>
-                <Text style={{ color: colors.label, fontSize: 16 }}>{q.promptJa}</Text>
+                <Text className="text-body text-foreground">
+                  {q.promptJa}
+                </Text>
                 <View style={styles.options}>
                   {q.optionsJa.map((option, j) => (
                     <Pressable
@@ -554,14 +603,17 @@ export function StoryReader({
                       accessibilityState={{ disabled: q.result !== null }}
                       disabled={q.result !== null}
                       onPress={() => void view.answer(q.position, j)}
-                      style={[styles.optionButton, { borderColor: colors.separator, backgroundColor: colors.card }]}
+                      style={styles.optionButton}
+                      className="border-border bg-card"
                     >
-                      <Text style={{ color: colors.label, fontSize: 15 }}>{option}</Text>
+                      <Text className="text-body text-foreground">
+                        {option}
+                      </Text>
                     </Pressable>
                   ))}
                 </View>
                 {q.result ? (
-                  <Text style={{ color: q.result.correct ? colors.accent : colors.danger, fontSize: 14 }}>
+                  <Text className={q.result.correct ? "text-small text-primary" : "text-small text-destructive"}>
                     {q.result.correct ? "Correct." : "Not quite — the answer is above your selection."}
                   </Text>
                 ) : null}
@@ -571,15 +623,68 @@ export function StoryReader({
         ) : null}
       </ScrollView>
 
-      {menuOpen && gesture.token && (screenSize ?? screen).width > 0 ? (
+      {/* The Story's own actions live in a footer bar (issue #45 — out of the
+          header, where they crowded the title). */}
+      <View style={styles.footer} className="border-t border-border bg-card">
+        {/* Groups, not nine loose buttons: when the row has to wrap on a phone it
+            wraps between nav / status / Practice, never inside a button. The nav
+            buttons are icon-only — same accessibility labels, and the row fits one
+            line at 400dp. */}
+        <View style={styles.footerGroup}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Previous story"
+            accessibilityState={{ disabled: positionInLibrary <= 0 }}
+            disabled={positionInLibrary <= 0}
+            onPress={() => navTo(-1)}
+            style={styles.footerButton}
+          >
+            <Icon name="chevron-left" size="sm" strokeWidth={2.5} className="text-muted-foreground" />
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Next story"
+            accessibilityState={{ disabled: positionInLibrary < 0 || positionInLibrary >= libraryItems.length - 1 }}
+            disabled={positionInLibrary < 0 || positionInLibrary >= libraryItems.length - 1}
+            onPress={() => navTo(1)}
+            style={styles.footerButton}
+          >
+            <Icon name="chevron-right" size="sm" strokeWidth={2.5} className="text-muted-foreground" />
+          </Pressable>
+        </View>
+        <View style={styles.footerSpacer} />
+        <View style={styles.footerGroup}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={story.readAt != null ? "Unmark read" : "Mark read"}
+            onPress={() => void (story.readAt != null ? view.clearRead(story.id) : view.setRead(story.id))}
+            style={styles.footerButton}
+          >
+            {story.readAt != null ? <Icon name="check" size="sm" className="text-primary" /> : null}
+            <Text className={story.readAt != null ? "text-small text-primary" : "text-small text-muted-foreground"}>
+              Read
+            </Text>
+          </Pressable>
+          <RatingButtons view={view} storyId={story.id} rating={story.rating} />
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Practice this Story"
+          onPress={() => onPractice?.(story.id)}
+          style={styles.footerButton}
+          className="bg-primary"
+        >
+          <Text className="text-small text-primary-foreground">Practice</Text>
+        </Pressable>
+      </View>
+
+      {menuOpen && gesture.token ? (
         <TokenMenu
           options={openOptions}
-          x={gesture.anchorX - (viewOrigin?.x ?? 0)}
-          y={gesture.anchorY - (viewOrigin?.y ?? 0)}
-          screenWidth={(screenSize ?? screen).width}
-          screenHeight={(screenSize ?? screen).height}
           measure={measure}
           onRects={setMenuRects}
+          onSelect={onMenuSelect}
+          onDismiss={closeMenu}
         />
       ) : null}
 
@@ -621,7 +726,7 @@ export function StoryReader({
             void lists
               .createList({ name, boosting: false })
               .then((created) => {
-                // Create-then-save only after a successful create, as on the web.
+                // Create-then-save only after a successful create.
                 if (created.ok && created.list) {
                   saveBusyRef.current = false;
                   return saveInto(created.list.id, item, created.list.name);
@@ -645,7 +750,6 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "column",
     gap: 2,
-    borderBottomWidth: 1,
     paddingHorizontal: 12,
     paddingVertical: 4,
   },
@@ -653,15 +757,42 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    minHeight: MIN_TOUCH,
+    minHeight: 44,
   },
   headerMeta: { flexDirection: "row", alignItems: "center", gap: 12, flexWrap: "wrap" },
   backButton: { paddingVertical: 10, paddingRight: 8 },
-  headerTitle: { flex: 1, fontSize: 16, fontWeight: "600" },
-  readToggle: { paddingVertical: 8, paddingHorizontal: 4 },
+  headerTitle: { flex: 1, fontWeight: "600" },
   titleTranslation: { paddingVertical: 2 },
-  questions: { marginTop: 20, paddingTop: 12, borderTopWidth: 1, borderTopColor: "transparent" },
+  titleEn: {},
+  questionHeading: { fontWeight: "600", marginBottom: 6 },
+  column: { alignSelf: "center", maxWidth: "100%" },
+  questions: { marginTop: 20, paddingTop: 12 },
   question: { marginBottom: 16, gap: 6 },
   options: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  optionButton: { borderRadius: 8, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, minHeight: MIN_TOUCH },
+  optionButton: { borderRadius: 8, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, minHeight: 44 },
+  footer: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap", // narrow phones: the groups wrap instead of clipping
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  footerGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flexShrink: 0, // a group moves to the next line whole, or not at all
+  },
+  footerButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    minHeight: 44,
+    minWidth: 44,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    flexShrink: 0,
+  },
+  footerSpacer: { flex: 1, minWidth: 4 },
 });

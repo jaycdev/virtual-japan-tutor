@@ -1,0 +1,31 @@
+{
+  "name": "@vjt/design",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./web.css": "./web.css",
+    "./native.css": "./native.css"
+  },
+  "files": [
+    "dist",
+    "web.css",
+    "native.css"
+  ],
+  "scripts": {
+    "generate": "node scripts/generate.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

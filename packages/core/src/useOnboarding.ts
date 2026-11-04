@@ -1,5 +1,6 @@
 import type { ApiClient, GrammarReviewItem, StartingLevelStatus } from "@vjt/api-client";
 import { useCallback, useEffect, useState } from "react";
+import { FAILED, UNREACHABLE } from "./errors.ts";
 
 export type StartingLevel = "N5" | "N4" | "N3" | "N2" | "N1";
 
@@ -33,8 +34,6 @@ export interface GrammarReview {
   reload(): void;
 }
 
-const UNREACHABLE = "Cannot reach the server";
-const FAILED = "Request failed";
 
 /**
  * State and actions behind the onboarding Starting Level picker (issue #6), shared by

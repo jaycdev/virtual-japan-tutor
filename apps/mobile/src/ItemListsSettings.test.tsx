@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { fakeBackHandler } from '../test/back-handler-fake.ts';
-import { setBackHandlerForTests } from './hardwareBack.ts';
+import { setBackHandlerForTests } from './useHardwareBack.ts';
 import { ItemListsSettings } from './ItemListsSettings.tsx';
 import { createApiClient } from '@vjt/api-client';
 
@@ -126,7 +126,7 @@ describe('mobile ItemListsSettings', () => {
       baseUrl: 'http://localhost',
       fetch: fetchMock as unknown as typeof fetch,
     });
-    return render(<ItemListsSettings client={client} onBack={() => {}} />);
+    return render(<ItemListsSettings client={client} />);
   }
 
   async function openList(name: string) {

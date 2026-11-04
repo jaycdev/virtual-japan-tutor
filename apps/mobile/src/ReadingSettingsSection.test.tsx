@@ -47,7 +47,7 @@ describe('mobile ReadingSettingsSection', () => {
       baseUrl: 'http://localhost',
       fetch: fetchMock as unknown as typeof fetch,
     });
-    return render(<ReadingSettingsSection client={client} onBack={() => {}} />);
+    return render(<ReadingSettingsSection client={client} />);
   }
 
   async function waitForLoaded() {
