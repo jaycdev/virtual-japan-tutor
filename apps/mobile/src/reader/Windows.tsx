@@ -1,15 +1,22 @@
 import type { DictionaryEntry, StoryGrammarSpan } from "@vjt/api-client";
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import * as DialogPrimitives from "@rn-primitives/dialog";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
-import { MIN_TOUCH, useColors } from "../theme.ts";
+import { Icon } from "../components/ui/icon";
+import { useSheetBottomInset } from "../components/ui/sheet.ts";
 import { JlptBadge } from "./parts.tsx";
 import { PitchGraph } from "./PitchGraph.tsx";
 
 /**
- * The Dictionary Entry and Grammar Point windows (issue #14): centred cards
- * over a dimmed story, like the web's windows. Opening one leaves the story
- * text visible behind; the reader keeps the tap-selection and the Lookup row
- * while a window is open, and Android Back closes the topmost window.
+ * The Dictionary Entry and Grammar Point windows (issue #14): bottom sheets over
+ * a dimmed story. Opening one leaves the story text visible behind; the reader
+ * keeps the tap-selection and the Lookup row while a window is open, and
+ * Android Back closes the topmost window.
+ *
+ * The windows are RN Primitives Dialogs (issue #45 review), always pinned to the
+ * bottom edge on the phone. The Title passes through Dialog.Title so assistive
+ * tech announces the window, and every dismissal path (×, tap-outside, Back)
+ * arrives at `onClose` through the Root's onOpenChange.
  */
 
 function WindowCard({
@@ -27,38 +34,50 @@ function WindowCard({
   onClose: () => void;
   children: React.ReactNode;
 }) {
-  const colors = useColors();
+  const inset = useSheetBottomInset();
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <View
+    <DialogPrimitives.Root open onOpenChange={(open) => !open && onClose()}>
+      <DialogPrimitives.Portal>
+        <DialogPrimitives.Overlay style={styles.backdrop} className="bg-backdrop" />
+        <DialogPrimitives.Content
           testID={testID}
           accessibilityLabel={testID === "dictionary-window" ? "Dictionary Entry window" : "Grammar Point window"}
-          style={[styles.card, { backgroundColor: colors.card, borderColor: colors.separator }]}
+          className="bg-card border-border"
+          style={StyleSheet.flatten([styles.card, styles.sheet, { paddingBottom: inset }])}
+          // No Description for these windows — the title says it all; this is
+          // Radix's documented way to skip the aria-describedby warning.
+          aria-describedby={undefined}
         >
           <View style={styles.head}>
-            <Text style={{ color: colors.label, fontSize: 20, fontWeight: "600" }}>{title}</Text>
-            {reading && reading !== title ? <Text style={{ color: colors.subtle, fontSize: 16 }}>{reading}</Text> : null}
+            <DialogPrimitives.Title asChild>
+              <Text className="text-title-sm text-foreground" style={styles.title}>
+                {title}
+              </Text>
+            </DialogPrimitives.Title>
+            {reading && reading !== title ? (
+              <Text className="text-body text-muted-foreground">
+                {reading}
+              </Text>
+            ) : null}
             {jlpt ? <JlptBadge level={jlpt} /> : null}
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Close"
-              onPress={onClose}
-              hitSlop={8}
-              style={styles.close}
-            >
-              <Text style={{ color: colors.subtle, fontSize: 18, fontWeight: "600" }}>×</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} hitSlop={8} style={styles.close}>
+              <Icon name="close" size="md" strokeWidth={2.5} className="text-muted-foreground" />
             </Pressable>
           </View>
           <ScrollView style={styles.body}>{children}</ScrollView>
-        </View>
-      </View>
-    </Modal>
+        </DialogPrimitives.Content>
+      </DialogPrimitives.Portal>
+    </DialogPrimitives.Root>
   );
 }
 
-export function DictionaryWindow({ entry, onClose }: { entry: DictionaryEntry; onClose: () => void }) {
-  const colors = useColors();
+export function DictionaryWindow({
+  entry,
+  onClose,
+}: {
+  entry: DictionaryEntry;
+  onClose: () => void;
+}) {
   return (
     <WindowCard
       testID="dictionary-window"
@@ -70,7 +89,7 @@ export function DictionaryWindow({ entry, onClose }: { entry: DictionaryEntry; o
       {entry.pitch ? (
         <View style={styles.pitchRow}>
           <PitchGraph pitch={entry.pitch} />
-          <Text style={{ color: colors.subtle, fontSize: 13 }}>
+          <Text className="text-caption text-muted-foreground">
             {entry.pitch.heiban ? "heiban (flat)" : `downstep after mora ${entry.pitch.downstepAfterMora}`}
             {entry.pitch.tag ? ` — ${entry.pitch.tag}` : ""}
           </Text>
@@ -78,9 +97,11 @@ export function DictionaryWindow({ entry, onClose }: { entry: DictionaryEntry; o
       ) : null}
       {entry.senses.map((sense, i) => (
         <View key={i} style={styles.sense}>
-          <Text style={{ color: colors.subtle, fontSize: 13 }}>{sense.partsOfSpeech.join(", ")}</Text>
+          <Text className="text-caption text-muted-foreground">
+            {sense.partsOfSpeech.join(", ")}
+          </Text>
           {sense.glosses.map((gloss, j) => (
-            <Text key={j} style={{ color: colors.label, fontSize: 16 }}>
+            <Text key={j} className="text-body text-foreground">
               {gloss}
             </Text>
           ))}
@@ -90,28 +111,49 @@ export function DictionaryWindow({ entry, onClose }: { entry: DictionaryEntry; o
   );
 }
 
-export function GrammarWindow({ span, onClose }: { span: StoryGrammarSpan; onClose: () => void }) {
-  const colors = useColors();
+export function GrammarWindow({
+  span,
+  onClose,
+}: {
+  span: StoryGrammarSpan;
+  onClose: () => void;
+}) {
   return (
     <WindowCard testID="grammar-window" title={span.pattern} jlpt={span.jlptLevel} onClose={onClose}>
-      <Text style={[styles.senseMeaning, { color: colors.label }]}>{span.meaning}</Text>
+      <Text className="text-body text-foreground" style={styles.senseMeaning}>
+        {span.meaning}
+      </Text>
     </WindowCard>
   );
 }
 
+// The Dialog portals are positioned entirely by these styles: an `absolute`
+// inset inside the Shell's PortalHost.
+const positioned = { position: "absolute" as const };
+
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", alignItems: "center", justifyContent: "center" },
+  backdrop: { ...positioned, top: 0, left: 0, right: 0, bottom: 0 },
   card: {
-    width: "88%",
-    maxHeight: "70%",
     borderRadius: 12,
     borderWidth: 1,
     elevation: 8,
   },
+  sheet: {
+    ...positioned,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    maxHeight: "80%",
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+  },
+  title: { fontWeight: "600" },
   head: { flexDirection: "row", alignItems: "center", gap: 8, padding: 14, flexWrap: "wrap" },
-  close: { marginLeft: "auto", width: MIN_TOUCH / 2, height: MIN_TOUCH / 2, alignItems: "center", justifyContent: "center" },
+  close: { marginLeft: "auto", width: 22, height: 22, alignItems: "center", justifyContent: "center" },
   body: { paddingHorizontal: 14, paddingBottom: 14 },
   pitchRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
   sense: { marginBottom: 10 },
-  senseMeaning: { fontSize: 16, marginBottom: 8 },
+  senseMeaning: { marginBottom: 8 },
 });

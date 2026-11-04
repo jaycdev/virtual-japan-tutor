@@ -10,8 +10,11 @@ export { useMarumori } from "./useMarumori.ts";
 export type { MaruMori, MaruMoriRunsState, MaruMoriState, SyncOutcome } from "./useMarumori.ts";
 export { usePractice } from "./usePractice.ts";
 export type { AnswerFeedback, ExerciseView, PracticeView } from "./usePractice.ts";
-export { useStory, useStorySettings } from "./useStory.ts";
-export type { TodaysStoryState } from "./useStory.ts";
+export { displayPrompt, practiceSeedForStory } from "./practiceText.ts";
+export { fetchTodaysStory, useStory, useStorySettings, useTodaysStory } from "./useStory.ts";
+export type { TodaysStoryState, TodaysStoryView } from "./useStory.ts";
+export { useFocusSet } from "./useFocusSet.ts";
+export type { FocusSetView } from "./useFocusSet.ts";
 export { useStoryGeneration } from "./useStoryGeneration.ts";
 export type { StoryGeneration, StoryGenerationState } from "./useStoryGeneration.ts";
 export { useReadingSettings } from "./useReadingSettings.ts";
@@ -32,6 +35,8 @@ export type {
   GrammarLevelFilter,
   GrammarListState,
 } from "./useGrammar.ts";
+export { useGrammarPoint } from "./useGrammarPoint.ts";
+export type { GrammarPointRead, GrammarPointState } from "./useGrammarPoint.ts";
 export { STARTING_LEVELS, useGrammarReview, useStartingLevel } from "./useOnboarding.ts";
 export type {
   GrammarReview,
@@ -41,6 +46,62 @@ export type {
   StartingLevelHook,
   StartingLevelState,
 } from "./useOnboarding.ts";
+export { decideLandingSetup, hasSetupSeen, markSetupSeen, SETUP_SEEN_KEY } from "./firstRun.ts";
+export type { KeyValueStore, LandingSetupDecision } from "./firstRun.ts";
 export { memoryTokenStorage } from "./tokenStorage.ts";
 export type { TokenStorage } from "./tokenStorage.ts";
 export { deviceTimezone, TIMEZONE_OPTIONS } from "./timezones.ts";
+export { SETTINGS_SECTIONS, findSettingsSection } from "./settingsSections.ts";
+export type { SettingsSection, StepSaveFn, StepSaveOutcome, StepSaveRegistrar } from "./settingsSections.ts";
+export { probeServerHealth, PROBE_TIMEOUT_MS } from "./serverHealth.ts";
+export type { FetchLike } from "./serverHealth.ts";
+export {
+  AI_TASK_LABELS,
+  EMPTY_PROVIDER_FORM,
+  canSubmitProviderForm,
+  isProviderFormTouched,
+  providerCreateInput,
+  providerFormFor,
+  providerSummary,
+  providerUpdateInput,
+} from "./aiProviderForm.ts";
+export type { ProviderForm } from "./aiProviderForm.ts";
+export { ITEM_KIND_LABELS, ITEM_KINDS, isSavedList, itemListHint } from "./itemLists.ts";
+export type { ItemKind } from "./itemLists.ts";
+export {
+  FURIGANA_LEVELS,
+  grammarReviewText,
+  grammarUpdatedText,
+  parseLookupHold,
+  suggestionsFor,
+  syncOutcomeText,
+  syncRunText,
+} from "./settingsText.ts";
+// The Story reader's pure logic, shared by the phone and the web reader (issue #77).
+export * from "./reader/holdMenu.ts";
+export * from "./reader/marks.ts";
+export * from "./reader/furigana.ts";
+export * from "./reader/sentences.ts";
+export * from "./reader/pitch.ts";
+export * from "./reader/glosses.ts";
+export { useEntryLookup } from "./reader/useEntryLookup.ts";
+export type { EntryLookup } from "./reader/useEntryLookup.ts";
+export {
+  formatInstant,
+  greetingFor,
+  learnerClock,
+  localDayKey,
+  normalizeTimezone,
+  stillUnreadFrom,
+} from "./learnerTime.ts";
+export { FAILED_RUN_FALLBACK, todayCardPhase } from "./todayCard.ts";
+export type { TodayCardPhase } from "./todayCard.ts";
+export { genreLabel, originLabel, progressLabel, stageLabel, storyCardMeta, storyDate } from "./storyPresentation.ts";
+export {
+  createFocusLabelResolver,
+  focusChipKey,
+  focusChipLabel,
+  focusKindWord,
+  useFocusChipLabels,
+} from "./focusLabels.ts";
+export type { FocusChipLabel, FocusLabelResolver } from "./focusLabels.ts";

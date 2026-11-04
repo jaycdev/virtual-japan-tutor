@@ -2,6 +2,12 @@
 
 A tutor that takes what a learner already knows on MaruMori and turns it into practice and short AI-written stories, focusing on what they know least well.
 
+## App
+
+**Today**:
+The Learner's starting page. It brings together Today's Story, the Focus Set at a glance, a way into a Practice Session and the state of the last Sync.
+_Avoid_: Home, dashboard
+
 ## Learner and knowledge
 
 **Learner**:

@@ -1,20 +1,36 @@
-import { createApiClient } from "@vjt/api-client";
+import "./index.css";
+
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { App } from "./App.tsx";
-import { localStorageTokenStorage } from "./tokenStorage.ts";
+import { createBrowserRouter, RouterProvider } from "react-router";
+import { createApiClient } from "@vjt/api-client";
 
-// A production build is served by the server itself, so the API is the page's own origin
-// (empty base URL = relative requests). Set VITE_API_URL to build for a different host;
-// `vite dev` has no API on its own origin, so it defaults to a local server.
-const baseUrl = import.meta.env.VITE_API_URL ?? (import.meta.env.PROD ? "" : "http://localhost:8080");
+import { appRoutes } from "./appRoutes.tsx";
+import { SessionBoundary, SessionProvider } from "./session/session.tsx";
+import { localTokenStorage } from "./session/tokenStorage.ts";
+import { themeStore } from "./theme/index.ts";
+import { storyTextSizeStore } from "./storysize/index.ts";
 
-// Created once at module level: useAuth requires stable client/storage references.
-const client = createApiClient({ baseUrl });
-const storage = localStorageTokenStorage();
+// One client for the page's life. The API is on this origin (in production the
+// Go server serves both; in development Vite proxies the API paths), so the
+// base URL is simply the page's own origin.
+const client = createApiClient({ baseUrl: window.location.origin });
+const tokenStorage = localTokenStorage();
+const router = createBrowserRouter(appRoutes);
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <App client={client} storage={storage} />
-  </StrictMode>,
-);
+// Read the saved preferences before the first render, so the Appearance settings
+// never show a default that is about to change. The no-flash script has already
+// set the theme class; this only loads the stores.
+void Promise.all([themeStore.hydrate(), storyTextSizeStore.hydrate()]).then(() => {
+  const container = document.getElementById("root");
+  if (!container) throw new Error("index.html has no #root element");
+  createRoot(container).render(
+    <StrictMode>
+      <SessionProvider client={client} tokenStorage={tokenStorage}>
+        <SessionBoundary>
+          <RouterProvider router={router} />
+        </SessionBoundary>
+      </SessionProvider>
+    </StrictMode>,
+  );
+});

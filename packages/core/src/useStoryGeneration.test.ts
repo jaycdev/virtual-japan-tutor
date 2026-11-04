@@ -67,6 +67,8 @@ describe("useStoryGeneration", () => {
     const h = harness({
       generation: [
         running("writing", 2, 44),
+        running("writing", 2, 48),
+        running("checking", 2, 52),
         running("checking", 2, 55),
         { status: "ready", percent: 100, storyId: "st-new" },
       ],

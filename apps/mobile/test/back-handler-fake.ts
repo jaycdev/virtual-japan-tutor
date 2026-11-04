@@ -1,6 +1,6 @@
 import { act } from '@testing-library/react';
 
-import type { BackHandlerLike } from '../src/hardwareBack.ts';
+import type { BackHandlerLike } from '../src/useHardwareBack.ts';
 
 /**
  * A stand-in for Android's BackHandler: press() runs the registered

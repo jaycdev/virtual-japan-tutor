@@ -1,16 +1,22 @@
 import type { ApiClient } from "@vjt/api-client";
-import { useReadingSettings } from "@vjt/core";
+import { parseLookupHold, useReadingSettings } from "@vjt/core";
 import { useState } from "react";
-
-import { Body, ErrorText, Field, LinkButton, Muted, PrimaryButton, Screen, Scroll, StatusText, Title } from "./ui.tsx";
+import { Card } from "./components/ui/Card.tsx";
+import { Field } from "./components/ui/Field.tsx";
+import { SwitchRow } from "./components/ui/SwitchRow.tsx";
+import { ActionButton } from "./stories-parts.tsx";
+import { InlineError, SkeletonBar } from "./state/states.tsx";
+import { Text, View } from "react-native";
 
 /**
- * Reading preferences on mobile (issue #13): the Lookup hold threshold — how
- * long a lookup must be held before it counts as a Weak Signal. The
- * translation-blur toggle lives on the web reader; mobile has no reader yet,
- * so this screen only exposes the hold (the hook still PUTs both fields).
+ * Reading preferences on mobile (#50, on the hub's tokens): the
+ * translation-blur toggle and the Lookup hold threshold — how long a lookup
+ * must be held before it counts as a Weak Signal. Both feed the Story
+ * reader (#45) directly, which is why they live here and nowhere else.
+ * The route provides the screen chrome (title, Back, scroll); this is the
+ * section's content so first-run setup can embed it too.
  */
-export function ReadingSettingsSection({ client, onBack }: { client: ApiClient; onBack: () => void }) {
+export function ReadingSettingsSection({ client }: { client: ApiClient }) {
   const reading = useReadingSettings(client);
   const [holdMs, setHoldMs] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -23,14 +29,14 @@ export function ReadingSettingsSection({ client, onBack }: { client: ApiClient; 
   const saveHold = async () => {
     setError(undefined);
     setSaved(false);
-    const ms = Number(holdValue);
-    if (!Number.isInteger(ms) || ms < 0 || ms > 10000) {
-      setError("The hold is a whole number of milliseconds from 0 to 10000.");
+    const parsed = parseLookupHold(holdValue);
+    if (!parsed.ok) {
+      setError(parsed.message);
       return;
     }
     setBusy(true);
     try {
-      const res = await reading.setLookupHoldMs(ms);
+      const res = await reading.setLookupHoldMs(parsed.ms);
       if (res.ok) {
         setHoldMs(null);
         setSaved(true);
@@ -40,34 +46,55 @@ export function ReadingSettingsSection({ client, onBack }: { client: ApiClient; 
     }
   };
 
+  if (reading.state.status === "loading") {
+    // Shaped like what replaces it: the toggle row and the field + Save.
+    return (
+      <View className="gap-4">
+        <SkeletonBar width="100%" height={76} />
+        <SkeletonBar width="70%" height={44} />
+        <SkeletonBar width="100%" height={72} />
+      </View>
+    );
+  }
+  if (reading.state.status === "error") {
+    return (
+      <InlineError
+        message={`Cannot load your reading settings: ${reading.state.message}`}
+        onRetry={reading.reload}
+      />
+    );
+  }
+
   return (
-    <Screen>
-      <Scroll>
-        <Title text="Reading" onBack={onBack} />
-        {reading.state.status === "loading" && <Muted text="Loading…" />}
-        {reading.state.status === "error" && (
-          <>
-            <ErrorText text={`Cannot load your reading settings: ${reading.state.message}`} />
-            <LinkButton label="Retry" onPress={reading.reload} />
-          </>
-        )}
-        {reading.state.status === "ready" && (
-          <>
-            <Body text="How long you must hold a lookup before it counts as a Weak Signal (0 signals every lookup)." />
-            <Field
-              label="Lookup hold before a Weak Signal (ms, 0–10000)"
-              value={holdValue}
-              onChangeText={setHoldMs}
-              onSubmit={() => void saveHold()}
-              keyboardType="number-pad"
-              disabled={busy}
-            />
-            <PrimaryButton label="Save reading settings" onPress={() => void saveHold()} disabled={busy} />
-            {saved && <StatusText text="Saved — the reader uses this from the next lookup on." />}
-            {error && <ErrorText text={error} />}
-          </>
-        )}
-      </Scroll>
-    </Screen>
+    <View className="gap-4">
+      <Text className="text-body text-foreground">
+        How long you must hold a lookup before it counts as a Weak Signal (0 signals every lookup).
+      </Text>
+      <Card padded={false}>
+        <SwitchRow
+          label="Blur the translation behind Weak Signals"
+          hint="A word you have not practised enough shows its meaning only after you ask"
+          value={stored?.blurTranslation ?? true}
+          disabled={busy}
+          onToggle={(blurTranslation) => void reading.setBlurTranslation(blurTranslation)}
+          last
+        />
+      </Card>
+      <Field
+        label="Lookup hold before a Weak Signal (ms, 0–10000)"
+        value={holdValue}
+        onChangeText={setHoldMs}
+        onSubmit={() => void saveHold()}
+        keyboardType="number-pad"
+        disabled={busy}
+      />
+      <ActionButton label="Save reading settings" onPress={() => void saveHold()} filled disabled={busy} />
+      {saved && (
+        <Text role="status" accessibilityLiveRegion="polite" className="text-body text-success">
+          Saved — the reader uses this from the next lookup on.
+        </Text>
+      )}
+      {error && <InlineError message={error} />}
+    </View>
   );
 }

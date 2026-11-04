@@ -1,6 +1,7 @@
 import type { ApiClient, MaruMoriStatus, MaruMoriSyncRun } from "@vjt/api-client";
 import { useCallback, useEffect, useState } from "react";
 import type { ActionResult } from "./useAiSettings.ts";
+import { FAILED, UNREACHABLE } from "./errors.ts";
 
 export type MaruMoriState =
   | { status: "loading" }
@@ -31,8 +32,6 @@ export interface MaruMori {
   sync(): Promise<SyncOutcome>;
 }
 
-const UNREACHABLE = "Cannot reach the server";
-const FAILED = "Request failed";
 
 async function act(
   run: () => Promise<{ error?: { message?: string } | undefined; response: Response }>,

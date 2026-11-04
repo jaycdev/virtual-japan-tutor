@@ -2,7 +2,7 @@
 # carries data/grammar/jlpt-grammar.csv. Generated code is committed, so the image build
 # needs neither the OpenAPI spec nor any code generation.
 #
-# Targets: `server` (default, the last stage: the API plus the built web app) and `import` (one-off
+# Targets: `server` (default, the last stage: the API plus the web app) and `import` (one-off
 # reference data import).
 FROM --platform=$BUILDPLATFORM golang:1.27.1-alpine AS build
 ARG TARGETOS
@@ -13,22 +13,30 @@ RUN go mod download
 COPY apps/server/ ./
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/ ./cmd/server ./cmd/import
 
-# The web app. The output is plain static files, so this stage always runs on the build platform.
-# Production builds call the API on their own origin, which is where the server serves them from.
-FROM --platform=$BUILDPLATFORM node:24-alpine AS web
-RUN corepack enable
+# The web app (ADR-0010): apps/web, a Vite + React SPA. The build runs once on the build
+# platform (--platform=$BUILDPLATFORM) — dist/ is static files, so every target architecture's
+# final stage just COPYs it; the Go stage above is the only per-architecture work. Node matches
+# CI/mise (mise.toml). Workspace manifests come before the sources so pnpm install is reused
+# until dependencies change. apps/mobile is deliberately absent: pnpm --frozen-lockfile accepts
+# lockfile importers that are not in the workspace, and the web build never touches it.
+# Generated code is committed, so the build runs no generators.
+FROM --platform=$BUILDPLATFORM node:24.21.0-alpine AS web
 WORKDIR /src
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc tsconfig.base.json ./
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json turbo.json tsconfig.base.json .npmrc ./
 COPY apps/web/package.json apps/web/
-COPY apps/mobile/package.json apps/mobile/
 COPY apps/server/package.json apps/server/
 COPY packages/api-client/package.json packages/api-client/
 COPY packages/core/package.json packages/core/
-RUN pnpm install --frozen-lockfile --filter "@vjt/web..."
-COPY apps/web apps/web
+COPY packages/design/package.json packages/design/
+RUN corepack enable && pnpm install --frozen-lockfile
 COPY packages/api-client packages/api-client
 COPY packages/core packages/core
-RUN pnpm --filter "@vjt/web..." build
+COPY packages/design packages/design
+COPY apps/web apps/web
+# The `...` suffix also runs the build scripts of the workspace deps (@vjt/design,
+# @vjt/api-client, @vjt/core) first, in topological order.
+RUN pnpm --filter @vjt/web... build
+RUN mkdir -p /out && cp -r apps/web/dist /out/web
 
 # Reference data import: JMdict, KANJIDIC2, JLPT lists, Kanjium and the Grammar Catalogue.
 # Downloads land in a cache directory meant to be a named volume (no bind mounts).
@@ -49,7 +57,7 @@ FROM alpine:3.22 AS server
 RUN adduser -D -u 10001 app
 USER app
 COPY --from=build /out/server /usr/local/bin/server
-COPY --from=web /src/apps/web/dist /usr/share/vjt/web
+COPY --from=web /out/web /usr/share/vjt/web
 # Serve the web app at / next to the API. Unset WEB_DIR to run the API only.
 ENV WEB_DIR=/usr/share/vjt/web
 EXPOSE 8080

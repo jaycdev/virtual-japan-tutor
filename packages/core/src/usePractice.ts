@@ -5,6 +5,7 @@ import type {
   PracticeSession,
 } from "@vjt/api-client";
 import { useCallback, useMemo, useRef, useState } from "react";
+import { FAILED, UNREACHABLE } from "./errors.ts";
 
 /**
  * State and actions behind the Practice Session screen (issue #9), shared by
@@ -22,8 +23,6 @@ import { useCallback, useMemo, useRef, useState } from "react";
  * screen to the Start form.
  */
 
-const UNREACHABLE = "Cannot reach the server";
-const FAILED = "Request failed";
 
 /** Feedback for one answered exercise. Ids are empty only for answers the view cannot attribute to an option. */
 export interface AnswerFeedback {
@@ -60,8 +59,19 @@ export interface PracticeView {
   /** True while an answer request is in flight: the option buttons are locked. */
   pending: boolean;
   error: string | null;
-  start(): Promise<void>;
+  /**
+   * Asks the server for a session. `seed` makes the session deterministic for
+   * the Learner's current Focus Set (the Story deep link starts one seeded
+   * from the Story id); omit it for a server-chosen seed.
+   */
+  start(seed?: number): Promise<void>;
   answer(exerciseId: string, optionId: string): Promise<void>;
+  /**
+   * Re-fetches the session (used when an answer landed but the automatic
+   * refresh after it failed). Resolves true when the session view is back in
+   * step, so the screen can tell a retry that worked from one that didn't.
+   */
+  refresh(): Promise<boolean>;
 }
 
 function message(error: { message?: string } | undefined, status: number): string {
@@ -81,11 +91,13 @@ export function usePractice(client: ApiClient): PracticeView {
   // twice (the second POST would 409 already_answered).
   const inFlight = useRef(false);
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (seed?: number) => {
     setState("starting");
     setError(null);
     try {
-      const { data, error: err, response } = await client.POST("/practice/sessions", { body: {} });
+      const { data, error: err, response } = await client.POST("/practice/sessions", {
+        body: seed === undefined ? {} : { seed },
+      });
       if (!data) {
         setError(message(err, response.status));
         setState("error");
@@ -99,6 +111,30 @@ export function usePractice(client: ApiClient): PracticeView {
       setState("error");
     }
   }, [client]);
+
+  const refetch = useCallback(async (): Promise<boolean> => {
+    if (!session) return false;
+    try {
+      const refreshed = await client.GET("/practice/sessions/{sessionId}", {
+        params: { path: { sessionId: session.id } },
+      });
+      if (refreshed.data) {
+        setSession(refreshed.data);
+        setState(refreshed.data.state === "complete" ? "done" : "active");
+        setError(null);
+        return true;
+      }
+      setError(message(refreshed.error, refreshed.response.status));
+      if (refreshed.response.status === 404) {
+        setSession(null);
+        setState("error");
+      }
+      return false;
+    } catch {
+      setError(UNREACHABLE);
+      return false;
+    }
+  }, [client, session]);
 
   const answer = useCallback(
     async (exerciseId: string, optionId: string) => {
@@ -131,19 +167,7 @@ export function usePractice(client: ApiClient): PracticeView {
             correct: data.correct,
           }),
         );
-        const refreshed = await client.GET("/practice/sessions/{sessionId}", {
-          params: { path: { sessionId: session.id } },
-        });
-        if (refreshed.data) {
-          setSession(refreshed.data);
-          setState(refreshed.data.state === "complete" ? "done" : "active");
-        } else {
-          setError(message(refreshed.error, refreshed.response.status));
-          if (refreshed.response.status === 404) {
-            setSession(null);
-            setState("error");
-          }
-        }
+        await refetch();
       } catch {
         setError(UNREACHABLE);
       } finally {
@@ -151,7 +175,7 @@ export function usePractice(client: ApiClient): PracticeView {
         setPending(false);
       }
     },
-    [client, session],
+    [client, refetch, session],
   );
 
   const exercises = useMemo<ExerciseView[]>(() => {
@@ -196,5 +220,6 @@ export function usePractice(client: ApiClient): PracticeView {
     error,
     start,
     answer,
+    refresh: refetch,
   };
 }

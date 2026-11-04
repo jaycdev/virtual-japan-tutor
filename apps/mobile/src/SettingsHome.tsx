@@ -1,70 +1,50 @@
-import type { ApiClient } from "@vjt/api-client";
-import { useCallback, useState } from "react";
+import { View } from "react-native";
+import { SETTINGS_SECTIONS, type SettingsSection } from "@vjt/core";
 
-import { AiProvidersSettings } from "./AiProvidersSettings.tsx";
-import { useHardwareBack } from "./hardwareBack.ts";
-import { ItemListsSettings } from "./ItemListsSettings.tsx";
-import { MaruMoriSettings } from "./MaruMoriSettings.tsx";
-import { ReadingSettingsSection } from "./ReadingSettingsSection.tsx";
-import { ServerSettings } from "./ServerSettings.tsx";
-import { StartingLevelSettings } from "./StartingLevelSettings.tsx";
-import { StorySettingsSection } from "./StorySettingsSection.tsx";
-import { Card, Row, Screen, Scroll, Title } from "./ui.tsx";
+import { Card } from "./components/ui/Card.tsx";
+import { Row } from "./components/ui/Row.tsx";
 
-type Section = "marumori" | "ai" | "level" | "stories" | "reading" | "lists" | "server";
+// The section list itself lives in @vjt/core (one list for web and mobile); the
+// /settings/[section] route validates params against it.
+export { SETTINGS_SECTIONS, type SettingsSection } from "@vjt/core";
+
+/** The hub's section list: one row per section, pushing its route on tap. */
+export function SettingsSectionMenu({ onOpen }: { onOpen: (section: SettingsSection) => void }) {
+  return (
+    <Card padded={false}>
+      {SETTINGS_SECTIONS.map((section, i) => (
+        <Row
+          key={section.id}
+          label={section.title}
+          hint={section.blurb}
+          onPress={() => onOpen(section.id)}
+          last={i === SETTINGS_SECTIONS.length - 1}
+        />
+      ))}
+    </Card>
+  );
+}
 
 /**
- * Settings hub (issue #13): a list of grouped rows opening state-driven
- * master-detail screens — the same no-router approach the app shell and the
- * web App use, kept simple and testable. The Account card lives here too, so
- * logging out is one tap from anywhere in Settings.
+ * The Settings hub (#50): the menu of sections and the Account card, so logging
+ * out is one tap from anywhere in Settings. Rows push /settings/:section.
  */
 export function SettingsHome({
-  client,
   username,
   onLogout,
-  serverUrl,
-  onSaveServerUrl,
+  onOpenSection,
 }: {
-  client: ApiClient;
   username: string;
   onLogout: () => void;
-  serverUrl: string;
-  onSaveServerUrl: (url: string) => Promise<void>;
+  onOpenSection: (section: SettingsSection) => void;
 }) {
-  const [section, setSection] = useState<Section | null>(null);
-  const back = useCallback(() => setSection(null), []);
-  // Hardware Back pops a drill-in back to the hub; on the hub itself no
-  // listener is attached, so Android's default (leave Settings) stands.
-  useHardwareBack(section !== null, back);
-
-  if (section === "marumori") return <MaruMoriSettings client={client} onBack={back} />;
-  if (section === "ai") return <AiProvidersSettings client={client} onBack={back} />;
-  if (section === "level") return <StartingLevelSettings client={client} onBack={back} />;
-  if (section === "stories") return <StorySettingsSection client={client} onBack={back} />;
-  if (section === "reading") return <ReadingSettingsSection client={client} onBack={back} />;
-  if (section === "lists") return <ItemListsSettings client={client} onBack={back} />;
-  if (section === "server")
-    return <ServerSettings currentUrl={serverUrl} onSave={onSaveServerUrl} onBack={back} />;
-
   return (
-    <Screen>
-      <Scroll>
-        <Title text="Settings" />
-        <Card>
-          <Row label="MaruMori" hint="Connect your Junji profile and Sync" onPress={() => setSection("marumori")} />
-          <Row label="AI Providers" hint="Endpoints, keys and task assignments" onPress={() => setSection("ai")} />
-          <Row label="Starting Level" hint="N5–N1 known grammar baseline" onPress={() => setSection("level")} />
-          <Row label="Stories" hint="Furigana threshold and future story tastes" onPress={() => setSection("stories")} />
-          <Row label="Reading" hint="Lookup hold threshold" onPress={() => setSection("reading")} />
-          <Row label="Item Lists" hint="Lists, boosting and saved items" onPress={() => setSection("lists")} />
-          <Row label="Server" hint={serverUrl} onPress={() => setSection("server")} last />
-        </Card>
-        <Card>
-          <Row label="Signed in" hint={username} />
-          <Row label="Log out" onPress={onLogout} last />
-        </Card>
-      </Scroll>
-    </Screen>
+    <View className="gap-6">
+      <SettingsSectionMenu onOpen={onOpenSection} />
+      <Card padded={false}>
+        <Row label="Signed in" hint={username} />
+        <Row label="Log out" onPress={onLogout} last />
+      </Card>
+    </View>
   );
 }
