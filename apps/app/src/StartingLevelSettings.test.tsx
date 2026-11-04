@@ -14,10 +14,14 @@ function jsonResponse(body: unknown, status = 200): Response {
 describe('mobile StartingLevelSettings', () => {
   let fetchMock: ReturnType<typeof vi.fn>;
   let status: { configured: boolean; level: string | null };
+  let reviewItems: unknown[];
+  let failLevelPut = false;
   let writes: { method: string; url: string; body?: unknown }[];
 
   beforeEach(() => {
     status = { configured: true, level: 'N5' };
+    reviewItems = [];
+    failLevelPut = false;
     writes = [];
     fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const request = new Request(input);
@@ -35,9 +39,11 @@ describe('mobile StartingLevelSettings', () => {
 
       if (method === 'GET' && path === '/starting-level') return jsonResponse(status);
       if (method === 'PUT' && path === '/starting-level') {
+        if (failLevelPut) return jsonResponse({ message: 'nope' }, 500);
         status = { configured: true, level: (body as { level: string }).level };
         return jsonResponse({ ...status, added: 120, removed: 3 });
       }
+      if (method === 'GET' && path === '/grammar/review') return jsonResponse(reviewItems);
       return jsonResponse({ message: `stub: unexpected ${method} ${path}` }, 500);
     });
   });
@@ -95,8 +101,7 @@ describe('mobile StartingLevelSettings', () => {
   });
 
   it('shows a server failure and stays on the picker', async () => {
-    fetchMock.mockImplementationOnce(async () => jsonResponse(status));
-    fetchMock.mockImplementationOnce(async () => jsonResponse({ message: 'nope' }, 500));
+    failLevelPut = true;
     renderApp();
     await waitFor(() => {
       expect(screen.getByText('Starting level: N5')).toBeTruthy();
@@ -129,5 +134,31 @@ describe('mobile StartingLevelSettings', () => {
     const put = writes.find((w) => w.method === 'PUT');
     expect(put?.url).toContain('/starting-level');
     expect(put?.body).toEqual({ level: 'N4' });
+  });
+
+  it('lists flagged grammar matches read-only under the picker (S5)', async () => {
+    reviewItems = [
+      { marumoriId: 'Grammar/6578', pattern: '～にちかい', jlptLevel: 'N4', flagged: true },
+      { marumoriId: 'Grammar/7001', pattern: '～ておいたほうがいい', matchedPointId: 412, flagged: true },
+    ];
+    renderApp();
+
+    const heading = await screen.findByRole('heading', { name: 'Review these grammar matches' });
+    expect(heading).toBeTruthy();
+    expect(
+      await screen.findByText(
+        'These MaruMori grammar points did not match the Catalogue cleanly. They re-check themselves on later Syncs.',
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText('～にちかい (MaruMori level N4) — no Grammar Catalogue match')).toBeTruthy();
+    expect(screen.getByText('～ておいたほうがいい — matched point 412, level was ambiguous')).toBeTruthy();
+    // Read-only: the list issues no writes.
+    expect(writes.some((w) => w.method !== 'GET')).toBe(false);
+  });
+
+  it('says so when the review list is empty (S5)', async () => {
+    renderApp();
+    await screen.findByRole('heading', { name: 'Review these grammar matches' });
+    expect(await screen.findByText('Nothing needs a second look.')).toBeTruthy();
   });
 });

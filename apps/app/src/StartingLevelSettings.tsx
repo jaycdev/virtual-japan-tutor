@@ -1,5 +1,5 @@
-import type { ApiClient } from "@vjt/api-client";
-import { STARTING_LEVELS, useStartingLevel, type StartingLevel } from "@vjt/core";
+import type { ApiClient, GrammarReviewItem } from "@vjt/api-client";
+import { STARTING_LEVELS, useGrammarReview, useStartingLevel, type StartingLevel } from "@vjt/core";
 import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 
@@ -11,10 +11,13 @@ import type { StepSaveHandle, StepSaveOutcome } from "./settingsSections.tsx";
 
 /**
  * Starting Level (#6, on the #50 hub): N5–N1 chips pick the level; saving
- * re-applies Seeded Grammar and reports the server's counts. First-run
- * setup shows this same component as its first step, so the Settings
- * section and the setup screen cannot drift apart — and the wizard's
- * Next/Finish runs this section's save through `saveHandle` (review S2).
+ * re-applies Seeded Grammar and reports the server's counts. Below the
+ * picker, the read-only "Review these grammar matches" list from the same
+ * issue — Catalogue Matching outcomes the Learner may want to glance at.
+ * First-run setup shows this same component as its first step, so the
+ * Settings section and the setup screen cannot drift apart — and the
+ * wizard's Next/Finish runs this section's save through `saveHandle`
+ * (review S2).
  */
 export function StartingLevelSettings({
   client,
@@ -106,6 +109,48 @@ export function StartingLevelSettings({
         </Text>
       )}
       {error && <InlineError message={error} />}
+
+      {/* S5: the read-only "review these" list (issue #6) — dropped from the
+          legacy mobile settings by the hub rebuild and restored here, in the
+          same section it sits under on web. Nothing to change: the list is
+          the outcome of Catalogue Matching on the last Syncs. */}
+      <GrammarReviewList client={client} />
+    </View>
+  );
+}
+
+const reviewText = (item: GrammarReviewItem): string =>
+  `${item.pattern || item.marumoriId}` +
+  (item.jlptLevel ? ` (MaruMori level ${item.jlptLevel})` : "") +
+  (item.matchedPointId ? ` — matched point ${item.matchedPointId}, level was ambiguous` : " — no Grammar Catalogue match");
+
+function GrammarReviewList({ client }: { client: ApiClient }) {
+  const review = useGrammarReview(client);
+  return (
+    <View className="gap-2">
+      <Text accessibilityRole="header" className="text-title-sm font-semibold text-foreground">
+        Review these grammar matches
+      </Text>
+      {review.state.status === "loading" ? <SkeletonBar width="60%" height={20} /> : null}
+      {review.state.status === "error" ? (
+        <InlineError message={`Cannot load the review list: ${review.state.message}`} onRetry={review.reload} />
+      ) : null}
+      {review.state.status === "ready" && review.state.items.length === 0 ? (
+        <Text className="text-body text-muted-foreground">Nothing needs a second look.</Text>
+      ) : null}
+      {review.state.status === "ready" && review.state.items.length > 0 ? (
+        <>
+          <Text className="text-small text-muted-foreground">
+            These MaruMori grammar points did not match the Catalogue cleanly. They re-check
+            themselves on later Syncs.
+          </Text>
+          {review.state.items.map((item) => (
+            <Text key={item.marumoriId} className="text-body text-foreground">
+              {reviewText(item)}
+            </Text>
+          ))}
+        </>
+      ) : null}
     </View>
   );
 }

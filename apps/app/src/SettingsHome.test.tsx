@@ -23,8 +23,8 @@ describe('mobile SettingsHome', () => {
   it('opens every settings section from the hub rows', () => {
     const opened = renderHome();
 
-    // The plan's (§4.7) eight sections, in hub order; no Review list — that
-    // belongs to the Grammar tab (#49).
+    // The plan's (§4.7) eight sections, in hub order. The grammar review
+    // list is not one of them: it lives inside Starting Level, read-only.
     for (const label of [
       'Appearance',
       'Reading',

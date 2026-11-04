@@ -9,8 +9,9 @@ import { Row } from "./components/ui/Row.tsx";
  * /settings/[section] route validates params against it — a new section is
  * added in exactly one place. The order is the plan's (§4.7).
  *
- * There is no Review list section on purpose: the grammar review list
- * belongs to the Grammar tab (#49), where the mobile chrome puts it.
+ * There is no separate Review section on purpose: the grammar review list
+ * is not a hub section, but it is not gone either — it rides along inside
+ * the Starting Level section, read-only, exactly as on web (issue #6).
  */
 export const SETTINGS_SECTIONS = [
   { id: "appearance", title: "Appearance", blurb: "Colour theme and Story text size" },
