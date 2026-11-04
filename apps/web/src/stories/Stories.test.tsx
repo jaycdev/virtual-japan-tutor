@@ -70,7 +70,7 @@ describe("Stories page", () => {
   it("remembers the grid/list choice on this device", async () => {
     const api = fakeApi({ stories: libraryStories() });
     renderStories(api);
-    expect(screen.getByTestId("layout-grid").getAttribute("aria-pressed")).toBe("true");
+    expect((await screen.findByTestId("layout-grid")).getAttribute("aria-pressed")).toBe("true");
     await userEvent.click(screen.getByTestId("layout-list"));
     expect(window.localStorage.getItem(STORIES_LAYOUT_STORAGE_KEY)).toBe("list");
     expect(screen.getByTestId("layout-list").getAttribute("aria-pressed")).toBe("true");
