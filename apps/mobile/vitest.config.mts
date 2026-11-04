@@ -64,7 +64,9 @@ export default defineConfig({
     setupFiles: ["./vitest.setup.ts"],
     include: ["src/**/*.test.{ts,tsx}", "showcase/**/*.test.{ts,tsx}", "App.test.tsx"],
     retry: process.env.CI ? 1 : 0,
-    reporters: process.env.CI ? ["default", "github-actions", retryReporter()] : ["default"],
+    reporters: process.env.CI
+      ? ["default", "github-actions", retryReporter({ githubActions: process.env.GITHUB_ACTIONS === "true" })]
+      : ["default"],
     // Cold imports of the expo-router / react-native-web graph take several
     // seconds on a loaded runner; the default 5 s test timeout cuts them off.
     testTimeout: 15_000,
