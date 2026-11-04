@@ -4,6 +4,7 @@ import { PortalHost } from "@rn-primitives/portal";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { flushPressConfig } from "../test/press-config.ts";
 import { Stories } from "./Stories.tsx";
 
 /**
@@ -230,6 +231,7 @@ describe("Today's Story pinned above the Library (issue #48)", () => {
     const { onOpenStory } = renderStories(api.client);
     await screen.findByTestId("today-open");
 
+    await flushPressConfig();
     fireEvent.click(screen.getByTestId("today-generate"));
     fireEvent.click(await screen.findByTestId("generate-confirm"));
 
@@ -251,6 +253,7 @@ describe("Today's Story pinned above the Library (issue #48)", () => {
     const first = renderStories(api.client);
     await first.findByTestId("today-open");
 
+    await flushPressConfig();
     fireEvent.click(screen.getByTestId("today-generate"));
     fireEvent.click(await screen.findByTestId("generate-confirm"));
     const ready = await screen.findByTestId("today-ready");
@@ -281,11 +284,13 @@ describe("The Library list, pager and states", () => {
     expect((await screen.findByTestId("library-page-summary")).textContent).toBe("1–2 of 3");
     expect(screen.getByTestId("pager-newer").getAttribute("aria-disabled")).toBe("true");
 
+    await flushPressConfig();
     fireEvent.click(screen.getByTestId("pager-older"));
     await screen.findByTestId("story-card-st-3");
     expect(screen.getByTestId("library-page-summary").textContent).toBe("3–3 of 3");
     expect(screen.getByTestId("pager-older").getAttribute("aria-disabled")).toBe("true");
 
+    await flushPressConfig();
     fireEvent.click(screen.getByTestId("pager-newer"));
     await screen.findByTestId("story-card-st-1");
   });
@@ -474,6 +479,7 @@ describe("On-demand Generate dialog", () => {
     renderStories(api.client);
     await screen.findByTestId("today-card");
 
+    await flushPressConfig();
     fireEvent.click(screen.getByTestId("today-generate"));
     const dialog = await screen.findByTestId("generate-dialog");
 
@@ -503,6 +509,7 @@ describe("On-demand Generate dialog", () => {
     renderStories(api.client, { generationPollMs: 250 });
     await screen.findByTestId("today-card");
 
+    await flushPressConfig();
     fireEvent.click(screen.getByTestId("today-generate"));
     fireEvent.click(await screen.findByTestId("generate-confirm"));
     await waitFor(() =>
@@ -534,6 +541,7 @@ describe("On-demand Generate dialog", () => {
     renderStories(api.client);
     await screen.findByTestId("today-card");
 
+    await flushPressConfig();
     fireEvent.click(screen.getByTestId("today-generate"));
     fireEvent.click(await screen.findByTestId("generate-confirm"));
 
@@ -548,6 +556,7 @@ describe("On-demand Generate dialog", () => {
     renderStories(fakeApi({ staleFailed: true }).client);
     await screen.findByTestId("today-card");
 
+    await flushPressConfig();
     fireEvent.click(screen.getByTestId("today-generate"));
     const dialog = await screen.findByTestId("generate-dialog");
     expect(within(dialog).queryByTestId("generate-error")).toBeNull();
@@ -561,6 +570,7 @@ describe("On-demand Generate dialog", () => {
     renderStories(api.client);
     await screen.findByTestId("today-card");
 
+    await flushPressConfig();
     fireEvent.click(screen.getByTestId("today-generate"));
     fireEvent.click(await screen.findByTestId("generate-confirm"));
 

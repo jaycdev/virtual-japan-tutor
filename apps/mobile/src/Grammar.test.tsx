@@ -2,6 +2,7 @@ import { createApiClient, type ApiClient } from "@vjt/api-client";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { flushPressConfig } from "../test/press-config.ts";
 import { Grammar, groupByLevel, resetGrammarBrowsePosition } from "./Grammar.tsx";
 
 /**
@@ -215,10 +216,12 @@ describe("Grammar catalogue", () => {
     await waitFor(() => expect(screen.getByText("1–50 of 120")).toBeTruthy());
     expect(screen.getByRole("button", { name: "Previous" }).getAttribute("aria-disabled")).toBe("true");
 
+    await flushPressConfig();
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     await waitFor(() => expect(gets.some((call) => call.includes("offset=50"))).toBe(true));
     await waitFor(() => expect(screen.getByText("51–100 of 120")).toBeTruthy());
 
+    await flushPressConfig();
     fireEvent.click(screen.getByRole("button", { name: "Previous" }));
     await waitFor(() => expect(gets.some((call) => call.includes("offset=0"))).toBe(true));
     await waitFor(() => expect(screen.getByText("1–50 of 120")).toBeTruthy());
@@ -302,6 +305,7 @@ describe("Grammar catalogue", () => {
     fixture.points = MANY_POINTS;
     renderGrammar();
     await waitFor(() => expect(screen.getByText("1–50 of 120")).toBeTruthy());
+    await flushPressConfig();
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     await waitFor(() => expect(gets.some((c) => c.includes("offset=50"))).toBe(true));
 
