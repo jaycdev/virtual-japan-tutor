@@ -10,6 +10,7 @@ export { useMarumori } from "./useMarumori.ts";
 export type { MaruMori, MaruMoriRunsState, MaruMoriState, SyncOutcome } from "./useMarumori.ts";
 export { usePractice } from "./usePractice.ts";
 export type { AnswerFeedback, ExerciseView, PracticeView } from "./usePractice.ts";
+export { displayPrompt, practiceSeedForStory } from "./practiceText.ts";
 export { fetchTodaysStory, useStory, useStorySettings, useTodaysStory } from "./useStory.ts";
 export type { TodaysStoryState, TodaysStoryView } from "./useStory.ts";
 export { useFocusSet } from "./useFocusSet.ts";
