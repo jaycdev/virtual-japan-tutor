@@ -1,10 +1,11 @@
-// Package webui serves the built web app (the Expo web export) from the same
-// origin as the API, so a self-hoster deploys one container and opens one URL.
+// Package webui serves the built web app (the apps/web Vite build) from the
+// same origin as the API, so a self-hoster deploys one container and opens one
+// URL.
 //
 // It sits in front of the API handler: a GET or HEAD for a file that exists in
 // the web directory is served from disk; every API route, every other method
 // and every path that is not a file goes to the API. One exception (#51): the
-// Expo app has client-side routes (web URLs like /stories/:id that must
+// web app has client-side routes (web URLs like /stories/:id that must
 // survive a reload), so a page navigation — GET/HEAD whose path names no file
 // type and whose Accept asks for text/html — that misses the disk gets
 // index.html, and the app's router takes the URL from there. API clients are
@@ -101,8 +102,8 @@ func (h *handler) serveFile(w http.ResponseWriter, r *http.Request, name string)
 	hd.Set("X-Content-Type-Options", "nosniff")
 	hd.Set("Referrer-Policy", "same-origin")
 	hd.Set("X-Frame-Options", "DENY")
-	if strings.HasPrefix(name, "assets/") || strings.HasPrefix(name, "_expo/") {
-		// Expo content-hashes these names, so they never change under one name.
+	if strings.HasPrefix(name, "assets/") {
+		// Vite content-hashes the names under assets/, so they never change under one name.
 		hd.Set("Cache-Control", "public, max-age=31536000, immutable")
 	} else {
 		hd.Set("Cache-Control", "no-cache")

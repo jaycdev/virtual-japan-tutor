@@ -3,7 +3,20 @@
 !apps/server
 !data/grammar
 
+# What the web stage of apps/server/Dockerfile needs: apps/web, the workspace
+# packages it builds against, and the manifests pnpm checks for --frozen-lockfile.
+!apps/web
+!packages
+!pnpm-workspace.yaml
+!pnpm-lock.yaml
+!package.json
+!turbo.json
+!tsconfig.base.json
+!.npmrc
+
 # Local build/spike output never goes into the image; the web stage rebuilds everything.
+# (These come after the allowlist, so they win: the copied trees arrive without node_modules,
+# dist, .turbo or .expo junk.)
 **/node_modules
 **/dist
 **/dist-web*

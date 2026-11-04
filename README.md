@@ -1,7 +1,9 @@
 # Virtual Japan Tutor
 
 Monorepo: a Go server that owns all domain logic ([ADR-0001](docs/adr/0001-go-server-owns-domain-logic.md))
-and one Expo app serving both the web client and Android ([ADR-0007](docs/adr/0007-one-expo-app-for-web-and-android.md)). Terminology lives in [GLOSSARY.md](GLOSSARY.md).
+and two clients ([ADR-0010](docs/adr/0010-separate-web-and-mobile-apps.md)): `apps/web`, a Vite + React SPA that the
+server also serves from its own image, and `apps/mobile`, a phone-only Expo app for Android. They share
+`@vjt/core`, `@vjt/api-client` and `@vjt/design`. Terminology lives in [GLOSSARY.md](GLOSSARY.md).
 
 ## Install (self-hosting)
 
@@ -100,9 +102,11 @@ add or confirm an AI Provider, and choose your starting level. To add accounts l
 | --------------------- | ----------------------------------------------------------------------- |
 | `api/openapi.yaml`    | OpenAPI spec: the single source of truth for the HTTP API               |
 | `apps/server`         | Go server (std `net/http`, pgx, goose migrations)                       |
+| `apps/web`            | Vite + React SPA (React Router, Tailwind 4, shadcn/ui)                  |
 | `apps/mobile`         | Expo + TypeScript (phone-only Android app)                              |
 | `packages/api-client` | `@vjt/api-client`: TS types + client generated from the spec            |
-| `packages/core`       | `@vjt/core`: UI-agnostic hooks/state used across the app's screens       |
+| `packages/core`       | `@vjt/core`: UI-agnostic hooks/state shared by the web and mobile apps  |
+| `packages/design`     | `@vjt/design`: design tokens, generated into web and native CSS         |
 
 ### Prerequisites
 
@@ -263,9 +267,10 @@ cd apps/server
 DATABASE_URL=postgres://user:pass@host:5432/db go run ./cmd/server
 ```
 
-Web: being rebuilt as `apps/web` (issue #76). Until issue #82 wires it into the server image, the image serves a
-placeholder page at `/` and the API is unchanged; see [#73](https://github.com/jaycdev/virtual-japan-tutor/issues/73).
-The phone app (`apps/mobile`) has no web build.
+Web: `pnpm --filter @vjt/web dev` runs the Vite dev server on `http://localhost:5173`; it proxies the API prefixes to
+`VJT_API_ORIGIN` (default `http://localhost:8080`), so log in against the `go run` server above. `pnpm --filter @vjt/web build`
+produces `apps/web/dist`, which the server image bakes and serves at `/` (`WEB_DIR`); `internal/webui` keeps deep links
+working the same way. The phone app (`apps/mobile`) has no web build.
 
 Android: `pnpm --filter @vjt/mobile android` (set `EXPO_PUBLIC_API_URL`; defaults to `http://10.0.2.2:8080`, the
 host as seen from the Android emulator). `pnpm --filter @vjt/mobile start` runs Metro for an already-installed app.

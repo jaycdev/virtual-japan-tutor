@@ -132,7 +132,7 @@ func TestAnythingElseGoesToTheAPI(t *testing.T) {
 // scratch test): reloading a client-side route like /stories/123 is a browser
 // navigation — GET with Accept: text/html and a path naming no file type —
 // so it gets index.html (the app shell, Cache-Control: no-cache like "/"),
-// and Expo Router restores the route from the URL.
+// and React Router restores the route from the URL.
 func TestDeepLinkServesTheAppShell(t *testing.T) {
 	h := site(t)
 	for _, tc := range []struct{ method, target string }{
@@ -186,7 +186,7 @@ func TestAssetMissesAreNotTheAppShell(t *testing.T) {
 	h := site(t)
 	for _, target := range []string{
 		"/assets/index-deadbeef.js",
-		"/_expo/static/js/web/index-deadbeef.js",
+		"/assets/vendor-react-deadbeef.js",
 		"/fonts/NotoSansJP400-missing.woff2",
 		"/no-such-page.json",
 	} {
@@ -198,7 +198,7 @@ func TestAssetMissesAreNotTheAppShell(t *testing.T) {
 	}
 }
 
-// TestTrailingSlashDeepLinksServeTheAppShell (#51 review S3): Expo Router
+// TestTrailingSlashDeepLinksServeTheAppShell (#51 review S3): React Router
 // accepts /stories/123/ style URLs and /stories/ is a page navigation like
 // /stories. fileName rejects trailing slashes before the disk lookup, so
 // without the slash-route path a browser got the API's JSON 404 where the
