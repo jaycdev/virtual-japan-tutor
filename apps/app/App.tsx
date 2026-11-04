@@ -13,6 +13,7 @@ import { useFonts } from "expo-font";
 import { StatusBar } from "expo-status-bar";
 
 import { Login } from "./src/Login.tsx";
+import { ServerField } from "./src/ServerField.tsx";
 import { AuthProvider, useSession } from "./src/session.tsx";
 import { resolveApiBaseUrl } from "./src/config.ts";
 import { appFonts } from "./src/fonts";
@@ -137,7 +138,11 @@ function AuthGate({
           <Text className="text-small text-destructive" accessibilityRole="alert">
             Cannot reach the server: {auth.state.message}
           </Text>
-          <Text className="text-caption text-muted-foreground">Server address: {serverUrl}</Text>
+          {/* #51 review B1: an unreachable address must not be a dead end.
+              Unlike Login, where the field is Android-only, this escape is
+              shown on every platform — whoever reaches this card needs a way
+              out, including web builds pointed at the wrong address. */}
+          <ServerField serverUrl={serverUrl} onSave={onChangeServerUrl} />
           <RetryButton onPress={auth.retry} />
         </View>
       </View>
