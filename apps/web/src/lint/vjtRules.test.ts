@@ -1,6 +1,7 @@
 // Probe for the repo's design-token gates. The repo has no RuleTester setup, so this
 // runs the real root eslint.config.mjs through ESLint's API on in-memory files, which
 // also checks the rules are wired to the right file globs.
+/* eslint-disable vjt/no-hardcoded-color -- the probe inputs are colour literals on purpose */
 import { ESLint } from "eslint";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
