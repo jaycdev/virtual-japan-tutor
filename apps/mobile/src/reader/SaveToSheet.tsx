@@ -1,5 +1,6 @@
 import type { ItemList } from "@vjt/api-client";
 import { Icon } from "../components/ui/icon";
+import { useSheetBottomInset } from "../components/ui/sheet.ts";
 import * as DialogPrimitives from "@rn-primitives/dialog";
 import { useState } from "react";
 import {
@@ -14,9 +15,9 @@ import {
 } from "react-native";
 
 /**
- * The "Save to…" sheet (issue #14): the mobile form of the web's popover. It
+ * The "Save to…" sheet (issue #14): a bottom sheet. It
  * lists the Learner's Item Lists — the Default List marked — and offers
- * inline list creation, mirroring the web's create-then-save flow: the save
+ * inline list creation, with create-then-save: the save
  * only follows a successful create.
  *
  * Issue #45 review: it is an RN Primitives Dialog like the windows, not an RN
@@ -41,6 +42,7 @@ export function SaveToSheet({
   onClose: () => void;
 }) {
   const [name, setName] = useState("");
+  const inset = useSheetBottomInset();
 
   const create = () => {
     const trimmed = name.trim();
@@ -54,7 +56,7 @@ export function SaveToSheet({
       <DialogPrimitives.Portal>
         <DialogPrimitives.Overlay style={styles.backdrop} className="bg-backdrop" />
         <DialogPrimitives.Content
-          style={styles.sheet}
+          style={StyleSheet.flatten([styles.sheet, { paddingBottom: 18 + inset }])}
           className="bg-card border-t border-border"
         >
           {/* The Dialog leaves the soft keyboard to the platform (Android
@@ -65,6 +67,7 @@ export function SaveToSheet({
               Portal's direct child. */}
           <KeyboardAvoidingView
             style={styles.avoider}
+            // Stock RNR; iOS-only, dead while app.json targets android only.
             behavior={Platform.OS === "ios" ? "padding" : undefined}
           >
             <View style={styles.head}>

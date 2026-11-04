@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text } from "react-native";
 
 import * as DialogPrimitive from "@rn-primitives/dialog";
+import { useSheetBottomInset } from "../components/ui/sheet.ts";
 
 import type { MeasurableNode, MenuOption, MenuOptionId, Rect } from "./holdMenu.ts";
 
@@ -20,15 +21,12 @@ import type { MeasurableNode, MenuOption, MenuOptionId, Rect } from "./holdMenu.
  */
 export function TokenMenu({
   options,
-  screenWidth,
   measure,
   onRects,
   onSelect,
   onDismiss,
 }: {
   options: MenuOption[];
-  /** The viewport width once the reader has laid out (0 until then: no max width yet). */
-  screenWidth: number;
   measure: (testID: string, node: MeasurableNode | null) => Rect | null;
   /** Reports the option rectangles (plus the card) once they are known. */
   onRects: (rects: Map<string, Rect>) => void;
@@ -37,6 +35,7 @@ export function TokenMenu({
   /** The overlay wants to close: tap outside, or Back. */
   onDismiss: () => void;
 }) {
+  const inset = useSheetBottomInset();
   const cardRef = useRef<MeasurableNode | null>(null);
   const optionRefs = useRef(new Map<MenuOptionId, MeasurableNode>());
   // The sheet's layout can land after this component first renders; each
@@ -90,7 +89,7 @@ export function TokenMenu({
           onLayout={() => setLayoutTick((tick) => tick + 1)}
           testID="token-menu"
           className="bg-card border-t border-border"
-          style={StyleSheet.flatten([styles.sheet, screenWidth > 0 ? { maxWidth: screenWidth - 24 } : null])}
+          style={StyleSheet.flatten([styles.sheet, { paddingBottom: 8 + inset }])}
         >
           {/* The menu is labelled by its options; the dialog still wants a
               title for screen readers, so it gets one nobody sees. */}

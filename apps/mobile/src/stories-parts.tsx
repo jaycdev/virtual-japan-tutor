@@ -7,6 +7,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { Card } from "./components/ui/Card.tsx";
 import { Icon, type IconName } from "./components/ui/icon.tsx";
+import { useSheetBottomInset } from "./components/ui/sheet.ts";
 import { EmptyState, InlineError, ProgressBar, SkeletonBar } from "./state/states.tsx";
 
 /**
@@ -86,7 +87,7 @@ export function ActionButton({
   onPress: () => void;
   filled?: boolean;
   disabled?: boolean;
-  /** Stretches to the column, for the stacked narrow layout. */
+  /** Stretches to the full width of the column (the pinned Generate button). */
   fullWidth?: boolean;
   testID?: string;
   accessibilityLabel?: string;
@@ -217,6 +218,7 @@ export function StoryMenu({
   onAskDelete: () => void;
 }) {
   const [sheetOpen, setSheetOpen] = useState(false);
+  const inset = useSheetBottomInset();
   const label = `Actions for ${story.title}`;
 
   const trigger = (onPress?: () => void, expanded?: boolean) => (
@@ -264,7 +266,7 @@ export function StoryMenu({
             <DialogPrimitives.Overlay style={styles.backdrop} className="bg-backdrop" />
             <DialogPrimitives.Content
               testID="story-menu-sheet"
-              style={styles.sheet}
+              style={StyleSheet.flatten([styles.sheet, { paddingBottom: 18 + inset }])}
               className="bg-card border-t border-border"
             >
               {/* A labelled surface still needs a title for assistive tech. */}
@@ -358,13 +360,14 @@ export function ConfirmDelete({
   onKeep: () => void;
   onConfirm: () => void;
 }) {
+  const inset = useSheetBottomInset();
   return (
     <DialogPrimitives.Root open onOpenChange={(open) => !open && onKeep()}>
       <DialogPrimitives.Portal>
         <DialogPrimitives.Overlay style={styles.backdrop} className="bg-backdrop" />
         <DialogPrimitives.Content
           testID="confirm-delete"
-          style={{ ...styles.sheet, ...styles.dialogBody }}
+          style={{ ...styles.sheet, ...styles.dialogBody, paddingBottom: 20 + inset }}
           className="bg-card border-t border-border"
         >
           <DialogPrimitives.Title asChild>
@@ -372,7 +375,7 @@ export function ConfirmDelete({
           </DialogPrimitives.Title>
           <DialogPrimitives.Description asChild>
             {/* The non-breaking tie keeps “Practice Records stay.” from orphaning
-                a single word at narrow widths. */}
+                a single word on a narrow phone. */}
             <Text className="text-small text-muted-foreground">
               {`“${story.title}” goes away for good, along with its rating.\u00A0Your Practice Records stay.`}
             </Text>
@@ -443,6 +446,7 @@ export function GenerateDialog({
   onClose: () => void;
 }) {
   const running = generation.status === "running";
+  const inset = useSheetBottomInset();
   // One error line, inside the dialog, and only for a run this dialog started:
   // an old server `failed` must not greet a dialog that has started nothing (S2).
   const failure =
@@ -456,7 +460,7 @@ export function GenerateDialog({
         <DialogPrimitives.Overlay style={styles.backdrop} className="bg-backdrop" />
         <DialogPrimitives.Content
           testID="generate-dialog"
-          style={{ ...styles.sheet, ...styles.dialogBody }}
+          style={{ ...styles.sheet, ...styles.dialogBody, paddingBottom: 20 + inset }}
           className="bg-card border-t border-border"
         >
           <DialogPrimitives.Title asChild>
@@ -541,7 +545,7 @@ export function GenerateDialog({
 /**
  * A dropdown picker over a list of server suggestions: the chip reads as a
  * control, the rows are the menu — the same DropdownMenu the card menu uses, so
- * web gets Radix's keyboard handling for free and Android an anchored popup.
+ * the primitives handle touch and keyboard, and the picker is an anchored popup.
  * The first row is the "Any" choice, which means the field is left out of the
  * request.
  */

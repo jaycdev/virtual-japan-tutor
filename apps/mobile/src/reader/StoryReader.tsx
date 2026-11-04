@@ -120,7 +120,6 @@ export function StoryReader({
   const saveBusyRef = useRef(false);
   const [sheetError, setSheetError] = useState<string | null>(null);
   const [saveNote, setSaveNote] = useState<string | null>(null);
-  const [screen, setScreen] = useState({ width: 0, height: 0 });
 
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelHold = () => {
@@ -492,7 +491,6 @@ export function StoryReader({
   return (
     <View
       style={styles.fill}
-      onLayout={(e) => setScreen({ width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height })}
       accessibilityLabel="Story reader"
     >
       <View style={styles.header} className="border-b border-border">
@@ -681,7 +679,6 @@ export function StoryReader({
       {menuOpen && gesture.token ? (
         <TokenMenu
           options={openOptions}
-          screenWidth={screen.width}
           measure={measure}
           onRects={setMenuRects}
           onSelect={onMenuSelect}

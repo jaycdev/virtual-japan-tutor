@@ -593,6 +593,8 @@ describe("Story reader gestures (mobile)", () => {
     expect(within(menu).getByTestId("menu-option-saveTo").textContent).toContain("Save to…");
     // がっこう sits in no Grammar Span, so there is no Grammar row.
     expect(within(menu).queryByTestId("menu-option-grammar")).toBeNull();
+    // The reading panel's word-mode row carries the word's pitch graph.
+    await waitFor(() => expect(within(screen.getByTestId("panel-lookup")).getByTestId("pitch-graph")).toBeTruthy());
 
     await waitFor(() => expect(requests.some((r) => r.path === "/weak-signals")).toBe(true));
     expect(weakSignals(requests)).toEqual([{ itemKind: "vocabulary", itemRef: "990101", reason: "lookup" }]);
@@ -723,6 +725,7 @@ describe("Story reader gestures (mobile)", () => {
     expect(within(win).getByText("store")).toBeTruthy();
     expect(within(win).getByText("N5")).toBeTruthy();
     expect(within(win).getByText(/heiban \(flat\)/)).toBeTruthy();
+    expect(within(win).getByTestId("pitch-graph")).toBeTruthy();
   });
 
   it("answers a comprehension question once and locks the buttons", async () => {

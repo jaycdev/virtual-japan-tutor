@@ -37,7 +37,13 @@ export function Shell({ children }: { children: ReactNode }) {
   };
 
   return (
-    <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
+    // The reader hides the tab bar, which is the only place that applies the
+    // bottom inset otherwise, so the reader's own footer takes it here.
+    <View
+      testID="shell"
+      className="flex-1 bg-background"
+      style={{ paddingTop: insets.top, paddingBottom: isReaderRoute(pathname) ? insets.bottom : 0 }}
+    >
       <View className="flex-1">{children}</View>
       {!isReaderRoute(pathname) && <TabBar active={active} onSelect={select} />}
       {/* the reader's Lookup menu and windows portal here (RN Primitives) */}

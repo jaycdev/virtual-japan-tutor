@@ -3,6 +3,7 @@ import * as DialogPrimitives from "@rn-primitives/dialog";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { Icon } from "../components/ui/icon";
+import { useSheetBottomInset } from "../components/ui/sheet.ts";
 import { JlptBadge } from "./parts.tsx";
 import { PitchGraph } from "./PitchGraph.tsx";
 
@@ -33,6 +34,7 @@ function WindowCard({
   onClose: () => void;
   children: React.ReactNode;
 }) {
+  const inset = useSheetBottomInset();
   return (
     <DialogPrimitives.Root open onOpenChange={(open) => !open && onClose()}>
       <DialogPrimitives.Portal>
@@ -41,7 +43,7 @@ function WindowCard({
           testID={testID}
           accessibilityLabel={testID === "dictionary-window" ? "Dictionary Entry window" : "Grammar Point window"}
           className="bg-card border-border"
-          style={StyleSheet.flatten([styles.card, styles.sheet])}
+          style={StyleSheet.flatten([styles.card, styles.sheet, { paddingBottom: inset }])}
           // No Description for these windows — the title says it all; this is
           // Radix's documented way to skip the aria-describedby warning.
           aria-describedby={undefined}
