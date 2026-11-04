@@ -181,7 +181,10 @@ describe('App shell (auth bootstrap)', () => {
       expect(screen.getByText(/Cannot reach the server/)).toBeTruthy();
     });
     expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
-    expect(screen.getByText(/Server address: http:\/\/10\.0\.2\.2:8080/)).toBeTruthy();
+    // #51 review B1: on web the server is the page's own origin — the error
+    // card must never show the Android emulator default.
+    expect(screen.getByText(`Server: ${window.location.origin}`)).toBeTruthy();
+    expect(screen.queryByText(/10\.0\.2\.2/)).toBeNull();
 
     // Retry re-checks the same stored session.
     impl = makeFetch(logged);
@@ -189,6 +192,42 @@ describe('App shell (auth bootstrap)', () => {
     await waitFor(() => {
       expect(screen.getByText('signed-in-tree')).toBeTruthy();
     });
+  });
+
+  it('the unreachable-server card offers the same Change server escape as Login (#51 B1)', async () => {
+    // No Platform mock: the escape must exist on web too, where the origin
+    // default can still be wrong (e.g. a build-time EXPO_PUBLIC_API_URL).
+    const store = fakeStore({ 'vjt.token': 'stale-session' });
+    let impl: typeof fetch = vi.fn(async () => {
+      throw new TypeError('fetch failed');
+    }) as unknown as typeof fetch;
+    fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => impl(input, init)) as unknown as typeof fetch;
+    renderApp(store, fetchMock);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Cannot reach the server/)).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Change server' }));
+    fireEvent.change(screen.getByLabelText('Server address'), {
+      target: { value: 'http://192.168.1.50:8080' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save server' }));
+
+    // The address is remembered, the old host's token is gone, and the
+    // re-keyed tree starts signed-out against the new host.
+    await waitFor(() => {
+      expect(store.dump()['vjt.serverUrl']).toBe('http://192.168.1.50:8080');
+    });
+    expect(store.dump()['vjt.token']).toBeUndefined();
+    impl = makeFetch(logged);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Log in' })).toBeTruthy();
+    });
+    await submitLogin('learner', 'hunter2');
+    await waitFor(() => {
+      expect(screen.getByText('signed-in-tree')).toBeTruthy();
+    });
+    expect(logged.some((r) => r.url === 'http://192.168.1.50:8080/auth/login')).toBe(true);
   });
 
   it('Android saves a new server address, forgets the old token, and talks to the new host only after a fresh sign-in', async () => {

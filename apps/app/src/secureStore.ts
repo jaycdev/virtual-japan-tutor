@@ -8,8 +8,8 @@ import type { SecureStoreLike } from "./tokenStorage.ts";
 // "./src/secureStore.ts").
 //
 // Deliberate security tradeoff (#44, reviewed): on web the session JWT — key
-// `vjt.token`, the same key the legacy web client used in
-// apps/web/src/tokenStorage.ts — and the server URL sit in localStorage in
+// `vjt.token`, the same key the legacy Vite web client (deleted in #51) used —
+// and the server URL sit in localStorage in
 // plaintext, readable by any script on this origin. That is acceptable for
 // the self-hosted single-origin deployment this app targets: anyone who can
 // run script on the origin already owns the session. Closing the hole means

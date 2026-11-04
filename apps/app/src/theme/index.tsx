@@ -14,9 +14,9 @@ export type { ResolvedTheme, ThemePreference };
 // Native chrome follows the same choice: Uniwind.setTheme drives
 // Appearance.setColorScheme on native (uniwind/src/core/config/config.common.ts,
 // setTheme), and it is an override, so with a forced Dark on a light-system
-// device StatusBar style="auto" and the legacy useColors() (which reads
-// react-native's useColorScheme()) both follow the app's choice; "system"
-// hands the colour scheme back to the device.
+// device StatusBar style="auto" (which reads react-native's useColorScheme())
+// follows the app's choice too; "system" hands the colour scheme back to the
+// device.
 const store = createThemeStore(themeStorage, (preference) => Uniwind.setTheme(preference));
 
 // Stable snapshot for useSyncExternalStore's server path; a fresh object per

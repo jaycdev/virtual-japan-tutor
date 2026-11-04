@@ -8,14 +8,16 @@
 !pnpm-workspace.yaml
 !.npmrc
 !tsconfig.base.json
-!apps/web
-!apps/app/package.json
+!apps/app
 !packages/api-client
 !packages/core
 
+# Local build/spike output never goes into the image; the web stage rebuilds everything.
 **/node_modules
 **/dist
+**/dist-web*
 **/.turbo
+**/.expo
 apps/server/bin
 apps/server/scripts
 apps/server/Dockerfile

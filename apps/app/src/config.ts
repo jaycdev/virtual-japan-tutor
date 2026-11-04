@@ -1,18 +1,35 @@
-// 10.0.2.2 is the host machine as seen from the Android emulator.
-const DEFAULT_API_URL = "http://10.0.2.2:8080";
+// The platform half of the fallback lives in the platformDefault split
+// (platformDefault.ts for web, platformDefault.native.ts for the Android
+// bundle). The import stays extensionless on purpose — "./platformDefault.ts"
+// would pin the web file for every platform, leaking window.location into
+// the Android bundle and the emulator address into the web one. Same rule
+// and precedent as src/secureStore.
+import { platformApiDefault } from "./platformDefault";
 
 /**
- * Resolve the API base URL for the client. Priority: an in-app override the Learner
- * saved (issue #11 server-connection requirement: mobile has no same-origin fallback),
- * then EXPO_PUBLIC_API_URL baked into the build, then the emulator default.
- * A stored value that no longer validates is treated as unset.
+ * Resolve the API base URL for the client. Precedence (#51 review B1):
+ *
+ *   1. an in-app override the Learner saved (issue #11: mobile has no
+ *      same-origin fallback); a stored value that no longer validates is
+ *      treated as unset;
+ *   2. EXPO_PUBLIC_API_URL baked into the build — the dev opt-in: Metro
+ *      (`expo start --web`) serves no API on its own port, so web dev
+ *      points the app at the Go server through this env value. The Docker
+ *      web export bakes in no such value and falls straight through;
+ *   3. the platform default: on web the page's own origin (the server
+ *      serving the bundle also hosts the API — like the pre-#51 Vite app),
+ *      on Android the host machine as seen from the emulator.
+ *
+ * `platformDefault` overrides step 3 so tests can pin either side of the
+ * split; callers omit it.
  */
 export function resolveApiBaseUrl(
   env: { EXPO_PUBLIC_API_URL?: string | undefined },
   storedUrl?: string | null,
+  platformDefault?: string,
 ): string {
   const stored = storedUrl ? normalizeServerUrl(storedUrl) : null;
-  const url = stored || env.EXPO_PUBLIC_API_URL || DEFAULT_API_URL;
+  const url = stored || env.EXPO_PUBLIC_API_URL || platformDefault || platformApiDefault();
   return url.replace(/\/+$/, "");
 }
 
