@@ -39,7 +39,7 @@ describe("Setup wizard", () => {
       expect(put?.body).toEqual({ level: "N3" });
     });
     expect(await screen.findByRole("progressbar", { name: "Step 2 of 3: MaruMori" })).toBeTruthy();
-    expect(screen.getByText("Not connected.")).toBeTruthy();
+    expect(await screen.findByText("Not connected.")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Next" })); // no key typed: nothing to save
     expect(await screen.findByRole("progressbar", { name: "Step 3 of 3: AI Providers" })).toBeTruthy();

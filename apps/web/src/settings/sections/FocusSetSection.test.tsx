@@ -50,7 +50,7 @@ describe("Settings › focus (the full Focus Set)", () => {
     renderFocus();
     expect(await screen.findByRole("heading", { name: "Today’s Focus Set" })).toBeTruthy();
     expect(
-      screen.getByText("These are the items your Stories and Practice are built around, up to 12 at a time."),
+      await screen.findByText("These are the items your Stories and Practice are built around, up to 12 at a time."),
     ).toBeTruthy();
     const nav = screen.getByRole("navigation", { name: "Settings sections" });
     expect(within(nav).queryByRole("link", { name: /Focus/ })).toBeNull();
