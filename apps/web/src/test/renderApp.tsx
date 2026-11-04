@@ -21,11 +21,16 @@ export interface HarnessOptions {
   signedIn?: boolean;
   /** Replaces the GET /starting-level answer, e.g. to hold it open or fail it. */
   startingLevelReply?: () => Promise<Response>;
+  /**
+   * Answers the API paths a test is about. Return undefined to fall through to the
+   * defaults above. Used by the Settings tests (see test/fakeSettingsApi.ts).
+   */
+  api?: (request: Request) => Promise<Response | undefined>;
 }
 
 export function renderAppAt(path: string, options: HarnessOptions = {}) {
   const router = createMemoryRouter(appRoutes, { initialEntries: [path] });
-  const { startingLevelConfigured = true, signedIn = true, startingLevelReply } = options;
+  const { startingLevelConfigured = true, signedIn = true, startingLevelReply, api } = options;
 
   function Harness({ children }: { children: ReactNode }) {
     const [state, setState] = useState<AuthState>(signedIn ? { status: "signedIn", user: TEST_USER } : { status: "signedOut" });
@@ -37,6 +42,10 @@ export function renderAppAt(path: string, options: HarnessOptions = {}) {
         createApiClient({
           baseUrl: "http://api.test",
           fetch: async (req) => {
+            if (api) {
+              const handled = await api(req);
+              if (handled) return handled;
+            }
             if (new URL(req.url).pathname === "/starting-level") {
               if (startingLevelReply) return startingLevelReply();
               return Response.json({ id: TEST_USER.id, username: TEST_USER.username, configured: startingLevelConfigured });
