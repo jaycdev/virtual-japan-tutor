@@ -417,7 +417,7 @@ function TodayCard({
           <GenerationProgress progress={running} />
         </View>
       ) : today.status === "error" ? (
-        <TodayCardState today={today} onReloadToday={onReloadToday} />
+        <TodayCardError today={today} onReloadToday={onReloadToday} />
       ) : generation.status === "failed" ? (
         // The run failed rather than the read: the line is the server's own
         // words, and the way to try again is the Generate dialog.
@@ -445,7 +445,7 @@ function TodayCard({
 }
 
 /** Today's read failing: the same failure words as the Library's, one Retry. */
-function TodayCardState({
+function TodayCardError({
   today,
   onReloadToday,
 }: {
