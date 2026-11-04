@@ -282,7 +282,7 @@ function TodayStoryCard({
         accessibilityRole="header"
         className="text-title-sm font-semibold text-foreground"
       >
-        Today’s story
+        Today’s Story
       </Text>
 
       {today.status === "loading" ? (
@@ -309,14 +309,14 @@ function TodayStoryCard({
               the story on screen is not the newest thing happening. */}
           {generation.status === "running" ? (
             <Text className="text-caption text-muted-foreground">
-              A newer story is being written.
+              A newer Story is being written.
             </Text>
           ) : null}
         </View>
       ) : running ? (
         <View className="gap-3">
           <Text className="text-body text-muted-foreground">
-            A new story is on its way — you can leave and come back.
+            A new Story is on its way — you can leave and come back.
           </Text>
           <ProgressBar
             value={(running.percent ?? 0) / 100}
@@ -324,21 +324,21 @@ function TodayStoryCard({
           />
         </View>
       ) : today.status === "error" ? (
-        <InlineError message={`Cannot load today’s story: ${today.message}`} onRetry={onReloadToday} />
+        <InlineError message={`Cannot load today’s Story: ${today.message}`} onRetry={onReloadToday} />
       ) : generation.status === "failed" ? (
         // The run failed rather than the read: the line is the server's own,
         // and the way to try again is the Generate box on Stories.
         <View className="gap-3">
           <Text className="text-body text-destructive">
-            {generation.progress?.message ?? "Couldn’t write a story for you."}
+            {generation.progress?.message ?? "Couldn’t write a Story for you."}
           </Text>
-          <ActionButton label="Generate a story" onPress={onOpenStories} />
+          <ActionButton label="Generate a Story" onPress={onOpenStories} />
         </View>
       ) : (
         <EmptyState
           compact
-          message="No story yet — the tutor writes one for you every day."
-          actionLabel="Generate a story"
+          message="No Story yet — the tutor writes one for you every day."
+          actionLabel="Generate a Story"
           onAction={onOpenStories}
         />
       )}
@@ -427,7 +427,7 @@ function PracticeCard({
           {items?.length === 0 ? (
             <Text className="text-caption text-muted-foreground">
               A session is built from your Focus Set, so there is nothing to practise until a Sync
-              or a story adds items.
+              or a Story adds items.
             </Text>
           ) : null}
         </View>

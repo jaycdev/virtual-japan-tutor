@@ -228,7 +228,7 @@ it("signed-in narrow viewport shows the tab bar with five destinations", async (
   await user.click(screen.getByRole("tab", { name: "Today" }));
   // Today is a real screen now (#47): its Story card section stands in for the
   // old placeholder as the "we are back on Today" signal.
-  await screen.findByText("Today’s story");
+  await screen.findByText("Today’s Story");
 });
 
 it("opening a settings section pushes it and Back returns to the hub", async () => {
@@ -468,7 +468,7 @@ describe("first-run setup (#50)", () => {
     await screen.findByRole("button", { name: "Save level" });
 
     await fireEvent.click(screen.getByRole("button", { name: "Skip setup" }));
-    await screen.findByText("Today’s story");
+    await screen.findByText("Today’s Story");
 
     // Sign out through the hub's account card…
     await fireEvent.click(screen.getByRole("tab", { name: "Settings" }));
@@ -497,7 +497,7 @@ describe("first-run setup (#50)", () => {
     await screen.findByRole("button", { name: "Add provider" }); // step 3: AI Providers
 
     await fireEvent.click(screen.getByRole("button", { name: "Finish" }));
-    await screen.findByText("Today’s story");
+    await screen.findByText("Today’s Story");
 
     // Skipping never half-saves: the wizard issued no PUT/POST the whole way
     // (the sign-in POST itself is not the wizard's).
@@ -562,7 +562,7 @@ describe("first-run setup (#50)", () => {
     renderApp("/");
     await signedIn();
 
-    await screen.findByText("Today’s story");
+    await screen.findByText("Today’s Story");
     expect(screen.queryByText(/Step \d of 3/)).toBeNull();
   });
 
@@ -576,7 +576,7 @@ describe("first-run setup (#50)", () => {
     renderApp("/");
 
     await logIn();
-    await screen.findByText("Today’s story");
+    await screen.findByText("Today’s Story");
     expect(screen.queryByText(/Step \d of 3/)).toBeNull();
     // The flag is marked, so the next launch does not even ask the server.
     expect(localStorage.getItem("vjt.setupSeen")).toBe("yes");
@@ -588,7 +588,7 @@ describe("first-run setup (#50)", () => {
     stubApi();
     renderApp("/setup");
 
-    await screen.findByText("Today’s story");
+    await screen.findByText("Today’s Story");
     expect(screen.queryByText(/Step \d of 3/)).toBeNull();
   });
 });

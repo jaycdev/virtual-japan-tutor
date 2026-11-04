@@ -270,7 +270,7 @@ describe('Today', () => {
       expect(screen.getByRole('button', { name: "Open today's story" })).toBeTruthy();
     });
     expect(screen.getByRole('heading', { name: /Good |Still / })).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Today’s story' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Today’s Story' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Practice' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Last sync' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Your Focus Set' })).toBeTruthy();
@@ -293,9 +293,9 @@ describe('Today', () => {
     const handlers = renderToday();
 
     await waitFor(() => {
-      expect(screen.getByText(/No story yet/)).toBeTruthy();
+      expect(screen.getByText(/No Story yet/)).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Generate a story' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Generate a Story' }));
     expect(handlers.onOpenStories).toHaveBeenCalled();
   });
 
@@ -317,8 +317,8 @@ describe('Today', () => {
     });
     expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('60');
     expect(screen.getByText('Writing… attempt 2 of 3 60%')).toBeTruthy();
-    // A run in flight is not an empty state: no "Generate a story" invitation.
-    expect(screen.queryByRole('button', { name: 'Generate a story' })).toBeNull();
+    // A run in flight is not an empty state: no "Generate a Story" invitation.
+    expect(screen.queryByRole('button', { name: 'Generate a Story' })).toBeNull();
   });
 
   it('re-reads Today’s story when a run finishes on screen', async () => {
@@ -380,7 +380,7 @@ describe('Today', () => {
     renderToday();
 
     await waitFor(() => {
-      expect(screen.getByText(/Cannot load today’s story/)).toBeTruthy();
+      expect(screen.getByText(/Cannot load today’s Story/)).toBeTruthy();
     });
     const before = gets.filter((call) => call.includes('/stories/today')).length;
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
