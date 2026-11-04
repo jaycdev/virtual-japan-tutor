@@ -81,14 +81,54 @@ describe("palette", () => {
 });
 
 describe("generated CSS is current", () => {
-  // The committed files must match what the tokens render to. CI also runs
-  // check:generated, but this fails in a plain `pnpm test` too.
+  // These only guard direct `vitest` runs. `pnpm test` runs `generate` first
+  // (turbo), which rewrites both files, so they cannot fail there. CI's guard is
+  // `pnpm check:generated`, which fails if the committed files differ from the
+  // output of `pnpm generate:force`.
   it("web.css matches tokens.ts", () => {
     expect(readFileSync(new URL("../web.css", import.meta.url), "utf8")).toBe(renderWebCss());
   });
 
   it("native.css matches tokens.ts", () => {
     expect(readFileSync(new URL("../native.css", import.meta.url), "utf8")).toBe(renderNativeCss());
+  });
+});
+
+describe("web.css structure (for the shadcn web app)", () => {
+  const web = readFileSync(new URL("../web.css", import.meta.url), "utf8");
+
+  // Body of the first block that opens with `opening` (for example ":root {"),
+  // up to the closing brace at column 0.
+  const body = (opening: string): string => {
+    const start = web.indexOf(opening);
+    expect(start, `${opening} block missing`).toBeGreaterThanOrEqual(0);
+    const end = web.indexOf("\n}", start);
+    return web.slice(start + opening.length, end);
+  };
+
+  it("declares the dark variant on the .dark class", () => {
+    expect(web).toContain("@custom-variant dark (&:where(.dark, .dark *));");
+  });
+
+  it("maps every colour token in @theme inline to its raw variable", () => {
+    const theme = body("@theme inline {");
+    for (const key of PLAN_COLOURS) {
+      expect(theme, `--color-${key}`).toContain(`--color-${key}: var(--${key});`);
+    }
+  });
+
+  it("defines every raw colour variable in :root and .dark", () => {
+    const root = body(":root {");
+    const dark = body(".dark {");
+    for (const key of PLAN_COLOURS) {
+      expect(root, `:root --${key}`).toMatch(new RegExp(`^  --${key}: `, "m"));
+      expect(dark, `.dark --${key}`).toMatch(new RegExp(`^  --${key}: `, "m"));
+    }
+  });
+
+  it("sets color-scheme so native controls follow the theme", () => {
+    expect(body(":root {")).toContain("color-scheme: light;");
+    expect(body(".dark {")).toContain("color-scheme: dark;");
   });
 });
 
