@@ -12,6 +12,17 @@ import { GrammarPointPage, parsePointId } from "./GrammarPointPage.tsx";
  * "generating" case is a held response that lands a moment later.
  */
 
+/** One validated example; the bad-offset cases override its offsets. */
+const EXAMPLE = {
+  id: "11111111-1111-1111-1111-111111111111",
+  sentenceJa: "宿題を忘れた。",
+  translationEn: "I forgot my homework.",
+  spanStart: 5,
+  spanEnd: 7,
+  spanText: "忘れた",
+  source: "ai" as const,
+};
+
 const DETAIL = {
   id: 12,
   jlptLevel: "N4",
@@ -64,11 +75,17 @@ function DetailRoute({ client }: { client: ApiClient }) {
 }
 
 /** The detail on a memory router with a catalogue entry beneath it, so Back has somewhere to go. */
-function renderDetail(fixture: Fixture, requests: string[], entries: string[]) {
+type Entry = string | { pathname: string; state?: unknown };
+
+/** The state a catalogue row sends with its link (see GrammarPage's PointRow). */
+const FROM_CATALOGUE = { from: "grammar" };
+
+function renderDetail(fixture: Fixture, requests: string[], entries: Entry[]) {
   const client = createApiClient({ baseUrl: "http://api.test", fetch: stubFetch(fixture, requests) });
   const router = createMemoryRouter(
     [
       { path: "/grammar", element: <p>Catalogue page</p> },
+      { path: "/practice", element: <p>Practice page</p> },
       { path: "/grammar/:grammarId", element: <DetailRoute client={client} /> },
     ],
     { initialEntries: entries, initialIndex: entries.length - 1 },
@@ -176,16 +193,21 @@ describe("Grammar Point detail", () => {
     );
   });
 
-  it("goes back to the catalogue the Learner came from", async () => {
+  it("goes back, in history, to the catalogue when a catalogue row opened the page", async () => {
     const user = userEvent.setup();
-    const { router } = renderDetail(fixture, requests, ["/grammar", "/grammar/12"]);
+    const { router } = renderDetail(fixture, requests, [
+      "/grammar",
+      { pathname: "/grammar/12", state: FROM_CATALOGUE },
+    ]);
     await screen.findByRole("heading", { level: 1, name: "〜てしまう" });
 
     await user.click(screen.getByRole("button", { name: "Back to grammar" }));
     await waitFor(() => expect(router.state.location.pathname).toBe("/grammar"));
+    // A real Back (a pop), so the catalogue is the entry the Learner left.
+    expect(router.state.historyAction).toBe("POP");
   });
 
-  it("opens the catalogue when the page was opened from a fresh link, with nothing to go back to", async () => {
+  it("replaces to the catalogue after a reload or a fresh link, with nothing to go back to", async () => {
     const user = userEvent.setup();
     const { router } = renderDetail(fixture, requests, ["/grammar/12"]);
     await screen.findByRole("heading", { level: 1, name: "〜てしまう" });
@@ -193,6 +215,61 @@ describe("Grammar Point detail", () => {
     await user.click(screen.getByRole("button", { name: "Back to grammar" }));
     await waitFor(() => expect(router.state.location.pathname).toBe("/grammar"));
     expect(router.state.historyAction).toBe("REPLACE");
+  });
+
+  it("does not pop to an unrelated screen: from Practice, Back opens the catalogue instead", async () => {
+    const user = userEvent.setup();
+    // The Learner went Practice -> a point link that did not come from the catalogue.
+    const { router } = renderDetail(fixture, requests, ["/practice", "/grammar/12"]);
+    await screen.findByRole("heading", { level: 1, name: "〜てしまう" });
+
+    await user.click(screen.getByRole("button", { name: "Back to grammar" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/grammar"));
+    expect(router.state.historyAction).toBe("REPLACE");
+  });
+
+  it("does not pop when the history state is something other than the catalogue's mark", async () => {
+    const user = userEvent.setup();
+    const { router } = renderDetail(fixture, requests, ["/practice", { pathname: "/grammar/12", state: { from: "practice" } }]);
+    await screen.findByRole("heading", { level: 1, name: "〜てしまう" });
+
+    await user.click(screen.getByRole("button", { name: "Back to grammar" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/grammar"));
+    expect(router.state.historyAction).toBe("REPLACE");
+  });
+
+  it("renders an ordered list in the explanation as a numbered list", async () => {
+    fixture.detail = { ...DETAIL, explanation: "Steps:\n\n1. first step\n2. second step" };
+    renderDetail(fixture, requests, ["/grammar/12"]);
+    const explanation = await screen.findByRole("region", { name: "Explanation" });
+    const ordered = explanation.querySelector("ol");
+    expect(ordered).not.toBeNull();
+    expect(Array.from(ordered?.querySelectorAll("li") ?? []).map((li) => li.textContent)).toEqual([
+      "first step",
+      "second step",
+    ]);
+  });
+
+  it("clamps bad example offsets: the page still renders and marks only text that exists", async () => {
+    fixture.detail = {
+      ...DETAIL,
+      examples: [
+        { ...EXAMPLE, id: "a", spanStart: 3, spanEnd: 99, translationEn: "end past the sentence" },
+        { ...EXAMPLE, id: "b", spanStart: 40, spanEnd: 50, translationEn: "start past the sentence" },
+        { ...EXAMPLE, id: "c", spanStart: 4, spanEnd: 1, translationEn: "end before the start" },
+      ],
+    };
+    renderDetail(fixture, requests, ["/grammar/12"]);
+    const examples = await screen.findByRole("region", { name: "Example sentences" });
+    // The sentence is 7 runes: 宿題を忘れた。 . The sentence text itself never changes.
+    const sentences = Array.from(examples.querySelectorAll('p[lang="ja"]'));
+    expect(sentences.map((p) => p.textContent)).toEqual(["宿題を忘れた。", "宿題を忘れた。", "宿題を忘れた。"]);
+    const marks = Array.from(examples.querySelectorAll("mark")).map((m) => m.textContent);
+    // Start 3 with an end past the sentence: the mark runs to the end (忘れた。).
+    expect(marks[0]).toBe("忘れた。");
+    // A start past the end, and an end before the start, mark nothing.
+    expect(marks[1]).toBe("");
+    expect(marks[2]).toBe("");
   });
 
   it("names a route id that is not a catalogue point, without asking the server", async () => {

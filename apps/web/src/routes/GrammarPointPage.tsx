@@ -15,10 +15,15 @@ import { Ruby, type RubyRun } from "@/components/Ruby";
 import { EmptyState, ErrorState } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { boldRuns, parseExplanation } from "../grammar/model.ts";
+import { boldRuns, clampSpan, parseExplanation } from "../grammar/model.ts";
 import { useSession } from "../session/session.tsx";
+
+/** Whether the history state says a catalogue row opened this page (see GrammarPage's Link). */
+export function isFromCatalogue(state: unknown): boolean {
+  return typeof state === "object" && state !== null && (state as { from?: unknown }).from === "grammar";
+}
 
 /** Route module: reads the point named by the URL with the session's client. */
 export function Component() {
@@ -38,10 +43,12 @@ export function GrammarPointPage({ client, pointId }: { client: ApiClient; point
   const location = useLocation();
   const { state, reload } = useGrammarPoint(client, pointId);
 
-  // Back returns to the catalogue the Learner came from (its search and scroll
-  // are restored there). A fresh deep link has no history to pop, so Back opens it.
+  // Back returns to the catalogue only when a catalogue row opened this page
+  // (its state says so). Everything else (a reload, a post-login redirect, an
+  // arrival from Practice) replaces to the catalogue, so Back never lands on the
+  // wrong screen.
   const back = () => {
-    if (location.key !== "default") navigate(-1);
+    if (isFromCatalogue(location.state)) navigate(-1);
     else navigate("/grammar", { replace: true });
   };
 
@@ -77,21 +84,23 @@ function GeneratingBody() {
         <Skeleton className="h-4 w-7/10" />
       </div>
       <Card>
-        <p role="status" className="text-body text-muted-foreground">
-          Preparing this page — the tutor writes a Grammar Point’s explanation the first time it is opened.
-        </p>
-        <div className="flex flex-col gap-2">
-          <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-4 w-3/5" />
-        </div>
+        <CardContent className="flex flex-col gap-4">
+          <p role="status" className="text-body text-muted-foreground">
+            Preparing this page — the tutor writes a Grammar Point’s explanation the first time it is opened.
+          </p>
+          <div className="flex flex-col gap-2">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-3/5" />
+          </div>
+        </CardContent>
       </Card>
       <Card>
-        <Skeleton className="h-6 w-40" />
-        <div className="flex flex-col gap-4">
+        <CardContent className="flex flex-col gap-4">
+          <Skeleton className="h-6 w-40" />
           <Skeleton className="h-4 w-4/5" />
           <Skeleton className="h-3.5 w-1/2" />
-        </div>
+        </CardContent>
       </Card>
     </>
   );
@@ -103,7 +112,7 @@ function ReadyBody({ point, onReload }: { point: GrammarPointDetail; onReload: (
       <header className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="font-serif-bold text-title text-foreground">{point.pattern}</h1>
-          <Badge>{point.jlptLevel}</Badge>
+          <Badge variant="secondary">{point.jlptLevel}</Badge>
           <span className="text-caption text-muted-foreground">{`#${point.catalogueNumber}`}</span>
         </div>
         <p className="text-body text-foreground">{point.meaning}</p>
@@ -113,6 +122,7 @@ function ReadyBody({ point, onReload }: { point: GrammarPointDetail; onReload: (
       </header>
 
       <Card>
+        <CardContent>
         <section aria-labelledby="grammar-explanation-heading" className="flex flex-col gap-4">
           <h2 id="grammar-explanation-heading" className="text-title-sm font-semibold text-foreground">
             Explanation
@@ -134,9 +144,11 @@ function ReadyBody({ point, onReload }: { point: GrammarPointDetail; onReload: (
             <ExplanationBody text={point.explanation} />
           )}
         </section>
+        </CardContent>
       </Card>
 
       <Card>
+        <CardContent>
         <section aria-labelledby="grammar-examples-heading" className="flex flex-col gap-4">
           <h2 id="grammar-examples-heading" className="text-title-sm font-semibold text-foreground">
             Example sentences
@@ -153,6 +165,7 @@ function ReadyBody({ point, onReload }: { point: GrammarPointDetail; onReload: (
             </ol>
           )}
         </section>
+        </CardContent>
       </Card>
     </>
   );
@@ -167,6 +180,14 @@ export function ExplanationBody({ text }: { text: string }) {
           <p key={i}>
             <BoldText text={block.text} />
           </p>
+        ) : block.ordered ? (
+          <ol key={i} className="flex list-decimal flex-col gap-1.5 pl-5">
+            {block.items.map((item, j) => (
+              <li key={j}>
+                <BoldText text={item} />
+              </li>
+            ))}
+          </ol>
         ) : (
           <ul key={i} className="flex list-disc flex-col gap-1.5 pl-5">
             {block.items.map((item, j) => (
@@ -199,11 +220,14 @@ function BoldText({ text }: { text: string }) {
 
 /** One example: the sentence in serif with its Grammar Span marked, and the translation under it. */
 function ExampleRow({ example }: { example: GrammarExample }) {
-  // spanStart and spanEnd are rune offsets, so split on code points, not UTF-16 units.
+  // spanStart and spanEnd are rune offsets, so split on code points, not UTF-16
+  // units. The offsets are clamped to the sentence: a bad one marks less, and
+  // never breaks the page.
   const chars = Array.from(example.sentenceJa);
-  const head = runsOf(chars.slice(0, example.spanStart).join(""));
-  const span = runsOf(chars.slice(example.spanStart, example.spanEnd).join(""));
-  const tail = runsOf(chars.slice(example.spanEnd).join(""));
+  const { start, end } = clampSpan(example.spanStart, example.spanEnd, chars.length);
+  const head = runsOf(chars.slice(0, start).join(""));
+  const span = runsOf(chars.slice(start, end).join(""));
+  const tail = runsOf(chars.slice(end).join(""));
   return (
     <div className="flex flex-col gap-1">
       <p lang="ja" className="font-serif text-body text-foreground">
