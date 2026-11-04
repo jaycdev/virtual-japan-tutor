@@ -58,7 +58,7 @@ export function ReadingPanel({
   /** Reports Weak Signals when a blurred Sentence Translation is revealed. */
   onUnblur: (sentenceIdx: number) => void;
 }) {
-  const { fontSizePx, columnWidthPx } = useStoryTextSize();
+  const { fontSizePx, lineHeightPx, columnWidthPx } = useStoryTextSize();
   const blur = reading.state.status === "ready" ? reading.state.settings.blurTranslation : true;
   const sen = selected !== null ? story.sentences[selected] : null;
   const [blurError, setBlurError] = useState<string | null>(null);
@@ -111,7 +111,7 @@ export function ReadingPanel({
                 className="text-foreground"
                 style={{
                   fontSize: fontSizePx,
-                  lineHeight: Math.round(fontSizePx * 1.4),
+                  lineHeight: lineHeightPx,
                   padding: 8,
                   paddingBottom: 4,
                 }}

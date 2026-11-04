@@ -8,6 +8,7 @@ import {
   DEFAULT_STORY_TEXT_SIZE,
   parseStoryTextSize,
   STORY_TEXT_SIZES,
+  STORY_TEXT_LINE_HEIGHT_RATIO,
   STORY_TEXT_SIZE_PX,
   STORY_TEXT_SIZE_STORAGE_KEY,
   storyColumnWidthPx,
@@ -56,6 +57,20 @@ describe("the Story text size scale", () => {
       const match = css.match(new RegExp(`--text-story-${size.toLowerCase()}:\\s*(\\d+(?:\\.\\d+)?)px`));
       expect(match, `--text-story-${size} missing from global.css`).not.toBeNull();
       expect(STORY_TEXT_SIZE_PX[size]).toBe(Number(match![1]));
+    }
+  });
+
+  it("keeps the JS line heights identical to the --text-story-*--line-height tokens in global.css", () => {
+    // The reader paints every token and the panel's quoted sentence with its
+    // own lineHeight, so the CSS line heights never reach those spans on
+    // Android — JS must carry the same ratios.
+    const css = readFileSync(path.join(__dirname, "../../global.css"), "utf8");
+    for (const size of STORY_TEXT_SIZES) {
+      const match = css.match(
+        new RegExp(`--text-story-${size.toLowerCase()}--line-height:\\s*(\\d+(?:\\.\\d+)?)`),
+      );
+      expect(match, `--text-story-${size}--line-height missing from global.css`).not.toBeNull();
+      expect(STORY_TEXT_LINE_HEIGHT_RATIO[size]).toBe(Number(match![1]));
     }
   });
 

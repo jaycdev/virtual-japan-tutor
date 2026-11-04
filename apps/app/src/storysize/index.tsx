@@ -5,6 +5,7 @@ import {
   createStoryTextSizeStore,
   DEFAULT_STORY_TEXT_SIZE,
   storyColumnWidthPx,
+  STORY_TEXT_LINE_HEIGHT_RATIO,
   STORY_TEXT_SIZE_PX,
   type StoryTextSize,
   type StoryTextSizeState,
@@ -34,6 +35,8 @@ export interface StoryTextSizeSetting {
   size: StoryTextSize;
   /** The px the Story text renders at (mirrors `--text-story-*` in global.css). */
   fontSizePx: number;
+  /** The line height matching that size (mirrors `--text-story-*--line-height`). */
+  lineHeightPx: number;
   /** The text column: 40 characters of Story text wide (plan 4.1). */
   columnWidthPx: number;
   setSize: (size: StoryTextSize) => void;
@@ -44,6 +47,7 @@ export function useStoryTextSize(): StoryTextSizeSetting {
   return {
     size: state.size,
     fontSizePx: STORY_TEXT_SIZE_PX[state.size],
+    lineHeightPx: Math.round(STORY_TEXT_SIZE_PX[state.size] * STORY_TEXT_LINE_HEIGHT_RATIO[state.size]),
     columnWidthPx: storyColumnWidthPx(state.size),
     setSize: store.setSize,
   };

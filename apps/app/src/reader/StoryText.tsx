@@ -146,6 +146,8 @@ interface StoryTokenProps {
   webHandlers?: TokenWebHostHandlers;
   /** The saved Story text size (the word's font size; the reading is half). */
   fontSizePx: number;
+  /** The line height matching that size (mirrors the CSS token, not a magic 1.4). */
+  lineHeightPx: number;
 }
 
 /**
@@ -154,7 +156,7 @@ interface StoryTokenProps {
  * the `token-{sentence}-{index}` / `furigana-{sentence}-{index}` test handles.
  */
 const StoryToken = forwardRef<MeasurableNode | null, StoryTokenProps>(function StoryToken(
-  { token, sentenceIndex, index, spans, selected, handlers, webHandlers, fontSizePx },
+  { token, sentenceIndex, index, spans, selected, handlers, webHandlers, fontSizePx, lineHeightPx },
   ref,
 ) {
   const { size } = useStoryTextSize();
@@ -222,7 +224,7 @@ const StoryToken = forwardRef<MeasurableNode | null, StoryTokenProps>(function S
         // and gets a fresh fiber when the marks change.
         key={"m-" + wordClasses.join("-")}
         className={wordClasses.length > 0 ? wordClasses.join(" ") : undefined}
-        style={{ fontSize: fontSizePx, lineHeight: Math.round(fontSizePx * 1.4), textAlign: "center" }}
+        style={{ fontSize: fontSizePx, lineHeight: lineHeightPx, textAlign: "center" }}
       >
         {token.surface}
       </Text>
@@ -252,6 +254,7 @@ export const StoryParagraph = memo(function StoryParagraph({
   webHandlers,
   onSelect,
   fontSizePx,
+  lineHeightPx,
 }: {
   sentence: StorySentence;
   sentenceIndex: number;
@@ -265,6 +268,8 @@ export const StoryParagraph = memo(function StoryParagraph({
   onSelect: (sentenceIndex: number) => void;
   /** The saved Story text size (the column's font). */
   fontSizePx: number;
+  /** The line height matching that size (see the storysize store). */
+  lineHeightPx: number;
 }) {
   // Centred line-by-line via the flex container itself (issue #45): each
   // wrapped line of token columns sits in the middle of the 40-character box.
@@ -288,6 +293,7 @@ export const StoryParagraph = memo(function StoryParagraph({
           handlers={handlers(sentenceIndex, j)}
           webHandlers={webHandlers}
           fontSizePx={fontSizePx}
+          lineHeightPx={lineHeightPx}
         />
       ))}
     </View>
