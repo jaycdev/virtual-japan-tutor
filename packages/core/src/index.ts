@@ -10,6 +10,7 @@ export { useMarumori } from "./useMarumori.ts";
 export type { MaruMori, MaruMoriRunsState, MaruMoriState, SyncOutcome } from "./useMarumori.ts";
 export { usePractice } from "./usePractice.ts";
 export type { AnswerFeedback, ExerciseView, PracticeView } from "./usePractice.ts";
+export { displayPrompt, practiceSeedForStory } from "./practiceText.ts";
 export { fetchTodaysStory, useStory, useStorySettings, useTodaysStory } from "./useStory.ts";
 export type { TodaysStoryState, TodaysStoryView } from "./useStory.ts";
 export { useFocusSet } from "./useFocusSet.ts";
@@ -76,3 +77,22 @@ export {
   syncOutcomeText,
   syncRunText,
 } from "./settingsText.ts";
+export {
+  formatInstant,
+  greetingFor,
+  learnerClock,
+  localDayKey,
+  normalizeTimezone,
+  stillUnreadFrom,
+} from "./learnerTime.ts";
+export { FAILED_RUN_FALLBACK, todayCardPhase } from "./todayCard.ts";
+export type { TodayCardPhase } from "./todayCard.ts";
+export { genreLabel, originLabel, progressLabel, stageLabel, storyCardMeta, storyDate } from "./storyPresentation.ts";
+export {
+  createFocusLabelResolver,
+  focusChipKey,
+  focusChipLabel,
+  focusKindWord,
+  useFocusChipLabels,
+} from "./focusLabels.ts";
+export type { FocusChipLabel, FocusLabelResolver } from "./focusLabels.ts";

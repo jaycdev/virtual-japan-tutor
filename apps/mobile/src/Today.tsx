@@ -1,5 +1,10 @@
 import type { ApiClient, MaruMoriSyncRun, Story } from "@vjt/api-client";
 import {
+  createFocusLabelResolver,
+  formatInstant,
+  learnerClock,
+  stageLabel,
+  todayCardPhase,
   useFocusSet,
   useMarumori,
   useStoryGeneration,
@@ -14,9 +19,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { Card } from "./components/ui/Card.tsx";
-import { createFocusLabelResolver, FocusSetPanel, FOCUS_CHIPS_MAX } from "./components/ui/FocusSetPanel.tsx";
+import { FocusSetPanel, FOCUS_CHIPS_MAX } from "./components/ui/FocusSetPanel.tsx";
 import { EmptyState, InlineError, ProgressBar, SkeletonBar } from "./state/states.tsx";
-import { stageLabel } from "./stories-parts.tsx";
+
+// The clock helpers moved to @vjt/core (issue #79); re-exported so this
+// screen's importers keep their path.
+export { formatInstant, learnerClock };
 
 /**
  * Today (issue #47), the signed-in landing screen. Plan 4.4 top to bottom:
@@ -177,76 +185,9 @@ function Greeting({
 }
 
 /**
- * The Learner's greeting and date, from the Learner's Timezone rather than the
- * device's: a Learner in Osaka opening the app at 07:30 sees "Good morning" and
- * their own Wednesday even when the phone or browser is set elsewhere. An empty
- * or unknown zone name means the server's rule too — unset Timezone is
- * "the server's own day", so the device's zone stands in for it.
- */
-export function learnerClock(
-  now: Date,
-  timezone: string | undefined | null,
-): { greeting: string; date: string } {
-  const zone = normalizeTimezone(timezone);
-  const parts = readParts(now, zone, ["hour", "weekday", "month", "day"]);
-  const hour = parts.hour ?? String(now.getHours());
-  const weekday = parts.weekday ?? now.toLocaleDateString(undefined, { weekday: "long" });
-  const month = parts.month ?? "";
-  const day = parts.day ?? String(now.getDate());
-  return { greeting: greetingFor(hour), date: `${weekday}, ${month} ${day}` };
-}
-
-/** An IANA name the runtime can load, or undefined to follow the device. */
-function normalizeTimezone(timezone: string | undefined | null): string | undefined {
-  if (!timezone) return undefined;
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: timezone });
-    return timezone;
-  } catch {
-    return undefined;
-  }
-}
-
-/** The pieces of the instant, in the zone, without trusting a locale's order. */
-function readParts(
-  now: Date,
-  zone: string | undefined,
-  want: Intl.DateTimeFormatPartTypes[],
-): Partial<Record<Intl.DateTimeFormatPartTypes, string>> {
-  try {
-    const parts = new Intl.DateTimeFormat("en-US", {
-      timeZone: zone,
-      weekday: "long",
-      month: "long",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: false,
-    }).formatToParts(now);
-    const out: Partial<Record<Intl.DateTimeFormatPartTypes, string>> = {};
-    for (const part of parts) {
-      if (want.includes(part.type)) out[part.type] = part.type === "hour" ? part.value.padStart(2, "0") : part.value;
-    }
-    return out;
-  } catch {
-    return {};
-  }
-}
-
-/** The day's three greetings; the small hours get their own, since learners keep odd hours. */
-function greetingFor(hourText: string): string {
-  // Some engines hand back "24" for midnight under hour12: false.
-  const hour = Number.parseInt(hourText, 10) % 24;
-  if (Number.isNaN(hour)) return "Hello";
-  if (hour >= 5 && hour < 12) return "Good morning";
-  if (hour >= 12 && hour < 18) return "Good afternoon";
-  if (hour >= 18 && hour < 22) return "Good evening";
-  return "Still studying";
-}
-
-/**
  * Today's Story card (plan 4.4 item 2): the title, its Genre and length and an
  * Open button — or, while a Story is being written, the progress of that run.
+ * Which state shows is the shared cascade in @vjt/core (todayCardPhase, #71).
  */
 function TodayStoryCard({
   today,
@@ -261,7 +202,7 @@ function TodayStoryCard({
   onOpenStory: (storyId: string) => void;
   onOpenStories: () => void;
 }) {
-  const running = generation.status === "running" ? generation.progress : undefined;
+  const phase = todayCardPhase(today, generation);
   return (
     <Card testID="today-story-card">
       <Text
@@ -272,7 +213,7 @@ function TodayStoryCard({
         Today’s Story
       </Text>
 
-      {today.status === "loading" ? (
+      {phase.kind === "loading" ? (
         // Shaped like the settled card: a story-title bar, a shorter meta
         // line, and the button block (issue #47 review S7) - so nothing
         // jumps when the story lands.
@@ -281,44 +222,42 @@ function TodayStoryCard({
           <SkeletonBar width="45%" height={14} />
           <SkeletonBar width={96} height={44} />
         </View>
-      ) : today.status === "story" ? (
+      ) : phase.kind === "story" ? (
         <View className="gap-3">
-          <Text className="text-title font-semibold text-foreground">{today.story.title}</Text>
-          <Text className="text-small text-muted-foreground">{storyMeta(today.story)}</Text>
+          <Text className="text-title font-semibold text-foreground">{phase.story.title}</Text>
+          <Text className="text-small text-muted-foreground">{storyMeta(phase.story)}</Text>
           <ActionButton
             label="Open"
             accessibilityLabel="Open today's story"
-            onPress={() => onOpenStory(today.story.id)}
+            onPress={() => onOpenStory(phase.story.id)}
             filled
             testID="today-story-open"
           />
           {/* A run started from Stories keeps its bar there; the card only says
               the story on screen is not the newest thing happening. */}
-          {generation.status === "running" ? (
+          {phase.running ? (
             <Text className="text-caption text-muted-foreground">
               A newer Story is being written.
             </Text>
           ) : null}
         </View>
-      ) : running ? (
+      ) : phase.kind === "running" ? (
         <View className="gap-3">
           <Text className="text-body text-muted-foreground">
             A new Story is on its way — you can leave and come back.
           </Text>
           <ProgressBar
-            value={(running.percent ?? 0) / 100}
-            label={`${stageLabel(running)} ${Math.round(running.percent ?? 0)}%`}
+            value={(phase.progress.percent ?? 0) / 100}
+            label={`${stageLabel(phase.progress)} ${Math.round(phase.progress.percent ?? 0)}%`}
           />
         </View>
-      ) : today.status === "error" ? (
-        <InlineError message={`Cannot load today’s Story: ${today.message}`} onRetry={onReloadToday} />
-      ) : generation.status === "failed" ? (
+      ) : phase.kind === "error" ? (
+        <InlineError message={`Cannot load today’s Story: ${phase.message}`} onRetry={onReloadToday} />
+      ) : phase.kind === "failed" ? (
         // The run failed rather than the read: the line is the server's own,
         // and the way to try again is the Generate box on Stories.
         <View className="gap-3">
-          <Text className="text-body text-destructive">
-            {generation.progress?.message ?? "Couldn’t write a Story for you."}
-          </Text>
+          <Text className="text-body text-destructive">{phase.message}</Text>
           <ActionButton label="Generate a Story" onPress={onOpenStories} />
         </View>
       ) : (
@@ -553,16 +492,6 @@ function syncResultLine(run: MaruMoriSyncRun): string {
   }, ${counts.linked} linked to reference data.`;
 }
 
-/**
- * An instant in the Learner's Timezone — "November 4, 14:02". A bad zone name
- * falls back to the device's, the same rule the greeting uses.
- */
-export function formatInstant(iso: string, timezone: string | undefined | null): string {
-  const zone = normalizeTimezone(timezone);
-  const parts = readParts(new Date(iso), zone, ["month", "day", "hour", "minute"]);
-  if (!parts.month || !parts.day || !parts.hour || !parts.minute) return new Date(iso).toLocaleString();
-  return `${parts.month} ${parts.day}, ${parts.hour}:${parts.minute}`;
-}
 
 /**
  * The one action control a section offers: 44 px tall and 8 px of radius like

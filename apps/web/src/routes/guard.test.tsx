@@ -99,8 +99,9 @@ describe("route guard", () => {
 
   it("signs out to /login with no next, even when the Learner was on a deep page", async () => {
     const user = userEvent.setup();
-    const { router } = renderAppAt("/grammar/n3-te-form");
-    expect(await screen.findByRole("heading", { name: "Grammar point" })).toBeTruthy();
+    const { router } = renderAppAt("/grammar/1");
+    // The Grammar detail page (its Back control shows in every state).
+    expect(await screen.findByRole("button", { name: "Back to grammar" })).toBeTruthy();
 
     await user.click(screen.getByRole("button", { name: "Log out" }));
 
@@ -126,11 +127,11 @@ describe("route guard", () => {
     const { router } = renderAppAt("/", { startingLevelReply: held.reply });
 
     expect(await waitForGate()).toBe(true);
-    expect(screen.queryByRole("heading", { name: "Today" })).toBeNull();
+    expect(screen.queryByTestId("today")).toBeNull();
 
     await held.answer({ id: TEST_USER.id, username: TEST_USER.username, configured: true });
 
-    expect(await screen.findByRole("heading", { name: "Today" })).toBeTruthy();
+    expect(await screen.findByTestId("today")).toBeTruthy();
     expect(isGateHolding()).toBe(false);
     expect(currentLocation(router)).toBe("/");
   });
@@ -139,13 +140,13 @@ describe("route guard", () => {
     const held = heldReply();
     const { router } = renderAppAt("/", { startingLevelReply: held.reply });
     expect(await waitForGate()).toBe(true);
-    expect(screen.queryByRole("heading", { name: "Today" })).toBeNull();
+    expect(screen.queryByTestId("today")).toBeNull();
 
     await held.answer({ id: TEST_USER.id, username: TEST_USER.username, configured: false });
 
     await waitFor(() => expect(currentLocation(router)).toBe("/setup"));
     expect(await screen.findByRole("heading", { name: "Set up" })).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: "Today" })).toBeNull();
+    expect(screen.queryByTestId("today")).toBeNull();
   });
 
   it("shows the landing page when the first-run check fails", async () => {
@@ -153,7 +154,7 @@ describe("route guard", () => {
       startingLevelReply: () => Promise.reject(new TypeError("Failed to fetch")),
     });
 
-    expect(await screen.findByRole("heading", { name: "Today" })).toBeTruthy();
+    expect(await screen.findByTestId("today")).toBeTruthy();
     expect(currentLocation(router)).toBe("/");
   });
 
@@ -167,13 +168,13 @@ describe("route guard", () => {
         await act(async () => undefined);
       }
       expect(isGateHolding()).toBe(true);
-      expect(screen.queryByRole("heading", { name: "Today" })).toBeNull();
+      expect(screen.queryByTestId("today")).toBeNull();
 
       await act(async () => {
         vi.advanceTimersByTime(LANDING_CHECK_TIMEOUT_MS);
       });
 
-      expect(screen.getByRole("heading", { name: "Today" })).toBeTruthy();
+      expect(screen.getByTestId("today")).toBeTruthy();
     } finally {
       vi.useRealTimers();
     }
