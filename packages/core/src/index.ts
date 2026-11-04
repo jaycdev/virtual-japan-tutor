@@ -51,6 +51,32 @@ export type { KeyValueStore, LandingSetupDecision } from "./firstRun.ts";
 export { memoryTokenStorage } from "./tokenStorage.ts";
 export type { TokenStorage } from "./tokenStorage.ts";
 export { deviceTimezone, TIMEZONE_OPTIONS } from "./timezones.ts";
+export { SETTINGS_SECTIONS, findSettingsSection } from "./settingsSections.ts";
+export type { SettingsSection, StepSaveFn, StepSaveOutcome, StepSaveRegistrar } from "./settingsSections.ts";
+export { probeServerHealth, PROBE_TIMEOUT_MS } from "./serverHealth.ts";
+export type { FetchLike } from "./serverHealth.ts";
+export {
+  AI_TASK_LABELS,
+  EMPTY_PROVIDER_FORM,
+  canSubmitProviderForm,
+  isProviderFormTouched,
+  providerCreateInput,
+  providerFormFor,
+  providerSummary,
+  providerUpdateInput,
+} from "./aiProviderForm.ts";
+export type { ProviderForm } from "./aiProviderForm.ts";
+export { ITEM_KIND_LABELS, ITEM_KINDS, isSavedList, itemListHint } from "./itemLists.ts";
+export type { ItemKind } from "./itemLists.ts";
+export {
+  FURIGANA_LEVELS,
+  grammarReviewText,
+  grammarUpdatedText,
+  parseLookupHold,
+  suggestionsFor,
+  syncOutcomeText,
+  syncRunText,
+} from "./settingsText.ts";
 // The Story reader's pure logic, shared by the phone and the web reader (issue #77).
 export * from "./reader/holdMenu.ts";
 export * from "./reader/marks.ts";

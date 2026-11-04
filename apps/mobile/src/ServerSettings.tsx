@@ -1,5 +1,5 @@
 import type { ApiClient } from "@vjt/api-client";
-import { useHealth } from "@vjt/core";
+import { probeServerHealth, useHealth } from "@vjt/core";
 import { useState } from "react";
 import { Text, View } from "react-native";
 
@@ -20,29 +20,8 @@ import { normalizeServerUrl } from "./config.ts";
  * mount; "Check again" bumps the inner component's key so a fresh mount
  * fetches again.
  */
-/**
- * Pre-commit reachability check for a candidate address (review S1): one
- * GET /health through the PLAIN global fetch — the ApiClient still points
- * at the OLD server, so the probe cannot go through it. Any 2xx counts as
- * "this is a Virtual Japan Tutor server"; degraded included, because the
- * address itself was right. A network failure, timeout or non-2xx answer
- * returns the message to show, and the current address stays.
- */
-const PROBE_TIMEOUT_MS = 5000;
-
-async function probeServerHealth(baseUrl: string): Promise<string | undefined> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
-  try {
-    const response = await fetch(`${baseUrl}/health`, { signal: controller.signal });
-    if (response.ok) return undefined;
-    return `That address answered ${response.status} instead of a healthy /health. It does not look like a Virtual Japan Tutor server — the current address is still in use.`;
-  } catch {
-    return "That address did not answer. Check the host and port — the current address is still in use.";
-  } finally {
-    clearTimeout(timer);
-  }
-}
+// Review S1: the pre-commit probe is in @vjt/core (probeServerHealth). It uses
+// the plain global fetch, because the ApiClient still points at the old server.
 
 export function ServerSettings({
   client,

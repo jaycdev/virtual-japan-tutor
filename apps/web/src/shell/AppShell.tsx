@@ -31,6 +31,7 @@ export function AppShell() {
   // no 960 px cap, and less padding from lg so its 40-character column reaches
   // ~1120 px — 40 characters at XL — from a 1280 px window on.
   const wide = useMatches().some((match) => (match.handle as RouteHandle | undefined)?.wide);
+  const handle = useMatches().at(-1)?.handle as RouteHandle | undefined;
   const mainRef = useRef<HTMLElement>(null);
   const lastPath = useRef(pathname);
   const [announcement, setAnnouncement] = useState("");
@@ -48,12 +49,19 @@ export function AppShell() {
 
   // A client-side navigation moves focus to the new page and announces its title.
   // The first render (and any re-render on the same path) is not a navigation.
+  // Routes that swap their own content (Settings sections, handle `shellFocus: false`)
+  // mark a heading with data-page-focus: focusing that instead of <main> keeps the
+  // rail immediately before the content in the tab order.
   useEffect(() => {
     if (lastPath.current === pathname) return;
     lastPath.current = pathname;
-    mainRef.current?.focus({ preventScroll: true });
+    const target =
+      handle?.shellFocus === false
+        ? (mainRef.current?.querySelector<HTMLElement>("[data-page-focus]") ?? mainRef.current)
+        : mainRef.current;
+    target?.focus({ preventScroll: true });
     setAnnouncement(documentTitle(title));
-  }, [pathname, title]);
+  }, [pathname, title, handle]);
 
   return (
     <div className="flex min-h-dvh bg-background text-foreground">

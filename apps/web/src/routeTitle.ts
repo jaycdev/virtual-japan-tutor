@@ -12,6 +12,13 @@ export interface RouteHandle {
    * L and XL need more than 960 px to do that).
    */
   wide?: boolean;
+  /**
+   * False when the route swaps its own content inside <main> (the Settings
+   * sections). The shell then focuses the element the page marks with
+   * `data-page-focus` instead of <main> itself, so the section rail stays
+   * immediately before the content in the tab order. Defaults to <main>.
+   */
+  shellFocus?: boolean;
 }
 
 /** The document title for a page title (or the app name alone). */

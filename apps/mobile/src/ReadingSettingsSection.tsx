@@ -1,5 +1,5 @@
 import type { ApiClient } from "@vjt/api-client";
-import { useReadingSettings } from "@vjt/core";
+import { parseLookupHold, useReadingSettings } from "@vjt/core";
 import { useState } from "react";
 import { Card } from "./components/ui/Card.tsx";
 import { Field } from "./components/ui/Field.tsx";
@@ -29,14 +29,14 @@ export function ReadingSettingsSection({ client }: { client: ApiClient }) {
   const saveHold = async () => {
     setError(undefined);
     setSaved(false);
-    const ms = Number(holdValue);
-    if (!Number.isInteger(ms) || ms < 0 || ms > 10000) {
-      setError("The hold is a whole number of milliseconds from 0 to 10000.");
+    const parsed = parseLookupHold(holdValue);
+    if (!parsed.ok) {
+      setError(parsed.message);
       return;
     }
     setBusy(true);
     try {
-      const res = await reading.setLookupHoldMs(ms);
+      const res = await reading.setLookupHoldMs(parsed.ms);
       if (res.ok) {
         setHoldMs(null);
         setSaved(true);

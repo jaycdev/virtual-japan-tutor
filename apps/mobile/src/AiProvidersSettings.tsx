@@ -1,5 +1,19 @@
-import type { AiProvider, AiProviderTestResult, AiTask, ApiClient } from "@vjt/api-client";
-import { useAiSettings, type ActionResult } from "@vjt/core";
+import type { AiProvider, AiProviderTestResult, ApiClient } from "@vjt/api-client";
+import {
+  AI_TASK_LABELS,
+  EMPTY_PROVIDER_FORM,
+  canSubmitProviderForm,
+  isProviderFormTouched,
+  providerCreateInput,
+  providerFormFor,
+  providerSummary,
+  providerUpdateInput,
+  useAiSettings,
+  type ActionResult,
+  type ProviderForm,
+  type StepSaveOutcome,
+  type StepSaveRegistrar,
+} from "@vjt/core";
 import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 
@@ -11,22 +25,9 @@ import { Row } from "./components/ui/Row.tsx";
 import { SwitchRow } from "./components/ui/SwitchRow.tsx";
 import { ActionButton } from "./stories-parts.tsx";
 import { InlineError, Skeleton, SkeletonBar } from "./state/states.tsx";
-import type { StepSaveOutcome, StepSaveRegistrar } from "./settingsSections.tsx";
 
-const TASK_LABELS: Record<AiTask, string> = {
-  story: "Story generation",
-  grammar_content: "Grammar content",
-};
-
-interface FormValues {
-  name: string;
-  baseUrl: string;
-  model: string;
-  apiKey: string;
-  removeKey: boolean;
-}
-
-const EMPTY: FormValues = { name: "", baseUrl: "", model: "", apiKey: "", removeKey: false };
+const TASK_LABELS = AI_TASK_LABELS;
+const EMPTY: ProviderForm = EMPTY_PROVIDER_FORM;
 
 /**
  * AI Providers (#5, on the #50 hub): full management — add, edit, test and
@@ -50,7 +51,7 @@ export function AiProvidersSettings({
   const { state } = settings;
   const [error, setError] = useState<string | undefined>();
   const [editing, setEditing] = useState<AiProvider | null>(null);
-  const [form, setForm] = useState<FormValues>(EMPTY);
+  const [form, setForm] = useState<ProviderForm>(EMPTY);
   const [busy, setBusy] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
@@ -70,7 +71,7 @@ export function AiProvidersSettings({
 
   const startEdit = (p: AiProvider) => {
     setEditing(p);
-    setForm({ name: p.name, baseUrl: p.baseUrl, model: p.model, apiKey: "", removeKey: false });
+    setForm(providerFormFor(p));
     setError(undefined);
   };
   const stopEdit = () => {
@@ -79,24 +80,9 @@ export function AiProvidersSettings({
   };
 
   const submit = async (): Promise<boolean> => {
-    const key = form.apiKey.trim();
-    const ok = await run(() => {
-      if (!editing) {
-        return settings.create({
-          name: form.name,
-          baseUrl: form.baseUrl,
-          model: form.model,
-          ...(key ? { apiKey: key } : {}),
-        });
-      }
-      // Empty key field = keep the stored key (the field is simply left out).
-      return settings.update(editing.id, {
-        name: form.name,
-        baseUrl: form.baseUrl,
-        model: form.model,
-        ...(form.removeKey ? { apiKey: null } : key ? { apiKey: key } : {}),
-      });
-    });
+    const ok = await run(() =>
+      editing ? settings.update(editing.id, providerUpdateInput(form)) : settings.create(providerCreateInput(form)),
+    );
     if (ok) stopEdit(); // also drops the typed key from memory
     return ok;
   };
@@ -108,12 +94,7 @@ export function AiProvidersSettings({
   useEffect(() => {
     if (!registerSave) return;
     registerSave(async (): Promise<StepSaveOutcome> => {
-      const touched =
-        form.name.trim() !== "" ||
-        form.baseUrl.trim() !== "" ||
-        form.model.trim() !== "" ||
-        form.apiKey.trim() !== "";
-      if (!touched) return "nothing";
+      if (!isProviderFormTouched(form)) return "nothing";
       const ok = await submit();
       return ok ? "saved" : "blocked";
     });
@@ -138,9 +119,7 @@ export function AiProvidersSettings({
   };
 
   const assignedTo = (providerId: string) =>
-    state.status === "ready"
-      ? state.tasks.filter((t) => t.providerId === providerId).map((t) => TASK_LABELS[t.task])
-      : [];
+    state.status === "ready" ? state.tasks.filter((t) => t.providerId === providerId).map((t) => t.task) : [];
 
   if (state.status === "loading") {
     return (
@@ -167,9 +146,7 @@ export function AiProvidersSettings({
           <Card key={p.id} padded={false}>
             <Row
               label={p.name}
-              hint={`${p.model} at ${p.baseUrl} · ${p.hasApiKey ? "Key saved" : "No key"}${
-                assignedTo(p.id).length > 0 ? ` · used for ${assignedTo(p.id).join(", ")}` : ""
-              }`}
+              hint={providerSummary(p, assignedTo(p.id))}
               last
             />
             <ProviderActions
@@ -247,7 +224,7 @@ export function AiProvidersSettings({
         label={editing ? "Save changes" : "Add provider"}
         onPress={() => void submit()}
         filled
-        disabled={busy || !form.name.trim() || !form.baseUrl.trim() || !form.model.trim()}
+        disabled={busy || !canSubmitProviderForm(form)}
       />
       {editing ? <LinkButton label="Cancel" onPress={stopEdit} /> : null}
 

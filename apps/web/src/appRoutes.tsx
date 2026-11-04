@@ -1,7 +1,7 @@
 // The route table (ui-plan 3). Every screen is a lazy module, so the first
 // load is the shell, the login page and whatever the Learner opens.
 import { useEffect } from "react";
-import { Link, Navigate, Outlet, type RouteObject } from "react-router";
+import { Link, Outlet, type RouteObject } from "react-router";
 
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/states";
@@ -86,10 +86,13 @@ export const appRoutes: RouteObject[] = [
                 handle: { title: "Grammar point" } satisfies RouteHandle,
                 lazy: () => import("./routes/GrammarPointPage.tsx"),
               },
-              { path: "settings", element: <Navigate to="/settings/appearance" replace /> },
+              // /settings is the hub (narrow) or Appearance (wide); both routes share one module.
+              // shellFocus: false — the page marks its own heading so switching sections
+              // keeps the rail immediately before the content in the tab order.
+              { path: "settings", handle: { title: "Settings", shellFocus: false } satisfies RouteHandle, lazy: () => import("./routes/SettingsPage.tsx") },
               {
                 path: "settings/:section",
-                handle: { title: "Settings" } satisfies RouteHandle,
+                handle: { title: "Settings", shellFocus: false } satisfies RouteHandle,
                 lazy: () => import("./routes/SettingsPage.tsx"),
               },
               { path: "setup", handle: { title: "Set up" } satisfies RouteHandle, lazy: () => import("./routes/SetupPage.tsx") },

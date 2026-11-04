@@ -1,13 +1,13 @@
 // /setup: the first-run setup (ui-plan 4.7, #50). The landing gate sends a
 // Learner here; this route records the flag as it is shown (so skipping or
 // leaving halfway still counts as seen) and sends a Learner who has already seen
-// it back to Today. The wizard itself is #81; until then this is its placeholder.
+// it back to Today. The steps are in settings/SetupWizard.tsx.
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { hasSetupSeen, markSetupSeen } from "@vjt/core";
 
 import { localKeyValueStore } from "../storage.ts";
-import { ComingSoon } from "./ComingSoon.tsx";
+import { SetupWizard } from "../settings/SetupWizard.tsx";
 
 export function Component() {
   const navigate = useNavigate();
@@ -34,5 +34,5 @@ export function Component() {
   }, [decision, navigate]);
 
   if (decision !== "show") return null;
-  return <ComingSoon title="Set up" issue={81} />;
+  return <SetupWizard onFinish={() => navigate("/", { replace: true })} />;
 }
