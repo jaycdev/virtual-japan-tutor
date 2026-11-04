@@ -167,6 +167,23 @@ describe("Practice (web)", () => {
     expect(screen.getByRole("button", { name: "tree" })).toBeTruthy();
   });
 
+  it("marks the correct option as current once the answer lands", async () => {
+    renderPractice();
+    startSession();
+    await waitFor(() => {
+      expect(screen.getByText("Exercise 1 of 2")).toBeTruthy();
+    });
+    expect(screen.getByRole("button", { name: "learn" }).hasAttribute("aria-current")).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "tree" }));
+    await waitFor(() => {
+      expect(screen.getByText("Not quite. Correct answer: learn")).toBeTruthy();
+    });
+    // The right option is announced as current; the chosen wrong one is not.
+    expect(screen.getByRole("button", { name: "learn" }).getAttribute("aria-current")).toBe("true");
+    expect(screen.getByRole("button", { name: "tree" }).hasAttribute("aria-current")).toBe(false);
+  });
+
   it("records the answer, locks the options, and advances on Continue", async () => {
     renderPractice();
     startSession();
@@ -415,14 +432,14 @@ describe("Practice (web)", () => {
     // The span holds the blank alone; displayPrompt's word joiners sit in the text around it.
     const blank = document.querySelector("p[lang='ja'] span.whitespace-nowrap");
     expect(blank?.textContent).toBe("＿＿＿");
-    expect(document.querySelector("p[lang='ja']")?.textContent).toBe("みせに いきました ⁠＿＿＿⁠。");
+    expect(document.querySelector("p[lang='ja']")?.textContent).toBe("みせに いきました \u2060＿＿＿\u2060。");
   });
 
   it("cloze blanks stay glued to their punctuation at narrow widths", () => {
     const joined = displayPrompt("みせに いきました ＿＿＿。");
     // U+2060 WORD JOINER forbids a line break where it sits.
-    expect(joined).toContain("＿＿＿⁠。");
-    expect(joined).toContain(" ⁠＿＿＿");
+    expect(joined).toContain("＿＿＿\u2060。");
+    expect(joined).toContain(" \u2060＿＿＿");
     expect(displayPrompt("学校")).toBe("学校");
   });
 
@@ -591,10 +608,12 @@ describe("Practice (web)", () => {
               correct: false,
             },
           ],
+          // A real grammar itemRef is the Grammar Catalogue point id as text
+          // (api.gen.go), the positive whole number PR #86's parsePointId wants.
           results: {
             correct: 0,
             total: 1,
-            items: [{ itemKind: "grammar", itemRef: "gp-42", correct: false }],
+            items: [{ itemKind: "grammar", itemRef: "42", correct: false }],
           },
         });
       }
@@ -615,10 +634,10 @@ describe("Practice (web)", () => {
       expect(screen.getByRole("heading", { name: "Session complete" })).toBeTruthy();
     });
     const grammarLink = screen.getByRole("link", { name: /これは本/ });
-    expect(grammarLink.getAttribute("href")).toBe("/grammar/gp-42");
+    expect(grammarLink.getAttribute("href")).toBe("/grammar/42");
     // The name says where the link goes, not just what it is.
     expect(grammarLink.textContent).toMatch(/Open Grammar Point$/);
-    expect(destinationForItem("grammar", "gp-42")).toEqual({ to: "/grammar/gp-42", label: "Open Grammar Point" });
+    expect(destinationForItem("grammar", "42")).toEqual({ to: "/grammar/42", label: "Open Grammar Point" });
     expect(destinationForItem("vocabulary", "1234")).toEqual({ to: "/settings/lists", label: "Open Item Lists" });
   });
 

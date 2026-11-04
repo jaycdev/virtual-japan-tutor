@@ -448,6 +448,8 @@ function OptionButton({
   locked: boolean;
   onChoose: () => void;
 }) {
+  // aria-current marks the right option for a screen reader once the answer
+  // lands, without changing the button's accessible name.
   const border =
     state === "correct"
       ? "border-success text-success"
@@ -459,6 +461,7 @@ function OptionButton({
       ref={innerRef}
       type="button"
       aria-keyshortcuts={String(index + 1)}
+      aria-current={state === "correct" ? "true" : undefined}
       aria-disabled={locked || undefined}
       onClick={onChoose}
       className={cn(

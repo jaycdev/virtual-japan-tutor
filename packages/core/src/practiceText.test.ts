@@ -5,8 +5,8 @@ import { displayPrompt, practiceSeedForStory } from "./practiceText.ts";
 describe("displayPrompt", () => {
   it("glues a cloze blank to its punctuation and to the word before it", () => {
     const joined = displayPrompt("みせに いきました ＿＿＿。");
-    expect(joined).toContain("＿＿＿⁠。");
-    expect(joined).toContain(" ⁠＿＿＿");
+    expect(joined).toContain("＿＿＿\u2060。");
+    expect(joined).toContain(" \u2060＿＿＿");
   });
 
   it("leaves prompts without a blank untouched", () => {
