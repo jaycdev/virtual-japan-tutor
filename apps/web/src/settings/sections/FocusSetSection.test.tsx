@@ -1,7 +1,7 @@
 // The full Focus Set page behind Today's "See all" (/settings/focus). The set
 // itself is written by Syncs, Stories and Practice; this page only reads it, with
 // the same chip labels the glance uses.
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { renderAppAt } from "../../test/renderApp.tsx";
