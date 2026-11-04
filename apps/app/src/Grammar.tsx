@@ -2,6 +2,7 @@ import type { ApiClient, GrammarJLPTLevel, GrammarPointSummary } from "@vjt/api-
 import { useGrammar } from "@vjt/core";
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useCSSVariable } from "uniwind";
 
 import { CONTENT_MAX_WIDTH } from "./chrome/Shell.tsx";
 import { Card } from "./components/ui/Card.tsx";
@@ -111,12 +112,20 @@ export function Grammar({
 
 /** The search box, with a clear button only while there is something to clear. */
 function SearchField({ term, onTermChange }: { term: string; onTermChange: (term: string) => void }) {
+  // The placeholder needs the token resolved by hand, not just a class: the
+  // default renders dark-grey-on-dark on Android and near-white on web, where
+  // it reads like entered text (#49 review B1). Same token-safe route as Icon
+  // — useCSSVariable hands the colour to the prop both hosts honour: native
+  // takes placeholderTextColor directly, react-native-web maps it onto the
+  // input's ::placeholder via --placeholderTextColor.
+  const placeholderColor = useCSSVariable("--color-muted-foreground");
   return (
     <View className="flex-row items-center gap-2">
       <TextInput
         value={term}
         onChangeText={onTermChange}
         placeholder="Search pattern or meaning"
+        placeholderTextColor={placeholderColor ?? undefined}
         accessibilityLabel="Search grammar"
         autoCorrect={false}
         className="min-h-11 flex-1 rounded-lg border border-input bg-card px-3 text-body text-foreground"
