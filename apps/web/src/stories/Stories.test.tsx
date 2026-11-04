@@ -35,7 +35,7 @@ describe("Stories page", () => {
     renderStories(api);
     expect(await screen.findByRole("heading", { name: "Stories" })).toBeTruthy();
     expect(await screen.findByRole("heading", { name: /Today.s Story/ })).toBeTruthy();
-    expect(screen.getByRole("link", { name: /Open today/ })).toBeTruthy();
+    expect(await screen.findByRole("link", { name: /Open today/ })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Story Library" })).toBeTruthy();
     expect(await screen.findByText("猫の一日")).toBeTruthy();
     expect(screen.getByText("駅で")).toBeTruthy();
@@ -155,7 +155,8 @@ describe("Stories page", () => {
     api.pushStory(makeStory("n1", { title: "新しい話", origin: "on_demand" }));
     api.setGeneration({ status: "ready", percent: 100, storyId: "n1" });
     await waitFor(() => expect(screen.queryByTestId("generate-confirm")).toBeNull());
-    expect(screen.getByRole("link", { name: "Ready, read now" }).getAttribute("href")).toBe("/stories/n1");
+    // findBy: the card's re-read lands a beat after the dialog steps aside.
+    expect((await screen.findByRole("link", { name: "Ready, read now" })).getAttribute("href")).toBe("/stories/n1");
     expect(await screen.findByTestId("story-card-n1")).toBeTruthy();
   });
 
@@ -172,6 +173,119 @@ describe("Stories page", () => {
     );
     expect((await screen.findByTestId("library-page-summary")).textContent).toBe("3-3 of 3");
     expect(screen.getByTestId("pager-older").hasAttribute("disabled")).toBe(true);
+  });
+
+  it("stacks filters: Unread and Genre apply together, not one over the other", async () => {
+    const api = fakeApi({ stories: libraryStories() });
+    const { router } = renderStories(api, "/stories");
+    await screen.findByText("駅で"); // the Library settled; the controls are live
+    await userEvent.click(screen.getByRole("button", { name: "Unread" }));
+    await waitFor(() => expect(currentLocation(router)).toBe("/stories?filter=unread"));
+    // Second filter, fired after the first: it must join the URL, not replace
+    // it (the old code composed from window.location, which the router never
+    // writes — under a memory router it is always empty).
+    await userEvent.selectOptions(screen.getByTestId("genre-filter"), "daily_life");
+    await waitFor(() => expect(currentLocation(router)).toBe("/stories?filter=unread&genre=daily_life"));
+    // The only daily_life Story is the read one, so the pair leaves nothing:
+    // a replaced (not stacked) filter would still show 猫の一日 here.
+    expect(await screen.findByText("No Stories match these filters.")).toBeTruthy();
+    expect(screen.queryByText("猫の一日")).toBeNull();
+  });
+
+  it("lines the Library up in rows when the Learner asks for rows", async () => {
+    const api = fakeApi({ stories: libraryStories() });
+    renderStories(api);
+    await screen.findByText("猫の一日");
+    await userEvent.click(screen.getByTestId("layout-list"));
+    expect(screen.getByTestId("library-list").className).toContain("flex-col");
+  });
+
+  it("reads this device's layout choice back on load", async () => {
+    window.localStorage.setItem(STORIES_LAYOUT_STORAGE_KEY, "list");
+    const api = fakeApi({ stories: libraryStories() });
+    renderStories(api);
+    expect((await screen.findByTestId("library-list")).className).toContain("flex-col");
+    expect(screen.getByTestId("layout-list").getAttribute("aria-pressed")).toBe("true");
+    window.localStorage.removeItem(STORIES_LAYOUT_STORAGE_KEY);
+  });
+
+  it("fails the Library with one Retry that brings the page back", async () => {
+    const api = fakeApi({ stories: libraryStories(), failStories: true });
+    renderStories(api);
+    expect(await screen.findByText("library read failed")).toBeTruthy();
+    api.failStories = false;
+    await userEvent.click(await screen.findByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("猫の一日")).toBeTruthy();
+    expect(screen.queryByText("library read failed")).toBeNull();
+  });
+
+  it("a Genre with no match says so, and Clear filters brings the page back", async () => {
+    const api = fakeApi({ stories: libraryStories() });
+    const { router } = renderStories(api, "/stories?genre=ghost");
+    expect(await screen.findByText("No Stories match these filters.")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    await waitFor(() => expect(currentLocation(router)).toBe("/stories"));
+    expect(await screen.findByText("猫の一日")).toBeTruthy();
+  });
+
+  it("marks a Story unread from the card menu, and the Read mark goes away", async () => {
+    const api = fakeApi({ stories: libraryStories() });
+    renderStories(api);
+    await userEvent.click(await screen.findByTestId("story-menu-a"));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Mark unread" }));
+    await waitFor(() => expect(api.calls.some((c) => c.method === "DELETE" && c.path === "/stories/a/read")).toBe(true));
+    expect(await screen.findByTestId("story-card-a")).toBeTruthy();
+    expect(screen.queryByTestId("story-read-a")).toBeNull();
+  });
+
+  it("a failed run started here keeps the dialog open, says so, and can be tried again", async () => {
+    const api = fakeApi({ today: null, stories: [] });
+    renderStories(api);
+    await userEvent.click(await screen.findByTestId("today-generate"));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByTestId("generate-confirm"));
+    await waitFor(() => expect(api.calls.some((c) => c.method === "POST" && c.path === "/stories/generate")).toBe(true));
+    // The run the Learner started here fails: the failure speaks inside the
+    // dialog, which stays open, and Generate stands ready for another try.
+    api.setGeneration({ status: "failed", percent: 20, message: "the writer fell asleep" });
+    expect((await within(dialog).findByTestId("generate-error")).textContent).toBe("the writer fell asleep");
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(within(dialog).getByTestId("generate-confirm").hasAttribute("disabled")).toBe(false);
+
+    await userEvent.click(within(dialog).getByTestId("generate-confirm"));
+    await waitFor(() =>
+      expect(api.calls.filter((c) => c.method === "POST" && c.path === "/stories/generate").length).toBe(2),
+    );
+  });
+
+  it("the stretched link and the card's own controls all stand in the tab order", async () => {
+    const user = userEvent.setup();
+    const api = fakeApi({ stories: libraryStories() });
+    renderStories(api);
+    const openLink = await screen.findByTestId("story-open-a");
+    // Tab from the top of the page until the stretched link holds focus.
+    let guard = 0;
+    while (document.activeElement !== openLink && guard < 25) {
+      await user.tab();
+      guard += 1;
+    }
+    expect(document.activeElement).toBe(openLink);
+    // The raised controls follow it in the same card — the overlay never
+    // swallows them out of the keyboard's reach.
+    await user.tab();
+    expect(document.activeElement).toBe(screen.getByTestId("story-menu-a"));
+    await user.tab();
+    expect(document.activeElement).toBe(screen.getByTestId("title-translation-a"));
+  });
+
+  it("opens the card menu with the keyboard alone", async () => {
+    const user = userEvent.setup();
+    const api = fakeApi({ stories: libraryStories() });
+    renderStories(api);
+    const trigger = await screen.findByTestId("story-menu-b");
+    trigger.focus();
+    await user.keyboard("{Enter}");
+    expect(await screen.findByRole("menuitem", { name: "Mark read" })).toBeTruthy();
   });
 
   it("the route wires the page to the session's client", async () => {
