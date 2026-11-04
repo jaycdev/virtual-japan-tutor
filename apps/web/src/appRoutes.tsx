@@ -79,9 +79,17 @@ export const appRoutes: RouteObject[] = [
                 handle: { title: "Story" } satisfies RouteHandle,
                 lazy: () => import("./routes/StoryPage.tsx"),
               },
-              { path: "practice", handle: { title: "Practice" } satisfies RouteHandle, lazy: placeholder("Practice", 78) },
-              { path: "grammar", handle: { title: "Grammar" } satisfies RouteHandle, lazy: placeholder("Grammar", 80) },
-              { path: "grammar/:grammarId", handle: { title: "Grammar point" } satisfies RouteHandle, lazy: placeholder("Grammar point", 80) },
+              { path: "practice", handle: { title: "Practice" } satisfies RouteHandle, lazy: () => import("./routes/PracticePage.tsx") },
+              {
+                path: "grammar",
+                handle: { title: "Grammar" } satisfies RouteHandle,
+                lazy: () => import("./routes/GrammarPage.tsx"),
+              },
+              {
+                path: "grammar/:grammarId",
+                handle: { title: "Grammar point" } satisfies RouteHandle,
+                lazy: () => import("./routes/GrammarPointPage.tsx"),
+              },
               { path: "settings", element: <Navigate to="/settings/appearance" replace /> },
               {
                 path: "settings/:section",
