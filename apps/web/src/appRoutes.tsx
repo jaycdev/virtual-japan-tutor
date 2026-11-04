@@ -5,6 +5,7 @@ import { Link, Navigate, Outlet, useMatches, type RouteObject } from "react-rout
 
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/states";
+import { SkeletonLines } from "./components/states.tsx";
 import { AppShell } from "./shell/AppShell.tsx";
 import { RequireSession } from "./routes/RequireSession.tsx";
 import { ComingSoon } from "./routes/ComingSoon.tsx";
@@ -19,6 +20,20 @@ const APP_NAME = "Virtual Japan Tutor";
 /** A not-yet-built destination: a lazy module that renders the placeholder. */
 function placeholder(title: string, issue: number) {
   return async () => ({ Component: () => <ComingSoon title={title} issue={issue} /> });
+}
+
+/**
+ * Shown while a lazy route module loads for the first time (React Router asks for
+ * this on the root route). A skeleton, not a spinner (ui-plan 5).
+ */
+function RouteFallback() {
+  return (
+    <div className="flex min-h-dvh items-center justify-center bg-background p-6">
+      <div className="w-full max-w-sm">
+        <SkeletonLines lines={3} />
+      </div>
+    </div>
+  );
 }
 
 /** Sets document.title from the deepest matched route that declares one. */
@@ -53,6 +68,7 @@ function NotFound() {
 export const appRoutes: RouteObject[] = [
   {
     element: <TitleSync />,
+    HydrateFallback: RouteFallback,
     children: [
       {
         path: "login",
