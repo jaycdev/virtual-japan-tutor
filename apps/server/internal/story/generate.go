@@ -58,8 +58,9 @@ func posSubCategory(t tokenizer.Token) string {
 	return pos[1]
 }
 
-// isContent reports whether a token is a content word for coverage purposes:
-// nouns, verbs, adjectives and adverbs, minus
+// isContent reports whether a token is a content word for coverage purposes
+// only: whether a token may be looked up is isLinkable's question, which is
+// wider. It is nouns, verbs, adjectives and adverbs, minus
 //   - bare numerals (名詞,数 — JMdict is not a number list), and
 //   - grammatical suffixes and dependent words (接尾, 非自立): れる, さん, たち,
 //     こと, の, はず, ている's いる. They are grammar, not vocabulary, so a
@@ -79,6 +80,65 @@ func isContent(t tokenizer.Token) bool {
 	default:
 		return false
 	}
+}
+
+// isLinkable reports whether a token gets a dictionary link (ent_seq), which
+// is what makes it hoverable: the reader opens a Lookup in the Reading Panel
+// only for a linked token. Every token is linkable except particles (助詞),
+// auxiliaries (助動詞), symbols (記号) and tokens with no part of speech. A
+// Lookup on those shows nothing useful, and particles stay un-hoverable on
+// purpose. isContent implies isLinkable, so the coverage gate never counts a
+// token that cannot be linked.
+func isLinkable(t tokenizer.Token) bool {
+	switch posCategory(t) {
+	case "", "助詞", "助動詞", "記号":
+		return false
+	}
+	return true
+}
+
+// tokenLinker links tokens to jmdict entries through a VocabLookup and caches
+// each answer for its own lifetime, so a repeated word costs one query, hit
+// or miss. The key is the surface and the dictionary form together, because
+// the lookup answers for that pair. Keying on the surface alone would be
+// unsafe once one linker serves a whole relink run, where the same spelling
+// can come with different forms.
+type tokenLinker struct {
+	lookup VocabLookup
+	looked map[string]VocabHit
+	missed map[string]bool
+}
+
+func newTokenLinker(l VocabLookup) *tokenLinker {
+	return &tokenLinker{lookup: l, looked: map[string]VocabHit{}, missed: map[string]bool{}}
+}
+
+// link sets the token's dictionary link when the lookup finds one and reports
+// whether it did. A miss leaves the token as it was: unlinked, so it counts as
+// an unknown Vocabulary Item, and the caller decides what that means.
+func (l *tokenLinker) link(ctx context.Context, tok *Token, base string) (bool, error) {
+	key := tok.Surface + "\x00" + base
+	hit, ok := l.looked[key]
+	if !ok && !l.missed[key] {
+		var err error
+		hit, ok, err = l.lookup.Lookup(ctx, tok.Surface, base)
+		if err != nil {
+			return false, err
+		}
+		if ok {
+			l.looked[key] = hit
+		} else {
+			l.missed[key] = true
+		}
+	}
+	if !ok {
+		return false, nil
+	}
+	seq := hit.EntSeq
+	tok.EntSeq = &seq
+	tok.Dictionary = hit.JA
+	tok.alts = hit.Alts
+	return true, nil
 }
 
 // ChatClient is the structured-output call generation needs; *llm.Client
@@ -232,9 +292,10 @@ func (g *Generator) Generate(ctx context.Context, client ChatClient, req Request
 }
 
 // materialise converts the model's JSON into a Story: tokenising every
-// sentence with kagome and linking content tokens to jmdict entries through
-// the lookup. Known/unknown tagging happens afterwards in tagKnown, once the
-// linked entries are known. Spans arriving here are copied verbatim; the
+// sentence with kagome and linking every linkable token (see isLinkable) to
+// jmdict entries through the lookup. Known/unknown tagging happens afterwards
+// in tagKnown, once the linked entries are known. Spans arriving here are
+// copied verbatim; the
 // gate judges them. The request's Title/Theme/Origin stamping happens here
 // too, so every candidate — validated or not — carries its library fields.
 func (g *Generator) materialise(ctx context.Context, raw *storyJSON, req Request) (*Story, error) {
@@ -252,8 +313,9 @@ func (g *Generator) materialise(ctx context.Context, raw *storyJSON, req Request
 		s.Genre = "free"
 	}
 	var texts []string
-	looked := map[string]VocabHit{} // surface → hit, so repeats cost one query
-	missed := map[string]bool{}     // surfaces that linked to nothing: also cached, so a repeated plant costs no query
+	// One linker for the whole candidate: a word repeated across sentences
+	// costs one lookup, hit or miss.
+	linker := newTokenLinker(g.lookup)
 	for i, in := range raw.Sentences {
 		sen := Sentence{Pos: i, JA: stripNulls(in.JA), EN: stripNulls(in.EN)}
 		toks, err := tokenise(sen.JA)
@@ -264,27 +326,13 @@ func (g *Generator) materialise(ctx context.Context, raw *storyJSON, req Request
 			base, _ := kt.BaseForm()
 			reading, _ := kt.Reading()
 			tok := Token{Pos: j, Surface: kt.Surface, Start: kt.Start, End: kt.End, Reading: toHiragana(reading), Dictionary: base, Tag: TagUnknown}
-			if isContent(kt) {
-				tok.content = true
-				hit, ok := looked[kt.Surface]
-				miss := missed[kt.Surface]
-				if !ok && !miss {
-					var err error
-					hit, ok, err = g.lookup.Lookup(ctx, kt.Surface, base)
-					if err != nil {
-						return nil, err
-					}
-					if ok {
-						looked[kt.Surface] = hit
-					} else {
-						missed[kt.Surface] = true
-					}
-				}
-				if ok {
-					seq := hit.EntSeq
-					tok.EntSeq = &seq
-					tok.Dictionary = hit.JA
-					tok.alts = hit.Alts
+			// The coverage gate counts only content words, but the reader can
+			// look up every word that isLinkable, so the two rules are kept
+			// apart: content is set for every token, the link for linkable ones.
+			tok.content = isContent(kt)
+			if isLinkable(kt) {
+				if _, err := linker.link(ctx, &tok, base); err != nil {
+					return nil, err
 				}
 			}
 			sen.Tokens = append(sen.Tokens, tok)

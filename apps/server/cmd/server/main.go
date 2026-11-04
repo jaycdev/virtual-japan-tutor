@@ -44,7 +44,7 @@ func main() {
 	}
 }
 
-// run serves the API, or runs a subcommand (`create-user`).
+// run serves the API, or runs a subcommand (`create-user`, `relink-stories`).
 func run(args []string) error {
 	cfg, err := config.Load(os.Getenv)
 	if err != nil {
@@ -61,10 +61,14 @@ func run(args []string) error {
 	defer stop()
 
 	if len(args) > 0 {
-		if args[0] != "create-user" {
-			return fmt.Errorf("unknown command %q (available: create-user)", args[0])
+		switch args[0] {
+		case "create-user":
+			return createUserCmd(ctx, cfg, args[1:])
+		case "relink-stories":
+			return relinkStoriesCmd(ctx, cfg, args[1:])
+		default:
+			return fmt.Errorf("unknown command %q (available: create-user, relink-stories)", args[0])
 		}
-		return createUserCmd(ctx, cfg, args[1:])
 	}
 
 	pool, err := db.Open(ctx, cfg.DatabaseURL)

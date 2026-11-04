@@ -315,6 +315,21 @@ No account exists on a fresh database. Either:
   printf "%s\n" "$PASSWORD" | docker compose exec -T server server create-user --username me
   ```
 
+#### Relinking stored Stories
+
+Stories generated before the fix for issue #94 have no dictionary link on most of their words, so those
+words cannot be looked up in the reader. After upgrading, run `server relink-stories` once to give them
+links. It is idempotent and safe to re-run: it only fills in missing links, never changes an existing
+link, the stored gate counts or the Focus flags already on a Story, and it prints a summary line.
+The summary goes to stderr. A sentence whose stored tokens no longer match the tokeniser is skipped with a
+warning, not counted as a failure. The command exits non-zero if any Story failed.
+
+```sh
+cd apps/server && DATABASE_URL=... SECRETS_KEY=... go run ./cmd/server relink-stories
+# in compose (run next to docker-compose.yml):
+docker compose exec -T server server relink-stories
+```
+
 ### Secrets
 
 Third-party keys (the MaruMori key, AI Provider keys) are encrypted at rest with `internal/secrets`:
