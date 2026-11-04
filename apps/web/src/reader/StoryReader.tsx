@@ -17,7 +17,7 @@ import { Link, useNavigate } from "react-router";
 
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
-import { SkeletonLines } from "@/components/states";
+import { ErrorState, SkeletonLines } from "@/components/states";
 import { cn } from "@/lib/utils";
 import { useStoryTextSize } from "../storysize/index.ts";
 import { ReadingPanel, type LookTarget } from "./ReadingPanel.tsx";
@@ -73,6 +73,10 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
   // The word the last overlay belongs to: focus goes back there when it closes.
   const lastWord = useRef<TokenRef | null>(null);
   const keepFocusOnMenuClose = useRef(false);
+  // The word marked at pointerdown when its already-open menu is about to be
+  // dismissed by that very press: the click that follows closes (toggles)
+  // instead of reopening (issue #77 review).
+  const wordToggle = useRef<TokenRef | null>(null);
   // Each (item, reason) is reported once per open Story; the server keeps only the
   // Learner's Known Items, so this is fire-and-forget.
   const signaled = useRef<Set<string>>(new Set());
@@ -99,6 +103,17 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
   const prime = (ref: TokenRef) => {
     const tok = tokenAt(ref);
     if (tok?.entSeq !== undefined) lookup.load(tok.entSeq, tok.surface, tok.reading);
+  };
+
+  // Hover and focus show a Lookup but never spend a request on a word whose last
+  // lookup failed: sweeping the mouse down the sentence, or a menu closing and
+  // its focus landing back on the word, must not refetch a 404 word over and
+  // over (issue #77 review). A press — click, Enter, or the dialog's Retry —
+  // still goes through and makes one fresh attempt.
+  const primeUnlessFailed = (ref: TokenRef) => {
+    const tok = tokenAt(ref);
+    if (tok?.entSeq !== undefined && lookup.failed(tok.entSeq, tok.surface, tok.reading)) return;
+    prime(ref);
   };
 
   const reportSignals = (signals: WeakSignalRequest[]) => {
@@ -145,14 +160,29 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
     columnRef.current?.querySelector<HTMLElement>(`[data-token="${ref.sentence}-${ref.index}"]`)?.focus();
   };
 
-  const activate = (ref: TokenRef, element: HTMLElement) => {
+  const activate = (ref: TokenRef, element: HTMLElement, source: "pointer" | "keyboard") => {
+    // Re-pressing the word whose menu is open closes it — a toggle, not a
+    // close-and-reopen. A pointer press gets there first: Radix's dismiss has
+    // already closed the menu by the time the click runs, so the pointerdown
+    // capture (below) marks the word instead.
+    if (source === "pointer" && wordToggle.current && sameRef(wordToggle.current, ref)) {
+      wordToggle.current = null;
+      closeMenu(); // a no-op when Radix's outside-dismiss already closed it
+      return;
+    }
+    if (source === "keyboard" && menu && sameRef(menu.ref, ref)) {
+      closeMenu();
+      return;
+    }
     setSelected(ref.sentence);
     const tok = tokenAt(ref);
     if (!tok) return;
     const span = spanAt(ref);
     if (tok.entSeq === undefined && span === null) return; // nothing behind this word
-    // A drag that selects text is not a click: copying must not open a menu.
-    if (window.getSelection()?.toString()) return;
+    // A drag that selects text is a copying gesture, not a click: copying must
+    // not open a menu. Enter on a word is never a selection gesture, so it is
+    // not blocked (issue #77 review).
+    if (source === "pointer" && window.getSelection()?.toString()) return;
     const column = columnRef.current;
     if (!column) return;
     const r = element.getBoundingClientRect();
@@ -169,13 +199,13 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
     onTokenEnter: (ref) => {
       if (menu) return;
       setHovered(ref);
-      prime(ref);
+      primeUnlessFailed(ref);
     },
     onTokenLeave: (ref) => setHovered((cur) => (sameRef(cur, ref) ? null : cur)),
     onTokenFocus: (ref) => {
       setFocused(ref);
       setSelected(ref.sentence);
-      prime(ref);
+      primeUnlessFailed(ref);
     },
     onTokenBlur: (ref) => setFocused((cur) => (sameRef(cur, ref) ? null : cur)),
     onTokenActivate: activate,
@@ -325,6 +355,16 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
 
   // --- the footer's actions and the comprehension questions -----------------
 
+  // The last Learner-initiated mutation (mark read, rating, answer): when it
+  // fails, the bare message gets a Retry that repeats just that action
+  // (ui-plan 5: a destructive message with one Retry, never a bare alert).
+  const [lastAction, setLastAction] = useState<{ run: () => void } | null>(null);
+  const run = (action: () => Promise<void>) => {
+    const wrapped = { run: () => void action() };
+    setLastAction(wrapped);
+    wrapped.run();
+  };
+
   const library = view.library.status === "ready" ? view.library.page.items : [];
   const at = library.findIndex((s) => s.id === story.id);
   const newer = at > 0 ? library[at - 1] : undefined;
@@ -344,6 +384,17 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
     <div
       ref={rootRef}
       onKeyDown={onKeyDown}
+      onPointerDownCapture={(e) => {
+        // Runs before Radix's document-level dismiss: a press on the word that
+        // already owns the open menu is a toggle, so the click that follows
+        // must not reopen it (issue #77 review).
+        const el = (e.target as Element | null)?.closest?.("[data-token]");
+        const open = menu;
+        wordToggle.current =
+          open !== null && el?.getAttribute("data-token") === `${open.ref.sentence}-${open.ref.index}`
+            ? open.ref
+            : null;
+      }}
       data-testid="story-reader"
       className="story-column-width mx-auto flex flex-col gap-6"
     >
@@ -526,7 +577,7 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
                     variant="outline"
                     aria-label={`Answer ${j + 1}: ${option}`}
                     disabled={q.result !== null}
-                    onClick={() => void view.answer(q.position, j)}
+                    onClick={() => run(() => view.answer(q.position, j))}
                     className="font-serif"
                   >
                     {option}
@@ -544,9 +595,7 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
       ) : null}
 
       {view.error ? (
-        <p role="alert" className="text-small text-destructive">
-          {view.error}
-        </p>
+        <ErrorState message={view.error} onRetry={lastAction ? lastAction.run : undefined} />
       ) : null}
 
       <footer className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
@@ -573,7 +622,7 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
           aria-label={story.readAt != null ? "Unmark read" : "Mark read"}
           aria-pressed={story.readAt != null}
           disabled={view.pending}
-          onClick={() => void (story.readAt != null ? view.clearRead(story.id) : view.setRead(story.id))}
+          onClick={() => run(() => (story.readAt != null ? view.clearRead(story.id) : view.setRead(story.id)))}
         >
           {story.readAt != null ? <Check aria-hidden="true" className="text-primary" /> : null}
           Read
@@ -585,7 +634,7 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
             aria-label="Rate up"
             aria-pressed={story.rating === "up"}
             disabled={view.pending}
-            onClick={() => void view.rate(story.id, "up")}
+            onClick={() => run(() => view.rate(story.id, "up"))}
             className={cn(story.rating === "up" && "text-primary")}
           >
             <ThumbsUp aria-hidden="true" />
@@ -596,7 +645,7 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
             aria-label="Rate down"
             aria-pressed={story.rating === "down"}
             disabled={view.pending}
-            onClick={() => void view.rate(story.id, "down")}
+            onClick={() => run(() => view.rate(story.id, "down"))}
             className={cn(story.rating === "down" && "text-primary")}
           >
             <ThumbsDown aria-hidden="true" />

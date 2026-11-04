@@ -40,8 +40,12 @@ export interface StoryTextHandlers {
   onTokenLeave(ref: TokenRef): void;
   onTokenFocus(ref: TokenRef): void;
   onTokenBlur(ref: TokenRef): void;
-  /** A click or Enter on a word: open its Lookup Menu from the word's element. */
-  onTokenActivate(ref: TokenRef, element: HTMLElement): void;
+  /**
+   * A click or Enter on a word: open its Lookup Menu from the word's element.
+   * `source` says which, so a dragged text selection only blocks pointer
+   * clicks — Enter on a word is never a selection gesture (issue #77 review).
+   */
+  onTokenActivate(ref: TokenRef, element: HTMLElement, source: "pointer" | "keyboard"): void;
 }
 
 export interface StoryTextProps extends StoryTextHandlers {
@@ -79,7 +83,8 @@ export function StoryText({
         <p
           key={i}
           data-sentence={i}
-          aria-label={`Sentence ${i + 1}`}
+          // No aria-label: a <p> is generic text, and a label on it is ignored.
+          // The sentence's own accessible name is its Japanese.
           onClick={() => handlers.onSelectSentence(i)}
           className={cn("mb-[0.6em] rounded-sm", selected === i && "bg-selected-sentence")}
         >
@@ -137,11 +142,11 @@ function Word({
   const onKeyDown = (e: KeyboardEvent<HTMLSpanElement>) => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
-      handlers.onTokenActivate(ref, e.currentTarget);
+      handlers.onTokenActivate(ref, e.currentTarget, "keyboard");
     }
   };
   const onClick = (e: MouseEvent<HTMLSpanElement>) => {
-    handlers.onTokenActivate(ref, e.currentTarget);
+    handlers.onTokenActivate(ref, e.currentTarget, "pointer");
   };
 
   return (
@@ -151,7 +156,10 @@ function Word({
       tabIndex={interactive ? 0 : undefined}
       aria-haspopup={interactive ? "dialog" : undefined}
       aria-expanded={interactive ? open : undefined}
-      aria-label={ruby ? token.surface : undefined}
+      // The name of the word as a button is its surface alone: a screen reader
+      // would otherwise read the <rt> reading as part of it. A non-interactive
+      // span takes no aria-label (nothing would read it, issue #77 review).
+      aria-label={interactive && ruby ? token.surface : undefined}
       onMouseEnter={interactive ? () => handlers.onTokenEnter(ref) : undefined}
       onMouseLeave={interactive ? () => handlers.onTokenLeave(ref) : undefined}
       onFocus={interactive ? () => handlers.onTokenFocus(ref) : undefined}

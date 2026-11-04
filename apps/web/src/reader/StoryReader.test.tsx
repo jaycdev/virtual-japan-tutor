@@ -7,7 +7,7 @@ import { useStory } from "@vjt/core";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useEffect } from "react";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, useLocation } from "react-router";
 
 import { storyTextSizeStore } from "../storysize/index.ts";
 import type { StoryTextSize } from "../storysize/store.ts";
@@ -112,10 +112,20 @@ interface Recorded {
 }
 
 /** A stateful fake of the API for one Story. */
-function fakeApi(opts: { story?: Story; blurTranslation?: boolean; failReadingPut?: number } = {}) {
+function fakeApi(
+  opts: {
+    story?: Story;
+    blurTranslation?: boolean;
+    failReadingPut?: number;
+    failReadPut?: number;
+    failRate?: boolean;
+    library?: Story[];
+  } = {},
+) {
   const story = opts.story ?? makeStory();
   const requests: Recorded[] = [];
   let readingPutFailures = opts.failReadingPut ?? 0;
+  let readPutFailures = opts.failReadPut ?? 0;
   const lists = [
     { id: "l1", name: "Saved", boosting: true, isDefault: true, itemCount: 1 },
     { id: "l2", name: "Travel", boosting: false, isDefault: false, itemCount: 3 },
@@ -145,12 +155,25 @@ function fakeApi(opts: { story?: Story; blurTranslation?: boolean; failReadingPu
     }
     if (/^\/item-lists\/[^/]+\/items$/.test(path) && method === "POST") return new Response(null, { status: 204 });
     if (path === "/weak-signals" && method === "POST") return new Response(null, { status: 204 });
-    if (path === "/stories/st-1/read" && method === "PUT") return new Response(null, { status: 204 });
+    if (path === "/stories/st-1/read" && method === "PUT") {
+      if (readPutFailures > 0) {
+        readPutFailures -= 1;
+        return json(503, { message: "the server is offline" });
+      }
+      return new Response(null, { status: 204 });
+    }
+    if (path === "/stories/st-1/rate" && method === "POST") {
+      if (opts.failRate) return json(503, { message: "the server is offline" });
+      return new Response(null, { status: 204 });
+    }
+    if (path === "/stories/st-1/answers" && method === "POST") {
+      return json(200, { correct: true, practiceRecorded: true });
+    }
     if (path === "/dictionary/entries/990101") return json(200, SCHOOL_ENTRY);
     if (path === "/dictionary/entries/990103") return json(404, { message: "no such entry" });
     if (path === "/stories/st-1" && method === "GET") return json(200, story);
     if (path === "/stories/today") return json(404, { message: "none" });
-    if (path === "/stories") return json(200, { items: [story], total: 1, limit: 20, offset: 0 });
+    if (path === "/stories") return json(200, { items: opts.library ?? [story], total: (opts.library ?? [story]).length, limit: 20, offset: 0 });
     if (path === "/story-settings") return json(200, { furiganaThresholdSrsLevel: 3, preferredGenre: "", preferredTheme: "" });
     return json(404, { message: "not found" });
   };
@@ -172,15 +195,27 @@ function ReaderHarness({ client }: { client: ApiClient }) {
   return <StoryReader key={view.story.id} client={client} view={view} story={view.story} />;
 }
 
+// Where the reader's footer Prev/Next actually navigate to; the probe sits
+// inside the router and records every pathname it lands on.
+function LocationProbe({ report }: { report: (path: string) => void }) {
+  const location = useLocation();
+  useEffect(() => {
+    report(location.pathname);
+  }, [location.pathname, report]);
+  return null;
+}
+
 async function renderReader(opts: Parameters<typeof fakeApi>[0] = {}) {
   const api = fakeApi(opts);
+  const paths: string[] = [];
   const view = render(
     <MemoryRouter>
+      <LocationProbe report={(p) => paths.push(p)} />
       <ReaderHarness client={api.client} />
     </MemoryRouter>,
   );
   await screen.findByRole("heading", { level: 1 });
-  return { ...api, ...view };
+  return { ...api, paths, ...view };
 }
 
 const token = (container: HTMLElement, sentence: number, index: number) =>
@@ -216,6 +251,12 @@ describe("Story reader: text", () => {
     expect(document.querySelector("img[onerror]")).toBeNull();
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(hostile);
     expect(container.textContent).toContain(hostile);
+    // The Reading Panel's sentence and its hidden translation are rendered the
+    // same way: text, never markup (issue #77 review).
+    fireEvent.click(container.querySelector('[data-sentence="0"]') as HTMLElement);
+    const translationButton = screen.getByRole("button", { name: "Sentence Translation" });
+    expect(translationButton.textContent).toContain(hostile);
+    expect(document.querySelector("img[onerror]")).toBeNull();
   });
 
   it("the Story Title's English translation is hidden until revealed", async () => {
@@ -401,10 +442,164 @@ describe("Story reader: translation, keyboard and the footer", () => {
     expect(requestsTo(requests, "/stories/st-1/read", "PUT").length).toBe(1);
   });
 
+  it("a failed mark-read gets a Retry that sends just that PUT again", async () => {
+    const { requests } = await renderReader({ failReadPut: 1 });
+    fireEvent.click(screen.getByRole("button", { name: "Mark read" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("the server is offline");
+    fireEvent.click(within(alert).getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(requestsTo(requests, "/stories/st-1/read", "PUT").length).toBe(2));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(screen.getByRole("button", { name: "Unmark read" })).toBeTruthy();
+  });
+
+  it("Rate up sends the rating and shows it pressed", async () => {
+    const { requests } = await renderReader();
+    fireEvent.click(screen.getByRole("button", { name: "Rate up" }));
+    await waitFor(() =>
+      expect(requestsTo(requests, "/stories/st-1/rate", "POST")[0]?.body).toBe("up"),
+    );
+    await waitFor(() => expect(screen.getByRole("button", { name: "Rate up" }).getAttribute("aria-pressed")).toBe("true"));
+  });
+
+  it("a failed rating gets a Retry that sends it again", async () => {
+    const { requests } = await renderReader({ failRate: true });
+    fireEvent.click(screen.getByRole("button", { name: "Rate down" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("the server is offline");
+    fireEvent.click(within(alert).getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(requestsTo(requests, "/stories/st-1/rate", "POST").length).toBe(2));
+    expect(requestsTo(requests, "/stories/st-1/rate", "POST").every((r) => r.body === "down")).toBe(true);
+  });
+
+  it("Prev and Next walk the Library page around the open Story, and stop at the ends", async () => {
+    const older = makeStory({ id: "st-0", title: "older" });
+    const { paths } = await renderReader({ library: [older, makeStory()] });
+    // st-1 sits between st-0 and nothing: Next has nowhere to go.
+    await waitFor(() => expect(screen.getByRole("button", { name: "Previous story" }).hasAttribute("disabled")).toBe(false));
+    expect(screen.getByRole("button", { name: "Next story" }).hasAttribute("disabled")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Previous story" }));
+    await waitFor(() => expect(paths[paths.length - 1]).toBe("/stories/st-0"));
+  });
+
+  it("a comprehension question answers once: the POST lands, the options lock, the verdict shows", async () => {
+    const { requests } = await renderReader();
+    const answer = screen.getByRole("button", { name: "Answer 1: がっこう" });
+    fireEvent.click(answer);
+    await waitFor(() =>
+      expect(requestsTo(requests, "/stories/st-1/answers", "POST")[0]?.body).toEqual({ questionIndex: 0, answerIndex: 0 }),
+    );
+    expect(await screen.findByText("Correct.")).toBeTruthy();
+    await waitFor(() =>
+      expect(
+        [screen.getByRole("button", { name: "Answer 1: がっこう" }), screen.getByRole("button", { name: "Answer 2: いえ" })].every(
+          (b) => b.hasAttribute("disabled"),
+        ),
+      ).toBe(true),
+    );
+    expect(requestsTo(requests, "/stories/st-1/answers", "POST").length).toBe(1);
+  });
+
   it("links to Practice for this Story", async () => {
     await renderReader();
     const link = screen.getByRole("link", { name: "Practice this Story" });
     expect(link.getAttribute("href")).toBe("/practice?storyId=st-1");
+  });
+});
+
+describe("Story reader: failed lookups and gestures", () => {
+  it("a failed dictionary word is not refetched by repeated hovers, but a press tries once more", async () => {
+    const { container, requests } = await renderReader();
+    const word = token(container, 1, 0); // みせ, entSeq 990103: the fake answers 404
+    const lookups = () => requestsTo(requests, "/dictionary/entries/990103").length;
+
+    fireEvent.mouseEnter(word);
+    await waitFor(() => expect(lookups()).toBe(1));
+    fireEvent.mouseLeave(word);
+    fireEvent.mouseEnter(word);
+    fireEvent.mouseLeave(word);
+    fireEvent.mouseEnter(word);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(lookups()).toBe(1); // hovering a failed word costs nothing (issue #77 review)
+
+    // A press still opens the menu and makes one fresh attempt; the Dictionary
+    // row stays dimmed until that attempt answers.
+    fireEvent.click(word);
+    await waitFor(() => expect(lookups()).toBe(2));
+    const row = await screen.findByRole("button", { name: "Dictionary" });
+    expect(row.hasAttribute("disabled")).toBe(true);
+    expect(row.textContent).toContain("The dictionary did not answer");
+
+    // Pressing the same word again closes the menu — a toggle — without spending
+    // another request (issue #77 review).
+    fireEvent.pointerDown(word);
+    fireEvent.pointerUp(word);
+    fireEvent.click(word);
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Save to…" })).toBeNull());
+    expect(lookups()).toBe(2);
+
+    // A further press opens it again with one more single attempt.
+    fireEvent.pointerDown(word);
+    fireEvent.pointerUp(word);
+    fireEvent.click(word);
+    await screen.findByRole("button", { name: "Save to…" });
+    await waitFor(() => expect(lookups()).toBe(3));
+  });
+
+  it("re-pressing the word that owns the open menu closes it instead of reopening it", async () => {
+    const { container } = await renderReader();
+    const word = token(container, 0, 0);
+    fireEvent.click(word);
+    await screen.findByRole("button", { name: "Dictionary" });
+    fireEvent.pointerDown(word); // what a real press does first, before Radix dismisses
+    fireEvent.pointerUp(word);
+    fireEvent.click(word);
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Dictionary" })).toBeNull());
+    expect(word.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("a text selection swallows the pointer click, but Enter on the word still opens its menu", async () => {
+    const { container } = await renderReader();
+    const word = token(container, 0, 0);
+    const range = document.createRange();
+    range.selectNodeContents(word);
+    const selection = window.getSelection();
+    act(() => {
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    });
+    fireEvent.click(word);
+    expect(screen.queryByRole("button", { name: "Dictionary" })).toBeNull(); // copying is not a press
+    fireEvent.keyDown(word, { key: "Enter" });
+    await screen.findByRole("button", { name: "Dictionary" });
+    selection?.removeAllRanges();
+  });
+
+  it("opening a word's menu reports its Lookup signal exactly once", async () => {
+    const { container, requests } = await renderReader();
+    const word = token(container, 0, 0);
+    fireEvent.click(word);
+    await waitFor(() =>
+      expect(requestsTo(requests, "/weak-signals", "POST")[0]?.body).toEqual({
+        signals: [{ itemKind: "vocabulary", itemRef: "990101", reason: "lookup" }],
+      }),
+    );
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Save to…" })).toBeNull());
+    fireEvent.click(word); // the same word again: the signal is not sent twice
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Save to…" })).toBeTruthy());
+    expect(requestsTo(requests, "/weak-signals", "POST").length).toBe(1);
+  });
+
+  it("Escape closes the Dictionary Entry and puts focus back on the word", async () => {
+    const { container } = await renderReader();
+    const word = token(container, 0, 0);
+    fireEvent.click(word);
+    fireEvent.click(await screen.findByRole("button", { name: "Dictionary" }));
+    const dialog = await screen.findByTestId("dictionary-window");
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByTestId("dictionary-window")).toBeNull());
+    expect(document.activeElement).toBe(word);
   });
 });
 
