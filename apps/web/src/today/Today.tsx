@@ -12,9 +12,10 @@ import {
   useStorySettings,
   useTodaysStory,
 } from "@vjt/core";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 
 import { Skeleton } from "@/components/ui/skeleton";
+import { useMinuteClock } from "@/lib/useMinuteClock.ts";
 import { TodayStoryCard } from "../stories/TodayStoryCard.tsx";
 import { FocusGlance } from "./FocusGlance.tsx";
 import { PracticeCard } from "./PracticeCard.tsx";
@@ -68,16 +69,6 @@ export function Today({ client }: { client: ApiClient }) {
       <SyncCard marumori={marumori} timezone={timezone} />
     </div>
   );
-}
-
-/** The clock, ticked once a minute: honest across a morning without a per-second re-render. */
-function useMinuteClock(): Date {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 60_000);
-    return () => clearInterval(timer);
-  }, []);
-  return now;
 }
 
 /**
