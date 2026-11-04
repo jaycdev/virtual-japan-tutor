@@ -91,8 +91,18 @@ export function EmptyState({
   );
 }
 
-/** A failure in place, with one Retry action. */
-export function InlineError({ message, onRetry }: { message: string; onRetry: () => void }) {
+/**
+ * A failure in place, with one Retry action. `onRetry` is optional (#50):
+ * a settings validation failure has nothing to retry — the Learner fixes
+ * the input and presses Save again — so the banner shows without a button.
+ */
+export function InlineError({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry?: () => void;
+}) {
   return (
     <View
       accessibilityRole="alert"
@@ -100,14 +110,16 @@ export function InlineError({ message, onRetry }: { message: string; onRetry: ()
       className="min-h-11 flex-row flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive p-3"
     >
       <Text className="flex-1 text-body text-destructive">{message}</Text>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Retry"
-        onPress={onRetry}
-        className="min-h-11 justify-center rounded-md bg-destructive px-4 active:opacity-80"
-      >
-        <Text className="text-body font-semibold text-destructive-foreground">Retry</Text>
-      </Pressable>
+      {onRetry ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Retry"
+          onPress={onRetry}
+          className="min-h-11 justify-center rounded-md bg-destructive px-4 active:opacity-80"
+        >
+          <Text className="text-body font-semibold text-destructive-foreground">Retry</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }

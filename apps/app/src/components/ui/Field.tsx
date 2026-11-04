@@ -1,0 +1,58 @@
+import { Text, TextInput, View } from "react-native";
+
+/**
+ * Labelled text input with the Settings/Login input shape (issue #50): the
+ * label sits above and doubles as the accessibility label, the box is a 44 px
+ * token-bordered field. `secure` masks the value (API keys) — the typed text
+ * is never rendered as a Text node anywhere, so the screen never echoes a
+ * secret back.
+ */
+export function Field({
+  label,
+  value,
+  onChangeText,
+  onSubmit,
+  secure = false,
+  placeholder,
+  keyboardType,
+  maxLength,
+  disabled = false,
+  testID,
+  onFocus,
+}: {
+  label: string;
+  value: string;
+  onChangeText: (text: string) => void;
+  onSubmit?: () => void;
+  /** Mask the entry (API keys and the like). */
+  secure?: boolean;
+  placeholder?: string;
+  keyboardType?: "default" | "number-pad" | "url" | "email-address";
+  maxLength?: number;
+  disabled?: boolean;
+  testID?: string;
+  onFocus?: () => void;
+}) {
+  return (
+    <View className="gap-1.5">
+      <Text className="text-small text-muted-foreground">{label}</Text>
+      <TextInput
+        accessibilityLabel={label}
+        testID={testID}
+        className="min-h-11 rounded-lg border border-input bg-background px-3 text-body text-foreground"
+        value={value}
+        onChangeText={onChangeText}
+        onSubmitEditing={onSubmit}
+        onFocus={onFocus}
+        secureTextEntry={secure}
+        placeholder={placeholder}
+        keyboardType={keyboardType}
+        maxLength={maxLength}
+        editable={!disabled}
+        autoCapitalize="none"
+        autoCorrect={false}
+        returnKeyType={onSubmit ? "done" : undefined}
+      />
+    </View>
+  );
+}
