@@ -84,11 +84,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
       # Builds both Dockerfile targets without pushing (publishing happens in publish.yml on main).
-      # The server target includes the web app, so this also proves the web build works in the image.
-      - name: Build server image (API + web app)
+      # TEMPORARY (#75 -> #82): the server target's web stage is a placeholder page until apps/web
+      # replaces it, so this only checks that the placeholder is in the image.
+      - name: Build server image (API + placeholder web page)
         run: docker build --target server -f apps/server/Dockerfile -t vjt-server:ci .
       - name: Build import image
         run: docker build --target import -f apps/server/Dockerfile -t vjt-import:ci .
-      - name: Server image serves the web app
+      - name: Server image serves the web page
         run: |
-          docker run --rm --entrypoint sh vjt-server:ci -c 'test -f /usr/share/vjt/web/index.html && ls /usr/share/vjt/web/_expo/static/js/web/index-*.js'
+          docker run --rm --entrypoint sh vjt-server:ci -c 'test -f /usr/share/vjt/web/index.html'
