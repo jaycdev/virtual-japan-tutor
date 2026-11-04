@@ -1,23 +1,22 @@
 # UI design plan
 
-How the app should look and feel on Android and web, and the order we build it in. Terms follow [GLOSSARY.md](../../GLOSSARY.md). The technical decisions behind it are [ADR-0007](../adr/0007-one-expo-app-for-web-and-android.md) (one Expo app), [ADR-0008](../adr/0008-uniwind-and-react-native-reusables.md) (Uniwind + React Native Reusables) and [ADR-0009](../adr/0009-bundled-japanese-fonts.md) (bundled fonts).
+How the web app and the Android app should look and feel, and the order we build them in. Terms follow [GLOSSARY.md](../../GLOSSARY.md). The technical decisions behind it are [ADR-0010](../adr/0010-separate-web-and-mobile-apps.md) (separate web and mobile apps sharing logic and tokens, superseding ADR-0007), [ADR-0008](../adr/0008-uniwind-and-react-native-reusables.md) (Uniwind + React Native Reusables on mobile) and [ADR-0009](../adr/0009-bundled-japanese-fonts.md) (bundled fonts).
 
 ## 1. Principles
 
 1. **Stories come first.** Reading is the core activity. The interface stays quiet so the reader's furigana and marks can carry meaning.
 2. **Calm and paper-like.** Warm paper, ink-dark text, lots of space and one restrained accent colour. No gamification, confetti or decorative "Japanese" ornament.
 3. **Colour means something.** Indigo means "you can act on this". Vermilion means "this is in your Focus Set" and is used for nothing else.
-4. **One app, two widths.** The same screens on Android and web, laid out for narrow (phone) and wide (desktop) screens, never forked per platform.
+4. **One design, two apps.** The web app and the mobile app share the same destinations, tokens and visual language, and each is built for its platform: the web app for a desktop browser with mouse and keyboard (still usable at phone widths), the mobile app for a phone held in one hand. Where a screen differs per app, this plan says so, so the two differ on purpose rather than by drift.
 5. **Accessible by default.** Text contrast meets WCAG AA in light and dark, touch targets are at least 44 px, every icon-only control has an accessible label, the app respects the system font scale and reduce-motion setting.
 
 ## 2. Foundations
 
 ### 2.1 Stack
 
-- Expo Router app in `apps/app` (renamed from `apps/mobile`), building Android and web (`expo export -p web`).
-- Uniwind for styling, React Native Reusables (RNR) and RN Primitives for components, lucide-react-native for icons.
-- react-native-reanimated only as far as RNR needs it.
-- All design values live in `apps/app/global.css`. No hex values in components.
+- **Web (`apps/web`):** Vite + React single-page app, React Router, Tailwind CSS 4, shadcn/ui on Radix, lucide-react for icons. Built with `vite build` into the static files the Go server serves from `WEB_DIR`.
+- **Mobile (`apps/mobile`):** Expo Router app, Android, phone-only. Uniwind for styling, React Native Reusables (RNR) and RN Primitives for components, lucide-react-native for icons, react-native-reanimated only as far as RNR needs it.
+- **Shared:** `@vjt/core` (screen logic hooks), `@vjt/api-client` and `@vjt/design`. All design values live in `packages/design`, which generates the theme CSS for both apps. No hex values in either app.
 
 ### 2.2 Colour
 
@@ -59,13 +58,13 @@ JLPT badges use `secondary` with `foreground` text, the same for every level. A 
 ### 2.3 Theme switching
 
 - Light, Dark or System, chosen in Settings › Appearance and saved **per device** (local storage on web, secure-store on Android). The default is System.
-- The saved choice is applied before the first screen draws, so the wrong theme never flashes on screen.
+- The saved choice is applied before the first screen draws, so the wrong theme never flashes on screen. On web an inline script in `index.html` sets the `dark` class before the bundle loads.
 
 ### 2.4 Type
 
 - **Interface:** Noto Sans JP (Regular, Medium, Bold).
 - **Story text and Practice prompts:** Noto Serif JP (Regular, Bold).
-- Fonts are bundled and loaded with `expo-font` on Android and from our own server on web. On web they are subsetted or lazy-loaded so only the reader pays for the serif. Add the OFL licence to `THIRD_PARTY_NOTICES.md`.
+- Fonts are bundled: TTFs loaded with `expo-font` in `apps/mobile`, and unicode-range woff2 slices served by our own server from `apps/web`, so only pages that render kanji or serif text download those slices. The OFL licence is in `THIRD_PARTY_NOTICES.md`.
 
 Interface scale (rem, 1 rem = 16 px):
 
@@ -107,10 +106,9 @@ The line height leaves room for stacked furigana without lines colliding. The Re
 
 ## 3. Layout and navigation
 
-- Destinations: **Today**, **Stories**, **Practice**, **Grammar** and **Settings**, with real URLs on web (`/`, `/stories`, `/stories/:id`, `/practice`, `/grammar`, `/grammar/:id`, `/settings/:section`).
-- **Narrow screens (under 1024 px):** bottom tab bar with five icons and labels. The Story reader hides the tab bar for full-screen reading.
-- **Wide screens (1024 px and up):** a left sidebar (about 240 px) with the wordmark, the destinations and, at the bottom, the signed-in Learner and Log out. Page content has a maximum width (about 960 px); the reader column is narrower (see 4.1).
-- Android hardware Back follows the Expo Router stack.
+- Destinations in both apps: **Today**, **Stories**, **Practice**, **Grammar** and **Settings**.
+- **Web:** real URLs (`/`, `/stories`, `/stories/:id`, `/practice`, `/grammar`, `/grammar/:id`, `/settings/:section`, `/setup`, `/login`). From 1024 px, a left sidebar (about 240 px) with the wordmark, the destinations and, at the bottom, the signed-in Learner and Log out. Below 1024 px the sidebar collapses to a top bar with the wordmark and a menu button that opens it as a sheet. Page content has a maximum width (about 960 px); the reader column is narrower (see 4.1). Every destination and the reader can be used fully with the keyboard.
+- **Mobile:** a bottom tab bar with five icons and labels. The Story reader hides the tab bar for full-screen reading. Android hardware Back follows the Expo Router stack. Layouts are single-column; there is no wide layout.
 
 ## 4. Screens
 
@@ -120,21 +118,23 @@ Built in this order. Each one counts as done only when it passes section 6.
 
 - **Text column** about 40 Japanese characters wide, centred, in the serif font at the chosen Story text size. The Story Title (`display`) sits above with its English translation hidden until revealed.
 - **Reading Panel** fixed above the text and the same width as the column, on `card` with a bottom border. It shows the Sentence Translation of the selected sentence (blurred until unblurred) and the current Lookup: the word, its reading, meaning, JLPT badge and pitch graph, or for a Grammar Span its Grammar Point and what it does. Its height is fixed so the text never jumps.
-- **Marks** that look the same on Android and web:
+- **Marks**, with the same colours and meaning in both apps:
   - Known word: no mark.
-  - Word with a Dictionary Entry that isn't a Known Item: a 1 px dotted underline in `lookup-mark`, drawn as its own element rather than a text underline.
+  - Word with a Dictionary Entry that isn't a Known Item: a 1 px dotted underline in `lookup-mark`. Web uses CSS `text-decoration` (dotted, offset clear of the next line's furigana); mobile draws it as its own element.
   - Grammar Span: `grammar` highlighter background with slightly rounded ends.
   - Focus Set item: its usual mark in `focus` (underline) or `grammar-focus` (highlight), slightly stronger.
-  - Furigana: stacked above the word in `furigana`, shown according to the Furigana Threshold.
+  - Furigana: stacked above the word in `furigana`, shown according to the Furigana Threshold. Web uses `<ruby>` / `<rt>`, so copied text and screen readers get the base text; mobile uses the token-column layout.
   - Selected sentence: `selected-sentence` background.
-- **Lookup:** hover on web, press and hold on Android. The word's context menu (Dictionary Entry, Save to Item List) uses RNR Popover or Dropdown Menu next to the word.
-- **Dictionary Entry, grammar details and Save to Item List** open as bottom sheets below the overlay breakpoint (640 px viewport) and centred dialogs at or above it. That breakpoint is the overlay rule's own — deliberately separate from the chrome's sidebar breakpoint (1024 px, section 3): at 700 px the chrome is still a tab bar but the overlays are centred dialogs, and below 640 px sheets pin the actions to the thumb.
-- **Pitch graph** is SVG wrapped with `withUniwind`, so it uses `pitch` in both themes.
+- **Lookup:** on web, hovering over a word (or focusing it with the keyboard) shows the Lookup, and a click opens the word's context menu (Dictionary Entry, Save to Item List) as a shadcn Popover next to the word. Text stays selectable. The left and right arrow keys move the selected sentence, Enter reveals its translation, and Escape closes any overlay. On mobile, press and hold shows the Lookup and opens the RNR context menu.
+- **Dictionary Entry, grammar details and Save to Item List:** on web, centred shadcn Dialogs (a bottom Sheet below a 640 px viewport, so a phone browser still gets thumb-reach actions); on mobile, always bottom sheets with the actions pinned to the thumb.
+- **Pitch graph** is inline SVG drawn with `currentColor` in `pitch` on web, and SVG wrapped with `withUniwind` on mobile, so it follows the theme in both.
 - **Footer:** Mark as Read (and undo), Practice this Story, and next or previous Story, with icons.
 
 ### 4.2 App shell
 
-Tab bar and sidebar, Login (wordmark, username, password, and server address on Android), the theme provider and saved theme, fonts, and the shared state components from section 5.
+- **Web:** sidebar and collapsed top bar, Login (wordmark, username, password; the API is on the same origin), and a route guard that sends signed-out visitors to `/login` and then back to the page they asked for.
+- **Mobile:** tab bar, and Login with the server address.
+- **Both:** the theme provider and saved theme, fonts, and the shared state components from section 5.
 
 ### 4.3 Practice
 
@@ -153,12 +153,12 @@ Top to bottom:
 4. The Focus Set at a glance: up to about 8 items as chips in `focus`, with "See all".
 5. Last Sync line (time and result) with Sync now.
 
-On wide screens, 2 and 3 sit side by side.
+On web at 1024 px and up, 2 and 3 sit side by side.
 
 ### 4.5 Stories (Story Library)
 
 - Today's Story pinned at the top, with Generate (On-demand Story with optional Genre and Theme) next to it.
-- The library as a list on narrow screens and a grid of cards on wide screens. Each card shows the Story Title, its English translation hidden until revealed, Genre, Story Origin, date and a Read check, with mark-Read and delete in a menu.
+- The library as a grid of cards on web (with a list view toggle) and a list on mobile. Each card shows the Story Title, its English translation hidden until revealed, Genre, Story Origin, date and a Read check, with mark-Read and delete in a menu.
 - Filters: Unread or All, and Genre.
 
 ### 4.6 Grammar
@@ -167,7 +167,7 @@ Grammar Catalogue grouped by JLPT Level, with search. Each Grammar Point shows i
 
 ### 4.7 Settings and first-run setup
 
-- **Hub and sections**, with two panes on wide screens (section list on the left, the open section on the right). Sections are Appearance (theme, Story text size), Reading, Stories, Item Lists, Starting Level, MaruMori, AI Providers and Server (address on Android, health check).
+- **Hub and sections**: on web, two panes (the section list on the left, the open section on the right, each at `/settings/:section`); on mobile, a hub list that pushes each section as its own screen. Sections are Appearance (theme, Story text size), Reading, Stories, Item Lists, Starting Level, MaruMori, AI Providers and Server (address on Android, health check).
 - **First-run setup** after the first login, skippable, in three steps: Starting Level, then MaruMori key and Sync, then AI Provider. Afterwards these settings live only in Settings.
 
 ## 5. Shared states
@@ -179,17 +179,24 @@ Grammar Catalogue grouped by JLPT Level, with search. Each Grammar Point shows i
 
 ## 6. Definition of done for a screen
 
-- The existing Vitest tests for it are moved over and pass (react-native-web, as mobile's tests do today).
-- Screenshot checks in light and dark, at narrow and wide widths, on Android and web.
-- Contrast passes AA, every control can be reached with the keyboard on web, and icon-only controls have labels.
-- No hardcoded colours, font sizes or fonts.
+- **Web:** Vitest + Testing Library on jsdom cover the screen's behaviour. Screenshot checks in light and dark at 1280 px and 390 px widths. Every control can be reached and used with the keyboard.
+- **Mobile:** the Vitest tests (on react-native-web) cover the screen's behaviour. Screenshot checks in light and dark on an Android phone.
+- **Both:** contrast passes AA, icon-only controls have labels, and there are no hardcoded colours, font sizes or fonts.
 
 ## 7. Order of work
 
-1. **Trial build (about a day).** In a branch, confirm that Uniwind and RNR work with Expo SDK 58 and RN 0.88 on Android and in a web export, that the Noto JP fonts load, that switching between light, dark and system works with no flash, that an SVG follows the theme, and that a deep link reloads correctly when the Go server serves the export with an `index.html` fallback. If any of these fails, stop and rethink before porting.
-2. **Rename and foundations.** `apps/mobile` → `apps/app`, add `global.css` with the palette and scales, fonts, icon and wordmark, and replace `theme.ts` and `ui.tsx` with RNR components.
-3. **App shell** (4.2).
-4. **Story Reader** (4.1).
-5. **Practice** (4.3).
-6. **Today, Stories, Grammar, Settings and setup** (4.4–4.7).
-7. **Switch over.** Once the Expo web build matches `apps/web` for Login, Today, Stories, Practice, Grammar and Settings, change the Dockerfile's web build to `expo export -p web`, add the `index.html` fallback to the server, update the README, and delete `apps/web`.
+### 7.1 Done: the single-app rollout (#41)
+
+The trial build, design foundations, app shell and every screen in section 4 were built once in the Expo app (`apps/app`) for both platforms, and `apps/web` was deleted. ADR-0010 reverses the single-app decision. Those screens remain the reference for the mobile app and for the look of the web app.
+
+### 7.2 The split (ADR-0010)
+
+1. **Design tokens package.** `packages/design` holds the palette, type scale, Story text sizes, radii and font names, and generates `web.css` (Tailwind 4, `.dark` class) and `native.css` (Uniwind `@variant light` / `dark`). A test fails if the generated files are stale. The Expo app's `global.css` imports `native.css`.
+2. **Mobile becomes phone-only.** Rename `apps/app` to `apps/mobile`. Remove the web export, the Sidebar, wide layouts, the dialog-on-wide overlays, two-pane Settings, web fonts and the react-native-web font override. Its Vitest tests keep running on react-native-web.
+3. **Web foundations and shell.** New `apps/web`: Vite, React Router, Tailwind 4 with `@vjt/design/web.css`, shadcn/ui, lucide-react, fonts and theme with no flash, Sidebar and collapsed top bar, Login, route guard, and the shared states (4.2, 5).
+4. **Web Story Reader** (4.1), with `<ruby>` furigana, CSS marks, hover and keyboard Lookup.
+5. **Web Practice** (4.3).
+6. **Web Today and Stories** (4.4, 4.5).
+7. **Web Grammar** (4.6).
+8. **Web Settings and first-run setup** (4.7).
+9. **Switch over.** The Dockerfile builds `apps/web` with `vite build`, CI and the README point at the two apps, and the server keeps its `index.html` fallback.
