@@ -258,7 +258,14 @@ function ActivePractice({
       optionRefs.current[0]?.focus();
       return;
     }
-    const frame = requestAnimationFrame(() => continueRef.current?.focus());
+    const frame = requestAnimationFrame(() => {
+      // Only if focus is still where the answer left it. If the Learner has
+      // moved on (a link, the nav sheet), the frame must not pull focus back.
+      const active = document.activeElement;
+      if (active === null || active === document.body || optionRefs.current.includes(active as HTMLButtonElement)) {
+        continueRef.current?.focus();
+      }
+    });
     return () => cancelAnimationFrame(frame);
   }, [current.id, settled]);
 
