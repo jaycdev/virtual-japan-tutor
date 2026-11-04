@@ -2,18 +2,18 @@ import type { ApiClient, DictionaryEntry } from "@vjt/api-client";
 import { useRef, useState } from "react";
 
 /**
- * Cached on-demand dictionary lookups powering the Lookup row (copied from the
- * web reader, issue #11, so both readers behave identically). Pressing a word
- * fetches its entry (keyed by entSeq + the tapped form so the echoed headword
- * and the reading's pitch are right) and caches it; repeat presses and the
- * Dictionary window then need no new request.
+ * Cached on-demand dictionary lookups powering the Lookup row (moved out of the
+ * phone reader, issue #11, so the phone and the web reader behave identically).
+ * Pressing a word fetches its entry (keyed by entSeq + the tapped form so the
+ * echoed headword and the reading's pitch are right) and caches it; repeat
+ * presses and the Dictionary window then need no new request.
  *
- * A FAILED lookup is remembered (as a null entry) only for the current press:
+ * A FAILED lookup is remembered (as a null entry) only until the next press:
  * `failed` lets the Lookup Menu dim its Dictionary row, while `load` retries
  * the request on the next press — a transient failure must not silence the
- * word forever. This deliberately differs from the web reader, which caches a
- * failure for the whole session (issue #14 review, major 3). `invalidate`
- * forgets a key outright.
+ * word forever. (The reader itself keeps hover cheap: StoryReader skips the
+ * prime for a failed word instead of refetching it on every pass of the mouse,
+ * issue #77 review.) `invalidate` forgets a key outright.
  */
 
 export interface EntryLookup {
