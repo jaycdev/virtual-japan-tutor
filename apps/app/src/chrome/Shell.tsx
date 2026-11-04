@@ -22,6 +22,14 @@ export const OVERLAY_BREAKPOINT = 640;
 export const CONTENT_MAX_WIDTH = 960;
 
 /**
+ * Widest a run of body prose grows on its own — the reading measure for
+ * explanation text and example sentences (~65 characters at body size). The
+ * content column may be 960 px, but a 95-character line is hard to track back
+ * on (#49 review N2).
+ */
+export const PROSE_MAX_WIDTH = 560;
+
+/**
  * The app chrome around every route (issue #44): a bottom tab bar on narrow
  * screens (<1024 px), hidden while a Story/Grammar reader route is open, and a
  * left sidebar (wordmark, destinations, signed-in Learner, Log out) on wide

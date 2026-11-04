@@ -136,6 +136,8 @@ function stubApi(): ReturnType<typeof vi.fn> {
     // below, whose shape is not a valid payload for either.
     if (path === "/focus-set")
       return jsonResponse(200, { size: 0, items: [] });
+    if (path === "/grammar/points")
+      return jsonResponse(200, { items: [], total: 0, limit: 50, offset: 0 });
     if (path === "/marumori")
       return jsonResponse(200, { connected: false, lastSync: null, lastFailure: null, counts: null });
     return jsonResponse(200, { items: [], nextCursor: null, total: 0, updatedMs: 0 });
@@ -323,7 +325,10 @@ it("a grammar deep link renders the grammar screen inside the chrome", async () 
   stubApi();
   renderApp("/grammar");
   await signedIn();
-  await screen.findByText("Your known and learning grammar points will appear here.");
+  // The real catalogue screen (#49), not the old placeholder: its search box
+  // and its empty-catalogue note (the stub serves no points).
+  await screen.findByLabelText("Search grammar");
+  await screen.findByText("No grammar points yet — a MaruMori sync fills this catalogue.");
 });
 
 it("wide viewport swaps the tab bar for the sidebar with the learner and Log out", async () => {

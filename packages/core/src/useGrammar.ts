@@ -54,11 +54,17 @@ function failure(error: { message?: string } | undefined, status: number): { ok:
 /**
  * State and actions behind the grammar catalogue screen, shared by web and mobile.
  * `client` must be a stable reference and must already authenticate (see `useAuth`).
+ * `initial` starts the browse where the screen left it — the screen keeps the
+ * Learner's search term and page across list→detail→back (#49 review S3), and
+ * this is how they ride into the first read instead of refetching page one.
  */
-export function useGrammar(client: ApiClient): Grammar {
+export function useGrammar(
+  client: ApiClient,
+  initial?: { query?: string; offset?: number },
+): Grammar {
   const [level, setLevelState] = useState<GrammarLevelFilter>("all");
-  const [query, setQueryState] = useState("");
-  const [offset, setOffsetState] = useState(0);
+  const [query, setQueryState] = useState(initial?.query ?? "");
+  const [offset, setOffsetState] = useState(Math.max(0, initial?.offset ?? 0));
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<GrammarListState>({ status: "loading" });
   const [detail, setDetail] = useState<GrammarDetailState>({ status: "idle" });

@@ -1,17 +1,21 @@
-import { Text, View } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 
-// Grammar point detail (#44 route placeholder, built out in #50). It exists now
-// so the route tree, the chrome (reader routes hide the tab bar) and deep links
-// are all in place before #50 fills in the content.
+import { GrammarPoint } from "../../src/GrammarPoint.tsx";
+import { useSession } from "../../src/session.tsx";
+
+// Grammar point detail (#49): /grammar/:id. The id is parsed here so a route
+// that is not a catalogue id reaches the screen as `undefined` and is named
+// as such, rather than firing a doomed request.
 export default function GrammarPointRoute() {
+  const router = useRouter();
+  const { client } = useSession();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const pointId = Number(id);
   return (
-    <View className="flex-1 gap-4 bg-background p-4">
-      <Text className="text-title font-semibold text-foreground">Grammar</Text>
-      <Text className="text-body text-muted-foreground">
-        The detail for grammar point {id} will appear here.
-      </Text>
-    </View>
+    <GrammarPoint
+      client={client}
+      pointId={Number.isInteger(pointId) && pointId > 0 ? pointId : undefined}
+      onBack={() => router.back()}
+    />
   );
 }
