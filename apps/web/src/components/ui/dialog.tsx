@@ -8,7 +8,10 @@ import { cn } from "@/lib/utils"
 // it and focus returns to the trigger. Colours are the @vjt/design tokens (the
 // backdrop token for the overlay, the popover surface for the panel), and the
 // open/close motion is left out (ui-plan 2.7; no animation package is installed),
-// as in sheet.tsx.
+// as in sheet.tsx. The close button is the stock small icon button (a size-4
+// glyph, top-4 right-4): this repo has no touch-target lint rule for web, and
+// Radix closes the dialog on Escape and on the overlay besides the button —
+// an equivalent control, so WCAG 2.5.8's exception applies.
 
 function Dialog({ ...props }: React.ComponentProps<typeof DialogPrimitive.Root>) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />
@@ -59,7 +62,7 @@ function DialogContent({
         {showCloseButton && (
           <DialogPrimitive.Close
             data-slot="dialog-close"
-            className="absolute top-3 right-3 inline-flex size-11 items-center justify-center rounded-md text-muted-foreground opacity-80 transition-opacity hover:bg-accent hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-5"
+            className="absolute top-4 right-4 rounded-xs text-muted-foreground opacity-70 transition-opacity hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
           >
             <XIcon />
             <span className="sr-only">Close</span>
