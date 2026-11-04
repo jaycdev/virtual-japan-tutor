@@ -1,14 +1,12 @@
 {
-  "name": "@vjt/app",
+  "name": "@vjt/mobile",
   "version": "0.0.0",
   "private": true,
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
-    "dev": "expo start --web",
     "android": "expo start --android",
     "build": "expo export --platform android --output-dir dist",
-    "build:web": "expo export --platform web --output-dir dist-web",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run"

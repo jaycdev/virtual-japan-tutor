@@ -1,7 +1,6 @@
 # Noto JP fonts
 
-Static Noto JP family files bundled with the app, plus the generated web
-slices. Face ids are hyphen-free (`NotoSansJP400`, not `NotoSansJP-400`) on
+Static Noto JP family files bundled with the app. Face ids are hyphen-free (`NotoSansJP400`, not `NotoSansJP-400`) on
 purpose: expo-font registers Android fonts by file basename, and uniwind's
 native CSS pipeline mis-parses hyphenated `font-family` values. The TTFs,
 the woff2 slices, the `@font-face` blocks and the `--font-*` tokens in
@@ -14,12 +13,12 @@ the woff2 slices, the `@font-face` blocks and the `--font-*` tokens in
 
 These are the FULL static family files (~14,500 glyphs each) from the
 google/fonts repo. Android bundles them via `expo-font`
-(`src/fonts.native.ts`); Android has no `unicode-range` loading, so they
+(`src/fonts.ts`); Android has no `unicode-range` loading, so they
 stay full for now (device-side subsetting is tracked after #43).
 
-Web never ships these TTFs: `scripts/subset-fonts.mjs` slices each face
-into two `unicode-range`-tagged woff2 files (latin-kana + kanji) under
-`apps/app/public/fonts/`, per ADR-0009. Regenerate with:
+The web app never ships these TTFs. `scripts/subset-fonts.mjs` slices each
+face into two `unicode-range`-tagged woff2 files (latin-kana + kanji) for the
+web app (`apps/web/public/fonts/`, #76), per ADR-0009. Regenerate with:
 
     node scripts/subset-fonts.mjs   # needs `uv`/`uvx` on PATH for fontTools
 

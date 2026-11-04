@@ -7,14 +7,8 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "platforms": [
-      "android",
-      "web"
+      "android"
     ],
-    "web": {
-      "bundler": "metro",
-      "favicon": "./assets/favicon.png",
-      "themeColor": "#FAF7F0"
-    },
     "android": {
       "package": "com.jaycdev.virtualjapantutor",
       "adaptiveIcon": {

@@ -3,8 +3,8 @@
 //
 // Design (plan table): 読 drawn from bundled Noto JP Bold, indigo #2F4B7C on
 // warm paper #FAF7F0; dark variant #8FA8D8 on #15161A. The SVGs in
-// apps/app/assets/brand are the design source of record; the glyph *paths*
-// are extracted from apps/app/assets/fonts/NotoSansJP700.ttf at generation
+// apps/mobile/assets/brand are the design source of record; the glyph *paths*
+// are extracted from apps/mobile/assets/fonts/NotoSansJP700.ttf at generation
 // time (no installed fonts, no rasteriser required - the TTF's own contours
 // are emitted as SVG paths by the small sfnt reader below).
 //
@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(here, "..");
-const app = path.join(root, "apps/app");
+const app = path.join(root, "apps/mobile");
 
 // ---------- minimal sfnt reader: cmap -> glyf outline -> SVG path ----------
 class TrueType {
@@ -350,7 +350,7 @@ writeFileSync(
   '<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><rect width="512" height="512" fill="#FAF7F0"/></svg>\n'
 );
 
-console.log("SVG sources written to apps/app/assets/brand/.");
+console.log("SVG sources written to apps/mobile/assets/brand/.");
 
 // ---------- rasterise (requires @resvg/resvg-wasm: root devDependency) ----------
 {

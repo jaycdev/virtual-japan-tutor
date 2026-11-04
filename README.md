@@ -76,7 +76,7 @@ account from step 1. The web app is built into the server image and served by th
 nothing else to deploy and no CORS or proxy setup. `http://localhost:8080/health` is the API health check.
 
 **Android**: there is no prebuilt APK yet. Build and install it from source
-(`pnpm --filter @vjt/app android` with a device or emulator attached; see [Development](#development)).
+(`pnpm --filter @vjt/mobile android` with a device or emulator attached; see [Development](#development)).
 The app asks for your server address on first launch and can change it in Settings. Release builds block plain
 `http://` addresses, so put the server behind HTTPS if you use the app away from a debug build.
 ### 5. Set up your account
@@ -100,7 +100,7 @@ add or confirm an AI Provider, and choose your starting level. To add accounts l
 | --------------------- | ----------------------------------------------------------------------- |
 | `api/openapi.yaml`    | OpenAPI spec: the single source of truth for the HTTP API               |
 | `apps/server`         | Go server (std `net/http`, pgx, goose migrations)                       |
-| `apps/app`            | Expo + TypeScript (Android and web)                                     |
+| `apps/mobile`         | Expo + TypeScript (phone-only Android app)                              |
 | `packages/api-client` | `@vjt/api-client`: TS types + client generated from the spec            |
 | `packages/core`       | `@vjt/core`: UI-agnostic hooks/state used across the app's screens       |
 
@@ -263,23 +263,12 @@ cd apps/server
 DATABASE_URL=postgres://user:pass@host:5432/db go run ./cmd/server
 ```
 
-Web: the server serves the built web app from `WEB_DIR` (the image sets it; unset means API only), so export it
-from the Expo app and point the server at it, then open <http://localhost:8080>:
+Web: being rebuilt as `apps/web` (issue #76). Until issue #82 wires it into the server image, the image serves a
+placeholder page at `/` and the API is unchanged; see [#73](https://github.com/jaycdev/virtual-japan-tutor/issues/73).
+The phone app (`apps/mobile`) has no web build.
 
-```sh
-pnpm --filter "@vjt/app^..." build   # @vjt/api-client and @vjt/core are consumed from their dist/
-pnpm --filter @vjt/app run build:web # the web export lands in apps/app/dist-web (`build` uses dist/ for Android)
-cd apps/server && WEB_DIR=../app/dist-web DATABASE_URL=... SECRETS_KEY=... go run ./cmd/server
-```
-
-`pnpm --filter @vjt/app dev` (hot reload; `expo start --web`) serves the app from Metro on its own port, where
-the API is not running. Point the app at a running server with `EXPO_PUBLIC_API_URL` (e.g.
-`EXPO_PUBLIC_API_URL=http://localhost:8080 pnpm --filter @vjt/app dev`), but note the server sends no CORS
-headers, so a browser blocks those cross-origin calls. Use the export above until CORS is added. If Metro
-serves a stale bundle, start it with a cleared cache: `pnpm --filter @vjt/app exec expo start -c --web`.
-
-Android: `pnpm --filter @vjt/app android` (set `EXPO_PUBLIC_API_URL`; defaults to `http://10.0.2.2:8080`, the
-host as seen from the Android emulator).
+Android: `pnpm --filter @vjt/mobile android` (set `EXPO_PUBLIC_API_URL`; defaults to `http://10.0.2.2:8080`, the
+host as seen from the Android emulator). `pnpm --filter @vjt/mobile start` runs Metro for an already-installed app.
 
 Packages `@vjt/api-client` and `@vjt/core` are consumed from their built `dist/`, so run `pnpm build`
 (or the package's `build`) after changing them.

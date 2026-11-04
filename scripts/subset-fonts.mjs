@@ -8,15 +8,15 @@
 // The fontTools version is pinned (see the exec below) so slice bytes are
 // reproducible across machines/CI. Bump the pin deliberately and re-check the
 // committed slice sizes when it moves.
-// The Android TTFs in apps/app/assets/fonts/ stay full (expo-font bundles them;
+// The Android TTFs in apps/mobile/assets/fonts/ stay full (expo-font bundles them;
 // Android has no unicode-range loading). Commit the generated files: they are
-// static assets of the web export, rebuilt rarely and reviewed by diff size.
+// static assets of the web app, rebuilt rarely and reviewed by diff size.
 import { execFileSync } from "node:child_process";
 import { mkdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-const SRC_DIR = "apps/app/assets/fonts";
-const OUT_DIR = "apps/app/public/fonts";
+const SRC_DIR = "apps/mobile/assets/fonts";
+const OUT_DIR = "apps/web/public/fonts";
 
 // Hyphen-free face ids: uniwind's native CSS pipeline mis-parses hyphenated
 // font-family values (crashes the Text component), and expo-font registers
@@ -24,7 +24,7 @@ const OUT_DIR = "apps/app/public/fonts";
 // all use these exact ids.
 const FACES = ["NotoSansJP400", "NotoSansJP700", "NotoSerifJP400", "NotoSerifJP700"];
 
-// Must stay in sync with the @font-face unicode-range blocks in apps/app/global.css.
+// Must stay in sync with the @font-face unicode-range blocks in the web app (apps/web, #76).
 // One kanji slice per face: CJK glyphs share component glyphs across the whole
 // block, so splitting them further duplicates components and inflates the sum.
 const SLICES = {
