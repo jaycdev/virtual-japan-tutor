@@ -1,60 +1,10 @@
-/* The single design source for Android and web (plan 2.2-2.5): palette, type
-   scale, Story text sizes, fonts and shape. No hex colours outside this file -
-   the vjt/no-hardcoded-color lint rule enforces it. Palette transcribed from
-   docs/design/ui-plan.md section 2.2 exactly. */
+/* The design tokens (palette, type scale, Story text sizes, radii and font
+   names) live in packages/design, which generates native.css from one TS
+   source (ADR-0010). Do not add tokens here: the vjt/no-hardcoded-color lint
+   rule keeps hex values out of the app. */
 @import "tailwindcss";
 @import "uniwind";
-
-@theme {
-  /* Shape (plan 2.5): 10 px cards/sheets, 8 px buttons/fields. */
-  --radius: 10px;
-  --radius-lg: var(--radius);
-  --radius-md: 8px;
-  --radius-sm: calc(var(--radius) - 4px);
-
-  /* Fonts (plan 2.4). Family names are the bundled file base names, which is
-     what expo-font registers on Android; the @font-face blocks below register
-     the same names on web, so these tokens work identically on both. */
-  --font-sans: "NotoSansJP400";
-  --font-sans-bold: "NotoSansJP700";
-  --font-serif: "NotoSerifJP400";
-  --font-serif-bold: "NotoSerifJP700";
-
-  /* Interface type scale (plan 2.4), px (1 rem = 16 px). Pair these BEFORE a
-     colour class on Text: uniwind 1.13.1 silently drops a colour class that
-     precedes a custom text-size class in className on native (verified on
-     device; built-in sizes are unaffected). The --*-line-height values stay
-     above uniwind's <6 "multiple of fontSize" cutoff (node_modules/uniwind/
-     src/core/native/store.ts), like the story sizes below which are
-     deliberate multiples. */
-  --text-caption: 12px;
-  --text-caption--line-height: 16px;
-  --text-small: 14px;
-  --text-small--line-height: 20px;
-  --text-body: 16px;
-  --text-body--line-height: 24px;
-  --text-title-sm: 18px;
-  --text-title-sm--line-height: 26px;
-  --text-title: 22px;
-  --text-title--line-height: 30px;
-  --text-display: 28px;
-  --text-display--line-height: 36px;
-
-  /* Story text sizes (plan 2.4, the Story text size reading setting). The
-     line height leaves room for stacked furigana without lines colliding. */
-  --text-story-s: 18px;
-  --text-story-s--line-height: 2.0;
-  --text-story-m: 21px;
-  --text-story-m--line-height: 2.1;
-  --text-story-l: 24px;
-  --text-story-l--line-height: 2.2;
-  --text-story-xl: 28px;
-  --text-story-xl--line-height: 2.2;
-  --text-furigana-s: 9px;
-  --text-furigana-m: 10.5px;
-  --text-furigana-l: 12px;
-  --text-furigana-xl: 14px;
-}
+@import "@vjt/design/native.css";
 
 /* Web fonts (ADR-0009): unicode-range-sliced woff2 from our own server, so a
    login page never pays for the kanji slice it does not render (first paint:
@@ -112,7 +62,7 @@
    the @font-face slices above sit unused. Re-assert the default face, and
    promote the font utilities so a Text can still pick serif/bold. The
    fallback stack mirrors react-native-web's own default. Keep the family list
-   in sync with the @theme --font-* tokens. */
+   in sync with the --font-* tokens in packages/design. */
 * {
   font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, "Segoe UI",
     Roboto, Helvetica, Arial, sans-serif !important;
@@ -121,74 +71,3 @@
 .font-sans-bold { font-family: var(--font-sans-bold) !important; }
 .font-serif { font-family: var(--font-serif) !important; }
 .font-serif-bold { font-family: var(--font-serif-bold) !important; }
-
-@layer theme {
-  :root {
-    @variant light {
-      --color-background: #faf7f0;
-      --color-foreground: #1f1d1a;
-      --color-card: #fffdf8;
-      --color-card-foreground: #1f1d1a;
-      --color-popover: #fffdf8;
-      --color-popover-foreground: #1f1d1a;
-      --color-primary: #2f4b7c;
-      --color-primary-foreground: #faf7f0;
-      --color-secondary: #efeae0;
-      --color-secondary-foreground: #1f1d1a;
-      --color-muted: #efeae0;
-      --color-muted-foreground: #6b655c;
-      --color-accent: #e6ecf5;
-      --color-accent-foreground: #1f1d1a;
-      --color-destructive: #a3312a;
-      --color-destructive-foreground: #faf7f0;
-      --color-border: #e2dcd0;
-      --color-input: #e2dcd0;
-      --color-ring: #2f4b7c;
-
-      /* Reader and app colours (plan 2.2, second table) */
-      --color-focus: #b5452f;
-      --color-grammar: #f3e7b3;
-      --color-grammar-focus: #ebcf7a;
-      --color-lookup-mark: #8a8378;
-      --color-furigana: #6b655c;
-      --color-pitch: #2f4b7c;
-      --color-success: #3f6b45;
-      --color-selected-sentence: #e6ecf5;
-      /* Behind sheets and dialogs (plan 2.2): ink at 40%. */
-      --color-backdrop: rgba(31, 29, 26, 0.4);
-    }
-
-    @variant dark {
-      --color-background: #15161a;
-      --color-foreground: #e9e5db;
-      --color-card: #1d1e23;
-      --color-card-foreground: #e9e5db;
-      --color-popover: #1d1e23;
-      --color-popover-foreground: #e9e5db;
-      --color-primary: #8fa8d8;
-      --color-primary-foreground: #15161a;
-      --color-secondary: #26272d;
-      --color-secondary-foreground: #e9e5db;
-      --color-muted: #26272d;
-      --color-muted-foreground: #a39e94;
-      --color-accent: #2a3346;
-      --color-accent-foreground: #e9e5db;
-      --color-destructive: #e5736a;
-      --color-destructive-foreground: #15161a;
-      --color-border: #33343a;
-      --color-input: #33343a;
-      --color-ring: #8fa8d8;
-
-      --color-focus: #e07a5f;
-      --color-grammar: #3a3622;
-      --color-grammar-focus: #5a4e26;
-      --color-lookup-mark: #7e796f;
-      --color-furigana: #a39e94;
-      --color-pitch: #8fa8d8;
-      --color-success: #86b98c;
-      --color-selected-sentence: #232c3d;
-      /* Behind sheets and dialogs (plan 2.2): black at 60%. */
-      --color-backdrop: rgba(0, 0, 0, 0.6);
-    }
-  }
-}

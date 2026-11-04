@@ -48,28 +48,28 @@ describe("the Story text size scale", () => {
     expect(DEFAULT_STORY_TEXT_SIZE).toBe("M");
   });
 
-  it("keeps the JS sizes identical to the --text-story-* tokens in global.css", () => {
+  it("keeps the JS sizes identical to the --text-story-* tokens in packages/design", () => {
     // JS sizes the column, the panel and the furigana off these numbers; the
     // text itself comes from CSS. A drift between the two is a layout bug,
     // so the test that catches it lives here.
-    const css = readFileSync(path.join(__dirname, "../../global.css"), "utf8");
+    const css = readFileSync(path.join(__dirname, "../../../../packages/design/native.css"), "utf8");
     for (const size of STORY_TEXT_SIZES) {
       const match = css.match(new RegExp(`--text-story-${size.toLowerCase()}:\\s*(\\d+(?:\\.\\d+)?)px`));
-      expect(match, `--text-story-${size} missing from global.css`).not.toBeNull();
+      expect(match, `--text-story-${size} missing from packages/design/native.css`).not.toBeNull();
       expect(STORY_TEXT_SIZE_PX[size]).toBe(Number(match![1]));
     }
   });
 
-  it("keeps the JS line heights identical to the --text-story-*--line-height tokens in global.css", () => {
+  it("keeps the JS line heights identical to the --text-story-*--line-height tokens in packages/design", () => {
     // The reader paints every token and the panel's quoted sentence with its
     // own lineHeight, so the CSS line heights never reach those spans on
     // Android — JS must carry the same ratios.
-    const css = readFileSync(path.join(__dirname, "../../global.css"), "utf8");
+    const css = readFileSync(path.join(__dirname, "../../../../packages/design/native.css"), "utf8");
     for (const size of STORY_TEXT_SIZES) {
       const match = css.match(
         new RegExp(`--text-story-${size.toLowerCase()}--line-height:\\s*(\\d+(?:\\.\\d+)?)`),
       );
-      expect(match, `--text-story-${size}--line-height missing from global.css`).not.toBeNull();
+      expect(match, `--text-story-${size}--line-height missing from packages/design/native.css`).not.toBeNull();
       expect(STORY_TEXT_LINE_HEIGHT_RATIO[size]).toBe(Number(match![1]));
     }
   });
