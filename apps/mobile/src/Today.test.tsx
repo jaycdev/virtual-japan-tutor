@@ -1,8 +1,10 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Today, formatInstant, learnerClock } from './Today.tsx';
 import { createApiClient } from '@vjt/api-client';
+
+import { flushPressConfig } from '../test/press-config.ts';
 
 /**
  * Today (#47). The screen reads five endpoints and acts on three of them, so
@@ -577,6 +579,7 @@ describe('Today', () => {
       expect(screen.getByText('Last sync succeeded November 4, 10:02.')).toBeTruthy();
     });
 
+    await flushPressConfig();
     fireEvent.click(screen.getByRole('button', { name: 'Sync now' }));
 
     await waitFor(() => {
@@ -608,9 +611,7 @@ describe('Today', () => {
       expect(screen.getByText('Last sync succeeded November 4, 10:02.')).toBeTruthy();
     });
 
-    // Sync now was disabled until this status landed; react-native-web reads
-    // that flag in a passive effect, so let it flush before pressing.
-    await act(async () => {});
+    await flushPressConfig();
     fireEvent.click(screen.getByRole('button', { name: 'Sync now' }));
 
     await waitFor(() => {
