@@ -10,7 +10,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AccessibilityInfo,
-  findNodeHandle,
   Platform,
   ScrollView,
   Text,
@@ -60,17 +59,22 @@ export function SetupWizard({
   // so a screen reader lands on "Step 2 of 3" instead of the page top.
   const titleRef = useRef<ViewInstance | null>(null);
   useEffect(() => {
-    const node = titleRef.current as unknown as HTMLElement | null;
+    const node = titleRef.current;
     if (!node) return;
     try {
       if (Platform.OS === "web") {
-        if (node instanceof HTMLElement) {
-          node.tabIndex = -1; // headings are not focusable until asked to be
-          node.focus();
+        const el = node as unknown as HTMLElement;
+        if (el instanceof HTMLElement) {
+          el.tabIndex = -1; // headings are not focusable until asked to be
+          el.focus();
         }
       } else {
-        const handle = findNodeHandle(node as never);
-        if (handle != null) AccessibilityInfo.sendAccessibilityEvent(handle as never, "focus");
+        // RN 0.88 hands sendAccessibilityEvent the host instance itself —
+        // the ref of the native component — and the Fabric renderer maps it
+        // to the real view. (A findNodeHandle number belongs to the
+        // deprecated setAccessibilityFocus; the renderer refuses it with a
+        // console error, seen on device.)
+        AccessibilityInfo.sendAccessibilityEvent(node as never, "focus");
       }
     } catch {
       // Focus is an enhancement; a host without the hook must not break the step.
