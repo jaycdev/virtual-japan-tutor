@@ -43,6 +43,9 @@ function themeBootstrap(): Plugin {
   };
 }
 
+// CI sets GITHUB_WORKSPACE to the checkout root; locally the package directory stands in.
+const repoRoot = process.env.GITHUB_WORKSPACE ?? process.cwd();
+
 export default defineConfig({
   plugins: [react(), tailwindcss(), themeBootstrap()],
   resolve: {
@@ -79,8 +82,8 @@ export default defineConfig({
     reporters: process.env.CI
       ? [
           "default",
-          ["github-actions", { onWritePath: repoPath }],
-          retryReporter({ githubActions: process.env.GITHUB_ACTIONS === "true" }),
+          ["github-actions", { onWritePath: (file: string) => repoPath(repoRoot, file) }],
+          retryReporter({ root: repoRoot, githubActions: process.env.GITHUB_ACTIONS === "true" }),
         ]
       : ["default"],
   },

@@ -19,6 +19,9 @@ const rnPrimitivesJsx = {
 // Screens are tested through react-native-web: vitest has no React Native host, so
 // `react-native` is aliased to its DOM implementation and the components render in
 // jsdom for @testing-library/react. The app code itself never imports react-native-web.
+// CI sets GITHUB_WORKSPACE to the checkout root; locally the package directory stands in.
+const repoRoot = process.env.GITHUB_WORKSPACE ?? process.cwd();
+
 export default defineConfig({
   plugins: [rnPrimitivesJsx],
   resolve: {
@@ -67,8 +70,8 @@ export default defineConfig({
     reporters: process.env.CI
       ? [
           "default",
-          ["github-actions", { onWritePath: repoPath }],
-          retryReporter({ githubActions: process.env.GITHUB_ACTIONS === "true" }),
+          ["github-actions", { onWritePath: (file: string) => repoPath(repoRoot, file) }],
+          retryReporter({ root: repoRoot, githubActions: process.env.GITHUB_ACTIONS === "true" }),
         ]
       : ["default"],
     // Cold imports of the expo-router / react-native-web graph take several
