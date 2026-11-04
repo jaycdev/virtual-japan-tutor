@@ -230,6 +230,78 @@ describe("useStory", () => {
     expect(result.current.error).toBeNull();
   });
 
+  it("ignores an openStory reply that lands after a newer openStory (out of order)", async () => {
+    // Previous/Next hammered in the reader: B is asked for, then C. B's reply
+    // lands after C's. If it painted, the reader would show B while the URL
+    // says C; if it errored or cleared pending, the reader would stick on a
+    // skeleton while C is still in flight (issue #77 review).
+    const { client, fetchImpl, json, noStory } = fakeClient();
+    let resolveB: (res: Response) => void = () => {};
+    const bPending = new Promise<Response>((resolve) => {
+      resolveB = resolve;
+    });
+    fetchImpl
+      .mockImplementationOnce(async () => json(200, page([])))
+      .mockImplementationOnce(async () => noStory())
+      .mockImplementationOnce(async () => json(200, settingsBody()))
+      .mockImplementationOnce(() => bPending)
+      .mockImplementationOnce(async () => json(200, story({ id: "st-c" })));
+    const { result } = renderHook(() => useStory(client));
+    await waitFor(() => expect(result.current.library.status).toBe("ready"));
+
+    let bInFlight: Promise<void>;
+    act(() => {
+      bInFlight = result.current.openStory("st-b");
+    });
+    await act(async () => {
+      await result.current.openStory("st-c");
+    });
+    expect(result.current.story?.id).toBe("st-c");
+    expect(result.current.error).toBeNull();
+
+    // The stale B reply arrives late — including as a failure, which must not
+    // error the now-open C either.
+    resolveB(json(500, { message: "the server is busy" }));
+    await act(async () => {
+      await bInFlight;
+    });
+    expect(result.current.story?.id).toBe("st-c");
+    expect(result.current.error).toBeNull();
+    expect(result.current.pending).toBe(false);
+  });
+
+  it("ignores an openStory failure that lands after a newer openStory", async () => {
+    const { client, fetchImpl, json, noStory } = fakeClient();
+    let rejectB: (err: unknown) => void = () => {};
+    const bPending = new Promise<Response>((_resolve, reject) => {
+      rejectB = reject;
+    });
+    fetchImpl
+      .mockImplementationOnce(async () => json(200, page([])))
+      .mockImplementationOnce(async () => noStory())
+      .mockImplementationOnce(async () => json(200, settingsBody()))
+      .mockImplementationOnce(() => bPending)
+      .mockImplementationOnce(async () => json(200, story({ id: "st-c" })));
+    const { result } = renderHook(() => useStory(client));
+    await waitFor(() => expect(result.current.library.status).toBe("ready"));
+
+    let bInFlight: Promise<void>;
+    act(() => {
+      bInFlight = result.current.openStory("st-b");
+    });
+    await act(async () => {
+      await result.current.openStory("st-c");
+    });
+
+    rejectB(new TypeError("Failed to fetch"));
+    await act(async () => {
+      await bInFlight;
+    });
+    expect(result.current.story?.id).toBe("st-c");
+    expect(result.current.error).toBeNull();
+    expect(result.current.pending).toBe(false);
+  });
+
   it("rates a story and shows the rating on the story, the library and Today's Story", async () => {
     const { client, fetchImpl, json } = fakeClient();
     fetchImpl
