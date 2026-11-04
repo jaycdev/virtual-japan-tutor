@@ -38,7 +38,7 @@ export function SetupWizard({
   return (
     <ScrollView className="flex-1" contentContainerStyle={{ padding: 16 }}>
       <Card>
-        <Text className="text-title font-serif">Welcome to Virtual Japan Tutor</Text>
+        <Text className="text-title font-serif text-foreground">Welcome to Virtual Japan Tutor</Text>
         <Text className="text-body text-muted-foreground">
           Three short steps to set you up — you can skip any of them and change
           everything later under Settings.
@@ -49,7 +49,7 @@ export function SetupWizard({
             label={`Step ${step + 1} of ${STEPS.length}: ${STEPS[step].title}`}
           />
         </View>
-        <Text className="text-title-sm font-semibold">{STEPS[step].title}</Text>
+        <Text className="text-title-sm font-semibold text-foreground">{STEPS[step].title}</Text>
         <Text className="text-small text-muted-foreground">{STEPS[step].body}</Text>
 
         {step === 0 ? <StartingLevelSettings client={client} /> : null}

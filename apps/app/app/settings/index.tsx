@@ -36,7 +36,7 @@ export default function SettingsIndexRoute() {
 
   return (
     <ScrollView className="flex-1" contentContainerStyle={{ padding: 16 }}>
-      <Text className="mb-4 text-title font-serif">Settings</Text>
+      <Text className="mb-4 text-title font-serif text-foreground">Settings</Text>
       <SettingsHome
         username={session.state.status === "signedIn" ? session.state.user.username : ""}
         onLogout={() => void session.logout()}

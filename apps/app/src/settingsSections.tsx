@@ -36,6 +36,10 @@ export function SectionBack({ label, onPress }: { label: string; onPress: () => 
 /** The section's name above its content. */
 export function SectionHeading({ children }: { children: ReactNode }) {
   return (
-    <Text className="mb-3 text-title-sm font-serif">{children}</Text>
+    // text-foreground is not decoration: without an explicit colour class the
+    // heading inherits react-native-web's default near-black, which disappears
+    // on the dark palette (#50 review B1). Colour class last — uniwind drops a
+    // colour class that precedes the custom text-size class on native.
+    <Text className="mb-3 text-title-sm font-serif text-foreground">{children}</Text>
   );
 }
