@@ -17,7 +17,7 @@ describe("/setup", () => {
   });
 
   it("sends a Learner who has already seen it back to Today", async () => {
-    window.localStorage.setItem(SETUP_SEEN_KEY, "1");
+    window.localStorage.setItem(SETUP_SEEN_KEY, "yes");
     const { router } = renderAppAt("/setup", { api: fakeSettingsApi(freshState()) });
     await waitFor(() => expect(currentLocation(router)).toBe("/"));
     expect(screen.queryByRole("heading", { name: "Set up" })).toBeNull();

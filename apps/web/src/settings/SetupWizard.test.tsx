@@ -30,6 +30,7 @@ describe("Setup wizard", () => {
   it("Next saves the pick, moves to MaruMori, and Finish leaves for Today", async () => {
     const { state, router } = renderSetup();
     await stepOne();
+    expect(await screen.findByText("Starting level: N4")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "N3" }));
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
 
@@ -48,9 +49,10 @@ describe("Setup wizard", () => {
   });
 
   it("a blocked save keeps the Learner on the step and says what they can do", async () => {
-    const state = renderSetup();
+    const { state } = renderSetup();
     state.failNext["PUT /starting-level"] = "The level is unknown.";
     await stepOne();
+    expect(await screen.findByText("Starting level: N4")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "N1" }));
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
 
@@ -62,8 +64,9 @@ describe("Setup wizard", () => {
   });
 
   it("Skip this step moves on without writing anything", async () => {
-    const state = renderSetup();
+    const { state } = renderSetup();
     await stepOne();
+    expect(await screen.findByText("Starting level: N4")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "N1" }));
     fireEvent.click(screen.getByRole("button", { name: "Skip this step" }));
 
@@ -72,7 +75,7 @@ describe("Setup wizard", () => {
   });
 
   it("the MaruMori step saves a typed key through Next", async () => {
-    const state = renderSetup();
+    const { state } = renderSetup();
     await stepOne();
     fireEvent.click(screen.getByRole("button", { name: "Skip this step" }));
     await screen.findByText("Not connected.");
