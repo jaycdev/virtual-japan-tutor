@@ -156,7 +156,8 @@ export function AiProvidersSettings({ client }: { client: ApiClient }) {
             )}
             {results[p.id] && (
               <Text
-                accessibilityRole="status"
+                role="status"
+                accessibilityLiveRegion="polite"
                 className={`px-4 pb-3 text-body ${results[p.id].ok ? "text-success" : "text-destructive"}`}
               >
                 {`${results[p.id].message} (${results[p.id].latencyMs} ms)`}

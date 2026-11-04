@@ -71,7 +71,7 @@ export function StartingLevelSettings({ client }: { client: ApiClient }) {
       </Card>
       <ActionButton label="Save level" onPress={() => void save()} filled disabled={busy} />
       {result && (
-        <Text accessibilityRole="status" className="text-body text-success">
+        <Text role="status" accessibilityLiveRegion="polite" className="text-body text-success">
           {result}
         </Text>
       )}

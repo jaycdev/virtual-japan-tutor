@@ -104,12 +104,12 @@ function HealthLine({ client, onRecheck }: { client: ApiClient; onRecheck: () =>
   return (
     <View className="gap-3">
       {health.state === "ok" && (
-        <Text accessibilityRole="status" className="text-body text-success">
+        <Text role="status" accessibilityLiveRegion="polite" className="text-body text-success">
           The server is reachable and its database is connected.
         </Text>
       )}
       {health.state === "degraded" && (
-        <Text accessibilityRole="status" className="text-body text-destructive">
+        <Text role="status" accessibilityLiveRegion="polite" className="text-body text-destructive">
           The server answered, but {health.health.database === "unreachable" ? "cannot reach its database" : "reports a degraded part"}.
         </Text>
       )}

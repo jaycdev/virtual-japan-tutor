@@ -134,7 +134,7 @@ export function StorySettingsSection({ client }: { client: ApiClient }) {
       ) : null}
       <ActionButton label="Save story settings" onPress={() => void save()} filled disabled={busy} />
       {saved && (
-        <Text accessibilityRole="status" className="text-body text-success">
+        <Text role="status" accessibilityLiveRegion="polite" className="text-body text-success">
           Saved — the next story written for you uses this.
         </Text>
       )}

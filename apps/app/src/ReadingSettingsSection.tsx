@@ -90,7 +90,7 @@ export function ReadingSettingsSection({ client }: { client: ApiClient }) {
       />
       <ActionButton label="Save reading settings" onPress={() => void saveHold()} filled disabled={busy} />
       {saved && (
-        <Text accessibilityRole="status" className="text-body text-success">
+        <Text role="status" accessibilityLiveRegion="polite" className="text-body text-success">
           Saved — the reader uses this from the next lookup on.
         </Text>
       )}

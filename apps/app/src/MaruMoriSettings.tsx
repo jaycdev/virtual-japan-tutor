@@ -151,7 +151,8 @@ export function MaruMoriSettings({ client }: { client: ApiClient }) {
       )}
       {syncResult && (
         <Text
-          accessibilityRole="status"
+          role="status"
+          accessibilityLiveRegion="polite"
           className={`text-body ${syncResult.ok ? "text-success" : "text-destructive"}`}
         >
           {syncResult.text}

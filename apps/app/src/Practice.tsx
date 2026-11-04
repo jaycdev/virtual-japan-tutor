@@ -287,8 +287,8 @@ function ActivePractice({
         {feedback ? (
           <View
             // The verdict appears on its own: a polite live region announces
-            // it without interrupting, on both hosts (S5).
-            accessibilityRole="status"
+            // it without interrupting, on both hosts (S5). The role prop (not
+            // accessibilityRole="status", which RCTText rejects on Android).
             accessibilityLiveRegion="polite"
             role="status"
             aria-live="polite"

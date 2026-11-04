@@ -372,7 +372,7 @@ function ItemListDetail({
         disabled={busy || itemRef.trim() === ""}
       />
       {added && (
-        <Text accessibilityRole="status" className="text-body text-success">
+        <Text role="status" accessibilityLiveRegion="polite" className="text-body text-success">
           Added.
         </Text>
       )}
