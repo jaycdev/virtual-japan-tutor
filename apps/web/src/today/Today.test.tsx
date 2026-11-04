@@ -136,7 +136,7 @@ describe("Today page", () => {
     });
     renderToday(api);
     expect(await screen.findByText("2 Focus Set items waiting.")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Start practice" }).getAttribute("href")).toBe("/practice");
+    expect((await screen.findByRole("link", { name: "Start practice" })).getAttribute("href")).toBe("/practice");
   });
 
   it("says so when the Focus Set cannot be read, and retries it", async () => {

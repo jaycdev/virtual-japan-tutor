@@ -24,7 +24,7 @@ describe("Setup wizard", () => {
     await stepOne();
     expect(await screen.findByRole("progressbar", { name: "Step 1 of 3: Starting Level" })).toBeTruthy();
     expect(screen.getByRole("list", { name: "Setup steps" })).toBeTruthy();
-    expect(screen.getByText("Starting level: N4")).toBeTruthy();
+    expect(await screen.findByText("Starting level: N4")).toBeTruthy();
   });
 
   it("Next saves the pick, moves to MaruMori, and Finish leaves for Today", async () => {
