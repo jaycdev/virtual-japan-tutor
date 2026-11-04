@@ -107,12 +107,12 @@ export function optionAt(
   return null;
 }
 
-/** One visible Lookup Menu row, with the same enabled/label rules as the web menu. */
+/** One visible Lookup Menu row, with its enabled and label rules. */
 export interface MenuOption {
   id: MenuOptionId;
   label: string;
   enabled: boolean;
-  /** Why an option is dimmed or what it points at (the web `title`s). */
+  /** Why an option is dimmed or what it points at. */
   hint?: string;
 }
 

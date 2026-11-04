@@ -9,8 +9,8 @@ import { useCSSVariable } from "uniwind";
  * Colour comes from a colour class, like everywhere else:
  * `<Icon name="thumbs-up" size="sm" className="text-primary" />`.
  *
- * The colour class alone only paints on web, though: uniwind's transform styles
- * react-native-web components, but a bare lucide glyph on native ignores it, and
+ * The colour class alone is not enough on native: uniwind's transform styles
+ * do not reach a bare lucide glyph, and
  * every Icon rendered colourless on device (#46 review B2). So the component
  * also resolves the token the class names and hands the glyph its `color`
  * directly — the token-safe route the spike verified (TRIAL_RESULTS §4, via

@@ -9,15 +9,14 @@ import { Icon } from "./components/ui/icon.tsx";
 import { EmptyState, InlineError, SkeletonBar } from "./state/states.tsx";
 
 /**
- * Grammar Catalogue (issue #49), the Grammar tab on Android and web. Plan §4.6:
+ * Grammar Catalogue (issue #49), the Grammar tab. Plan §4.6:
  * the catalogue grouped by JLPT Level (easiest first), with search, and each
  * Grammar Point showing its pattern and whether it is Seeded, Observed or not
  * known. Tapping a row opens /grammar/:id through the router.
  *
  * Search rides the server's own filter (the `q` parameter useGrammar passes:
  * a case-insensitive match on pattern, romaji or meaning), debounced here so
- * typing does not fire one request per keystroke. Paging keeps the old web
- * catalogue's Previous/Next over a page of 50.
+ * typing does not fire one request per keystroke. Paging is Previous/Next over a page of 50.
  *
  * Styling is design-token classes only (plan §3): no palette colours, no
  * inline font sizes; text-size classes stay ahead of colour classes on Text
@@ -143,7 +142,7 @@ export function Grammar({
 /** The search box, with a clear button only while there is something to clear. */
 function SearchField({ term, onTermChange }: { term: string; onTermChange: (term: string) => void }) {
   // The placeholder needs the token resolved by hand, not just a class: the
-  // default renders dark-grey-on-dark on Android and near-white on web, where
+  // default renders dark-grey-on-dark on Android, where
   // it reads like entered text (#49 review B1). Same token-safe route as Icon
   // — useCSSVariable hands the colour to the prop both hosts honour: native
   // takes placeholderTextColor directly, react-native-web maps it onto the
@@ -322,8 +321,7 @@ function LevelGroupSkeleton() {
 }
 
 /**
- * Previous/Next over the page of 50 the hook asks for — the old web
- * catalogue's paging, same bounds and same "from–to of total" line.
+ * Previous/Next over the page of 50 the hook asks for — the same bounds and the same "from–to of total" line.
  */
 function Pager({
   offset,
@@ -386,6 +384,6 @@ function PagerButton({
 const styles = StyleSheet.create({
   // Same page metrics as Today, the other tab screen (issue #47).
   page: { flexGrow: 1, padding: 16, paddingTop: 24 },
-  // The Shell caps the column on wide screens; this keeps the reading measure.
+  // Full width of the phone column.
   column: { width: "100%", gap: 16 },
 });

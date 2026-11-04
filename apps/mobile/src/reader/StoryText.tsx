@@ -271,7 +271,7 @@ const styles = StyleSheet.create({
   },
   lookupUnderline: {
     // The lookup mark is its own element spanning the column, not a text
-    // decoration: View borders paint identically on web and Android.
+    // decoration: View borders paint reliably on Android.
     alignSelf: "stretch",
     borderBottomWidth: 1,
     borderStyle: "dotted",

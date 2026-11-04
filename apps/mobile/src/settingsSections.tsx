@@ -29,7 +29,7 @@ export type StepSaveFn = () => Promise<StepSaveOutcome>;
  */
 export type StepSaveRegistrar = (save: StepSaveFn | null) => void;
 
-/** Back affordance for the narrow section routes. */
+/** Back affordance for the section route. */
 export function SectionBack({ label, onPress }: { label: string; onPress: () => void }) {
   return (
     <Pressable
@@ -48,7 +48,7 @@ export function SectionBack({ label, onPress }: { label: string; onPress: () => 
 export function SectionHeading({ children }: { children: ReactNode }) {
   return (
     // text-foreground is not decoration: without an explicit colour class the
-    // heading inherits react-native-web's default near-black, which disappears
+    // heading inherits the test host's default near-black, which disappears
     // on the dark palette (#50 review B1). Colour class last — uniwind drops a
     // colour class that precedes the custom text-size class on native.
     // accessibilityRole="header" is the safe spelling of a heading on both

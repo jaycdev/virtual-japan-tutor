@@ -8,7 +8,7 @@ import { Icon } from "./components/ui/icon.tsx";
 import { EmptyState, InlineError, SkeletonBar } from "./state/states.tsx";
 
 /**
- * Grammar Point detail (issue #49), /grammar/:id on Android and web. Plan
+ * Grammar Point detail (issue #49), /grammar/:id on Android. Plan
  * §4.6: the point's pattern and meaning up top, then the explanation and the
  * example sentences in the serif face.
  *
@@ -19,7 +19,7 @@ import { EmptyState, InlineError, SkeletonBar } from "./state/states.tsx";
  * The screen reads its one point through useGrammarPoint (#49 review S4) —
  * no catalogue page rides along with a detail view.
  *
- * This is the viewing experience the plan describes. The old web detail's
+ * This is the viewing experience the plan describes. The detail's
  * editing controls (save/regenerate the explanation, generate examples) stay
  * available through useGrammar but are not on this screen — the plan's grammar
  * scope is catalogue and reading.
@@ -126,9 +126,9 @@ function ReadyBody({ point, onReloadExplanation }: { point: GrammarPointDetail; 
           <Text
             role="heading"
             accessibilityRole="header"
-            // font-serif-bold, not font-serif + font-semibold: global.css pins
-            // the 400 face under font-serif, so the old weight class only
-            // faked bold on web (#49 review S6). Same token face richLine uses.
+            // font-serif-bold, not font-serif + font-semibold: font-serif is
+            // the 400 face; the old weight class only
+            // faked bold (#49 review S6). Same token face richLine uses.
             className="text-title font-serif-bold font-semibold text-foreground"
           >
             {point.pattern}
@@ -190,7 +190,7 @@ function ReadyBody({ point, onReloadExplanation }: { point: GrammarPointDetail; 
 /**
  * The explanation, in the serif face the plan gives this page. The server's
  * text is light Markdown — paragraphs, **bold**, "- " bullets (generate.go's
- * prompt) — rendered as Text runs rather than raw markup; the old web page
+ * prompt) — rendered as Text runs rather than raw markup; the earlier page
  * showed it in an editable textarea, which no Learner should have to read.
  */
 export function ExplanationBody({ text }: { text: string }) {
@@ -247,7 +247,7 @@ function richLine(line: string): (string | ReactNode)[] {
 
 /**
  * One example: the sentence in serif with its Grammar Span underlined (the
- * rune offsets, as the old web page's <mark> did), and the translation under
+ * rune offsets, as the earlier page's <mark> did), and the translation under
  * it.
  */
 function ExampleRow({ example }: { example: GrammarExample }) {

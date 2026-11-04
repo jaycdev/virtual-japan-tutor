@@ -362,7 +362,7 @@ it("signed-out visitors see the login screen and no chrome", async () => {
   expect(screen.queryAllByRole("tab")).toHaveLength(0);
 });
 
-it("a narrow section route is one column — the menu lives in the hub, not the section", async () => {
+it("a section route is one column — the menu lives in the hub, not the section", async () => {
   stubApi();
   renderApp("/settings/reading"); // the hub list is not beside the section
   await signedIn();

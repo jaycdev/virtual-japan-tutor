@@ -112,7 +112,7 @@ export function StartingLevelSettings({
 
       {/* S5: the read-only "review these" list (issue #6) — dropped from the
           legacy mobile settings by the hub rebuild and restored here, in the
-          same section it sits under on web. Nothing to change: the list is
+          same section it sits under. Nothing to change: the list is
           the outcome of Catalogue Matching on the last Syncs. */}
       <GrammarReviewList client={client} />
     </View>

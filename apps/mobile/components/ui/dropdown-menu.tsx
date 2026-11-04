@@ -79,6 +79,7 @@ function DropdownMenuSubContent({
   );
 }
 
+// Stock RNR; iOS-only, dead while app.json targets android only.
 const FullWindowOverlay = Platform.OS === 'ios' ? RNFullWindowOverlay : React.Fragment;
 
 function DropdownMenuContent({

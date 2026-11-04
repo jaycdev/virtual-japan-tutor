@@ -21,13 +21,11 @@ export const SETTINGS_SECTIONS = [
   { id: "level", title: "Starting Level", blurb: "N5–N1 known grammar baseline" },
   { id: "marumori", title: "MaruMori", blurb: "Connect your Junji profile and Sync" },
   { id: "ai", title: "AI Providers", blurb: "Endpoints, keys and task assignments" },
-  { id: "server", title: "Server", blurb: "Connection health (and address on Android)" },
+  { id: "server", title: "Server", blurb: "Connection health and server address" },
 ] as const;
 
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]["id"];
 
-/** The Settings sections that are valid route params (#50). */
-export const SECTION_IDS: SettingsSection[] = SETTINGS_SECTIONS.map((s) => s.id);
 
 /** The hub's section list: one row per section, pushing its route on tap. */
 export function SettingsSectionMenu({ onOpen }: { onOpen: (section: SettingsSection) => void }) {

@@ -1,6 +1,6 @@
 // The server-address editor (#11), shared by two entry points:
-// - Login shows it on Android only (web infers the address from the origin);
-// - the AuthGate error card shows it on every platform (#51 review B1): a
+// - Login shows it (the app has no same-origin address to infer);
+// - the AuthGate error card shows it too (#51 review B1): a
 //   Learner who lands on an unreachable address must never be trapped.
 //
 // Android cannot infer a host: the Learner points the app at the LAN server

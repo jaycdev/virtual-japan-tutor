@@ -48,8 +48,7 @@ export default defineConfig({
       // the native build gates its Portal on measure(), which jsdom does not implement:
       // aliased to native, Popover/Dialog content never renders and the menu/window
       // tests would pass (or fail) for the wrong reason. Expo really does resolve the
-      // web files: the reader's web popover fork is src/rnr/popover.web.tsx, the same
-      // platform-extension mechanism.
+      // web files: the primitives resolve the same way, by platform extension.
       "@rn-primitives/popover": fileURLToPath(new URL("../../node_modules/@rn-primitives/popover/dist/popover.web.mjs", import.meta.url)),
       "@rn-primitives/dialog": fileURLToPath(new URL("../../node_modules/@rn-primitives/dialog/dist/dialog.web.mjs", import.meta.url)),
       // #48: the Library card's menu and the Generate dialog's pickers are

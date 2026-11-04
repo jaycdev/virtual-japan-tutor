@@ -1,7 +1,6 @@
 // Login: the signed-out screen. Same auth contract as before (#13): the
 // Learner types Username / Password, presses "Log in", and Android can point
-// the app at a different server address; on web the address comes from the
-// page origin. This component owns presentation only — the auth machine lives
+// the app at a different server address. This component owns presentation only — the auth machine lives
 // in AuthGate, and a login attempt is handed up via onLogin.
 import { useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
