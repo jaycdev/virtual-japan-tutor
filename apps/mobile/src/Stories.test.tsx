@@ -243,7 +243,7 @@ describe("Today's Story pinned above the Library (issue #48)", () => {
     fireEvent.click(ready);
     await waitFor(() => expect(onOpenStory).toHaveBeenCalledWith("st-1"));
     // Opening spends the offer: the card's own Open is the same Story now.
-    expect(screen.queryByTestId("today-ready")).toBeNull();
+    await waitFor(() => expect(screen.queryByTestId("today-ready")).toBeNull());
   });
 
   it("a spent ready offer does not come back on a fresh mount with the same snapshot", async () => {
