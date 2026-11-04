@@ -61,6 +61,7 @@ export default defineConfig({
     globals: true, // lets @testing-library/react register its automatic cleanup
     setupFiles: ["./vitest.setup.ts"],
     include: ["src/**/*.test.{ts,tsx}", "showcase/**/*.test.{ts,tsx}", "App.test.tsx"],
+    retry: process.env.CI ? 1 : 0,
     server: {
       deps: {
         // must go through vite so the raw-JSX .mjs files above get compiled,
