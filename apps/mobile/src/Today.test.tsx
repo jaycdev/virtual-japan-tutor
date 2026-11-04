@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Today, formatInstant, learnerClock } from './Today.tsx';
@@ -608,6 +608,9 @@ describe('Today', () => {
       expect(screen.getByText('Last sync succeeded November 4, 10:02.')).toBeTruthy();
     });
 
+    // Sync now was disabled until this status landed; react-native-web reads
+    // that flag in a passive effect, so let it flush before pressing.
+    await act(async () => {});
     fireEvent.click(screen.getByRole('button', { name: 'Sync now' }));
 
     await waitFor(() => {
