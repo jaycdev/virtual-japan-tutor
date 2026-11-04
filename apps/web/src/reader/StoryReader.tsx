@@ -339,11 +339,13 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
   const returnFocus = () => focusWord(lastWord.current);
 
   return (
+    // One column for the whole reader (ui-plan 4.1): the title, panel, text, questions and
+    // footer share the 40-character width, so their edges line up.
     <div
       ref={rootRef}
       onKeyDown={onKeyDown}
       data-testid="story-reader"
-      className="flex flex-col gap-6"
+      className="story-column-width mx-auto flex flex-col gap-6"
     >
       <header className="flex flex-col gap-2">
         <Link to="/stories" className="inline-flex w-fit items-center gap-1 text-small text-muted-foreground hover:text-foreground">
