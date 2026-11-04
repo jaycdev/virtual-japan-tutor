@@ -63,7 +63,7 @@ describe("Stories page", () => {
     await screen.findByTestId("library-filter-note");
     expect(screen.getByText("猫の一日")).toBeTruthy();
     expect(screen.queryByText("駅で")).toBeNull();
-    expect((await screen.findByTestId("library-filter-note")).textContent).toBe(
+    expect(screen.getByTestId("library-filter-note").textContent).toBe(
       "1 of the 2 Stories on this page are hidden by your filters.",
     );
   });
