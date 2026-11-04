@@ -126,7 +126,7 @@ describe('mobile ItemListsSettings', () => {
       baseUrl: 'http://localhost',
       fetch: fetchMock as unknown as typeof fetch,
     });
-    return render(<ItemListsSettings client={client} onBack={() => {}} />);
+    return render(<ItemListsSettings client={client} />);
   }
 
   async function openList(name: string) {

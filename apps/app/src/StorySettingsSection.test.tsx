@@ -73,7 +73,7 @@ describe('mobile StorySettingsSection', () => {
       baseUrl: 'http://localhost',
       fetch: fetchMock as unknown as typeof fetch,
     });
-    return render(<StorySettingsSection client={client} onBack={() => {}} />);
+    return render(<StorySettingsSection client={client} />);
   }
 
   it('prefills the stored settings', async () => {

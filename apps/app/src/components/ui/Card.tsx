@@ -21,6 +21,7 @@ export function Card({
   testID,
   fill = false,
   pinned = false,
+  padded = true,
 }: {
   children: ReactNode;
   testID?: string;
@@ -31,13 +32,23 @@ export function Card({
    * classes only — no one-off colours.
    */
   pinned?: boolean;
+  /**
+   * `padded={false}` drops the card's own padding and inner gap for content
+   * that lays itself out — a list of Rows (#50's hub menu and section
+   * cards), where extra padding would push the row separators off the edges
+   * and gaps would break them apart.
+   */
+  padded?: boolean;
 }) {
   return (
     <View
       testID={testID}
-      className={`${cardFillClass(fill, Platform.OS)}gap-3 rounded-lg ${
+      // overflow-hidden: unpadded content (Row lists) paints edge-to-edge,
+      // and its separators and press highlights would square off the card's
+      // rounded corners without it (review S6).
+      className={`overflow-hidden ${cardFillClass(fill, Platform.OS)}rounded-lg ${
         pinned ? "border-2 border-primary" : "border border-border"
-      } bg-card p-5`}
+      } bg-card ${padded ? "gap-3 p-5" : ""}`}
     >
       {children}
     </View>
