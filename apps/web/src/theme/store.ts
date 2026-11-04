@@ -1,4 +1,4 @@
-// The theme preference store (ported from apps/app/src/theme/store.ts, #42).
+// The theme preference store (ported from apps/mobile/src/theme/store.ts, #42).
 // Light / Dark / System, saved per device in localStorage. The store itself is
 // DOM-free: the page passes in the storage and the function that applies the
 // preference, so the tests can drive both.

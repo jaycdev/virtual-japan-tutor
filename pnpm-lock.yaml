@@ -63,7 +63,7 @@ importers:
         specifier: ^8.72.1
         version: 8.72.1(eslint@10.14.0(jiti@2.7.0))(typescript@6.0.3)
 
-  apps/app:
+  apps/mobile:
     dependencies:
       '@rn-primitives/dialog':
         specifier: 1.5.2

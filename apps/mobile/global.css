@@ -1,0 +1,8 @@
+/* The design tokens (palette, type scale, Story text sizes, radii and font
+   names) live in packages/design, which generates native.css from one TS
+   source (ADR-0010). Do not add tokens here: the vjt/no-hardcoded-color lint
+   rule keeps hex values out of the app. The Noto JP faces load on Android
+   through expo-font (src/fonts.ts, ADR-0009). */
+@import "tailwindcss";
+@import "uniwind";
+@import "@vjt/design/native.css";

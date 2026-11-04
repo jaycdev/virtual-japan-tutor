@@ -2,7 +2,7 @@
 # carries data/grammar/jlpt-grammar.csv. Generated code is committed, so the image build
 # needs neither the OpenAPI spec nor any code generation.
 #
-# Targets: `server` (default, the last stage: the API plus the built web app) and `import` (one-off
+# Targets: `server` (default, the last stage: the API plus the web app) and `import` (one-off
 # reference data import).
 FROM --platform=$BUILDPLATFORM golang:1.27.1-alpine AS build
 ARG TARGETOS
@@ -13,31 +13,13 @@ RUN go mod download
 COPY apps/server/ ./
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/ ./cmd/server ./cmd/import
 
-# The web app: the Expo export of apps/app (ADR-0007). The output is plain static files, so this
-# stage always runs on the build platform. Production builds call the API on their own origin,
-# which is where the server serves them from.
-FROM --platform=$BUILDPLATFORM node:24-alpine AS web
-RUN corepack enable
-WORKDIR /src
-# expo export in a container: no interactive prompts, no telemetry.
-ENV CI=1 \
-    EXPO_NO_TELEMETRY=1
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc tsconfig.base.json ./
-COPY apps/app/package.json apps/app/
-COPY apps/server/package.json apps/server/
-COPY packages/api-client/package.json packages/api-client/
-COPY packages/core/package.json packages/core/
-COPY packages/design/package.json packages/design/
-RUN pnpm install --frozen-lockfile --filter "@vjt/app..."
-COPY apps/app apps/app
-COPY packages/api-client packages/api-client
-COPY packages/core packages/core
-COPY packages/design packages/design
-# The workspace packages @vjt/app depends on (api-client, core, design) are consumed from their
-# built dist/ (design also ships web.css and native.css), so build the dependencies first. The
-# export itself is web-only (the app's `build` script exports Android).
-RUN pnpm --filter "@vjt/app^..." build \
- && pnpm --filter @vjt/app run build:web
+# TEMPORARY (#75 -> #82): the web app is being rebuilt as apps/web (#76), and apps/mobile is
+# phone-only with no web export. Until #82 wires apps/web in here, the server image serves a
+# placeholder page so the image still builds and serves / next to the API. Replace this stage
+# with the apps/web build when #82 lands.
+FROM alpine:3.22 AS web
+RUN mkdir -p /out/web \
+ && echo '<!doctype html><meta charset="utf-8"><title>Virtual Japan Tutor</title><p>The web app is being rebuilt, see #73.</p>' > /out/web/index.html
 
 # Reference data import: JMdict, KANJIDIC2, JLPT lists, Kanjium and the Grammar Catalogue.
 # Downloads land in a cache directory meant to be a named volume (no bind mounts).
@@ -58,7 +40,7 @@ FROM alpine:3.22 AS server
 RUN adduser -D -u 10001 app
 USER app
 COPY --from=build /out/server /usr/local/bin/server
-COPY --from=web /src/apps/app/dist-web /usr/share/vjt/web
+COPY --from=web /out/web /usr/share/vjt/web
 # Serve the web app at / next to the API. Unset WEB_DIR to run the API only.
 ENV WEB_DIR=/usr/share/vjt/web
 EXPOSE 8080

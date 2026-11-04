@@ -81,7 +81,6 @@ export default tseslint.config(
   {
     ignores: [
       "**/dist/**",
-      "apps/app/dist-web*/**",
       "**/node_modules/**",
       "**/.expo/**",
       "**/.turbo/**",
@@ -112,12 +111,12 @@ export default tseslint.config(
     rules: { "vjt/no-hardcoded-color": "error" },
   },
   {
-    // The font-size gate (#43, widened on #48 review): every screen in apps/app
+    // The font-size gate (#43, widened on #48 review): every screen in apps/mobile
     // sets type through the token scale - text-caption / -small / -body /
     // -title-sm - or through the Learner's saved Story text size, never through
     // a number in a style object. apps/web (ADR-0010) follows the same rule on
     // the DOM: a text-* class, or var(--story-text-size), never "16px".
-    files: ["apps/app/src/**/*.tsx", "apps/web/src/**/*.{ts,tsx}"],
+    files: ["apps/mobile/src/**/*.tsx", "apps/web/src/**/*.{ts,tsx}"],
     rules: { "vjt/no-inline-font-size": "error" },
   },
   {
@@ -138,8 +137,8 @@ export default tseslint.config(
   },
   {
     // Benign CommonJS shims that vitest aliases over native-only modules
-    // (see apps/app/vitest.setup.ts): hand-written CJS, not app code.
-    files: ["apps/app/test/cjs-stubs/**/*.cjs"],
+    // (see apps/mobile/vitest.setup.ts): hand-written CJS, not app code.
+    files: ["apps/mobile/test/cjs-stubs/**/*.cjs"],
     languageOptions: {
       sourceType: "commonjs",
       globals: { ...globals.node, window: "readonly" },

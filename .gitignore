@@ -1,7 +1,5 @@
 node_modules/
 dist/
-# Web exports (spike leftovers and manual checks).
-apps/app/dist-web*/
 bin/
 .turbo/
 .expo/

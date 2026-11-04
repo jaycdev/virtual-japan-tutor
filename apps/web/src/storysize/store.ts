@@ -1,4 +1,4 @@
-// The Story text size setting (ported from apps/app/src/storysize/store.ts, #45).
+// The Story text size setting (ported from apps/mobile/src/storysize/store.ts, #45).
 // S / M / L / XL, saved per device. The px values live in packages/design as the
 // --text-story-* tokens; on web the chosen size is exposed as the CSS variable
 // --story-text-size (see index.css), which the reader will use.

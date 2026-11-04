@@ -28,7 +28,7 @@ describe("vjt/no-hardcoded-color", () => {
   });
 
   it("flags the same pattern in the phone app", async () => {
-    expect(await ruleIds("apps/app/src/probe.tsx", "const a = <p className={`p-2 text-[#abc]`} />;")).toContain(
+    expect(await ruleIds("apps/mobile/src/probe.tsx", "const a = <p className={`p-2 text-[#abc]`} />;")).toContain(
       "vjt/no-hardcoded-color",
     );
   });
