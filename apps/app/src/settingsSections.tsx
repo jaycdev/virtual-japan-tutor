@@ -18,6 +18,23 @@ export function useWideLayout(): boolean {
   return useWindowDimensions().width >= SIDEBAR_BREAKPOINT;
 }
 
+/**
+ * What a section's step-save reports to the setup wizard (review S2):
+ * "saved" wrote something, "nothing" had no entered input to write,
+ * "blocked" tried and failed — the section shows its own error and the
+ * wizard stays put.
+ */
+export type StepSaveOutcome = "saved" | "nothing" | "blocked";
+
+/**
+ * A ref the setup wizard holds; each section registers its own save here
+ * while it is mounted, so Next/Finish reuse the section's Save rather
+ * than duplicating (or drifting from) it. The hub never passes one.
+ */
+export type StepSaveHandle = {
+  current: (() => Promise<StepSaveOutcome>) | null;
+};
+
 /** Back affordance for the narrow section routes. */
 export function SectionBack({ label, onPress }: { label: string; onPress: () => void }) {
   return (

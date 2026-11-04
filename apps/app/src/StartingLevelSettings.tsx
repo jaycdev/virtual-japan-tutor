@@ -1,20 +1,29 @@
 import type { ApiClient } from "@vjt/api-client";
 import { STARTING_LEVELS, useStartingLevel, type StartingLevel } from "@vjt/core";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 
 import { Card } from "./components/ui/Card.tsx";
 import { Chip, ChipRow } from "./components/ui/Chip.tsx";
 import { ActionButton } from "./stories-parts.tsx";
 import { InlineError, SkeletonBar } from "./state/states.tsx";
+import type { StepSaveHandle, StepSaveOutcome } from "./settingsSections.tsx";
 
 /**
  * Starting Level (#6, on the #50 hub): N5–N1 chips pick the level; saving
  * re-applies Seeded Grammar and reports the server's counts. First-run
  * setup shows this same component as its first step, so the Settings
- * section and the setup screen cannot drift apart.
+ * section and the setup screen cannot drift apart — and the wizard's
+ * Next/Finish runs this section's save through `saveHandle` (review S2).
  */
-export function StartingLevelSettings({ client }: { client: ApiClient }) {
+export function StartingLevelSettings({
+  client,
+  saveHandle,
+}: {
+  client: ApiClient;
+  /** Registered by the setup wizard; absent under the Settings hub. */
+  saveHandle?: StepSaveHandle;
+}) {
   const level = useStartingLevel(client);
   const [choice, setChoice] = useState<StartingLevel | null>(null);
   const [busy, setBusy] = useState(false);
@@ -36,6 +45,27 @@ export function StartingLevelSettings({ client }: { client: ApiClient }) {
       setBusy(false);
     }
   };
+
+  // S2: the wizard's Next/Finish runs the step's entered input through the
+  // same setLevel path the Save button uses. No pick yet is "nothing" —
+  // there is nothing to write, and the wizard may move on.
+  useEffect(() => {
+    if (!saveHandle) return;
+    saveHandle.current = async (): Promise<StepSaveOutcome> => {
+      if (choice === null) return "nothing";
+      const res = await level.setLevel(choice);
+      if ("status" in res) {
+        setError(res.message);
+        return "blocked";
+      }
+      setResult(`Grammar updated: ${res.added ?? 0} added, ${res.removed ?? 0} removed.`);
+      setChoice(null);
+      return "saved";
+    };
+    return () => {
+      saveHandle.current = null;
+    };
+  });
 
   if (level.state.status === "loading") {
     // Shaped like the picker it replaces: a line of prose and the chip row.

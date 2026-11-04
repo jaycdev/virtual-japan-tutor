@@ -479,6 +479,29 @@ describe("first-run setup (#50)", () => {
     expect(writes).toHaveLength(0);
   });
 
+  it("Next saves what the Learner entered on the step instead of discarding it", async () => {
+    // Review S2: entering a level and pressing Next used to drop the pick on
+    // the floor; Next now runs the step's own save first.
+    freshDevice();
+    const fetchMock = stubApi({ startingLevelConfigured: false });
+    renderApp("/");
+
+    await logIn();
+    await screen.findByRole("button", { name: "Save level" }); // step 1: Starting Level
+
+    await fireEvent.click(screen.getByRole("button", { name: "N4" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Next" }));
+
+    // Moved to step 2, and the pick itself went over the wire first.
+    await screen.findByLabelText("MaruMori API key");
+    const puts = fetchMock.mock.calls.filter((call) => {
+      const request = call[0] as Request;
+      return request.method === "PUT" && new URL(request.url).pathname === "/starting-level";
+    });
+    expect(puts).toHaveLength(1);
+    expect(await (puts[0][0] as Request).json()).toEqual({ level: "N4" });
+  });
+
   it("a device that has seen setup never sees it again", async () => {
     // The beforeEach already carries vjt.setupSeen = yes and a session.
     stubApi();

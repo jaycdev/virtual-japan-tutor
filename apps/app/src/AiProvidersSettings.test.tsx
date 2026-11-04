@@ -111,12 +111,14 @@ describe('mobile AiProvidersSettings', () => {
     });
   });
 
-  function renderApp() {
+  function renderApp(saveHandle?: {
+    current: (() => Promise<'saved' | 'nothing' | 'blocked'>) | null;
+  }) {
     const client = createApiClient({
       baseUrl: 'http://localhost',
       fetch: fetchMock as unknown as typeof fetch,
     });
-    return render(<AiProvidersSettings client={client} />);
+    return render(<AiProvidersSettings client={client} saveHandle={saveHandle} />);
   }
 
   async function waitForLoaded() {
@@ -245,5 +247,27 @@ describe('mobile AiProvidersSettings', () => {
     await waitFor(() => {
       expect(screen.queryByText(/used for Story generation/)).toBeNull();
     });
+  });
+
+  it('the wizard save handle submits a filled form, and reports nothing when it is untouched (S2)', async () => {
+    const saveHandle: {
+      current: (() => Promise<'saved' | 'nothing' | 'blocked'>) | null;
+    } = { current: null };
+    renderApp(saveHandle);
+    await screen.findByRole('button', { name: 'Add provider' });
+    expect(saveHandle.current).toBeTruthy();
+
+    await expect(saveHandle.current!()).resolves.toBe('nothing');
+    expect(writes.some((w) => w.method === 'POST')).toBe(false);
+
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Home LLM' } });
+    fireEvent.change(screen.getByLabelText('Base URL'), {
+      target: { value: 'http://localhost:11434/v1' },
+    });
+    fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'llama3' } });
+    await expect(saveHandle.current!()).resolves.toBe('saved');
+    const post = writes.find((w) => w.method === 'POST');
+    expect(post?.url).toContain('/ai-providers');
+    expect(post?.body).toMatchObject({ name: 'Home LLM' });
   });
 });

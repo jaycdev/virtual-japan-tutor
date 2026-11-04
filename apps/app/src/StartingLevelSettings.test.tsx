@@ -42,12 +42,14 @@ describe('mobile StartingLevelSettings', () => {
     });
   });
 
-  function renderApp() {
+  function renderApp(saveHandle?: {
+    current: (() => Promise<"saved" | "nothing" | "blocked">) | null;
+  }) {
     const client = createApiClient({
       baseUrl: 'http://localhost',
       fetch: fetchMock as unknown as typeof fetch,
     });
-    return render(<StartingLevelSettings client={client} />);
+    return render(<StartingLevelSettings client={client} saveHandle={saveHandle} />);
   }
 
   it('shows the stored level with all five choices', async () => {
@@ -107,5 +109,25 @@ describe('mobile StartingLevelSettings', () => {
       expect(screen.getByText('nope')).toBeTruthy();
     });
     expect(screen.getByRole('button', { name: 'Save level' })).toBeTruthy();
+  });
+
+  it('the wizard save handle writes the picked chip, and reports nothing when none is picked (S2)', async () => {
+    status = { configured: false, level: null };
+    const saveHandle: {
+      current: (() => Promise<'saved' | 'nothing' | 'blocked'>) | null;
+    } = { current: null };
+    renderApp(saveHandle);
+    await screen.findByRole("button", { name: 'N4' });
+    expect(saveHandle.current).toBeTruthy();
+
+    // No pick yet: nothing to write, and the wizard is free to move on.
+    await expect(saveHandle.current!()).resolves.toBe('nothing');
+    expect(writes.some((w) => w.method === 'PUT')).toBe(false);
+
+    fireEvent.click(screen.getByRole('button', { name: 'N4' }));
+    await expect(saveHandle.current!()).resolves.toBe('saved');
+    const put = writes.find((w) => w.method === 'PUT');
+    expect(put?.url).toContain('/starting-level');
+    expect(put?.body).toEqual({ level: 'N4' });
   });
 });

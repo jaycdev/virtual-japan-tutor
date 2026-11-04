@@ -1,20 +1,30 @@
 // One-time first-run setup (#50), shown after the very first login on this
 // device. Three steps — Starting Level, MaruMori, AI Providers — each one
 // embedding the SAME component the Settings hub uses, so the wizard can
-// never drift from the settings screen it replaces. Every step is skippable
-// (inputs only persist when the Learner presses the section's own Save),
-// and the whole flow can be skipped. `firstRun.ts` records that the flow
+// never drift from the settings screen it replaces. Next and Finish save
+// what the Learner entered on the step (review S2) through a save handle
+// the section registers; "Skip this step" stays a genuine no-write skip,
+// and the whole flow is skippable. `firstRun.ts` records that the flow
 // was shown, so it never returns.
 
-import { useState } from "react";
-import { ScrollView, Text, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import {
+  AccessibilityInfo,
+  findNodeHandle,
+  Platform,
+  ScrollView,
+  Text,
+  View,
+  type ViewInstance,
+} from "react-native";
 
 import type { ApiClient } from "@vjt/api-client";
 
 import { Card } from "./components/ui/Card.tsx";
 import { LinkButton } from "./components/ui/LinkButton.tsx";
 import { ActionButton } from "./stories-parts.tsx";
-import { ProgressBar } from "./state/states.tsx";
+import { InlineError, ProgressBar } from "./state/states.tsx";
+import type { StepSaveHandle } from "./settingsSections.tsx";
 import { AiProvidersSettings } from "./AiProvidersSettings.tsx";
 import { MaruMoriSettings } from "./MaruMoriSettings.tsx";
 import { StartingLevelSettings } from "./StartingLevelSettings.tsx";
@@ -33,43 +43,104 @@ export function SetupWizard({
   onFinish: () => void;
 }) {
   const [step, setStep] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [blockedNote, setBlockedNote] = useState<string | undefined>();
+  // The step's own save, registered by the embedded section (review S2):
+  // Next/Finish run it instead of discarding what the Learner entered.
+  const stepSave = useRef<StepSaveHandle["current"]>(null);
   const last = step === STEPS.length - 1;
 
+  // S4: on every step change, hand accessibility focus to the step title —
+  // DOM focus on the web host, RN's accessibility-focus event on native —
+  // so a screen reader lands on "Step 2 of 3" instead of the page top.
+  const titleRef = useRef<ViewInstance | null>(null);
+  useEffect(() => {
+    const node = titleRef.current as unknown as HTMLElement | null;
+    if (!node) return;
+    try {
+      if (Platform.OS === "web") {
+        if (node instanceof HTMLElement) {
+          node.tabIndex = -1; // headings are not focusable until asked to be
+          node.focus();
+        }
+      } else {
+        const handle = findNodeHandle(node as never);
+        if (handle != null) AccessibilityInfo.sendAccessibilityEvent(handle as never, "focus");
+      }
+    } catch {
+      // Focus is an enhancement; a host without the hook must not break the step.
+    }
+  }, [step]);
+
+  const advance = async () => {
+    setBlockedNote(undefined);
+    const save = stepSave.current;
+    if (save) {
+      setBusy(true);
+      try {
+        const outcome = await save();
+        if (outcome === "blocked") {
+          // The section already shows its own error; say why the wizard
+          // refused to move, and offer the way out (S2).
+          setBlockedNote("The step could not be saved. Fix it and try again, or skip this step.");
+          return;
+        }
+      } finally {
+        setBusy(false);
+      }
+    }
+    if (last) onFinish();
+    else setStep(step + 1);
+  };
+
   return (
-    <ScrollView className="flex-1" contentContainerStyle={{ padding: 16 }}>
-      <Card>
-        <Text className="text-title font-serif text-foreground">Welcome to Virtual Japan Tutor</Text>
-        <Text className="text-body text-muted-foreground">
-          Three short steps to set you up — you can skip any of them and change
-          everything later under Settings.
-        </Text>
-        <View className="w-full">
-          <ProgressBar
-            value={(step + 1) / STEPS.length}
-            label={`Step ${step + 1} of ${STEPS.length}: ${STEPS[step].title}`}
-          />
-        </View>
-        <Text className="text-title-sm font-semibold text-foreground">{STEPS[step].title}</Text>
-        <Text className="text-small text-muted-foreground">{STEPS[step].body}</Text>
-
-        {step === 0 ? <StartingLevelSettings client={client} /> : null}
-        {step === 1 ? <MaruMoriSettings client={client} /> : null}
-        {step === 2 ? <AiProvidersSettings client={client} /> : null}
-
-        <View className="flex-row flex-wrap items-center justify-between gap-3">
-          <LinkButton label="Skip setup" onPress={onFinish} />
-          <View className="flex-row items-center gap-3">
-            {!last ? (
-              <LinkButton label="Skip this step" onPress={() => setStep(step + 1)} />
-            ) : null}
-            <ActionButton
-              filled
-              label={last ? "Finish" : "Next"}
-              onPress={() => (last ? onFinish() : setStep(step + 1))}
+    <View className="flex-1">
+      <ScrollView className="flex-1" contentContainerStyle={{ padding: 16 }}>
+        <Card>
+          <Text className="text-title font-serif text-foreground">Welcome to Virtual Japan Tutor</Text>
+          <Text className="text-body text-muted-foreground">
+            Three short steps to set you up — you can skip any of them and change
+            everything later under Settings.
+          </Text>
+          <View className="w-full">
+            <ProgressBar
+              value={(step + 1) / STEPS.length}
+              label={`Step ${step + 1} of ${STEPS.length}: ${STEPS[step].title}`}
             />
           </View>
+          {/* S4: real heading semantics (header maps to role="heading" on
+              the web host), and the node accessibility focus targets. */}
+          <View ref={titleRef}>
+            <Text accessibilityRole="header" className="text-title-sm font-semibold text-foreground">
+              {STEPS[step].title}
+            </Text>
+          </View>
+          <Text className="text-small text-muted-foreground">{STEPS[step].body}</Text>
+
+          {step === 0 ? <StartingLevelSettings client={client} saveHandle={stepSave} /> : null}
+          {step === 1 ? <MaruMoriSettings client={client} saveHandle={stepSave} /> : null}
+          {step === 2 ? <AiProvidersSettings client={client} saveHandle={stepSave} /> : null}
+
+          {blockedNote ? <InlineError message={blockedNote} /> : null}
+        </Card>
+      </ScrollView>
+
+      {/* P4: the step buttons live OUTSIDE the ScrollView — step 3's long
+          form used to push Next/Finish below the fold. */}
+      <View className="flex-row flex-wrap items-center justify-between gap-3 border-t border-border bg-background px-4 py-2">
+        <LinkButton label="Skip setup" onPress={onFinish} disabled={busy} />
+        <View className="flex-row items-center gap-3">
+          {!last ? (
+            <LinkButton label="Skip this step" onPress={() => setStep(step + 1)} disabled={busy} />
+          ) : null}
+          <ActionButton
+            filled
+            label={last ? "Finish" : "Next"}
+            onPress={() => void advance()}
+            disabled={busy}
+          />
         </View>
-      </Card>
-    </ScrollView>
+      </View>
+    </View>
   );
 }

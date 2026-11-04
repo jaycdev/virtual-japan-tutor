@@ -1,6 +1,6 @@
 import type { AiProvider, AiProviderTestResult, AiTask, ApiClient } from "@vjt/api-client";
 import { useAiSettings, type ActionResult } from "@vjt/core";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 
 import { Card } from "./components/ui/Card.tsx";
@@ -11,6 +11,7 @@ import { Row } from "./components/ui/Row.tsx";
 import { SwitchRow } from "./components/ui/SwitchRow.tsx";
 import { ActionButton } from "./stories-parts.tsx";
 import { InlineError, Skeleton, SkeletonBar } from "./state/states.tsx";
+import type { StepSaveHandle, StepSaveOutcome } from "./settingsSections.tsx";
 
 const TASK_LABELS: Record<AiTask, string> = {
   story: "Story generation",
@@ -33,9 +34,17 @@ const EMPTY: FormValues = { name: "", baseUrl: "", model: "", apiKey: "", remove
  * task. Same rules as web: keys are write-only and the field is masked (an
  * empty field = keep; "Remove the saved key" = drop), and deleting a
  * provider that a task still uses fails with the server's 409 message.
- * First-run setup embeds this same component as its third step.
+ * First-run setup embeds this same component as its third step, and the
+ * wizard's Next/Finish submits a filled form through `saveHandle` (S2).
  */
-export function AiProvidersSettings({ client }: { client: ApiClient }) {
+export function AiProvidersSettings({
+  client,
+  saveHandle,
+}: {
+  client: ApiClient;
+  /** Registered by the setup wizard; absent under the Settings hub. */
+  saveHandle?: StepSaveHandle;
+}) {
   const settings = useAiSettings(client);
   const { state } = settings;
   const [error, setError] = useState<string | undefined>();
@@ -68,7 +77,7 @@ export function AiProvidersSettings({ client }: { client: ApiClient }) {
     setForm(EMPTY);
   };
 
-  const submit = async () => {
+  const submit = async (): Promise<boolean> => {
     const key = form.apiKey.trim();
     const ok = await run(() => {
       if (!editing) {
@@ -88,7 +97,29 @@ export function AiProvidersSettings({ client }: { client: ApiClient }) {
       });
     });
     if (ok) stopEdit(); // also drops the typed key from memory
+    return ok;
   };
+
+  // S2: the wizard's Next/Finish submits the form the Learner filled in —
+  // the same submit the "Add provider"/"Save changes" button runs. An
+  // untouched form is "nothing"; a rejected one shows its error here and
+  // the wizard stays on the step.
+  useEffect(() => {
+    if (!saveHandle) return;
+    saveHandle.current = async (): Promise<StepSaveOutcome> => {
+      const touched =
+        form.name.trim() !== "" ||
+        form.baseUrl.trim() !== "" ||
+        form.model.trim() !== "" ||
+        form.apiKey.trim() !== "";
+      if (!touched) return "nothing";
+      const ok = await submit();
+      return ok ? "saved" : "blocked";
+    };
+    return () => {
+      saveHandle.current = null;
+    };
+  });
 
   const test = async (p: AiProvider) => {
     setTesting(p.id);

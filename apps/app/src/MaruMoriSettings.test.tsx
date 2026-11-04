@@ -61,12 +61,14 @@ describe('mobile MaruMoriSettings', () => {
     });
   });
 
-  function renderApp() {
+  function renderApp(saveHandle?: {
+    current: (() => Promise<'saved' | 'nothing' | 'blocked'>) | null;
+  }) {
     const client = createApiClient({
       baseUrl: 'http://localhost',
       fetch: fetchMock as unknown as typeof fetch,
     });
-    return render(<MaruMoriSettings client={client} />);
+    return render(<MaruMoriSettings client={client} saveHandle={saveHandle} />);
   }
 
   async function waitForDisconnected() {
@@ -179,5 +181,29 @@ describe('mobile MaruMoriSettings', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Confirm remove' }));
 
     await waitForDisconnected();
+  });
+
+  it('the wizard save handle connects a typed key, and reports nothing when none is typed (S2)', async () => {
+    const saveHandle: {
+      current: (() => Promise<'saved' | 'nothing' | 'blocked'>) | null;
+    } = { current: null };
+    renderApp(saveHandle);
+    await waitForDisconnected();
+    expect(saveHandle.current).toBeTruthy();
+
+    await expect(saveHandle.current!()).resolves.toBe('nothing');
+    expect(writes.some((w) => w.method === 'PUT')).toBe(false);
+
+    fireEvent.change(screen.getByLabelText('MaruMori API key'), {
+      target: { value: 'mkmk_2024_key' },
+    });
+    await expect(saveHandle.current!()).resolves.toBe('saved');
+    const put = writes.find((w) => w.method === 'PUT');
+    expect(put?.url).toContain('/marumori/key');
+    expect(put?.body).toEqual({ apiKey: 'mkmk_2024_key' });
+    // Same contract as Connect: the draft is cleared once it lands.
+    await waitFor(() => {
+      expect((screen.getByLabelText('MaruMori API key') as HTMLInputElement).value).toBe('');
+    });
   });
 });

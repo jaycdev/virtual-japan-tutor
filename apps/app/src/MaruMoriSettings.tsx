@@ -1,6 +1,6 @@
 import type { ApiClient, MaruMoriSyncRun } from "@vjt/api-client";
 import { useMarumori } from "@vjt/core";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 
 import { Card } from "./components/ui/Card.tsx";
@@ -8,6 +8,7 @@ import { Field } from "./components/ui/Field.tsx";
 import { LinkButton } from "./components/ui/LinkButton.tsx";
 import { ActionButton } from "./stories-parts.tsx";
 import { InlineError, Skeleton, SkeletonBar } from "./state/states.tsx";
+import type { StepSaveHandle, StepSaveOutcome } from "./settingsSections.tsx";
 
 /**
  * MaruMori connection (#6, on the #50 hub): connect with an API key, Sync
@@ -16,7 +17,14 @@ import { InlineError, Skeleton, SkeletonBar } from "./state/states.tsx";
  * typed one is never rendered as text. First-run setup embeds this same
  * component as its second step.
  */
-export function MaruMoriSettings({ client }: { client: ApiClient }) {
+export function MaruMoriSettings({
+  client,
+  saveHandle,
+}: {
+  client: ApiClient;
+  /** Registered by the setup wizard; absent under the Settings hub (S2). */
+  saveHandle?: StepSaveHandle;
+}) {
   const maru = useMarumori(client);
   const { state } = maru;
   const [key, setKey] = useState("");
@@ -39,6 +47,32 @@ export function MaruMoriSettings({ client }: { client: ApiClient }) {
       setBusy(false);
     }
   };
+
+  // S2: the wizard's Next/Finish connects a typed key through the same
+  // saveKey path as the Connect button. No key typed is "nothing".
+  useEffect(() => {
+    if (!saveHandle) return;
+    saveHandle.current = async (): Promise<StepSaveOutcome> => {
+      const trimmed = key.trim();
+      if (!trimmed) return "nothing";
+      setBusy(true);
+      setError(undefined);
+      try {
+        const res = await maru.saveKey(trimmed);
+        if (res.ok) {
+          setKey("");
+          return "saved";
+        }
+        setError(res.message);
+        return "blocked";
+      } finally {
+        setBusy(false);
+      }
+    };
+    return () => {
+      saveHandle.current = null;
+    };
+  });
 
   const remove = async () => {
     setConfirmRemove(false);
