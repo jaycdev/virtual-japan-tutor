@@ -50,6 +50,22 @@ describe("app shell", () => {
     await waitFor(() => expect(document.title).toBe("Practice · Virtual Japan Tutor"));
   });
 
+  it("keeps the 960 px cap except on the reader route, whose handle asks for the wide layout", async () => {
+    const today = renderAppAt("/");
+    await screen.findByRole("main");
+    expect(screen.getByRole("main").className).toContain("max-w-[960px]");
+    today.unmount();
+
+    // The stories/:storyId handle carries `wide: true` (issue #77 review): the
+    // 40-character column needs more than 960 px at L and XL, so main drops the
+    // cap and its lg padding for that route alone.
+    renderAppAt("/stories/123");
+    await screen.findByRole("main");
+    const reader = screen.getByRole("main");
+    expect(reader.className).not.toContain("max-w-[960px]");
+    expect(reader.className).toContain("lg:px-4");
+  });
+
   it("opens the same navigation in a sheet from the top bar, and closes it after a tap", async () => {
     const user = userEvent.setup();
     const { router } = renderAppAt("/");

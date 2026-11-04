@@ -1,17 +1,21 @@
 // The app shell (ui-plan 3, 4.2): a sidebar from 1024 px, and a top bar with a
 // menu button that opens the same navigation in a sheet below that. Both are
 // chosen with CSS (lg:), not JavaScript, so only one navigation is ever in the
-// accessibility tree. Content is capped at 960 px. The skip link, the <main>
-// landmark and the route announcements are here so every page gets them.
+// accessibility tree. Content is capped at 960 px except on routes whose handle
+// says `wide` (the Story reader, issue #77 review): those keep the full width
+// and take less horizontal padding from lg, so the reader's 40-character column
+// fits at every Story text size. The skip link, the <main> landmark and the
+// route announcements are here so every page gets them.
 import { useEffect, useRef, useState } from "react";
 import { Menu } from "lucide-react";
-import { Outlet, useLocation } from "react-router";
+import { Outlet, useLocation, useMatches } from "react-router";
 
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { SkeletonLines } from "../components/states.tsx";
 import { useLandingHold } from "../routes/RequireSession.tsx";
-import { documentTitle, useRouteTitle } from "../routeTitle.ts";
+import { documentTitle, useRouteTitle, type RouteHandle } from "../routeTitle.ts";
 import { SideNavContent } from "./SideNav.tsx";
 import { Wordmark } from "./Wordmark.tsx";
 
@@ -23,6 +27,10 @@ export function AppShell() {
   const holding = useLandingHold();
   const { pathname } = useLocation();
   const title = useRouteTitle();
+  // The deepest route may ask for the wide layout (the Story reader, issue #77):
+  // no 960 px cap, and less padding from lg so its 40-character column reaches
+  // ~1120 px — 40 characters at XL — from a 1280 px window on.
+  const wide = useMatches().some((match) => (match.handle as RouteHandle | undefined)?.wide);
   const mainRef = useRef<HTMLElement>(null);
   const lastPath = useRef(pathname);
   const [announcement, setAnnouncement] = useState("");
@@ -93,7 +101,13 @@ export function AppShell() {
           id="main"
           ref={mainRef}
           tabIndex={-1}
-          className="mx-auto w-full max-w-[960px] flex-1 px-4 py-6 focus:outline-none sm:px-6 lg:px-8"
+          className={cn(
+            "mx-auto w-full flex-1 px-4 py-6 focus:outline-none sm:px-6",
+            // Wide routes trade padding for width from lg: the reader column is
+            // centred inside whatever main gives it, so the padding only ever
+            // bites when the window is barely wider than the column.
+            wide ? "lg:px-4" : "max-w-[960px] lg:px-8",
+          )}
         >
           {holding ? (
             // The first-run check is still answering: a skeleton, not Today (ui-plan 5).

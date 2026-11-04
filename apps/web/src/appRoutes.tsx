@@ -76,7 +76,9 @@ export const appRoutes: RouteObject[] = [
               { path: "stories", handle: { title: "Stories" } satisfies RouteHandle, lazy: placeholder("Stories", 79) },
               {
                 path: "stories/:storyId",
-                handle: { title: "Story" } satisfies RouteHandle,
+                // wide: the reader lifts the shell's 960 px cap so the 40-character
+                // column keeps its width at the L and XL Story text sizes.
+                handle: { title: "Story", wide: true } satisfies RouteHandle,
                 lazy: () => import("./routes/StoryPage.tsx"),
               },
               { path: "practice", handle: { title: "Practice" } satisfies RouteHandle, lazy: () => import("./routes/PracticePage.tsx") },
