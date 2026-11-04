@@ -2,7 +2,12 @@
 // Run after `pnpm generate:force`. Optional args override the default paths (used by tests).
 import { execFileSync } from "node:child_process";
 
-const DEFAULT_PATHS = ["apps/server/internal/api", "packages/api-client/src/generated"];
+const DEFAULT_PATHS = [
+  "apps/server/internal/api",
+  "packages/api-client/src/generated",
+  "packages/design/web.css",
+  "packages/design/native.css",
+];
 const paths = process.argv.length > 2 ? process.argv.slice(2) : DEFAULT_PATHS;
 
 // --porcelain lists modified, staged, deleted and untracked entries; --untracked-files=all

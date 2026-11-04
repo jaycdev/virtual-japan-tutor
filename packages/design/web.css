@@ -1,0 +1,132 @@
+/* GENERATED from packages/design/src/tokens.ts by scripts/generate.ts. Do not edit;
+   run `pnpm generate` and commit the result. */
+
+:root {
+  --radius: 10px;
+  --background: #faf7f0;
+  --foreground: #1f1d1a;
+  --card: #fffdf8;
+  --card-foreground: #1f1d1a;
+  --popover: #fffdf8;
+  --popover-foreground: #1f1d1a;
+  --primary: #2f4b7c;
+  --primary-foreground: #faf7f0;
+  --secondary: #efeae0;
+  --secondary-foreground: #1f1d1a;
+  --muted: #efeae0;
+  --muted-foreground: #6b655c;
+  --accent: #e6ecf5;
+  --accent-foreground: #1f1d1a;
+  --destructive: #a3312a;
+  --destructive-foreground: #faf7f0;
+  --border: #e2dcd0;
+  --input: #e2dcd0;
+  --ring: #2f4b7c;
+  --focus: #b5452f;
+  --grammar: #f3e7b3;
+  --grammar-focus: #ebcf7a;
+  --lookup-mark: #8a8378;
+  --furigana: #6b655c;
+  --pitch: #2f4b7c;
+  --success: #3f6b45;
+  --selected-sentence: #e6ecf5;
+  --backdrop: rgba(31, 29, 26, 0.4);
+}
+
+.dark {
+  --background: #15161a;
+  --foreground: #e9e5db;
+  --card: #1d1e23;
+  --card-foreground: #e9e5db;
+  --popover: #1d1e23;
+  --popover-foreground: #e9e5db;
+  --primary: #8fa8d8;
+  --primary-foreground: #15161a;
+  --secondary: #26272d;
+  --secondary-foreground: #e9e5db;
+  --muted: #26272d;
+  --muted-foreground: #a39e94;
+  --accent: #2a3346;
+  --accent-foreground: #e9e5db;
+  --destructive: #e5736a;
+  --destructive-foreground: #15161a;
+  --border: #33343a;
+  --input: #33343a;
+  --ring: #8fa8d8;
+  --focus: #e07a5f;
+  --grammar: #3a3622;
+  --grammar-focus: #5a4e26;
+  --lookup-mark: #7e796f;
+  --furigana: #a39e94;
+  --pitch: #8fa8d8;
+  --success: #86b98c;
+  --selected-sentence: #232c3d;
+  --backdrop: rgba(0, 0, 0, 0.6);
+}
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-focus: var(--focus);
+  --color-grammar: var(--grammar);
+  --color-grammar-focus: var(--grammar-focus);
+  --color-lookup-mark: var(--lookup-mark);
+  --color-furigana: var(--furigana);
+  --color-pitch: var(--pitch);
+  --color-success: var(--success);
+  --color-selected-sentence: var(--selected-sentence);
+  --color-backdrop: var(--backdrop);
+}
+
+@theme {
+  --radius-lg: var(--radius);
+  --radius-md: 8px;
+  --radius-sm: calc(var(--radius) - 4px);
+  --font-sans: "NotoSansJP400", ui-sans-serif, system-ui, sans-serif;
+  --font-sans-bold: "NotoSansJP700", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "NotoSerifJP400", ui-serif, Georgia, serif;
+  --font-serif-bold: "NotoSerifJP700", ui-serif, Georgia, serif;
+  --text-caption: 12px;
+  --text-caption--line-height: 16px;
+  --text-small: 14px;
+  --text-small--line-height: 20px;
+  --text-body: 16px;
+  --text-body--line-height: 24px;
+  --text-title-sm: 18px;
+  --text-title-sm--line-height: 26px;
+  --text-title: 22px;
+  --text-title--line-height: 30px;
+  --text-display: 28px;
+  --text-display--line-height: 36px;
+  --text-story-s: 18px;
+  --text-story-s--line-height: 2.0;
+  --text-story-m: 21px;
+  --text-story-m--line-height: 2.1;
+  --text-story-l: 24px;
+  --text-story-l--line-height: 2.2;
+  --text-story-xl: 28px;
+  --text-story-xl--line-height: 2.2;
+  --text-furigana-s: 9px;
+  --text-furigana-m: 10.5px;
+  --text-furigana-l: 12px;
+  --text-furigana-xl: 14px;
+}
