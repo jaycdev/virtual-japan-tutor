@@ -95,7 +95,7 @@ function themeBlock(theme: Theme, indent: string): string[] {
 
 /**
  * native.css: Uniwind for the mobile app, the same shape as the theme that
- * apps/app/global.css carried before this package existed. The app imports it
+ * apps/mobile/global.css carried before this package existed. The app imports it
  * after tailwindcss and uniwind.
  */
 export function renderNativeCss(): string {

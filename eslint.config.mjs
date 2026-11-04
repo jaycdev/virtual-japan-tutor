@@ -12,6 +12,9 @@ import tseslint from "typescript-eslint";
 // useCSSVariable. packages/design is the only exception, since it holds the
 // hex values that generate web.css and native.css.
 const HEX_COLOR = /#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})(?![0-9a-zA-Z])/;
+// Functional notations too: a DOM className or style value can carry rgb(...)
+// just as easily as #hex. (Nothing outside packages/design uses them today.)
+const FUNCTIONAL_COLOR = /\b(?:rgba?|hsla?|oklch|oklab)\(/i;
 
 const noHardcodedColor = {
   meta: {
@@ -24,13 +27,15 @@ const noHardcodedColor = {
   },
   create(context) {
     const check = (node, value) => {
-      if (HEX_COLOR.test(value)) context.report({ node, messageId: "noColor" });
+      if (HEX_COLOR.test(value) || FUNCTIONAL_COLOR.test(value)) context.report({ node, messageId: "noColor" });
     };
     return {
       Literal: (node) => {
         if (typeof node.value === "string") check(node, node.value);
       },
-      TemplateElement: (node) => check(node, node.raw),
+      // The text of a template chunk is node.value.raw (ESTree); node.raw is undefined
+      // and silently disabled this handler before. Covers className={`… text-[#abc]`}.
+      TemplateElement: (node) => check(node, node.value.raw),
     };
   },
 };
@@ -46,19 +51,25 @@ const noInlineFontSize = {
     schema: [],
     messages: {
       noFontSize:
-        "Inline font size. Type steps live in packages/design (design tokens); use a text-* class, or the saved Story text size from useStoryTextSize.",
+        "Inline font size. Type steps live in packages/design (design tokens); use a text-* class, or the saved Story text size (fontSizePx on mobile, var(--story-text-size) on web).",
     },
   },
   create(context) {
+    // A literal size: a number (React Native) or a string that starts with a digit
+    // ("16px", "1.25rem", the DOM form). A var(--…) or a keyword is not a literal.
+    const isLiteralSize = (node) => {
+      if (node.type === "TemplateLiteral") return /^\s*\d/.test(node.quasis[0]?.value.raw ?? "");
+      return node.type === "Literal" && (typeof node.value === "number" || (typeof node.value === "string" && /^\s*\d/.test(node.value)));
+    };
     return {
       Property(node) {
         const key = node.key;
         if ((key.type !== "Identifier" && key.type !== "Literal") || String(key.name ?? key.value) !== "fontSize") return;
         const value = node.value;
-        if (value.type === "Literal" && typeof value.value === "number") context.report({ node, messageId: "noFontSize" });
+        if (isLiteralSize(value)) context.report({ node, messageId: "noFontSize" });
         else if (value.type === "ConditionalExpression") {
           for (const branch of [value.consequent, value.alternate]) {
-            if (branch.type === "Literal" && typeof branch.value === "number") context.report({ node, messageId: "noFontSize" });
+            if (isLiteralSize(branch)) context.report({ node, messageId: "noFontSize" });
           }
         }
       },
@@ -103,8 +114,9 @@ export default tseslint.config(
     // The font-size gate (#43, widened on #48 review): every screen in apps/mobile
     // sets type through the token scale - text-caption / -small / -body /
     // -title-sm - or through the Learner's saved Story text size, never through
-    // a number in a style object.
-    files: ["apps/mobile/src/**/*.tsx"],
+    // a number in a style object. apps/web (ADR-0010) follows the same rule on
+    // the DOM: a text-* class, or var(--story-text-size), never "16px".
+    files: ["apps/mobile/src/**/*.tsx", "apps/web/src/**/*.{ts,tsx}"],
     rules: { "vjt/no-inline-font-size": "error" },
   },
   {
