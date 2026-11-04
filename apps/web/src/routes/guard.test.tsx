@@ -99,7 +99,7 @@ describe("route guard", () => {
 
   it("signs out to /login with no next, even when the Learner was on a deep page", async () => {
     const user = userEvent.setup();
-    const { router } = renderAppAt("/grammar/n3-te-form");
+    const { router } = renderAppAt("/grammar/1");
     // The Grammar detail page (its Back control shows in every state).
     expect(await screen.findByRole("button", { name: "Back to grammar" })).toBeTruthy();
 
