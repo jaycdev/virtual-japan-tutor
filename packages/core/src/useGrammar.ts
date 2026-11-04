@@ -59,9 +59,9 @@ function failure(error: { message?: string } | undefined, status: number): { ok:
  */
 export function useGrammar(
   client: ApiClient,
-  initial?: { query?: string; offset?: number },
+  initial?: { query?: string; offset?: number; level?: GrammarLevelFilter },
 ): Grammar {
-  const [level, setLevelState] = useState<GrammarLevelFilter>("all");
+  const [level, setLevelState] = useState<GrammarLevelFilter>(initial?.level ?? "all");
   const [query, setQueryState] = useState(initial?.query ?? "");
   const [offset, setOffsetState] = useState(Math.max(0, initial?.offset ?? 0));
   const [attempt, setAttempt] = useState(0);
