@@ -6,6 +6,6 @@ The app is styled with Uniwind (Tailwind CSS 4 for React Native) and built from 
 
 ## Consequences
 
-- Every colour, size and font comes from `global.css` theme variables. Hardcoded hex values in components are a bug.
+- Every colour, size and font comes from the theme variables in `packages/design` (generated `native.css`). Hardcoded hex values in components are a bug.
 - Components that don't take `className` (for example `react-native-svg` paths in the pitch graph) are wrapped with `withUniwind` so they follow the theme.
 - Uniwind applies light, dark or system but does not save the choice. The app saves it per device itself.
