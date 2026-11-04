@@ -198,6 +198,43 @@ func TestAssetMissesAreNotTheAppShell(t *testing.T) {
 	}
 }
 
+// TestTrailingSlashDeepLinksServeTheAppShell (#51 review S3): Expo Router
+// accepts /stories/123/ style URLs and /stories/ is a page navigation like
+// /stories. fileName rejects trailing slashes before the disk lookup, so
+// without the slash-route path a browser got the API's JSON 404 where the
+// app shell belongs. API-shaped Accept on the very same URL must still
+// reach the API.
+func TestTrailingSlashDeepLinksServeTheAppShell(t *testing.T) {
+	h := site(t)
+	for _, target := range []string{"/stories/", "/stories/123/", "/settings/"} {
+		rec := doAccept(h, http.MethodGet, target, browserAccept)
+		if rec.Header().Get("X-From") != "" || rec.Code != http.StatusOK {
+			t.Errorf("GET %s = %d (X-From %q), want the app shell not the API",
+				target, rec.Code, rec.Header().Get("X-From"))
+			continue
+		}
+		if !strings.Contains(rec.Body.String(), "<title>app</title>") {
+			t.Errorf("GET %s body = %q, want index.html", target, rec.Body.String())
+		}
+	}
+	for _, accept := range []string{"", "*/*", "application/json"} {
+		rec := doAccept(h, http.MethodGet, "/stories/123/", accept)
+		if rec.Header().Get("X-From") != "api" || rec.Code != http.StatusTeapot {
+			t.Errorf(`GET /stories/123/ (Accept %q) = %d (X-From %q), want the API's answer`,
+				accept, rec.Code, rec.Header().Get("X-From"))
+		}
+	}
+	// Paths that name a file type keep 404ing through the API even with a
+	// trailing slash, and degenerate paths ("//") stay the API's too.
+	for _, target := range []string{"/no-such-page.json/", "//"} {
+		rec := doAccept(h, http.MethodGet, target, browserAccept)
+		if rec.Header().Get("X-From") != "api" || rec.Code != http.StatusTeapot {
+			t.Errorf("GET %s = %d (X-From %q), want the API's answer, not index.html",
+				target, rec.Code, rec.Header().Get("X-From"))
+		}
+	}
+}
+
 func TestRangeRequests(t *testing.T) {
 	h := site(t)
 	req := httptest.NewRequest(http.MethodGet, "/assets/index-abc123.js", nil)

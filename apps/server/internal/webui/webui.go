@@ -52,6 +52,12 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	name, ok := fileName(r.URL.Path)
 	if !ok {
+		// A trailing slash ("/stories/") is not a valid fs name, but it is
+		// still an extension-less client-side route: run the same
+		// page-vs-API decision on the trimmed path (#51 review S3).
+		if h.serveShellForSlashRoute(w, r) {
+			return
+		}
 		h.api.ServeHTTP(w, r)
 		return
 	}
@@ -110,6 +116,18 @@ func pageRequest(r *http.Request, name string) bool {
 		return false
 	}
 	return path.Ext(name) == ""
+}
+
+// serveShellForSlashRoute covers trailing-slash deep links like /stories/:
+// fileName rejects the trailing slash before any disk lookup, but the path
+// still names no file type — a browser wants the app shell for it, while
+// Accept: */* stays the API's business (its 404).
+func (h *handler) serveShellForSlashRoute(w http.ResponseWriter, r *http.Request) bool {
+	trimmed, ok := fileName(strings.TrimSuffix(r.URL.Path, "/"))
+	if !ok || trimmed == "index.html" || path.Ext(trimmed) != "" {
+		return false
+	}
+	return pageRequest(r, trimmed) && h.serveFile(w, r, "index.html")
 }
 
 // fileName maps a request path to a slash-separated name inside the web
