@@ -1,0 +1,25 @@
+/* The Story reader's text rules that Tailwind classes cannot express cleanly
+   (ui-plan 4.1). Colours and sizes still come from the design tokens. */
+
+/* The 40-character column (about 40 Japanese characters at the saved Story text
+   size). The Reading Panel shares this width, so the two stay one column. */
+.story-column-width {
+  width: min(100%, calc(var(--story-text-size) * 40));
+}
+
+/* Ruby: the reading sits over its word, centred on it, and never takes part in
+   a copy or a selection (copyText strips <rt> too, this is the belt to that
+   braces). The base text stays the only thing a screen reader or a paste gets. */
+.story-text ruby {
+  ruby-position: over;
+  ruby-align: center;
+}
+.story-text rt {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* A word that opens a Lookup Menu is a control, not a plain run of text. */
+.story-text [data-token][tabindex] {
+  cursor: pointer;
+}

@@ -51,6 +51,15 @@ export type { KeyValueStore, LandingSetupDecision } from "./firstRun.ts";
 export { memoryTokenStorage } from "./tokenStorage.ts";
 export type { TokenStorage } from "./tokenStorage.ts";
 export { deviceTimezone, TIMEZONE_OPTIONS } from "./timezones.ts";
+// The Story reader's pure logic, shared by the phone and the web reader (issue #77).
+export * from "./reader/holdMenu.ts";
+export * from "./reader/marks.ts";
+export * from "./reader/furigana.ts";
+export * from "./reader/sentences.ts";
+export * from "./reader/pitch.ts";
+export * from "./reader/glosses.ts";
+export { useEntryLookup } from "./reader/useEntryLookup.ts";
+export type { EntryLookup } from "./reader/useEntryLookup.ts";
 export {
   formatInstant,
   greetingFor,

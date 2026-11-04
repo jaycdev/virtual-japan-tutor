@@ -224,6 +224,11 @@ export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
   // re-creating them: an answer's response is only painted while the Story
   // it was asked about is still the open one.
   const openIdRef = useRef<string | null>(null);
+  // The Story the Learner last asked to open, before it has necessarily
+  // arrived: quick Previous/Next presses can land out of order, and a reply
+  // for a Story the Learner has already moved past must not paint, not fail,
+  // and not clear the newer request's pending state (issue #77 review).
+  const requestedIdRef = useRef<string | null>(null);
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -290,18 +295,23 @@ export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
 
   const openStory = useCallback(
     async (id: string) => {
+      requestedIdRef.current = id;
       setPending(true);
       setError(null);
       try {
         const { data, error: err, response } = await client.GET("/stories/{storyId}", {
           params: { path: { storyId: id } },
         });
+        // A reply that lands after the Learner moved on belongs to a Story they
+        // no longer want: it never paints, never errors, and never clears the
+        // newer request's pending flag.
+        if (requestedIdRef.current !== id) return;
         if (data) showStory(data);
         else setError(message(err, response.status));
       } catch {
-        setError(UNREACHABLE);
+        if (requestedIdRef.current === id) setError(UNREACHABLE);
       } finally {
-        setPending(false);
+        if (requestedIdRef.current === id) setPending(false);
       }
     },
     [client, showStory],
@@ -309,6 +319,7 @@ export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
 
   const close = useCallback(() => {
     openIdRef.current = null;
+    requestedIdRef.current = null;
     setStory(null);
     setOpen(false);
     setAnswers(new Map());

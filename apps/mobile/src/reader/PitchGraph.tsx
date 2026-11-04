@@ -1,4 +1,5 @@
 import type { PitchPattern } from "@vjt/api-client";
+import { pitchDots } from "@vjt/core";
 import { StyleSheet, Text, View } from "react-native";
 import Svg, { Circle, Line } from "react-native-svg";
 
@@ -22,20 +23,8 @@ export function PitchGraph({
   withCaption?: boolean;
 }) {
   const height = 36;
-  const pad = 10;
-  const yHigh = 8;
-  const yLow = height - 12;
-  const n = pitch.moraCount + 1; // mora dots plus the trailing dot
-  const step = n > 1 ? (width - pad * 2) / (n - 1) : 0;
-  // A mora is high while it sits before the downstep; heiban (downstep after
-  // the end) keeps every mora high, and so does the trailing dot.
-  const isHigh = (mora: number) => mora < pitch.downstepAfterMora;
-  const trailingHigh = pitch.heiban;
-
-  const dots = Array.from({ length: n }, (_, i) => {
-    const high = i < pitch.moraCount ? isHigh(i + 1) : trailingHigh;
-    return { x: pad + step * i, y: high ? yHigh : yLow };
-  });
+  // The dot geometry is shared with the web graph (issue #77, @vjt/core).
+  const dots = pitchDots(pitch, width, height);
   return (
     <View
       testID="pitch-graph"

@@ -4,7 +4,7 @@ import { Pressable, StyleSheet, Text } from "react-native";
 import * as DialogPrimitive from "@rn-primitives/dialog";
 import { useSheetBottomInset } from "../components/ui/sheet.ts";
 
-import type { MeasurableNode, MenuOption, MenuOptionId, Rect } from "./holdMenu.ts";
+import type { MeasurableNode, MenuOption, MenuOptionId, Rect } from "@vjt/core";
 
 /**
  * The Lookup menu (issues #14, #45): it opens once the Learner keeps holding a
