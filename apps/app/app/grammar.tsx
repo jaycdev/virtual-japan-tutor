@@ -1,15 +1,12 @@
-import { Text, View } from "react-native";
+import { router, type Href } from "expo-router";
 
-// Grammar (#44 placeholder, built out in #50): the list of known/learning
-// grammar points will live here; /grammar/:id (a Grammar point detail) is
-// already routed so reader-style deep links resolve once #50 fills them in.
+import { Grammar } from "../src/Grammar.tsx";
+import { useSession } from "../src/session.tsx";
+
+// Grammar destination (#49): the catalogue grouped by JLPT level, with search.
+// Opening a point pushes /grammar/:id, so hardware Back pops the detail and
+// the chrome hides the tab bar there (isReaderRoute in the Shell).
 export default function GrammarRoute() {
-  return (
-    <View className="flex-1 gap-4 bg-background p-4">
-      <Text className="text-title font-semibold text-foreground">Grammar</Text>
-      <Text className="text-body text-muted-foreground">
-        Your known and learning grammar points will appear here.
-      </Text>
-    </View>
-  );
+  const { client } = useSession();
+  return <Grammar client={client} onOpenPoint={(pointId) => router.push(`/grammar/${pointId}` as Href)} />;
 }
