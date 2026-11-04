@@ -13,6 +13,9 @@ export interface GrammarPointRead {
   reload(): void;
 }
 
+/** A finished read, tagged with the id it answers. */
+type Settled = { id: number; state: Extract<GrammarPointState, { status: "ready" | "error" }> };
+
 const UNREACHABLE = "Cannot reach the server";
 const FAILED = "Request failed";
 
@@ -29,35 +32,40 @@ const FAILED = "Request failed";
  * for that (S1), hence the state stays `ready` rather than pretending error.
  *
  * `id` undefined (a route :id that is not a catalogue id) leaves the read
- * idle without asking the server. Late answers are dropped: changing `id`,
- * calling `reload`, or unmounting cancels the in-flight effect, so a stale
- * response can never paint over the current one.
+ * idle without asking the server. Late answers are dropped twice over: the
+ * effect's cancellation stops a changed `id`, a `reload` or an unmount from
+ * landing at all, and every settled answer carries the id it belongs to, so
+ * one that no longer matches the screen never paints. The visible state is
+ * derived from those two facts — no setState runs in the effect body.
  */
 export function useGrammarPoint(client: ApiClient, id: number | undefined): GrammarPointRead {
   const [attempt, setAttempt] = useState(0);
-  const [state, setState] = useState<GrammarPointState>({ status: "idle" });
+  const [settled, setSettled] = useState<Settled | null>(null);
 
   useEffect(() => {
-    if (id === undefined) {
-      setState({ status: "idle" });
-      return;
-    }
+    if (id === undefined) return;
     let cancelled = false;
-    setState({ status: "loading" });
     client
       .GET("/grammar/points/{id}", { params: { path: { id: String(id) } } })
       .then(({ data, error, response }) => {
         if (cancelled) return;
-        if (data) setState({ status: "ready", point: data });
-        else setState({ status: "error", message: error?.message ?? `${FAILED} (${response.status})` });
+        if (data) setSettled({ id, state: { status: "ready", point: data } });
+        else setSettled({ id, state: { status: "error", message: error?.message ?? `${FAILED} (${response.status})` } });
       })
       .catch(() => {
-        if (!cancelled) setState({ status: "error", message: UNREACHABLE });
+        if (!cancelled) setSettled({ id, state: { status: "error", message: UNREACHABLE } });
       });
     return () => {
       cancelled = true;
     };
   }, [client, id, attempt]);
+
+  const state: GrammarPointState =
+    id === undefined
+      ? { status: "idle" }
+      : settled !== null && settled.id === id
+        ? settled.state
+        : { status: "loading" };
 
   const reload = useCallback(() => setAttempt((n) => n + 1), []);
 
