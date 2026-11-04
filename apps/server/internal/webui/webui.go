@@ -64,8 +64,13 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.serveFile(w, r, name) {
 		return
 	}
-	// File miss. A browser page load of a client-side route gets the app
-	// shell; everything else keeps the API's answer.
+	// File miss on a path that names no file type: the answer now depends
+	// on Accept (app shell for page loads, API JSON for everything else),
+	// so a cache keyed on the URL alone must not mix the two — both answers
+	// say Vary: Accept (#51 review S1).
+	if path.Ext(name) == "" {
+		w.Header().Set("Vary", "Accept")
+	}
 	if pageRequest(r, name) {
 		if h.serveFile(w, r, "index.html") {
 			return
@@ -127,6 +132,7 @@ func (h *handler) serveShellForSlashRoute(w http.ResponseWriter, r *http.Request
 	if !ok || trimmed == "index.html" || path.Ext(trimmed) != "" {
 		return false
 	}
+	w.Header().Set("Vary", "Accept")
 	return pageRequest(r, trimmed) && h.serveFile(w, r, "index.html")
 }
 

@@ -235,6 +235,36 @@ func TestTrailingSlashDeepLinksServeTheAppShell(t *testing.T) {
 	}
 }
 
+// TestVaryAcceptOnRouteMisses (#51 review S1): on a file miss for a path
+// that names no file type, the answer depends on the Accept header — app
+// shell for a browser, API JSON for */*. Both answers carry Vary: Accept so
+// a future URL-keyed cache cannot serve one where the other belongs. Real
+// files are Accept-blind and must NOT get the header.
+func TestVaryAcceptOnRouteMisses(t *testing.T) {
+	h := site(t)
+	for _, tc := range []struct{ method, target, accept, wantFrom string }{
+		{http.MethodGet, "/stories/123", browserAccept, ""},
+		{http.MethodGet, "/stories/123", "*/*", "api"},
+		{http.MethodHead, "/stories/123", browserAccept, ""},
+		{http.MethodGet, "/stories/", browserAccept, ""},
+		{http.MethodGet, "/stories/", "*/*", "api"},
+	} {
+		rec := doAccept(h, tc.method, tc.target, tc.accept)
+		if rec.Header().Get("X-From") != tc.wantFrom {
+			t.Errorf("%s %s (Accept %q): X-From = %q, want %q",
+				tc.method, tc.target, tc.accept, rec.Header().Get("X-From"), tc.wantFrom)
+		}
+		if got := rec.Header().Get("Vary"); got != "Accept" {
+			t.Errorf("%s %s (Accept %q): Vary = %q, want Accept", tc.method, tc.target, tc.accept, got)
+		}
+	}
+	for _, target := range []string{"/", "/assets/index-abc123.js", "/favicon.svg"} {
+		if got := do(h, http.MethodGet, target).Header().Get("Vary"); got != "" {
+			t.Errorf("GET %s: Vary = %q, want none (the answer does not depend on Accept)", target, got)
+		}
+	}
+}
+
 func TestRangeRequests(t *testing.T) {
 	h := site(t)
 	req := httptest.NewRequest(http.MethodGet, "/assets/index-abc123.js", nil)
