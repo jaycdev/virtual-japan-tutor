@@ -107,7 +107,7 @@ The line height leaves room for stacked furigana without lines colliding. The Re
 ## 3. Layout and navigation
 
 - Destinations in both apps: **Today**, **Stories**, **Practice**, **Grammar** and **Settings**.
-- **Web:** real URLs (`/`, `/stories`, `/stories/:id`, `/practice`, `/grammar`, `/grammar/:id`, `/settings/:section`, `/setup`, `/login`). From 1024 px, a left sidebar (about 240 px) with the wordmark, the destinations and, at the bottom, the signed-in Learner and Log out. Below 1024 px the sidebar collapses to a top bar with the wordmark and a menu button that opens it as a sheet. Page content has a maximum width (about 960 px); the reader column is narrower (see 4.1). Every destination and the reader can be used fully with the keyboard.
+- **Web:** real URLs (`/`, `/stories`, `/stories/:id`, `/practice`, `/grammar`, `/grammar/:id`, `/settings/:section`, `/setup`, `/login`). From 1024 px, a left sidebar (about 240 px) with the wordmark, the destinations and, at the bottom, the signed-in Learner and Log out. Below 1024 px the sidebar collapses to a top bar with the wordmark and a menu button that opens it as a sheet. Page content has a maximum width (about 960 px); the reader column is narrower (see 4.1). The Story reader is the one route that lifts that maximum, because its column is measured in characters rather than pixels. Every destination and the reader can be used fully with the keyboard.
 - **Mobile:** a bottom tab bar with five icons and labels. The Story reader hides the tab bar for full-screen reading. Android hardware Back follows the Expo Router stack. Layouts are single-column; there is no wide layout.
 
 ## 4. Screens
@@ -116,7 +116,7 @@ Built in this order. Each one counts as done only when it passes section 6.
 
 ### 4.1 Story Reader
 
-- **Text column** about 40 Japanese characters wide, centred, in the serif font at the chosen Story text size. The Story Title (`display`) sits above with its English translation hidden until revealed.
+- **Text column** about 40 Japanese characters wide, centred, in the serif font at the chosen Story text size. On web that is exact: 40 times the size in pixels, and never more than the page gives it, so a wider window centres the column and gives it more air rather than making the line longer. This is why the reader route lifts the 960 px page maximum instead (3): the column then reaches its 40 characters whenever the window has room for it, 1120 px at XL, and stops at what fits, never scrolling sideways, below that. The Reading Panel below takes the same width, so one rule covers both. The Story Title (`display`) sits above with its English translation hidden until revealed.
 - **Reading Panel** fixed above the text and the same width as the column, on `card` with a bottom border. It shows the Sentence Translation of the selected sentence (blurred until unblurred) and the current Lookup: the word, its reading, meaning, JLPT badge and pitch graph, or for a Grammar Span its Grammar Point and what it does. Its height is fixed so the text never jumps.
 - **Marks**, with the same colours and meaning in both apps:
   - Known word: no mark.
