@@ -57,7 +57,7 @@ func (f *focusStub) KnownWords(_ context.Context, _ uuid.UUID, _ int) ([]story.V
 func newGenerateEnv(t *testing.T, focus story.Focus) *generateEnv {
 	t.Helper()
 	clock := authtest.NewFakeClock()
-	authSvc := auth.NewService(authtest.NewMemStore(), auth.Options{TTL: time.Hour, Now: clock.Now})
+	authSvc := auth.NewService(authtest.NewMemStore(), auth.Options{TTL: time.Hour, Now: clock.Now, PasswordParams: authtest.FastPasswordParams})
 	var aliceID uuid.UUID
 	for _, name := range []string{"alice", "bob"} {
 		u, err := authSvc.CreateUser(context.Background(), name, password)

@@ -32,14 +32,31 @@ const (
 
 var errBadHash = errors.New("auth: malformed password hash")
 
-// HashPassword returns an encoded argon2id hash ($argon2id$v=19$m=..,t=..,p=..$salt$hash).
+// PasswordParams are the argon2id costs used to hash new passwords. Production uses the
+// defaults (the zero value of Options.PasswordParams selects them); tests inject cheaper
+// ones so they do not pay ~100 ms per hash. Verification always reads the costs stored in
+// the hash, so the choice never affects which passwords are accepted.
+type PasswordParams struct {
+	MemoryKiB uint32
+	Time      uint32
+	Threads   uint8
+}
+
+var defaultPasswordParams = PasswordParams{MemoryKiB: argonMemoryKiB, Time: argonTime, Threads: argonThreads}
+
+// HashPassword returns an encoded argon2id hash ($argon2id$v=19$m=..,t=..,p=..$salt$hash)
+// at the production cost.
 func HashPassword(password string) (string, error) {
+	return hashPassword(password, defaultPasswordParams)
+}
+
+func hashPassword(password string, p PasswordParams) (string, error) {
 	salt := make([]byte, argonSaltLen)
 	if _, err := rand.Read(salt); err != nil {
 		return "", fmt.Errorf("auth: salt: %w", err)
 	}
-	key := argon2.IDKey([]byte(password), salt, argonTime, argonMemoryKiB, argonThreads, argonKeyLen)
-	return encodeHash(argonMemoryKiB, argonTime, argonThreads, salt, key), nil
+	key := argon2.IDKey([]byte(password), salt, p.Time, p.MemoryKiB, p.Threads, argonKeyLen)
+	return encodeHash(p.MemoryKiB, p.Time, p.Threads, salt, key), nil
 }
 
 func encodeHash(memory, time uint32, threads uint8, salt, key []byte) string {

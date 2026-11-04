@@ -30,7 +30,7 @@ type libraryEnv struct {
 func newLibraryEnv(t *testing.T) *libraryEnv {
 	t.Helper()
 	clock := authtest.NewFakeClock()
-	authSvc := auth.NewService(authtest.NewMemStore(), auth.Options{TTL: time.Hour, Now: clock.Now})
+	authSvc := auth.NewService(authtest.NewMemStore(), auth.Options{TTL: time.Hour, Now: clock.Now, PasswordParams: authtest.FastPasswordParams})
 	var aliceID uuid.UUID
 	for _, name := range []string{"alice", "bob"} {
 		u, err := authSvc.CreateUser(context.Background(), name, password)

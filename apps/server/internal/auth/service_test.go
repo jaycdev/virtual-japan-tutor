@@ -26,13 +26,38 @@ type fixture struct {
 }
 
 func newFixture(t *testing.T) fixture {
+	return newFixtureWithParams(t, authtest.FastPasswordParams)
+}
+
+// newFixtureWithParams takes the zero PasswordParams for production argon2id cost.
+func newFixtureWithParams(t *testing.T, params auth.PasswordParams) fixture {
 	t.Helper()
 	store, clock := authtest.NewMemStore(), authtest.NewFakeClock()
-	svc := auth.NewService(store, auth.Options{TTL: sessionTTL, Now: clock.Now})
+	svc := auth.NewService(store, auth.Options{TTL: sessionTTL, Now: clock.Now, PasswordParams: params})
 	if _, err := svc.CreateUser(context.Background(), "Alice", goodPassword); err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
 	return fixture{svc, store, clock}
+}
+
+// A partly filled PasswordParams must fall back per field to the production cost: a zero
+// Time or Threads would panic inside argon2, and must never mean "weak".
+func TestPartialPasswordParamsDefaultPerField(t *testing.T) {
+	f := newFixtureWithParams(t, auth.PasswordParams{MemoryKiB: 8}) // Time and Threads unset
+	_, hash, err := f.store.UserByUsername(context.Background(), "alice")
+	if err != nil {
+		t.Fatalf("UserByUsername: %v", err)
+	}
+	h, err := auth.HashPassword("x")
+	if err != nil {
+		t.Fatalf("HashPassword: %v", err)
+	}
+	// Both hashes carry "m=..,t=..,p=..": the unset fields must match production's t and p.
+	costs := func(s string) string { return strings.Split(s, "$")[3] }
+	prod := strings.SplitN(costs(h), ",", 2)[1] // "t=..,p=.."
+	if got := strings.SplitN(costs(hash), ",", 2); got[0] != "m=8" || got[1] != prod {
+		t.Fatalf("costs = %q, want m=8 with production %q", costs(hash), prod)
+	}
 }
 
 func TestLoginIssuesATokenThatAuthenticatesTheUser(t *testing.T) {
@@ -159,7 +184,7 @@ func TestUnknownUserAndWrongPasswordAreIndistinguishable(t *testing.T) {
 // An unknown username must cost about as much as a wrong password (a dummy hash is
 // verified), otherwise response time reveals which usernames exist.
 func TestUnknownUserTakesComparableTimeToWrongPassword(t *testing.T) {
-	f := newFixture(t)
+	f := newFixtureWithParams(t, auth.PasswordParams{}) // production cost: the timing is about real argon2id work
 	ctx := context.Background()
 	timeIt := func(user string) time.Duration {
 		// Fresh usernames each time so lockout bookkeeping can never short-circuit.
@@ -271,7 +296,7 @@ func TestCreateUserValidatesAndRejectsDuplicates(t *testing.T) {
 
 func TestBootstrapCreatesTheFirstUserOnlyWhenThereAreNone(t *testing.T) {
 	store, clock := authtest.NewMemStore(), authtest.NewFakeClock()
-	svc := auth.NewService(store, auth.Options{TTL: sessionTTL, Now: clock.Now})
+	svc := auth.NewService(store, auth.Options{TTL: sessionTTL, Now: clock.Now, PasswordParams: authtest.FastPasswordParams})
 	ctx := context.Background()
 
 	created, err := svc.Bootstrap(ctx, "owner", goodPassword)

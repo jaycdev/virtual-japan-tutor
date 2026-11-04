@@ -56,9 +56,15 @@ jobs:
   node:
     name: Node packages and generated code
     runs-on: ubuntu-latest
+    env:
+      # Turbo's local cache, persisted by the cache step below. Set explicitly because the
+      # default location has changed between Turbo major versions.
+      TURBO_CACHE_DIR: .turbo/cache
     steps:
       - uses: actions/checkout@v7.0.1
-      # Turborepo also runs the Go server's tasks, so Go is needed here too.
+      # Go is needed only because generate:force runs go generate (api.gen.go, which
+      # check:generated verifies). The Go server's vet, test and build run in the go job,
+      # so the turbo step below excludes @vjt/server.
       - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: apps/server/go.mod
@@ -69,14 +75,24 @@ jobs:
           node-version: 24.21.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Restore Turbo cache
+        uses: actions/cache@v6.1.0
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
+            turbo-${{ runner.os }}-
       - name: Regenerate from OpenAPI spec and fail if committed output is stale
         run: |
           pnpm generate:force
           pnpm check:generated
-      - run: pnpm lint
-      - run: pnpm typecheck
-      - run: pnpm test
-      - run: pnpm build
+        env:
+          # --force overwrites existing cache entries. Read-only turbo cache keeps this
+          # regeneration from writing into the cache that is saved for later runs.
+          TURBO_CACHE: local:r
+      - name: Lint, typecheck, test and build (Go server excluded)
+        run: pnpm exec turbo run lint typecheck test build --filter='!@vjt/server'
 
   images:
     name: Docker images build

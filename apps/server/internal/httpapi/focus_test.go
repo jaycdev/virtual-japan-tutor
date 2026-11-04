@@ -32,7 +32,7 @@ type focusEnv struct {
 func newFocusEnv(t *testing.T) *focusEnv {
 	t.Helper()
 	clock := authtest.NewFakeClock()
-	authSvc := auth.NewService(authtest.NewMemStore(), auth.Options{TTL: time.Hour, Now: clock.Now})
+	authSvc := auth.NewService(authtest.NewMemStore(), auth.Options{TTL: time.Hour, Now: clock.Now, PasswordParams: authtest.FastPasswordParams})
 	alice, err := authSvc.CreateUser(context.Background(), "alice", password)
 	if err != nil {
 		t.Fatal(err)

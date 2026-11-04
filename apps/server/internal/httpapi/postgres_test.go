@@ -10,6 +10,7 @@ import (
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/aiprovider"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/api"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/auth"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/auth/authtest"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/dbtest"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/httpapi"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/marumorisync"
@@ -21,7 +22,7 @@ import (
 // TEST_DATABASE_URL). Catches SQL/schema drift the in-memory store cannot.
 func TestLoginMeLogoutAgainstPostgres(t *testing.T) {
 	pool := dbtest.New(t)
-	svc := auth.NewService(auth.NewPostgresStore(pool), auth.Options{TTL: time.Hour})
+	svc := auth.NewService(auth.NewPostgresStore(pool), auth.Options{TTL: time.Hour, PasswordParams: authtest.FastPasswordParams})
 	if _, err := svc.CreateUser(context.Background(), "alice", password); err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +47,7 @@ func TestAIProvidersAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc := auth.NewService(auth.NewPostgresStore(pool), auth.Options{TTL: time.Hour})
+	svc := auth.NewService(auth.NewPostgresStore(pool), auth.Options{TTL: time.Hour, PasswordParams: authtest.FastPasswordParams})
 	for _, n := range []string{"alice", "bob"} {
 		if _, err := svc.CreateUser(context.Background(), n, password); err != nil {
 			t.Fatal(err)

@@ -12,6 +12,11 @@ import (
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/auth"
 )
 
+// FastPasswordParams are cheap argon2id costs for test services (Options.PasswordParams).
+// Production hashes cost ~64 MiB and ~100 ms each; tests that are not about hashing
+// strength use these so suites are not dominated by password hashing.
+var FastPasswordParams = auth.PasswordParams{MemoryKiB: 8, Time: 1, Threads: 1}
+
 // MemStore is an in-memory auth.Store for tests. auth's storeContract test runs against it
 // and against the Postgres store, which keeps the fake honest.
 type MemStore struct {

@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/auth"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/auth/authtest"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/dbtest"
 )
 
@@ -58,7 +59,7 @@ func TestOneUserCannotReadAnothersRowsThroughTheScopedRepository(t *testing.T) {
 	}
 
 	store := auth.NewPostgresStore(pool)
-	svc := auth.NewService(store, auth.Options{TTL: sessionTTL})
+	svc := auth.NewService(store, auth.Options{TTL: sessionTTL, PasswordParams: authtest.FastPasswordParams})
 	login := func(name string) context.Context {
 		t.Helper()
 		if _, err := svc.CreateUser(ctx, name, goodPassword); err != nil {

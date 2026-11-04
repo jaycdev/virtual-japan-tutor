@@ -10,6 +10,7 @@ import (
 
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/api"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/auth"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/auth/authtest"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/dbtest"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/httpapi"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/mastery"
@@ -94,7 +95,7 @@ func TestPracticeAgainstPostgres(t *testing.T) {
 
 	// The Learner: auth over Postgres, then Known Items written the way the
 	// Sync and onboarding features write them.
-	authSvc := auth.NewService(auth.NewPostgresStore(pool), auth.Options{TTL: time.Hour})
+	authSvc := auth.NewService(auth.NewPostgresStore(pool), auth.Options{TTL: time.Hour, PasswordParams: authtest.FastPasswordParams})
 	alice, err := authSvc.CreateUser(ctx, "alice", password)
 	if err != nil {
 		t.Fatal(err)

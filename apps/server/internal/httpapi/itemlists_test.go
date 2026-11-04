@@ -188,7 +188,7 @@ type listsEnv struct {
 func newListsEnv(t *testing.T) *listsEnv {
 	t.Helper()
 	clock := authtest.NewFakeClock()
-	authn := auth.NewService(authtest.NewMemStore(), auth.Options{TTL: time.Hour, Now: clock.Now})
+	authn := auth.NewService(authtest.NewMemStore(), auth.Options{TTL: time.Hour, Now: clock.Now, PasswordParams: authtest.FastPasswordParams})
 	if _, err := authn.CreateUser(context.Background(), "alice", password); err != nil {
 		t.Fatal(err)
 	}
