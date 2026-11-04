@@ -1,7 +1,8 @@
 // Generates the unicode-range-sliced webfont subsets (ADR-0009): two woff2
-// slices per bundled Noto JP face, served from our own web build. global.css
-// references them as /fonts/<face>-<slice>.woff2; a page only downloads the
-// slices whose ranges it actually renders (login/showcase: latin-kana only).
+// slices per bundled Noto JP face, served from our own web build. The web app's
+// index.css references them as /fonts/<face>-<slice>.woff2; a page only downloads
+// the slices whose ranges it actually renders (login: latin-kana, plus kanji for
+// the 読 wordmark).
 //
 //   node scripts/subset-fonts.mjs     (needs `uv`/`uvx` on PATH for fontTools)
 //
@@ -10,13 +11,13 @@
 // committed slice sizes when it moves.
 // The Android TTFs in apps/app/assets/fonts/ stay full (expo-font bundles them;
 // Android has no unicode-range loading). Commit the generated files: they are
-// static assets of the web export, rebuilt rarely and reviewed by diff size.
+// static assets of the web build, rebuilt rarely and reviewed by diff size.
 import { execFileSync } from "node:child_process";
 import { mkdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 const SRC_DIR = "apps/app/assets/fonts";
-const OUT_DIR = "apps/app/public/fonts";
+const OUT_DIR = "apps/web/public/fonts";
 
 // Hyphen-free face ids: uniwind's native CSS pipeline mis-parses hyphenated
 // font-family values (crashes the Text component), and expo-font registers
@@ -24,7 +25,7 @@ const OUT_DIR = "apps/app/public/fonts";
 // all use these exact ids.
 const FACES = ["NotoSansJP400", "NotoSansJP700", "NotoSerifJP400", "NotoSerifJP700"];
 
-// Must stay in sync with the @font-face unicode-range blocks in apps/app/global.css.
+// Must stay in sync with the @font-face unicode-range blocks in apps/web/src/index.css.
 // One kanji slice per face: CJK glyphs share component glyphs across the whole
 // block, so splitting them further duplicates components and inflates the sum.
 const SLICES = {
