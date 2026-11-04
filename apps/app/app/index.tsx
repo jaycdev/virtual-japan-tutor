@@ -14,10 +14,14 @@ import { hasSetupSeen, markSetupSeen } from "../src/firstRun.ts";
 // goes to /practice, and the two ways out of an empty state go to Stories and
 // the Item Lists section — the screens where the Learner can actually act.
 //
-// First-run setup (#50): on the first sign-in on this device, landing here
-// replaces straight into /setup. The seen-flag is written before navigating,
-// so a Learner who skips the flow or quits it halfway is never asked again
-// (and never stuck in a redirect loop).
+// First-run setup (#50, review B2): the wizard is for Learners who have never
+// chosen a Starting Level, not for every device first-boot. The gate reads
+// GET /starting-level before deciding: an already-configured Learner (an
+// upgrader, an account made on another device, a reinstalled app) has setup
+// marked seen and is never nagged; only a genuinely unconfigured Learner is
+// replaced into /setup, where the route itself records the flag. A server
+// that will not answer is inconclusive — no mark, no redirect, checked again
+// on the next launch.
 export default function TodayRoute() {
   const { client, state } = useSession();
   const setupChecked = useRef(false);
@@ -26,12 +30,23 @@ export default function TodayRoute() {
     if (state.status !== "signedIn" || setupChecked.current) return;
     setupChecked.current = true;
     void (async () => {
-      if (!(await hasSetupSeen())) {
-        await markSetupSeen();
-        router.replace("/setup");
+      if (await hasSetupSeen()) return;
+      // openapi-fetch resolves HTTP errors instead of throwing, so no payload
+      // at all (or a thrown network failure) is the inconclusive case.
+      let configured: boolean | undefined;
+      try {
+        configured = (await client.GET("/starting-level")).data?.configured;
+      } catch {
+        return; // inconclusive: stay put, decide on the next launch
       }
+      if (configured === undefined) return; // inconclusive response
+      if (configured) {
+        await markSetupSeen(); // known account: never ask again
+        return;
+      }
+      router.replace("/setup");
     })();
-  }, [state.status]);
+  }, [state.status, client]);
 
   return (
     <Today

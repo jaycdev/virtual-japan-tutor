@@ -113,7 +113,8 @@ function jsonResponse(status: number, body: unknown): Response {
   });
 }
 
-function stubApi(): ReturnType<typeof vi.fn> {
+function stubApi(options: { startingLevelConfigured?: boolean } = {}): ReturnType<typeof vi.fn> {
+  const levelConfigured = options.startingLevelConfigured ?? true;
   const fetchMock = vi.fn(async (input: unknown) => {
     const request = input instanceof Request ? input : new Request(String(input));
     const path = new URL(request.url).pathname;
@@ -138,7 +139,7 @@ function stubApi(): ReturnType<typeof vi.fn> {
     if (path === "/reading-settings")
       return jsonResponse(200, { blurTranslation: true, lookupHoldMs: 500 });
     if (path === "/starting-level")
-      return jsonResponse(200, { configured: true, level: "N5" });
+      return jsonResponse(200, { configured: levelConfigured, level: levelConfigured ? "N5" : null });
     if (path === "/ai-providers") return jsonResponse(200, []);
     if (path === "/ai-tasks") return jsonResponse(200, []);
     if (path === "/story-settings")
@@ -425,7 +426,9 @@ describe("first-run setup (#50)", () => {
 
   it("the first sign-in lands in setup once — skipping it sticks across sign out and back in", async () => {
     freshDevice();
-    stubApi();
+    // A brand-new account has never picked a level — that, not the missing
+    // device flag, is what puts the wizard in front of it (review B2).
+    stubApi({ startingLevelConfigured: false });
     renderApp("/");
 
     await logIn();
@@ -452,7 +455,7 @@ describe("first-run setup (#50)", () => {
 
   it("skipping each step walks the wizard to the end and fires no writes", async () => {
     freshDevice();
-    const fetchMock = stubApi();
+    const fetchMock = stubApi({ startingLevelConfigured: false });
     renderApp("/");
 
     await logIn();
@@ -481,6 +484,32 @@ describe("first-run setup (#50)", () => {
     stubApi();
     renderApp("/");
     await signedIn();
+
+    await screen.findByText("Today’s story");
+    expect(screen.queryByText(/Step \d of 3/)).toBeNull();
+  });
+
+  it("an already-configured returning learner is not walked through setup", async () => {
+    // Review B2: the app reinstalled (or a second Learner on this device, or
+    // an account created before this flow existed) — the device flag is gone
+    // but the account HAS chosen a level. The gate asks the server, marks
+    // setup seen, and lets them land on Today.
+    freshDevice();
+    stubApi({ startingLevelConfigured: true });
+    renderApp("/");
+
+    await logIn();
+    await screen.findByText("Today’s story");
+    expect(screen.queryByText(/Step \d of 3/)).toBeNull();
+    // The flag is marked, so the next launch does not even ask the server.
+    expect(localStorage.getItem("vjt.setupSeen")).toBe("yes");
+  });
+
+  it("a /setup deep link after setup was seen falls through to Today", async () => {
+    // Review B2: the wizard is a one-time flow, not a permanent route. The
+    // beforeEach carries vjt.setupSeen = yes.
+    stubApi();
+    renderApp("/setup");
 
     await screen.findByText("Today’s story");
     expect(screen.queryByText(/Step \d of 3/)).toBeNull();
