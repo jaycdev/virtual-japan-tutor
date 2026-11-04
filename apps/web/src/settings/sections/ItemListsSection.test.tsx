@@ -85,7 +85,7 @@ describe("Settings › Item Lists", () => {
       expect(state.writes.some((w) => w.method === "DELETE" && w.path === "/item-lists/food")).toBe(true);
     });
     expect(await screen.findByRole("button", { name: /Saved.*Manage/ })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /Food/ })).toBeNull();
+    await waitFor(() => expect(screen.queryByRole("button", { name: /Food/ })).toBeNull());
   });
 
   it("shows a list's members with their glosses and removes one", async () => {

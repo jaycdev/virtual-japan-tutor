@@ -60,6 +60,7 @@ describe("Stories page", () => {
     await screen.findByText("駅で"); // wait for the Library to settle before touching the select
     await userEvent.selectOptions(screen.getByTestId("genre-filter"), "daily_life");
     await waitFor(() => expect(currentLocation(router)).toBe("/stories?genre=daily_life"));
+    await screen.findByTestId("library-filter-note");
     expect(screen.getByText("猫の一日")).toBeTruthy();
     expect(screen.queryByText("駅で")).toBeNull();
     expect((await screen.findByTestId("library-filter-note")).textContent).toBe(
