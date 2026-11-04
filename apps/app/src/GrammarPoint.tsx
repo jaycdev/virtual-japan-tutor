@@ -6,7 +6,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { CONTENT_MAX_WIDTH } from "./chrome/Shell.tsx";
 import { Card } from "./components/ui/Card.tsx";
 import { Icon } from "./components/ui/icon.tsx";
-import { InlineError, SkeletonBar } from "./state/states.tsx";
+import { EmptyState, InlineError, SkeletonBar } from "./state/states.tsx";
 
 /**
  * Grammar Point detail (issue #49), /grammar/:id on Android and web. Plan
@@ -59,7 +59,7 @@ export function GrammarPoint({
             onRetry={reload}
           />
         ) : (
-          <ReadyBody point={state.point} />
+          <ReadyBody point={state.point} onReloadExplanation={reload} />
         )}
       </View>
     </ScrollView>
@@ -119,7 +119,7 @@ function GeneratingBody() {
   );
 }
 
-function ReadyBody({ point }: { point: GrammarPointDetail }) {
+function ReadyBody({ point, onReloadExplanation }: { point: GrammarPointDetail; onReloadExplanation: () => void }) {
   return (
     <>
       <View className="gap-2">
@@ -151,9 +151,17 @@ function ReadyBody({ point }: { point: GrammarPointDetail }) {
           Explanation
         </Text>
         {point.explanation === "" ? (
-          <Text className="text-body text-muted-foreground">
-            No explanation yet — the tutor writes one the first time this page is opened.
-          </Text>
+          // #49 review S1: the server attempts generation inside this very GET
+          // (grammar.go), so an empty explanation on a page that was just
+          // opened means that attempt failed — usually no AI Provider assigned
+          // to grammar content. Say that, and give the way out; the old copy
+          // ("writes one the first time this page is opened") was a lie here.
+          <EmptyState
+            compact
+            message="The tutor could not generate this explanation. Check the AI Provider for grammar content in Settings, then reload this page."
+            actionLabel="Reload"
+            onAction={onReloadExplanation}
+          />
         ) : (
           <ExplanationBody text={point.explanation} />
         )}

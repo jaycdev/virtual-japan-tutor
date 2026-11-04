@@ -144,12 +144,20 @@ describe("Grammar point detail", () => {
     );
   });
 
-  it("says so plainly when the point has no explanation or examples yet", async () => {
+  it("admits a failed generation and offers Reload, instead of claiming the page was never opened (#49 review S1)", async () => {
     fixture.detail = { ...DETAIL, explanation: "", explanationEdited: false, examples: [] };
     renderPoint(DETAIL.id);
-    await waitFor(() => expect(screen.getByText("Explanation")).toBeTruthy());
-    expect(screen.getByText(/No explanation yet/)).toBeTruthy();
+    await waitFor(() => expect(screen.getByText(/could not generate this explanation/)).toBeTruthy());
+    expect(screen.getByText(/Check the AI Provider for grammar content in Settings/)).toBeTruthy();
+    expect(screen.queryByText(/first time this page is opened/)).toBeNull();
     expect(screen.getByText("No validated examples yet.")).toBeTruthy();
+
+    // Reload re-reads the point — the server retries generation inside the GET.
+    const before = gets.filter((call) => call === `GET /grammar/points/${DETAIL.id}`).length;
+    fireEvent.click(screen.getByRole("button", { name: "Reload" }));
+    await waitFor(() =>
+      expect(gets.filter((call) => call === `GET /grammar/points/${DETAIL.id}`).length).toBeGreaterThan(before),
+    );
   });
 
   it("goes back to the catalogue through the host’s control", async () => {
