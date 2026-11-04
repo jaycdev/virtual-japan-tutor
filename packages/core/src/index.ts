@@ -34,6 +34,8 @@ export type {
   GrammarLevelFilter,
   GrammarListState,
 } from "./useGrammar.ts";
+export { useGrammarPoint } from "./useGrammarPoint.ts";
+export type { GrammarPointRead, GrammarPointState } from "./useGrammarPoint.ts";
 export { STARTING_LEVELS, useGrammarReview, useStartingLevel } from "./useOnboarding.ts";
 export type {
   GrammarReview,
