@@ -91,4 +91,4 @@ jobs:
         run: docker build --target import -f apps/server/Dockerfile -t vjt-import:ci .
       - name: Server image serves the web app
         run: |
-          docker run --rm --entrypoint sh vjt-server:ci -c 'test -f /usr/share/vjt/web/index.html && ls /usr/share/vjt/web/assets | head'
+          docker run --rm --entrypoint sh vjt-server:ci -c 'test -f /usr/share/vjt/web/index.html && ls /usr/share/vjt/web/_expo/static/js/web | head'

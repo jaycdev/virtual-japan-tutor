@@ -1,7 +1,7 @@
 # Virtual Japan Tutor
 
-Monorepo: a Go server that owns all domain logic ([ADR-0001](docs/adr/0001-go-server-owns-domain-logic.md)),
-a Vite + React web app and an Expo (Android) app. Terminology lives in [GLOSSARY.md](GLOSSARY.md).
+Monorepo: a Go server that owns all domain logic ([ADR-0001](docs/adr/0001-go-server-owns-domain-logic.md))
+and one Expo app serving both the web client and Android ([ADR-0007](docs/adr/0007-one-expo-app-for-web-and-android.md)). Terminology lives in [GLOSSARY.md](GLOSSARY.md).
 
 ## Install (self-hosting)
 
@@ -100,7 +100,6 @@ add or confirm an AI Provider, and choose your starting level. To add accounts l
 | --------------------- | ----------------------------------------------------------------------- |
 | `api/openapi.yaml`    | OpenAPI spec: the single source of truth for the HTTP API               |
 | `apps/server`         | Go server (std `net/http`, pgx, goose migrations)                       |
-| `apps/web`            | Vite + React + TypeScript                                               |
 | `apps/app`            | Expo + TypeScript (Android and web)                                     |
 | `packages/api-client` | `@vjt/api-client`: TS types + client generated from the spec            |
 | `packages/core`       | `@vjt/core`: UI-agnostic hooks/state shared by the web and Expo apps    |
@@ -264,17 +263,20 @@ cd apps/server
 DATABASE_URL=postgres://user:pass@host:5432/db go run ./cmd/server
 ```
 
-Web: the server serves the built web app from `WEB_DIR` (the image sets it; unset means API only), so build it and
-point the server at it, then open <http://localhost:8080>:
+Web: the server serves the built web app from `WEB_DIR` (the image sets it; unset means API only), so export it
+from the Expo app and point the server at it, then open <http://localhost:8080>:
 
 ```sh
-pnpm --filter @vjt/web build
-cd apps/server && WEB_DIR=../web/dist DATABASE_URL=... SECRETS_KEY=... go run ./cmd/server
+pnpm --filter "@vjt/app^..." build   # @vjt/api-client and @vjt/core are consumed from their dist/
+pnpm --filter @vjt/app run build:web
+cd apps/server && WEB_DIR=../app/dist DATABASE_URL=... SECRETS_KEY=... go run ./cmd/server
 ```
 
-`pnpm --filter @vjt/web dev` (hot reload) calls the API on `VITE_API_URL` (default `http://localhost:8080`), a
-different origin, and the server sends no CORS headers, so a browser blocks those calls. Use the build above
-until CORS is added.
+`pnpm --filter @vjt/app dev` (hot reload; `expo start --web`) serves the app from Metro on its own port, where
+the API is not running. Point the app at a running server with `EXPO_PUBLIC_API_URL` (e.g.
+`EXPO_PUBLIC_API_URL=http://localhost:8080 pnpm --filter @vjt/app dev`), but note the server sends no CORS
+headers, so a browser blocks those cross-origin calls. Use the export above until CORS is added. If Metro
+serves a stale bundle, start it with a cleared cache: `pnpm --filter @vjt/app exec expo start -c --web`.
 
 Android: `pnpm --filter @vjt/app android` (set `EXPO_PUBLIC_API_URL`; defaults to `http://10.0.2.2:8080`, the
 host as seen from the Android emulator).
