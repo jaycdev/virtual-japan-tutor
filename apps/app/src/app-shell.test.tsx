@@ -400,8 +400,8 @@ it("wide screens show the hub and the open section side by side", async () => {
   // Two panes, not a navigation: the menu stayed, the picked row is marked.
   expect(screen.getByRole("button", { name: "MaruMori" })).toBeTruthy();
   expect(
-    (screen.getByRole("button", { name: "Reading" }) as HTMLElement).getAttribute("aria-selected"),
-  ).toBe("true");
+    (screen.getByRole("button", { name: "Reading" }) as HTMLElement).getAttribute("aria-current"),
+  ).toBe("page");
 
   // Switching sections happens inside the page.
   await user.click(screen.getByRole("button", { name: "MaruMori" }));

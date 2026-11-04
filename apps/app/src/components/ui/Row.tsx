@@ -43,10 +43,12 @@ export function Row({
       accessibilityLabel={label}
       accessibilityHint={hint}
       accessibilityState={{ selected }}
-      // react-native-web (jsdom test host) maps the raw ARIA props; native
-      // reads the accessibility* pair — same state on both hosts (as in
-      // chrome/TabBar.tsx).
-      aria-selected={selected}
+      // Review S3: these rows are role=button navigation, and aria-selected
+      // is not a valid state on a button — the ARIA way to mark the row whose
+      // pane is open is aria-current="page". Native keeps the selected state
+      // through the accessibility* pair (as in chrome/TabBar.tsx, where
+      // aria-selected IS valid because those are role=tab).
+      aria-current={selected ? "page" : undefined}
       onPress={onPress}
       className={`active:bg-accent ${selected ? "bg-accent" : ""}`}
     >

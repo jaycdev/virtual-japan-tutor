@@ -79,13 +79,15 @@ describe('mobile SettingsHome', () => {
 });
 
 describe('mobile SettingsSectionMenu', () => {
-  it('marks the open section selected', () => {
+  it('marks the open section as the current one', () => {
     render(<SettingsSectionMenu active="marumori" onOpen={() => {}} />);
+    // S3: aria-current="page" — the rows are buttons, and aria-selected is
+    // not a valid state on a button.
     expect(
-      (screen.getByRole('button', { name: 'MaruMori' }) as HTMLElement).getAttribute('aria-selected'),
-    ).toBe('true');
+      (screen.getByRole('button', { name: 'MaruMori' }) as HTMLElement).getAttribute('aria-current'),
+    ).toBe('page');
     expect(
-      (screen.getByRole('button', { name: 'Server' }) as HTMLElement).getAttribute('aria-selected'),
-    ).toBe('false');
+      (screen.getByRole('button', { name: 'Server' }) as HTMLElement).getAttribute('aria-current'),
+    ).toBeNull();
   });
 });
