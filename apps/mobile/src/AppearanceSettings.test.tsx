@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
@@ -35,9 +35,16 @@ describe('mobile AppearanceSettings', () => {
     secure.clear();
   });
 
-  // First test in the file: its dynamic import is the cold transform of the whole
-  // module graph, which takes far longer than 15 s on a shared runner. A timeout
-  // here also leaks this test's render into the next one, so give it room.
+  // The first dynamic import pays for the cold transform of the whole expo-router /
+  // react-native-web module graph, which on a shared runner can pass 15 s; a test
+  // that dies that way also leaks its render into the next one. Take the cost in a
+  // beforeAll hook instead: vi.resetModules() drops the run cache but not vite's
+  // transform cache, so the tests' own freshAppearanceSettings() calls re-run a
+  // graph that is already compiled, and every test keeps the normal 15 s timeout.
+  beforeAll(async () => {
+    await freshAppearanceSettings();
+  }, 60_000);
+
   it('switches the app theme immediately and remembers the choice', async () => {
     const { AppearanceSettings, setThemeCalls } = await freshAppearanceSettings();
     render(<AppearanceSettings />);
@@ -56,7 +63,7 @@ describe('mobile AppearanceSettings', () => {
 
     expect(setThemeCalls).toContain('system');
     expect(secure.get('vjt.theme')).toBe('system');
-  }, 60_000);
+  });
 
   it('applies a story text size immediately and remembers it', async () => {
     const { AppearanceSettings } = await freshAppearanceSettings();
