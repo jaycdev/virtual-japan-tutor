@@ -49,6 +49,17 @@ export default defineConfig({
       "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },
+  build: {
+    // React, the router and the Radix/lucide base get one long-cached chunk
+    // instead of riding in whichever route first pulls them in.
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [{ name: "vendor-react", test: /node_modules[\\/](react|react-dom|react-router|scheduler)[\\/]/, priority: 20 }],
+        },
+      },
+    },
+  },
   server: {
     port: 5173,
     proxy,
