@@ -27,7 +27,9 @@ export function PracticeCard({ focus }: { focus: FocusSetView }) {
         <ErrorState message={focus.error} onRetry={focus.retry} />
       ) : (
         <div className="flex flex-col items-start gap-3">
-          <p className="text-body text-muted-foreground">{waitingLine(count)}</p>
+          <p className="text-body text-muted-foreground" id="practice-waiting">
+            {waitingLine(count)}
+          </p>
           <Button asChild>
             <Link
               to="/practice"

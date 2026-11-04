@@ -11,6 +11,7 @@ import {
   type FocusSetView,
 } from "@vjt/core";
 import { useMemo } from "react";
+import { Link } from "react-router";
 
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -29,9 +30,11 @@ export function FocusGlance({ client, focus }: { client: ApiClient; focus: Focus
         <h2 id="focus-glance-heading" className="text-title-sm font-semibold text-foreground">
           Focus Set
         </h2>
-        <a href="/settings/focus" className="text-small font-medium text-primary hover:underline">
+        {/* A router Link, not an <a>: the app is a SPA and a full page reload
+            here would throw away the shell and every loaded state. */}
+        <Link to="/settings/focus" className="text-small font-medium text-primary hover:underline">
           See all
-        </a>
+        </Link>
       </div>
 
       {focus.loading && focus.items === null ? (
