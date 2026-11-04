@@ -3,7 +3,7 @@ import { useGrammarPoint } from "@vjt/core";
 import { type ReactNode } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
-import { CONTENT_MAX_WIDTH } from "./chrome/Shell.tsx";
+import { CONTENT_MAX_WIDTH, PROSE_MAX_WIDTH } from "./chrome/Shell.tsx";
 import { Card } from "./components/ui/Card.tsx";
 import { Icon } from "./components/ui/icon.tsx";
 import { EmptyState, InlineError, SkeletonBar } from "./state/states.tsx";
@@ -200,7 +200,7 @@ export function ExplanationBody({ text }: { text: string }) {
     .map((paragraph) => paragraph.trim())
     .filter((paragraph) => paragraph !== "");
   return (
-    <View className="gap-3">
+    <View className="gap-3" style={styles.prose}>
       {paragraphs.map((paragraph, i) => {
         const lines = paragraph.split("\n");
         if (lines.length === 1 && !paragraph.startsWith("- ")) {
@@ -254,7 +254,7 @@ function richLine(line: string): (string | ReactNode)[] {
 function ExampleRow({ example }: { example: GrammarExample }) {
   const chars = Array.from(example.sentenceJa);
   return (
-    <View className="gap-1">
+    <View className="gap-1" style={styles.prose}>
       <Text className="font-serif text-body text-foreground">
         {chars.slice(0, example.spanStart).join("")}
         <Text className="underline">
@@ -271,4 +271,6 @@ const styles = StyleSheet.create({
   // Same page metrics as the catalogue and Today, the other tab screens.
   page: { flexGrow: 1, padding: 16, paddingTop: 24 },
   column: { width: "100%", maxWidth: CONTENT_MAX_WIDTH, gap: 16 },
+  // Prose keeps its own reading measure inside a wide card (#49 review N2).
+  prose: { maxWidth: PROSE_MAX_WIDTH },
 });
