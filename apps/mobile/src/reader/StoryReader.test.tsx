@@ -21,6 +21,19 @@ vi.mock("./holdMenu.ts", async (importOriginal) => {
   return { ...mod, reduceHold: vi.fn(mod.reduceHold) };
 });
 
+// Per-device settings persist in the Android secure store; the test host swaps it for
+// an in-memory map so the saved Story text size can be read back.
+const secure = vi.hoisted(() => new Map<string, string>());
+vi.mock("expo-secure-store", () => ({
+  getItemAsync: async (key: string) => secure.get(key) ?? null,
+  setItemAsync: async (key: string, value: string) => {
+    secure.set(key, value);
+  },
+  deleteItemAsync: async (key: string) => {
+    secure.delete(key);
+  },
+}));
+
 afterEach(cleanup);
 
 /**
@@ -33,7 +46,6 @@ afterEach(cleanup);
  */
 
 const HOLD_MS = 30;
-const SCREEN = { width: 400, height: 800 };
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -302,17 +314,17 @@ function SizeProbe() {
  * the Story off the fake API's Library page, and a stub host the Back returns
  * to — the Stories suite proves that screen's own markup.
  */
-function renderReader(client: ApiClient, overrideScreen?: { width: number; height: number }) {
+function renderReader(client: ApiClient) {
   return render(
     <StoryTextSizeProvider>
       <PortalHost />
       <SizeProbe />
-      <ReaderHarness client={client} screenSize={overrideScreen ?? SCREEN} />
+      <ReaderHarness client={client} />
     </StoryTextSizeProvider>,
   );
 }
 
-function ReaderHarness({ client, screenSize }: { client: ApiClient; screenSize: { width: number; height: number } }) {
+function ReaderHarness({ client }: { client: ApiClient }) {
   const view = useStory(client, 10);
   useEffect(() => {
     // The route opens the Story on the shared view before rendering the
@@ -338,7 +350,6 @@ function ReaderHarness({ client, screenSize }: { client: ApiClient; screenSize: 
       onBack={() => setBackToHost(true)}
       onPractice={(id) => practiceCalls.push(id)}
       measure={(testID) => RECTS[testID] ?? null}
-      screenSize={screenSize}
     />
   );
 }
@@ -493,7 +504,7 @@ describe("Story reader layout and Story text size (issue #45)", () => {
     act(() => {
       setSizeFn?.("L");
     });
-    await waitFor(() => expect(globalThis.localStorage.getItem("vjt.storyTextSize")).toBe("L"));
+    await waitFor(() => expect(secure.get("vjt.storyTextSize")).toBe("L"));
   });
 
   it("the footer marks the Story read, undoes it, rates it and opens Practice", async () => {
@@ -604,37 +615,6 @@ describe("Story reader gestures (mobile)", () => {
     await waitFor(() => expect(screen.queryByLabelText("Lookup menu")).toBeNull());
     expect(screen.queryByTestId("dictionary-window")).toBeNull();
     expect(requests.some((r) => r.method === "POST" && r.path.startsWith("/item-lists/"))).toBe(false);
-  });
-
-  it("on wide screens the anchored menu closes on Escape and on a click outside it", async () => {
-    const { client } = fakeApi();
-    // Wide viewport (≥ OVERLAY_BREAKPOINT): the menu is the anchored Popover
-    // rather than the narrow bottom sheet.
-    renderReader(client, { width: 1280, height: 800 });
-    await screen.findByTestId("back-to-stories");
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 30));
-    });
-
-    await pressAndHold(0, 0);
-    const menu = screen.getByLabelText("Lookup menu");
-    expect(within(menu).getByTestId("menu-option-dictionary").textContent).toContain("Dictionary");
-
-    // The keyboard closes it, and the gesture machine sees the dismissal.
-    fireEvent.keyDown(menu, { key: "Escape" });
-    await waitFor(() => expect(screen.queryByLabelText("Lookup menu")).toBeNull());
-    // The hold never lifted, so lift it before pressing again.
-    releaseAt(0, 0, 300, 300);
-
-    await pressAndHold(0, 0);
-    expect(screen.getByLabelText("Lookup menu")).toBeTruthy();
-    // A click outside the popover dismisses it. The primitives defer a
-    // left-button pointerdown to the click that completes it, and a bare click
-    // on a story token does nothing else, so the story is the tap target.
-    const elsewhere = token(1, 0);
-    fireEvent.pointerDown(elsewhere, { button: 0 });
-    fireEvent.click(elsewhere);
-    await waitFor(() => expect(screen.queryByLabelText("Lookup menu")).toBeNull());
   });
 
   it("slide-release on Save writes to the Default List and notes it in the header", async () => {
@@ -1087,18 +1067,19 @@ describe("Reading Panel placement, modes and scroll lock (review fixes)", () => 
     expect(hasClass("token-1-0", "bg-selected-sentence")).toBe(false);
   });
 
-  it("blurs the Sentence Translation until the Learner unblurs it", async () => {
+  it("hides the Sentence Translation until the Learner reveals it", async () => {
     const { client } = fakeApi();
     await openStory(client);
 
     fireEvent.mouseDown(token(0, 0), { clientX: 300, clientY: 300 });
     fireEvent.mouseUp(token(0, 0), { clientX: 300, clientY: 300 });
     const translation = await screen.findByLabelText("Sentence Translation");
-    expect(translation.getAttribute("style")).toContain("blur(");
+    // Android has no CSS filter: a hidden translation is transparent, not blurred.
+    expect(translation.getAttribute("style")).toContain("opacity: 0");
 
     fireEvent.click(translation);
     await waitFor(() =>
-      expect((screen.getByLabelText("Sentence Translation") as HTMLElement).getAttribute("style")).not.toContain("blur("),
+      expect((screen.getByLabelText("Sentence Translation") as HTMLElement).getAttribute("style")).not.toContain("opacity: 0"),
     );
   });
 });
@@ -1144,101 +1125,5 @@ describe("hardware Back in the reader (mobile)", () => {
     fireEvent.click(screen.getByTestId("back-to-stories"));
     await waitFor(() => expect(screen.queryByTestId("back-to-stories")).toBeNull());
     expect(await screen.findByTestId("stories-host")).toBeTruthy();
-  });
-});
-
-describe("Lookup by hover and right-click (web parity, issue #45)", () => {
-  it("hovering a word looks it up in the Reading Panel and reports one Weak Signal per lookup", async () => {
-    const { client, requests } = fakeApi();
-    await openStory(client);
-
-    fireEvent.mouseOver(token(0, 0), { clientX: 300, clientY: 300 });
-    const lookup = await screen.findByTestId("panel-lookup");
-    expect(within(lookup).getByText("school")).toBeTruthy();
-    expect(within(lookup).getByText("N5")).toBeTruthy();
-    await waitFor(() => expect(requests.some((r) => r.path === "/dictionary/entries/990101")).toBe(true));
-    await waitFor(() =>
-      expect(weakSignals(requests)).toEqual([
-        { itemKind: "vocabulary", itemRef: "990101", reason: "lookup" },
-      ]),
-    );
-
-    // Re-hovering the same word while it is still open does not re-signal it.
-    fireEvent.mouseOver(token(0, 0), { clientX: 300, clientY: 300 });
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 20));
-    });
-    expect(weakSignals(requests).filter((s) => (s as { reason: string }).reason === "lookup").length).toBe(1);
-
-    // Moving to another word is another lookup.
-    fireEvent.mouseOver(token(1, 0), { clientX: 320, clientY: 340 });
-    await waitFor(() =>
-      expect(weakSignals(requests).filter((s) => (s as { reason: string }).reason === "lookup").length).toBe(2),
-    );
-    const panel = screen.getByLabelText("Reading Panel");
-    expect(within(panel).getByText(/heiban \(flat\)/)).toBeTruthy();
-    expect(within(panel).getByTestId("pitch-graph")).toBeTruthy();
-  });
-
-  it("hovering a Grammar Span shows its info in the panel without any fetch", async () => {
-    const { client, requests } = fakeApi();
-    await openStory(client);
-
-    fireEvent.mouseOver(token(0, 3), { clientX: 300, clientY: 320 });
-    const lookup = await screen.findByTestId("panel-lookup");
-    expect(within(lookup).getByText("completing something; unfortunately doing")).toBeTruthy();
-    expect(requests.some((r) => r.path.startsWith("/grammar/points/"))).toBe(false);
-    await waitFor(() =>
-      expect(weakSignals(requests)).toEqual([{ itemKind: "grammar", itemRef: "12", reason: "lookup" }]),
-    );
-  });
-
-  it("right-click opens the Lookup menu next to the word, and Save writes to the Default List", async () => {
-    const { client, requests } = fakeApi();
-    await openStory(client);
-
-    fireEvent.contextMenu(token(0, 0), { clientX: 300, clientY: 300 });
-    const menu = await screen.findByLabelText("Lookup menu");
-    expect(within(menu).getByTestId("menu-option-dictionary").textContent).toContain("Dictionary");
-    expect(within(menu).getByTestId("menu-option-save").textContent).toContain("Save");
-    expect(within(menu).getByTestId("menu-option-saveTo")).toBeTruthy();
-
-    fireEvent.click(within(menu).getByTestId("menu-option-save"));
-    await waitFor(() =>
-      expect(requests.some((r) => r.method === "POST" && r.path === "/item-lists/l1/items")).toBe(true),
-    );
-    expect((await screen.findByTestId("save-note")).textContent).toBe("Saved to Saved.");
-    await waitFor(() => expect(screen.queryByLabelText("Lookup menu")).toBeNull());
-  });
-
-  it("right-click on a Grammar Span dims Dictionary and the Grammar row opens the span window", async () => {
-    const { client } = fakeApi();
-    await openStory(client);
-
-    fireEvent.contextMenu(token(0, 3), { clientX: 300, clientY: 300 });
-    const menu = await screen.findByLabelText("Lookup menu");
-    expect(within(menu).getByTestId("menu-option-dictionary").getAttribute("aria-disabled")).toBe("true");
-
-    fireEvent.click(within(menu).getByTestId("menu-option-grammar"));
-    const win = await screen.findByTestId("grammar-window");
-    expect(within(win).getByText("completing something; unfortunately doing")).toBeTruthy();
-    fireEvent.click(within(win).getByLabelText("Close"));
-    await waitFor(() => expect(screen.queryByTestId("grammar-window")).toBeNull());
-  });
-
-  it("the Dictionary window shows the entry with its pitch graph", async () => {
-    const { client, requests } = fakeApi();
-    await openStory(client);
-
-    fireEvent.mouseOver(token(1, 0), { clientX: 300, clientY: 300 });
-    await screen.findByTestId("panel-lookup");
-    fireEvent.contextMenu(token(1, 0), { clientX: 300, clientY: 300 });
-    const menu = await screen.findByLabelText("Lookup menu");
-    fireEvent.click(within(menu).getByTestId("menu-option-dictionary"));
-
-    const win = await screen.findByTestId("dictionary-window");
-    expect(within(win).getByText(/heiban \(flat\)/)).toBeTruthy();
-    expect(within(win).getByTestId("pitch-graph")).toBeTruthy();
-    expect(requests.filter((r) => r.path === "/dictionary/entries/990103").length).toBe(1);
   });
 });

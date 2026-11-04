@@ -8,20 +8,13 @@ import { Stories } from "./Stories.tsx";
 
 /**
  * The rebuilt Stories page (issue #48, plan §4.5): Today's Story pinned above
- * the Story Library, each card's menu (an anchored dropdown on wide windows, a
- * bottom sheet on narrow ones), the delete confirmation, the Generate dialog,
- * and the Unread/All + Genre filters. The Reader itself is a separate screen
- * now — src/reader/StoryReader.test.tsx covers it.
- *
- * The viewport arrives through the `screenSize` prop exactly as the reader's
- * suite injects it: jsdom measures nothing, and the page's narrow/wide choices
- * (list vs grid, sheet vs anchored menu) must be pinned to be asserted.
+ * the Story Library (a list of rows), each card's menu (a bottom sheet), the
+ * delete confirmation, the Generate dialog, and the Unread/All + Genre filters.
+ * The Reader itself is a separate screen now — src/reader/StoryReader.test.tsx
+ * covers it.
  */
 
 afterEach(cleanup);
-
-const NARROW = { width: 420, height: 800 };
-const WIDE = { width: 1280, height: 900 };
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -170,31 +163,15 @@ function fakeApi(
   return { client, requests };
 }
 
-function renderStories(
-  client: ApiClient,
-  opts: { screen?: { width: number; height: number }; generationPollMs?: number } = {},
-) {
+function renderStories(client: ApiClient, opts: { generationPollMs?: number } = {}) {
   const onOpenStory = vi.fn();
   const utils = render(
     <>
       <PortalHost />
-      <Stories
-        client={client}
-        onOpenStory={onOpenStory}
-        screenSize={opts.screen ?? NARROW}
-        generationPollMs={opts.generationPollMs}
-      />
+      <Stories client={client} onOpenStory={onOpenStory} generationPollMs={opts.generationPollMs} />
     </>,
   );
   return { ...utils, onOpenStory };
-}
-
-/** Opens the first card's menu; on wide windows Radix opens from the pointer. */
-async function openWideMenu(storyId = "st-1") {
-  const trigger = screen.getByTestId(`story-menu-${storyId}`);
-  fireEvent.pointerDown(trigger, { button: 0, pointerType: "mouse" });
-  fireEvent.pointerUp(trigger, { button: 0, pointerType: "mouse" });
-  return screen.findByTestId("story-menu-content");
 }
 
 describe("Today's Story pinned above the Library (issue #48)", () => {
@@ -291,15 +268,10 @@ describe("Today's Story pinned above the Library (issue #48)", () => {
 });
 
 describe("The Library list, pager and states", () => {
-  it("lists rows on narrow screens and a card grid once there is room", async () => {
-    const narrow = renderStories(fakeApi().client);
-    await narrow.findByTestId("library-list");
-    expect(narrow.queryByTestId("library-grid")).toBeNull();
-    narrow.unmount();
-
-    const wide = renderStories(fakeApi().client, { screen: WIDE });
-    await wide.findByTestId("library-grid");
-    expect(wide.queryByTestId("library-list")).toBeNull();
+  it("lists the Library as rows", async () => {
+    const view = renderStories(fakeApi().client);
+    await view.findByTestId("library-list");
+    expect(view.queryByTestId("library-grid")).toBeNull();
   });
 
   it("pages the Library with Newer/Older over the server's pages", async () => {
@@ -366,26 +338,8 @@ describe("The Library list, pager and states", () => {
   });
 });
 
-describe("Card menus (wide dropdown, narrow sheet)", () => {
-  it("marks read and unmarks from the anchored dropdown on wide windows", async () => {
-    const { client, requests } = fakeApi();
-    renderStories(client, { screen: WIDE });
-    await screen.findByTestId("story-card-st-1");
-
-    const content = await openWideMenu();
-    fireEvent.click(within(content).getByTestId("menu-mark-read"));
-    await waitFor(() => expect(requests.some((r) => r.method === "PUT" && r.path === "/stories/st-1/read")).toBe(true));
-    await screen.findByTestId("story-read-st-1");
-
-    const again = await openWideMenu();
-    fireEvent.click(within(again).getByTestId("menu-mark-read")); // now "Mark unread"
-    await waitFor(() =>
-      expect(requests.some((r) => r.method === "DELETE" && r.path === "/stories/st-1/read")).toBe(true),
-    );
-    await waitFor(() => expect(screen.queryByTestId("story-read-st-1")).toBeNull());
-  });
-
-  it("puts the same rows in a bottom sheet on narrow windows, and reports a failed mark", async () => {
+describe("Card menus (bottom sheet)", () => {
+  it("puts the rows in a bottom sheet, and reports a failed mark", async () => {
     const { client, requests } = fakeApi({ failRead: true });
     renderStories(client);
     await screen.findByTestId("story-card-st-1");

@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useCSSVariable } from "uniwind";
 
-import { CONTENT_MAX_WIDTH } from "./chrome/Shell.tsx";
 import { Card } from "./components/ui/Card.tsx";
 import { Icon } from "./components/ui/icon.tsx";
 import { EmptyState, InlineError, SkeletonBar } from "./state/states.tsx";
@@ -388,5 +387,5 @@ const styles = StyleSheet.create({
   // Same page metrics as Today, the other tab screen (issue #47).
   page: { flexGrow: 1, padding: 16, paddingTop: 24 },
   // The Shell caps the column on wide screens; this keeps the reading measure.
-  column: { width: "100%", maxWidth: CONTENT_MAX_WIDTH, gap: 16 },
+  column: { width: "100%", gap: 16 },
 });

@@ -1,10 +1,9 @@
 import type { ApiClient, GenerateStoryRequest, Story } from "@vjt/api-client";
 import { useStory, useStoryGeneration, type StoryGenerationState, type TodaysStoryState } from "@vjt/core";
 import { useEffect, useRef, useState } from "react";
-import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { Card } from "./components/ui/Card.tsx";
-import { CONTENT_MAX_WIDTH, OVERLAY_BREAKPOINT, SIDEBAR_BREAKPOINT } from "./chrome/Shell.tsx";
 import { pageSummary } from "./reader/parts.tsx";
 import { SkeletonBar } from "./state/states.tsx";
 import {
@@ -25,18 +24,14 @@ import {
 
 /**
  * The Stories page (issue #48, plan §4.5): Today's Story pinned at the top with
- * Generate beside it, and the Story Library underneath — list rows on narrow
- * screens, a grid of cards once there is room for columns.
+ * Generate beside it, and the Story Library underneath as a list of rows.
  *
  * Everything the Learner acts on sits on the pinned card or on a Library card;
- * the only extra surfaces are the two dialogs — Generate, and the confirmation
+ * the only extra surfaces are the two sheets — Generate, and the confirmation
  * before a Story is deleted. A card opens the Reader at `/stories/:id` (the
  * route passes `onOpenStory`), so this page never holds the reading column.
- *
- * The menu and dialogs take their sheet form below the same width the reader's
- * overlays do (OVERLAY_BREAKPOINT), and the Library switches to columns at the
- * chrome's sidebar width (SIDEBAR_BREAKPOINT) — both imported from the Shell so
- * the page never re-declares a number. Styling is design-token classes only.
+ * The menu and dialogs are always bottom sheets on the phone. Styling is
+ * design-token classes only.
  */
 
 /** Page size of the Library's pager; the server's default is the same. */
@@ -48,16 +43,9 @@ export interface StoriesProps {
   onOpenStory: (storyId: string) => void;
   /** Generation poll interval; only the tests shorten it. */
   generationPollMs?: number;
-  /** Overrides the viewport, the way the Reader's `screenSize` does. */
-  screenSize?: { width: number; height: number };
 }
 
-export function Stories({ client, onOpenStory, generationPollMs, screenSize }: StoriesProps) {
-  const screen = useWindowDimensions();
-  const size = screenSize ?? screen;
-  const wide = size.width >= SIDEBAR_BREAKPOINT;
-  const sheetOverlays = size.width < OVERLAY_BREAKPOINT;
-
+export function Stories({ client, onOpenStory, generationPollMs }: StoriesProps) {
   const view = useStory(client, LIBRARY_PAGE_SIZE);
   const gen = useStoryGeneration(client, generationPollMs ?? 1500);
 
@@ -168,36 +156,31 @@ export function Stories({ client, onOpenStory, generationPollMs, screenSize }: S
           <Text role="heading" accessibilityRole="header" className="text-title-sm font-semibold text-foreground">
             Today&rsquo;s Story
           </Text>
-          <View className={wide ? "flex-row items-stretch gap-3" : "gap-3"}>
-            <View className={wide ? "flex-1" : undefined}>
-              <TodayCard
-                today={view.today}
-                generation={gen.generation}
-                readyStoryId={readyFlash}
-                onReloadToday={view.reloadToday}
-                onOpenStory={onOpenStory}
-                onOpenReady={() => {
-                  if (readyFlash === null) return;
-                  onOpenStory(readyFlash);
-                  // Opening spends the offer: the Story is open now, and the
-                  // card's own Open is the same action (S3).
-                  setSpentReady(true);
-                }}
-                onOpenGenerate={openGenerate}
-                fill={wide}
-              />
-            </View>
-            {/* Secondary/outline: the pinned card's Open stays the page's only
-                filled primary on narrow, where the two stack (issue #48 review). */}
-            <ActionButton
-              label={status === "running" ? "Writing…" : "Generate"}
-              accessibilityHint="Writes one new Story now, with an optional Genre and Theme"
-              disabled={status === "running"}
-              fullWidth={!wide}
-              onPress={openGenerate}
-              testID="today-generate"
-            />
-          </View>
+          <TodayCard
+            today={view.today}
+            generation={gen.generation}
+            readyStoryId={readyFlash}
+            onReloadToday={view.reloadToday}
+            onOpenStory={onOpenStory}
+            onOpenReady={() => {
+              if (readyFlash === null) return;
+              onOpenStory(readyFlash);
+              // Opening spends the offer: the Story is open now, and the
+              // card's own Open is the same action (S3).
+              setSpentReady(true);
+            }}
+            onOpenGenerate={openGenerate}
+          />
+          {/* Secondary/outline: the pinned card's Open stays the page's only
+              filled primary, the two stack (issue #48 review). */}
+          <ActionButton
+            label={status === "running" ? "Writing…" : "Generate"}
+            accessibilityHint="Writes one new Story now, with an optional Genre and Theme"
+            disabled={status === "running"}
+            fullWidth
+            onPress={openGenerate}
+            testID="today-generate"
+          />
         </View>
 
         {/* ── The Story Library ─────────────────────────────────────────── */}
@@ -243,12 +226,9 @@ export function Stories({ client, onOpenStory, generationPollMs, screenSize }: S
           ) : null}
 
           {view.library.status === "ready" && visible.length > 0 ? (
-            <View
-              testID={wide ? "library-grid" : "library-list"}
-              style={wide ? styles.grid : styles.list}
-            >
+            <View testID="library-list" style={styles.list}>
               {visible.map((story) => (
-                <View key={story.id} style={wide ? styles.gridCell : undefined}>
+                <View key={story.id}>
                   <StoryCard
                     story={story}
                     revealed={revealed.has(story.id)}
@@ -257,7 +237,6 @@ export function Stories({ client, onOpenStory, generationPollMs, screenSize }: S
                     menu={
                       <StoryMenu
                         story={story}
-                        narrow={sheetOverlays}
                         onMarkRead={() => void view.setRead(story.id)}
                         onMarkUnread={() => void view.clearRead(story.id)}
                         onAskDelete={() => setPendingDelete(story)}
@@ -312,8 +291,6 @@ export function Stories({ client, onOpenStory, generationPollMs, screenSize }: S
           its rendering derives from `finishedHere` (S2). */}
       {generateOpen && finishedHere === null ? (
         <GenerateDialog
-          narrow={sheetOverlays}
-          viewWidth={size.width}
           runHere={runHere}
           suggestions={gen.suggestions}
           genre={pickGenre}
@@ -329,8 +306,6 @@ export function Stories({ client, onOpenStory, generationPollMs, screenSize }: S
 
       {confirmTarget ? (
         <ConfirmDelete
-          narrow={sheetOverlays}
-          viewWidth={size.width}
           story={confirmTarget}
           pending={view.pending}
           error={view.error}
@@ -355,7 +330,6 @@ function TodayCard({
   onOpenStory,
   onOpenReady,
   onOpenGenerate,
-  fill,
 }: {
   today: TodaysStoryState;
   generation: StoryGenerationState;
@@ -366,7 +340,6 @@ function TodayCard({
   /** Opens the just-written Story and dismisses the offer (S3). */
   onOpenReady: () => void;
   onOpenGenerate: () => void;
-  fill: boolean;
 }) {
   const running = generation.status === "running" ? generation.progress : undefined;
   // The finished run's Story is worth opening even before the reload lands it
@@ -376,7 +349,7 @@ function TodayCard({
     readyStoryId !== null && (today.status !== "story" || today.story.id !== readyStoryId);
 
   return (
-    <Card testID="today-card" fill={fill} pinned>
+    <Card testID="today-card" pinned>
       {today.status === "loading" ? (
         // Shaped like the settled card: a title bar, a meta line, the button
         // block (plan §5) — so nothing jumps when the story lands.
@@ -463,16 +436,10 @@ function TodayCardError({
 const styles = StyleSheet.create({
   // Top safe-area insets are the Shell's job, not this screen's (as on Today).
   page: { flexGrow: 1, padding: 16, paddingTop: 24 },
-  // The Shell caps the column on wide screens; this keeps the measure narrow when it doesn't.
-  column: { width: "100%", maxWidth: CONTENT_MAX_WIDTH, gap: 20 },
+  column: { width: "100%", gap: 20 },
   filterRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12 },
   chipRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   list: { gap: 12 },
-  // Two fixed equal columns on wide screens (issue #48 review, B3): no grow,
-  // so a row's odd card keeps the same width as its neighbours and sits at the
-  // column's left edge instead of stretching across the hole.
-  grid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
-  gridCell: { flexBasis: "49%" },
   pager: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
 });
 

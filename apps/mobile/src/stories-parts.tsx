@@ -3,7 +3,7 @@ import type { StoryGenerationState, StoryLibraryState } from "@vjt/core";
 import * as DialogPrimitives from "@rn-primitives/dialog";
 import * as DropdownMenuPrimitive from "@rn-primitives/dropdown-menu";
 import { useState, type ReactNode } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View, type ViewStyle } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { Card } from "./components/ui/Card.tsx";
 import { Icon, type IconName } from "./components/ui/icon.tsx";
@@ -13,11 +13,10 @@ import { EmptyState, InlineError, ProgressBar, SkeletonBar } from "./state/state
  * The pieces of the rebuilt Stories page (issue #48, plan §4.5).
  *
  * The card, the per-card menu, the delete confirmation and the Generate dialog
- * follow the forms the reader already set (issue #45 review): anchored dropdowns
- * on wide windows, sheets pinned to the bottom edge on narrow ones — the same
- * OVERLAY_BREAKPOINT the reader's overlays split at, which the page passes in
- * as `narrow`. Styling is design-token classes only (plan §3): the styles below
- * are geometry (touch sizes, radii, sheet edges), never colour or font size.
+ * are bottom sheets pinned to the bottom edge, the same form the reader's
+ * overlays take on the phone (issue #45 review). Styling is design-token classes
+ * only (plan §3): the styles below are geometry (touch sizes, radii, sheet
+ * edges), never colour or font size.
  */
 
 /** Story Origin in Learner's words. */
@@ -202,20 +201,17 @@ export function StoryCard({
 }
 
 /**
- * The card's menu: Mark Read / Mark unread, and Delete. Wide windows get an
- * anchored dropdown; narrow windows get the same rows in a Dialog sheet at the
- * bottom edge, where they are thumb-reachable and touch-sized (the TokenMenu
- * split, issue #45 review). The trigger is icon-only, so it carries a label.
+ * The card's menu: Mark Read / Mark unread, and Delete. The rows sit in a Dialog
+ * sheet at the bottom edge, where they are thumb-reachable and touch-sized (the
+ * TokenMenu split, issue #45 review). The trigger is icon-only, so it carries a label.
  */
 export function StoryMenu({
   story,
-  narrow,
   onMarkRead,
   onMarkUnread,
   onAskDelete,
 }: {
   story: Story;
-  narrow: boolean;
   onMarkRead: () => void;
   onMarkUnread: () => void;
   onAskDelete: () => void;
@@ -239,17 +235,17 @@ export function StoryMenu({
     </Pressable>
   );
 
-  const rows = (onPick: (action: () => void) => void, variant: "menu" | "sheet") => (
+  const rows = (onPick: (action: () => void) => void) => (
     <>
       <MenuRow
-        variant={variant}
+        variant="sheet"
         testID="menu-mark-read"
         label={story.readAt ? "Mark unread" : "Mark read"}
         icon={story.readAt ? "close" : "check"}
         onPress={() => onPick(story.readAt ? onMarkUnread : onMarkRead)}
       />
       <MenuRow
-        variant={variant}
+        variant="sheet"
         testID="menu-delete"
         label="Delete"
         icon="trash"
@@ -258,29 +254,6 @@ export function StoryMenu({
       />
     </>
   );
-
-  if (!narrow) {
-    return (
-      <DropdownMenuPrimitive.Root>
-        <DropdownMenuPrimitive.Trigger asChild>{trigger()}</DropdownMenuPrimitive.Trigger>
-        <DropdownMenuPrimitive.Portal>
-          <DropdownMenuPrimitive.Overlay style={styles.backdrop}>
-            <DropdownMenuPrimitive.Content
-              testID="story-menu-content"
-              accessibilityLabel={label}
-              style={styles.menuCard}
-              className="bg-card border-border"
-              side="bottom"
-              align="end"
-              sideOffset={4}
-            >
-              {rows((action) => action(), "menu")}
-            </DropdownMenuPrimitive.Content>
-          </DropdownMenuPrimitive.Overlay>
-        </DropdownMenuPrimitive.Portal>
-      </DropdownMenuPrimitive.Root>
-    );
-  }
 
   return (
     <>
@@ -296,13 +269,10 @@ export function StoryMenu({
             >
               {/* A labelled surface still needs a title for assistive tech. */}
               <DialogPrimitives.Title style={styles.srOnly}>{label}</DialogPrimitives.Title>
-              {rows(
-                (action) => {
-                  setSheetOpen(false);
-                  action();
-                },
-                "sheet",
-              )}
+              {rows((action) => {
+                setSheetOpen(false);
+                action();
+              })}
             </DialogPrimitives.Content>
           </DialogPrimitives.Portal>
         </DialogPrimitives.Root>
@@ -312,10 +282,9 @@ export function StoryMenu({
 }
 
 /**
- * One menu row. It is used in two places with the same box and the same label,
- * and the caller says which primitive wraps it: inside a DropdownMenu.Content it
- * must itself be an Item so Radix (web) and the primitives (Android) see it as a
- * menu item; in a Dialog sheet it is a plain Pressable row.
+ * One menu row. The Picker's options sit in a DropdownMenu, so there the row
+ * must itself be an Item for the primitives to see it as a menu item; in a
+ * Dialog sheet it is a plain Pressable row.
  */
 function MenuRow({
   variant,
@@ -347,8 +316,7 @@ function MenuRow({
     return (
       <DropdownMenuPrimitive.Item
         testID={testID}
-        // RN Primitives' web Item hands its children straight to Radix, which
-        // names the row through role rather than RN's accessibility props.
+        // RN Primitives' Item names the row through role rather than RN's accessibility props.
         role="menuitem"
         accessibilityRole="button"
         onPress={onPress}
@@ -375,21 +343,15 @@ function MenuRow({
 /**
  * The delete confirmation (issue #48: delete asks first): it names the Story so
  * nobody deletes a mystery card, and Keep is the calmer neighbour of the
- * destructive action. Bottom sheet on narrow windows, centred card on wide ones
- * — the SaveToSheet geometry.
+ * destructive action. A bottom sheet, the SaveToSheet geometry.
  */
 export function ConfirmDelete({
-  narrow,
-  viewWidth,
   story,
   pending,
   error,
   onKeep,
   onConfirm,
 }: {
-  narrow: boolean;
-  /** Viewport width: the wide card centres over the content column, not the viewport's 50%. */
-  viewWidth: number;
   story: Story;
   pending: boolean;
   error: string | null;
@@ -402,20 +364,16 @@ export function ConfirmDelete({
         <DialogPrimitives.Overlay style={styles.backdrop} className="bg-backdrop" />
         <DialogPrimitives.Content
           testID="confirm-delete"
-          // The wide dialog centres over the Shell's content column, not the
-          // viewport's middle third (S7). One merged object: the web Content
-          // hands style straight to a div, and React DOM cannot take an array.
-          style={narrow ? { ...styles.sheet, ...styles.dialogBody } : { ...centeredDialog(viewWidth), ...styles.dialogBody }}
-          className={narrow ? "bg-card border-t border-border" : "bg-card border border-border"}
+          style={{ ...styles.sheet, ...styles.dialogBody }}
+          className="bg-card border-t border-border"
         >
           <DialogPrimitives.Title asChild>
             <Text className="text-title-sm font-semibold text-foreground">Delete this Story?</Text>
           </DialogPrimitives.Title>
           <DialogPrimitives.Description asChild>
             {/* The non-breaking tie keeps “Practice Records stay.” from orphaning
-                a single word at narrow widths; text-balance carries it on web
-                where the utility exists. */}
-            <Text className="text-small text-muted-foreground text-balance">
+                a single word at narrow widths. */}
+            <Text className="text-small text-muted-foreground">
               {`“${story.title}” goes away for good, along with its rating.\u00A0Your Practice Records stay.`}
             </Text>
           </DialogPrimitives.Description>
@@ -461,8 +419,6 @@ export function ConfirmDelete({
  * lives on the server and the pinned card keeps showing its bar.
  */
 export function GenerateDialog({
-  narrow,
-  viewWidth,
   runHere,
   suggestions,
   genre,
@@ -474,9 +430,6 @@ export function GenerateDialog({
   onGenerate,
   onClose,
 }: {
-  narrow: boolean;
-  /** Viewport width: the wide card centres over the content column, not the viewport's 50%. */
-  viewWidth: number;
   /** Whether a run was started from this dialog in this visit (S2): the only run its words may speak of. */
   runHere: boolean;
   suggestions: StorySuggestions;
@@ -503,10 +456,8 @@ export function GenerateDialog({
         <DialogPrimitives.Overlay style={styles.backdrop} className="bg-backdrop" />
         <DialogPrimitives.Content
           testID="generate-dialog"
-          // One merged object, not an array: the web Content hands style
-          // straight to a div, and React DOM cannot take an array (evidence v2).
-          style={narrow ? { ...styles.sheet, ...styles.dialogBody } : { ...centeredDialog(viewWidth), ...styles.dialogBody }}
-          className={narrow ? "bg-card border-t border-border" : "bg-card border border-border"}
+          style={{ ...styles.sheet, ...styles.dialogBody }}
+          className="bg-card border-t border-border"
         >
           <DialogPrimitives.Title asChild>
             <Text className="text-title-sm font-semibold text-foreground">Generate a Story</Text>
@@ -773,9 +724,8 @@ export function GenerationProgress({ progress }: { progress: StoryGenerationProg
   );
 }
 
-// Overlays portal into the primitives' own layer, whose web wrapper is a
-// full-viewport fixed div and whose native host is the Shell's PortalHost, so
-// `absolute` fills the screen on either host (issue #45 review).
+// Overlays portal into the Shell's PortalHost, so `absolute` fills the screen
+// (issue #45 review).
 const positioned = { position: "absolute" as const };
 
 const styles = StyleSheet.create({
@@ -789,8 +739,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     paddingVertical: 4,
-    // A shadow reads as a floating card (elevation on Android, the same idea
-    // the reader's Lookup menu uses on web).
+    // A shadow reads as a floating card (elevation on Android).
     elevation: 6,
   },
   item: {
@@ -816,7 +765,7 @@ const styles = StyleSheet.create({
   dialogActions: { flexDirection: "row", gap: 12, marginTop: 4 },
   dialogButton: { flex: 1, minHeight: 44, borderRadius: 8, alignItems: "center", justifyContent: "center" },
   backdrop: { ...positioned, top: 0, left: 0, right: 0, bottom: 0 },
-  // Bottom sheet narrow, centred card wide: the reader's geometry (SaveToSheet).
+  // The bottom sheet: the reader's geometry (SaveToSheet).
   sheet: {
     ...positioned,
     left: 0,
@@ -836,22 +785,4 @@ const styles = StyleSheet.create({
   srOnly: { left: -9999, opacity: 0, position: "absolute" as const },
 });
 
-/**
- * The wide text dialog, centred over the Shell's capped content column rather
- * than the viewport's middle third (issue #48 review, S7): the column centres
- * itself in the viewport, so a capped dialog at the viewport's centre sits at
- * the column's centre at every width.
- */
-export function centeredDialog(viewWidth: number): ViewStyle {
-  const width = Math.min(520, viewWidth - 32);
-  return {
-    ...positioned,
-    top: "15%",
-    left: (viewWidth - width) / 2,
-    width,
-    maxHeight: "70%",
-    borderRadius: 12,
-    borderWidth: 1,
-    elevation: 12,
-  };
-}
+

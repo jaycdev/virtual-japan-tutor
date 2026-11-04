@@ -4,7 +4,7 @@
 // page origin. This component owns presentation only — the auth machine lives
 // in AuthGate, and a login attempt is handed up via onLogin.
 import { useState } from "react";
-import { Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ServerField } from "./ServerField.tsx";
@@ -99,7 +99,7 @@ export function Login({ busy, error, serverUrl, onLogin, onSaveServerUrl }: Logi
           </Text>
         </Pressable>
 
-        {Platform.OS === "android" ? <ServerField serverUrl={serverUrl} onSave={onSaveServerUrl} /> : null}
+        <ServerField serverUrl={serverUrl} onSave={onSaveServerUrl} />
       </View>
     </ScrollView>
   );

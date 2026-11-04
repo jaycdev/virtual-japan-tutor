@@ -1,5 +1,5 @@
 import type { StoryGrammarSpan, StorySentence, StoryToken } from "@vjt/api-client";
-import { forwardRef, memo, useEffect, useRef, type ReactNode } from "react";
+import { forwardRef, memo, type ReactNode } from "react";
 import { StyleSheet, Text, View, type NativeSyntheticEvent, type NativeTouchEvent } from "react-native";
 
 import { useStoryTextSize } from "../storysize/index.tsx";
@@ -10,17 +10,17 @@ import { type MeasurableNode, type TokenRef } from "./holdMenu.ts";
  * characters wide, sized by the saved Story text size. Marks follow the ticket:
  *   Known Item          → no mark at all
  *   lookup-marked word  → its own underline element (class `border-lookup-mark`):
- *                         a View border, so it paints on Android as on web
+ *                         a View border, which paints on Android
  *   Grammar Span        → a rounded highlighter background, stronger for Focus Spans
  *   selected token      → the selected-token background
  *
- * Layout is a token column, identically on BOTH platforms (issue #45 review,
- * blocker 2): each token is its own View — a flex row of columns wraps per
- * sentence — with a fixed-height reading slot above the word. The slot is
- * always reserved, so words on one line share a baseline whether or not the
- * token carries furigana, and the reading paints directly above its word.
- * (The old `word + "\n" + reading` nested-Text trick is gone: on Android it
- * broke the reading out of the word's line and reflowed the whole sentence.)
+ * Layout is a token column (issue #45 review, blocker 2): each token is its own
+ * View — a flex row of columns wraps per sentence — with a fixed-height reading
+ * slot above the word. The slot is always reserved, so words on one line share
+ * a baseline whether or not the token carries furigana, and the reading paints
+ * directly above its word. (The old `word + "\n" + reading` nested-Text trick is
+ * gone: on Android it broke the reading out of the word's line and reflowed the
+ * whole sentence.)
  *
  * The tap target is the whole column, so a Learner can press the reading, the
  * word, or the space between them. Punctuation the tokeniser left out stays a
@@ -29,10 +29,7 @@ import { type MeasurableNode, type TokenRef } from "./holdMenu.ts";
  * A token's press begins the Lookup gesture — the reader's per-token handler
  * objects are SPREAD onto the column (its responder wiring is what lets the
  * ScrollView steal a swipe, see StoryReader) — and a press anywhere else in
- * the paragraph just selects its sentence. On web the column element also
- * listens for native `mouseover` (hover lookup) and `contextmenu` (right-click
- * opens the Lookup menu at the pointer), because a mouse never fires RN's
- * press events.
+ * the paragraph just selects its sentence.
  */
 
 /** The gesture props the reader builds per token (holdMenu machine, StoryReader). */
@@ -43,14 +40,6 @@ export interface TokenHandlers {
   onResponderRelease: (e: NativeSyntheticEvent<NativeTouchEvent>) => void;
   onResponderTerminate: (e: NativeSyntheticEvent<NativeTouchEvent>) => void;
   onResponderTerminationRequest: () => boolean;
-}
-
-/** Extra props a web host adds to a token: hover lookup and right-click menu. */
-export interface TokenWebHostHandlers {
-  /** Pointer entered the token — look it up in the Reading Panel. */
-  onHover: (ref: TokenRef, e: MouseEvent) => void;
-  /** Right-click — open the Lookup menu at the pointer. */
-  onContextMenu: (ref: TokenRef, e: MouseEvent) => void;
 }
 
 /**
@@ -142,8 +131,6 @@ interface StoryTokenProps {
   selected: boolean;
   /** Gesture props, spread straight onto the token column. */
   handlers: TokenHandlers;
-  /** Web only: hover lookup + right-click menu, attached to the DOM element. */
-  webHandlers?: TokenWebHostHandlers;
   /** The saved Story text size (the word's font size; the reading is half). */
   fontSizePx: number;
   /** The line height matching that size (mirrors the CSS token, not a magic 1.4). */
@@ -156,31 +143,10 @@ interface StoryTokenProps {
  * the `token-{sentence}-{index}` / `furigana-{sentence}-{index}` test handles.
  */
 const StoryToken = forwardRef<MeasurableNode | null, StoryTokenProps>(function StoryToken(
-  { token, sentenceIndex, index, spans, selected, handlers, webHandlers, fontSizePx, lineHeightPx },
+  { token, sentenceIndex, index, spans, selected, handlers, fontSizePx, lineHeightPx },
   ref,
 ) {
   const { size } = useStoryTextSize();
-  const localRef = useRef<MeasurableNode | null>(null);
-  useEffect(() => {
-    // Web only: a mouse has no RN press events, so hover and right-click come
-    // in as DOM events on the rendered element (native refs have no such
-    // method — the guard skips Android entirely). The column element spans
-    // reading + word, so hovering either one counts as hovering the word.
-    const host = localRef.current as unknown as HTMLElement | null;
-    if (!host || typeof host.addEventListener !== "function") return;
-    const ref_: TokenRef = { sentence: sentenceIndex, index };
-    const over = (e: Event) => webHandlers?.onHover(ref_, e as MouseEvent);
-    const menu = (e: Event) => {
-      e.preventDefault();
-      webHandlers?.onContextMenu(ref_, e as MouseEvent);
-    };
-    host.addEventListener("mouseover", over);
-    host.addEventListener("contextmenu", menu);
-    return () => {
-      host.removeEventListener("mouseover", over);
-      host.removeEventListener("contextmenu", menu);
-    };
-  }, [webHandlers, sentenceIndex, index]);
 
   const classes = tokenMarkClasses(token, spans, selected);
   // The highlighter marks belong to the WORD (the reading above stays clear of
@@ -194,7 +160,6 @@ const StoryToken = forwardRef<MeasurableNode | null, StoryTokenProps>(function S
     <View
       ref={(el) => {
         const node = el as unknown as MeasurableNode | null;
-        localRef.current = node;
         if (typeof ref === "function") ref(node);
         else if (ref !== null) (ref as { current: MeasurableNode | null }).current = node;
       }}
@@ -242,16 +207,15 @@ const StoryToken = forwardRef<MeasurableNode | null, StoryTokenProps>(function S
 /**
  * One paragraph of the story: a flex row of token columns that wraps per
  * sentence, centred line by line. Memoised (issue #14 review, minor 6): the
- * reader caches `handlers`, `webHandlers` and `onSelect` across renders, so
- * header notes, panel updates and answer feedback re-render only the
- * paragraphs whose selected token actually changed.
+ * reader caches `handlers` and `onSelect` across renders, so header notes,
+ * panel updates and answer feedback re-render only the paragraphs whose
+ * selected token actually changed.
  */
 export const StoryParagraph = memo(function StoryParagraph({
   sentence,
   sentenceIndex,
   selectedToken,
   handlers,
-  webHandlers,
   onSelect,
   fontSizePx,
   lineHeightPx,
@@ -262,8 +226,6 @@ export const StoryParagraph = memo(function StoryParagraph({
   selectedToken: TokenRef | null;
   /** Gesture handlers per token (one stable function; the per-token objects are cached by the reader). */
   handlers: (sentenceIndex: number, index: number) => TokenHandlers;
-  /** Web hover / right-click wiring (stable; undefined on native hosts). */
-  webHandlers?: TokenWebHostHandlers;
   /** Stable selector: which sentence was pressed anywhere in this paragraph. */
   onSelect: (sentenceIndex: number) => void;
   /** The saved Story text size (the column's font). */
@@ -291,7 +253,6 @@ export const StoryParagraph = memo(function StoryParagraph({
           spans={sentence.grammarSpans}
           selected={selectedToken !== null && selectedToken.sentence === sentenceIndex && selectedToken.index === j}
           handlers={handlers(sentenceIndex, j)}
-          webHandlers={webHandlers}
           fontSizePx={fontSizePx}
           lineHeightPx={lineHeightPx}
         />

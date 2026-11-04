@@ -1,22 +1,11 @@
-// Shared chrome for settings screens (issue #50): the wide/narrow decision
-// and the small heading/back pieces every section route and the setup wizard
-// put around a section's own content.
+// Shared chrome for settings screens (issue #50): the small heading and back
+// pieces every section route and the setup wizard put around a section's own
+// content.
 
 import type { ReactNode } from "react";
-import { Pressable, Text, useWindowDimensions } from "react-native";
+import { Pressable, Text } from "react-native";
 
 import { Icon } from "./components/ui/icon";
-import { SIDEBAR_BREAKPOINT } from "./chrome/Shell";
-
-/**
- * True at/above the width where the app chrome already shows a sidebar —
- * the same 1024 px line `Shell` uses (issue #44), so the hub goes two-pane
- * exactly when the screen has room for a second column. A hook because it
- * tracks window resizes.
- */
-export function useWideLayout(): boolean {
-  return useWindowDimensions().width >= SIDEBAR_BREAKPOINT;
-}
 
 /**
  * What a section's step-save reports to the setup wizard (review S2):

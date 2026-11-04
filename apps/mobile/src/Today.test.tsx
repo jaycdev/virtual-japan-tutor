@@ -2,7 +2,6 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Today, formatInstant, learnerClock } from './Today.tsx';
-import { cardFillClass } from './components/ui/Card.tsx';
 import { createApiClient } from '@vjt/api-client';
 
 /**
@@ -662,14 +661,3 @@ describe('Today clock helpers', () => {
   });
 });
 
-describe('Today card fill', () => {
-  it('fills with flex-1 on native, never a percentage height', () => {
-    // A 100%-height card inside ScrollView content balloons to the viewport on
-    // native (indefinite parent), which buried the sections below it.
-    expect(cardFillClass(true, 'ios')).toBe('flex-1 ');
-    expect(cardFillClass(true, 'android')).toBe('flex-1 ');
-    expect(cardFillClass(true, 'web')).toBe('h-full ');
-    expect(cardFillClass(false, 'android')).toBe('');
-    expect(cardFillClass(false, 'web')).toBe('');
-  });
-});

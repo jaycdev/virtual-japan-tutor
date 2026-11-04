@@ -2,7 +2,6 @@ import type { ApiClient, Story, WeakSignalRequest } from "@vjt/api-client";
 import { type StoryView, useReadingSettings, useItemLists } from "@vjt/core";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import {
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,12 +12,11 @@ import {
 } from "react-native";
 
 import { useHardwareBack } from "../useHardwareBack.ts";
-import { SIDEBAR_BREAKPOINT, OVERLAY_BREAKPOINT } from "../chrome/Shell.tsx";
 import { Icon } from "../components/ui/icon";
 import { useStoryTextSize } from "../storysize/index.tsx";
 import { RatingButtons } from "./parts.tsx";
 import { ReadingPanel, type LookedTarget } from "./ReadingPanel.tsx";
-import { StoryParagraph, type TokenHandlers, type TokenWebHostHandlers } from "./StoryText.tsx";
+import { StoryParagraph, type TokenHandlers } from "./StoryText.tsx";
 import { SaveToSheet } from "./SaveToSheet.tsx";
 import { TokenMenu } from "./TokenMenu.tsx";
 import { DictionaryWindow, GrammarWindow } from "./Windows.tsx";
@@ -49,12 +47,8 @@ import {
  * (Dictionary / Grammar open centred windows, Save writes to the Default
  * List, Save to… opens the bottom sheet); anywhere else the release cancels.
  *
- * On web the same lookup surface answers to the mouse (#45): hovering a word
- * looks it up in the Reading Panel (one Weak Signal per item, deduped), and
- * right-click opens the Lookup Menu at the pointer — its rows then take a
- * plain click. This is why the panel's word-mode `looked` target merges the
- * touch gesture with the hovered token: whichever host drove it, one path
- * feeds the panel, the lookup cache and the menu.
+ * The Reading Panel's word-mode `looked` target follows the touch gesture, so
+ * the panel, the lookup cache and the menu all share one path.
  *
  * Scrolling vs. the gesture (issue #14 review): the story ScrollView is only
  * frozen while the Lookup Menu is up. A swipe that merely starts on text,
@@ -86,7 +80,6 @@ export function StoryReader({
   onBack,
   onPractice,
   measure: measureProp,
-  screenSize,
 }: {
   client: ApiClient;
   view: StoryView;
@@ -96,8 +89,6 @@ export function StoryReader({
   onPractice?: (storyId: string) => void;
   /** Overrides the menu measuring (jsdom reports no geometry — tests inject rects). */
   measure?: (testID: string, node: MeasurableNode | null) => Rect | null;
-  /** Overrides the measured viewport for menu anchoring (same reason). */
-  screenSize?: { width: number; height: number };
 }) {
   const reading = useReadingSettings(client);
   const lists = useItemLists(client);
@@ -122,9 +113,6 @@ export function StoryReader({
   // that terminated the responder can never be followed by a menu opening
   // behind the Learner's finger.
   const [gesture, dispatch] = useReducer(reduceHold, IDLE);
-  // The web hover target (mouse lookup): a separate state from the gesture so
-  // a press (or its cancel) overlays the hover instead of fighting it.
-  const [hovered, setHovered] = useState<TokenRef | null>(null);
   const [menuRects, setMenuRects] = useState<Map<string, Rect> | null>(null);
   const [windows, setWindows] = useState<LookedTarget[]>([]);
   const [sheetToken, setSheetToken] = useState<TokenRef | null>(null);
@@ -133,16 +121,6 @@ export function StoryReader({
   const [sheetError, setSheetError] = useState<string | null>(null);
   const [saveNote, setSaveNote] = useState<string | null>(null);
   const [screen, setScreen] = useState({ width: 0, height: 0 });
-  // The reader view's window origin (see the menu-position effect): pageX/
-  // pageY arrive in window coordinates, but TokenMenu positions itself
-  // absolutely inside this view, which sits below the safe-area padding.
-  const [viewOrigin, setViewOrigin] = useState<{ x: number; y: number } | null>(null);
-
-  // Is a finger or mouse button still down on the story text? The web popover
-  // hands focus back to the token when it closes — but never mid-press:
-  // moving focus during a live RN Web press corrupts the responder system,
-  // and the next hold dies without ever granting (issue #45 review).
-  const pointerHeld = useRef(false);
 
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelHold = () => {
@@ -191,7 +169,7 @@ export function StoryReader({
     reportSignals(signals);
   };
 
-  // --- state derived from the gesture reducer (and the web hover) -----------
+  // --- state derived from the gesture reducer -------------------------------
 
   const pressedToken =
     gesture.token !== null ? story.sentences[gesture.token.sentence]?.tokens[gesture.token.index] : undefined;
@@ -202,26 +180,17 @@ export function StoryReader({
     lookup.failed(pressedToken.entSeq, pressedToken.surface, pressedToken.reading);
 
   // The Reading Panel's word-mode follows the machine: the pressed token is
-  // "looked at" from press until cancel (release, terminate, or Back). On web
-  // a hovered token keeps the panel in word-mode too — the gesture wins while
-  // it is live, so a press never contradicts the hover underneath it.
+  // "looked at" from press until cancel (release, terminate, or Back).
   const looked: LookedTarget | null = useMemo(() => {
-    const target = gesture.token ?? hovered;
+    const target = gesture.token;
     if (!target) return null;
     const sen = story.sentences[target.sentence];
     const tok = sen?.tokens[target.index];
     if (!sen || !tok) return null;
     return { ...target, kind: coveringSpan(sen, tok) ? "grammar" : "token" };
-  }, [gesture.token, hovered, story]);
+  }, [gesture.token, story]);
 
   const menuOpen = gesture.phase === "menu";
-  // Wide or narrow decides the overlay FORM (anchored popover / centred card
-  // vs bottom sheet) — the shell's breakpoint, never an ad-hoc number here.
-  const narrowOverlays = (screenSize ?? screen).width < OVERLAY_BREAKPOINT;
-  // The footer drops its button labels below the shell's phone breakpoint: at
-  // 400dp nine actions with text do not fit on one row, and half-wrapped labels
-  // are worse than icons with the same accessibility labels.
-  const narrowFooter = (screenSize ?? screen).width < SIDEBAR_BREAKPOINT;
   // The scroll freeze belongs to the menu alone: before it, the story stays
   // scrollable so a swipe on text pans instead of hijacking the word.
   const scrollEnabled = !menuOpen;
@@ -257,7 +226,6 @@ export function StoryReader({
 
   /** Finger down on a token: select, prime the Lookup row, start the hold. */
   const onTokenGrant = (ref: TokenRef, e: NativeSyntheticEvent<NativeTouchEvent>) => {
-    pointerHeld.current = true;
     cancelHold();
     closeMenu();
     const sen = story.sentences[ref.sentence];
@@ -279,8 +247,8 @@ export function StoryReader({
       const g = gestureRef.current;
       if (g.phase !== "press" || !g.token || !sameRef(g.token, ref)) return; // released or stolen
       dispatch({ type: "holdElapsed" });
-      // The hold *is* the menu opening on mobile: one signal covers both,
-      // and unlinked words simply signal nothing.
+      // The hold *is* the menu opening: one signal covers both, and unlinked
+      // words simply signal nothing.
       const signal = holdSignal(token, coveringSpan(sen, token));
       if (signal) reportSignals([signal]);
     }, holdMs);
@@ -288,7 +256,6 @@ export function StoryReader({
 
   /** Finger up: before the threshold this is a tap; after it, the option under the release runs. */
   const onTokenRelease = (ref: TokenRef, e: NativeSyntheticEvent<NativeTouchEvent>) => {
-    pointerHeld.current = false;
     cancelHold();
     const g = gestureRef.current;
     if (g.phase !== "menu" || !g.token || !sameRef(g.token, ref)) {
@@ -308,45 +275,10 @@ export function StoryReader({
 
   /** The responder was taken (a scroll swipe panned the story): abandon the gesture. */
   const onTokenTerminate = (ref: TokenRef) => {
-    pointerHeld.current = false;
     cancelHold();
     const g = gestureRef.current;
     if (g.phase === "menu" && g.token && sameRef(g.token, ref)) closeMenu();
     else dispatch({ type: "cancel" });
-  };
-
-  /** Web hover (issue #45): the Reading Panel looks the word up, and the
-   * lookup itself is the Weak Signal — the same one a mobile hold reports. */
-  const onTokenHover = (ref: TokenRef) => {
-    const sen = story.sentences[ref.sentence];
-    const token = sen?.tokens[ref.index];
-    if (!sen || !token) return;
-    setHovered(ref);
-    if (token.entSeq !== undefined) lookup.load(token.entSeq, token.surface, token.reading);
-    const signal = holdSignal(token, coveringSpan(sen, token));
-    if (signal) reportSignals([signal]); // signaled.current dedups repeated hovers
-  };
-
-  /** Web right-click: open the Lookup Menu at the pointer. The machine sees a
-   * press and its hold at once — right-click is an instant, deliberate hold. */
-  const onTokenContextMenu = (ref: TokenRef, e: MouseEvent) => {
-    // A right-click is complete the moment it fires — nothing is being held —
-    // so focus may return to the token when this menu closes.
-    pointerHeld.current = false;
-    cancelHold();
-    closeMenu();
-    const sen = story.sentences[ref.sentence];
-    const token = sen?.tokens[ref.index];
-    if (!sen || !token) return;
-    setSelected(ref.sentence);
-    setSelectedToken(ref);
-    if (token.entSeq !== undefined) lookup.load(token.entSeq, token.surface, token.reading);
-    // Anchor under the token's bottom edge, not the pointer: a context menu
-    // that covers the word it describes hides the thing the Learner aimed at.
-    const target = e.target instanceof Element ? e.target.closest(`[data-testid="token-${ref.sentence}-${ref.index}"]`) : null;
-    const y = target ? target.getBoundingClientRect().bottom : e.clientY;
-    dispatch({ type: "press", token: ref, x: e.clientX, y });
-    dispatch({ type: "holdElapsed" });
   };
 
   const runMenuOption = (option: MenuOptionId, ref: TokenRef) => {
@@ -377,7 +309,7 @@ export function StoryReader({
     setSheetToken(ref);
   };
 
-  /** A menu row clicked (web, issue #45): close the menu, then run the option. */
+  /** A tap on a menu row: close the menu, then run the option. */
   const onMenuSelect = (option: MenuOptionId) => {
     const g = gestureRef.current;
     closeMenu();
@@ -427,13 +359,11 @@ export function StoryReader({
     grant: onTokenGrant,
     release: onTokenRelease,
     terminate: onTokenTerminate,
-    hover: onTokenHover,
-    contextMenu: onTokenContextMenu,
   });
   // The refs refresh after each commit (react-hooks forbids writing refs in
   // the render body). Every reader of them — the hold timer and the token
-  // handlers — runs from a timer or a touch/mouse event, which always lands
-  // after the effects have flushed, so they never see a stale closure.
+  // handlers — runs from a timer or a touch event, which always lands after
+  // the effects have flushed, so they never see a stale closure.
   useEffect(() => {
     gestureRef.current = gesture;
     openOptionsRef.current = openOptions;
@@ -441,8 +371,6 @@ export function StoryReader({
       grant: onTokenGrant,
       release: onTokenRelease,
       terminate: onTokenTerminate,
-      hover: onTokenHover,
-      contextMenu: onTokenContextMenu,
     };
   });
 
@@ -470,16 +398,6 @@ export function StoryReader({
     const bySentence = story.sentences.map((sen, i) => sen.tokens.map((_token, j) => make(i, j)));
     return (sentenceIndex: number, index: number) => bySentence[sentenceIndex][index];
   }, [story]);
-
-  // Web wiring is stable too (the paragraphs are memoised): like the touch
-  // handlers, these only touch the ref when the DOM event fires.
-  const webHandlers = useMemo<TokenWebHostHandlers>(
-    () => ({
-      onHover: (ref) => actionsRef.current.hover(ref),
-      onContextMenu: (ref, e) => actionsRef.current.contextMenu(ref, e),
-    }),
-    [],
-  );
 
   const selectSentence = useCallback((sentenceIndex: number) => setSelected(sentenceIndex), []);
 
@@ -509,11 +427,9 @@ export function StoryReader({
     setWindows((w) => w.slice(0, -1));
   };
 
-  // A web hover must not outlive a Story change (or an open menu/window
-  // gesture, for that matter): the panel falls back to its idle row.
+  // A Story change resets the per-Story state: the panel falls back to its idle row.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting per-Story state on Story change is the point
-    setHovered(null);
     setSelected(null);
     setSelectedToken(null);
     setNavStory(null);
@@ -523,7 +439,7 @@ export function StoryReader({
 
   // Android Back unwinds one layer at a time, and only one listener is ever
   // attached (issue #13's pattern), so a press can never pop twice. The sheet
-  // and windows are Modals whose onRequestClose also fires on Back: on Android
+  // and windows are Dialogs whose onOpenChange also fires on Back: on Android
   // the dialog consumes the key press, so that path never reaches this
   // listener — the pairing is a deliberate double safety, not a double-pop.
   useHardwareBack(true, () => {
@@ -557,8 +473,6 @@ export function StoryReader({
   }, []);
   const measure = measureProp ?? defaultMeasure;
 
-  const rootViewRef = useRef<MeasurableNode | null>(null);
-
   // --- footer: read, rating, practice, prev/next (issue #45) -----------------
 
   const libraryItems = view.library.status === "ready" ? view.library.page.items : [];
@@ -577,18 +491,8 @@ export function StoryReader({
 
   return (
     <View
-      ref={(node) => {
-        rootViewRef.current = node;
-      }}
       style={styles.fill}
-      onLayout={(e) => {
-        setScreen({ width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height });
-        // The menu anchors on pageX/pageY (window coordinates) but positions
-        // itself inside this view — under the safe-area paddingTop. Anchor on
-        // view-local coordinates instead (issue #14 review, minor 4).
-        const r = measure("reader-view", rootViewRef.current);
-        setViewOrigin(r ? { x: r.x, y: r.y } : null);
-      }}
+      onLayout={(e) => setScreen({ width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height })}
       accessibilityLabel="Story reader"
     >
       <View style={styles.header} className="border-b border-border">
@@ -616,18 +520,11 @@ export function StoryReader({
               onPress={() => setTitleEnRevealed((v) => !v)}
               style={styles.titleTranslation}
             >
-              {/* The translation text stays in the DOM either way (issue #45):
-                  web dims it with a real blur, Android — which has no filter
-                  — paints it transparent. */}
+              {/* The translation text stays in the tree either way (issue #45):
+                  Android has no filter, so a hidden translation paints transparent. */}
               <Text
                 className="text-small text-muted-foreground"
-                style={
-                  titleEnRevealed
-                    ? styles.titleEn
-                    : Platform.OS === "web"
-                      ? [styles.titleEn, { filter: "blur(4px)" }]
-                      : [styles.titleEn, { color: "transparent" }]
-                }
+                style={titleEnRevealed ? styles.titleEn : [styles.titleEn, { color: "transparent" }]}
                 numberOfLines={1}
               >
                 {story.titleEn}
@@ -650,9 +547,9 @@ export function StoryReader({
         </View>
       </View>
 
-      {/* The Reading Panel is the fixed area ABOVE the story (mirrors the web
-          reader, Stories.tsx): the story scrolls under it, and the panel's
-          one fixed box switches between sentence-mode and word-mode. */}
+      {/* The Reading Panel is the fixed area ABOVE the story: the story scrolls
+          under it, and the panel's one fixed box switches between sentence-mode
+          and word-mode. */}
       <ReadingPanel
         story={story}
         selected={selected}
@@ -681,7 +578,6 @@ export function StoryReader({
               sentenceIndex={i}
               selectedToken={selectedToken}
               handlers={tokenHandlers}
-              webHandlers={webHandlers}
               onSelect={selectSentence}
               fontSizePx={fontSizePx}
               lineHeightPx={lineHeightPx}
@@ -731,9 +627,9 @@ export function StoryReader({
           header, where they crowded the title). */}
       <View style={styles.footer} className="border-t border-border bg-card">
         {/* Groups, not nine loose buttons: when the row has to wrap on a phone it
-            wraps between nav / status / Practice, never inside a button. Below
-            SIDEBAR_BREAKPOINT the nav buttons are icon-only — same accessibility
-            labels, and the row fits one line at 400dp. */}
+            wraps between nav / status / Practice, never inside a button. The nav
+            buttons are icon-only — same accessibility labels, and the row fits one
+            line at 400dp. */}
         <View style={styles.footerGroup}>
           <Pressable
             accessibilityRole="button"
@@ -744,7 +640,6 @@ export function StoryReader({
             style={styles.footerButton}
           >
             <Icon name="chevron-left" size="sm" strokeWidth={2.5} className="text-muted-foreground" />
-            {narrowFooter ? null : <Text className="text-small text-muted-foreground">Previous</Text>}
           </Pressable>
           <Pressable
             accessibilityRole="button"
@@ -754,7 +649,6 @@ export function StoryReader({
             onPress={() => navTo(1)}
             style={styles.footerButton}
           >
-            {narrowFooter ? null : <Text className="text-small text-muted-foreground">Next</Text>}
             <Icon name="chevron-right" size="sm" strokeWidth={2.5} className="text-muted-foreground" />
           </Pressable>
         </View>
@@ -784,30 +678,24 @@ export function StoryReader({
         </Pressable>
       </View>
 
-      {menuOpen && gesture.token && (screenSize ?? screen).width > 0 ? (
+      {menuOpen && gesture.token ? (
         <TokenMenu
           options={openOptions}
-          x={gesture.anchorX - (viewOrigin?.x ?? 0)}
-          y={gesture.anchorY - (viewOrigin?.y ?? 0)}
-          narrow={narrowOverlays}
-          screenWidth={(screenSize ?? screen).width}
-          screenHeight={(screenSize ?? screen).height}
+          screenWidth={screen.width}
           measure={measure}
           onRects={setMenuRects}
           onSelect={onMenuSelect}
           onDismiss={closeMenu}
-          focusReturnTestId={gesture.token ? `token-${gesture.token.sentence}-${gesture.token.index}` : null}
-          pointerHeld={pointerHeld}
         />
       ) : null}
 
       {top ? (
         top.kind === "grammar" && topSpan ? (
-          <GrammarWindow span={topSpan} narrow={narrowOverlays} onClose={closeTopWindow} />
+          <GrammarWindow span={topSpan} onClose={closeTopWindow} />
         ) : topVocabLinked && topEntry ? (
           // The window is only pushed when the entry is already cached (see
           // runMenuOption), so this renders with real content, never a stub.
-          <DictionaryWindow entry={topEntry} narrow={narrowOverlays} onClose={closeTopWindow} />
+          <DictionaryWindow entry={topEntry} onClose={closeTopWindow} />
         ) : null
       ) : null}
 
@@ -817,7 +705,6 @@ export function StoryReader({
           defaultListId={lists.state.defaultListId}
           busy={saveBusy}
           error={sheetError}
-          narrow={narrowOverlays}
           onClose={() => {
             setSheetToken(null);
             setSheetError(null);
@@ -840,7 +727,7 @@ export function StoryReader({
             void lists
               .createList({ name, boosting: false })
               .then((created) => {
-                // Create-then-save only after a successful create, as on the web.
+                // Create-then-save only after a successful create.
                 if (created.ok && created.list) {
                   saveBusyRef.current = false;
                   return saveInto(created.list.id, item, created.list.name);

@@ -1,7 +1,7 @@
 import type { ApiClient } from "@vjt/api-client";
 import { useHealth } from "@vjt/core";
 import { useState } from "react";
-import { Platform, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { Field } from "./components/ui/Field.tsx";
 import { LinkButton } from "./components/ui/LinkButton.tsx";
@@ -10,16 +10,11 @@ import { InlineError, SkeletonBar } from "./state/states.tsx";
 import { normalizeServerUrl } from "./config.ts";
 
 /**
- * The server connection (#50, split by platform):
- *
- * - Android has no same-origin default, so the API base URL stays editable
- *   here and persists in the device's secure store. Saving first probes
- *   the candidate's /health (review S1): an unreachable address explains
- *   itself and the old address stays; only a server that answers gets
- *   committed, rebuilt into a fresh ApiClient, and re-checked.
- * - Web builds serve from the server itself: the address is the page's
- *   origin, fixed at build time, so there is no address field to edit —
- *   only the health check.
+ * The server connection (#50). The app has no same-origin default, so the API
+ * base URL stays editable here and persists in the device's secure store.
+ * Saving first probes the candidate's /health (review S1): an unreachable
+ * address explains itself and the old address stays; only a server that
+ * answers gets committed, rebuilt into a fresh ApiClient, and re-checked.
  *
  * The health line reads GET /health through `useHealth`, which fetches on
  * mount; "Check again" bumps the inner component's key so a fresh mount
@@ -95,9 +90,7 @@ export function ServerSettings({
   return (
     <View className="gap-4">
       <Text className="text-body text-foreground">
-        {Platform.OS === "android"
-          ? "The app talks to your Virtual Japan Tutor server at this address."
-          : "This build is served by the Virtual Japan Tutor server itself — the address comes from the page."}
+        The app talks to your Virtual Japan Tutor server at this address.
       </Text>
 
       <HealthLine
@@ -106,8 +99,7 @@ export function ServerSettings({
         onRecheck={() => setAttempt((n) => n + 1)}
       />
 
-      {Platform.OS === "android" && (
-        <>
+      <>
           <Text className="text-small text-muted-foreground">Currently: {currentUrl}</Text>
           <Field
             label="Server address"
@@ -129,8 +121,7 @@ export function ServerSettings({
             onPress={() => setUrl("http://10.0.2.2:8080")}
             disabled={busy}
           />
-        </>
-      )}
+      </>
     </View>
   );
 }

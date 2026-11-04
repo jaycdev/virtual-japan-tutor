@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Router integration test (#44): mounts the real Expo Router app (real
  * app/_layout.tsx + route files via ExpoRoot) on jsdom with a fake API, and
  * asserts the shell behaviour end to end — chrome per viewport, navigation
@@ -25,6 +25,19 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// Per-device state (the session token, the server address, the setup flag) lives in the
+// Android secure store; the test host swaps it for an in-memory map seeded and read here.
+const secure = vi.hoisted(() => new Map<string, string>());
+vi.mock("expo-secure-store", () => ({
+  getItemAsync: async (key: string) => secure.get(key) ?? null,
+  setItemAsync: async (key: string, value: string) => {
+    secure.set(key, value);
+  },
+  deleteItemAsync: async (key: string) => {
+    secure.delete(key);
+  },
+}));
+
 import { setBackHandlerForTests } from "./useHardwareBack.ts";
 import { resolveApiBaseUrl } from "./config.ts";
 
@@ -46,24 +59,6 @@ const ROUTE_MODULES: Record<string, RouteModule> = {
   "./setup": setupRoute,
 };
 
-const NARROW = 900;
-const WIDE = 1280;
-
-function setViewport(width: number) {
-  // The Shell measures width through react-native-web's useWindowDimensions,
-  // which follows RN's Dimensions 'change' event. In jsdom that event fires
-  // from window.visualViewport resize (or window resize without it), reading
-  // the viewport size as it goes — so drive that path rather than Dimensions.
-  Object.defineProperty(document.documentElement, "clientWidth", { value: width, configurable: true });
-  Object.defineProperty(document.documentElement, "clientHeight", { value: 900, configurable: true });
-  const vv = window.visualViewport;
-  if (vv) {
-    Object.defineProperty(vv, "width", { value: width, configurable: true });
-    Object.defineProperty(vv, "height", { value: 900, configurable: true });
-    vv.dispatchEvent(new Event("resize"));
-  }
-  window.dispatchEvent(new Event("resize"));
-}
 
 function storyView() {
   // Same StoryView shape as src/Stories.test.tsx's fixture — the reader
@@ -179,14 +174,13 @@ function renderApp(path: string) {
 
 beforeEach(() => {
   // A stored session is the signed-in starting point; the Login flow itself is
-  // covered by src/Login.test.tsx. Under vitest the app's secure store is the
-  // web variant (src/secureStore.ts), i.e. localStorage.
-  localStorage.clear();
-  localStorage.setItem("vjt.token", "preset-token");
-  localStorage.setItem("vjt.serverUrl", TEST_SERVER_URL);
+  // covered by src/Login.test.tsx. The secure store is the in-memory mock above.
+  secure.clear();
+  secure.set("vjt.token", "preset-token");
+  secure.set("vjt.serverUrl", TEST_SERVER_URL);
   // These tests are all past first run: the #50 setup flow gates on this flag
   // (its own flow is covered by the setup tests below).
-  localStorage.setItem("vjt.setupSeen", "yes");
+  secure.set("vjt.setupSeen", "yes");
 });
 
 afterEach(() => {
@@ -195,19 +189,12 @@ afterEach(() => {
   setBackHandlerForTests(undefined);
 });
 
-async function signedIn(width = NARROW) {
-  setViewport(width);
-  // The chrome is the signed-in signal: tabs at narrow widths, links in the
-  // sidebar at wide ones.
-  if (width < 1024) {
-    await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(5));
-  } else {
-    await waitFor(() => expect(screen.getAllByRole("link")).toHaveLength(5));
-  }
+async function signedIn() {
+  await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(5));
   return userEvent.setup();
 }
 
-it("signed-in narrow viewport shows the tab bar with five destinations", async () => {
+it("signed-in shows the tab bar with five destinations", async () => {
   stubApi();
   renderApp("/");
   const user = await signedIn();
@@ -280,7 +267,6 @@ it("opening a story from the library pushes the reader route and hides the tab b
 it("a story deep link lands directly in the reader with the tab bar hidden", async () => {
   stubApi();
   renderApp("/stories/st-1");
-  setViewport(NARROW);
 
   await screen.findByRole("button", { name: "Back to stories" });
   expect(screen.queryAllByRole("tab")).toHaveLength(0);
@@ -289,7 +275,6 @@ it("a story deep link lands directly in the reader with the tab bar hidden", asy
 it("Back from a fresh-tab story deep link replaces to the Stories tab", async () => {
   stubApi();
   renderApp("/stories/st-1"); // nothing under the route: canGoBack is false
-  setViewport(NARROW);
   const user = await userEvent.setup();
 
   await user.click(await screen.findByRole("button", { name: "Back to stories" }));
@@ -310,7 +295,6 @@ it("Back from a fresh-tab settings deep link returns to the hub", async () => {
 it("Back from a fresh-tab grammar deep link returns to the catalogue", async () => {
   stubApi();
   renderApp("/grammar/12"); // deep link in a fresh tab: nothing to pop
-  setViewport(NARROW);
   const user = await userEvent.setup();
 
   // The Back row renders in every state (loading, error, ready), so its press
@@ -369,29 +353,9 @@ it("a grammar deep link renders the grammar screen inside the chrome", async () 
   await screen.findByText("No grammar points yet — a MaruMori sync fills this catalogue.");
 });
 
-it("wide viewport swaps the tab bar for the sidebar with the learner and Log out", async () => {
-  stubApi();
-  renderApp("/");
-  const user = await signedIn(WIDE);
-
-  await screen.findByText("読");
-  await screen.findByText("Learner");
-  expect(screen.queryAllByRole("tab")).toHaveLength(0);
-
-  const links = screen.getAllByRole("link");
-  expect(links[0].getAttribute("aria-current")).toBe("page");
-
-  await user.click(screen.getByRole("link", { name: "Practice" }));
-  await screen.findByText("Start a practice session");
-
-  await user.click(screen.getByRole("button", { name: "Log out" }));
-  await screen.findByLabelText("Username");
-});
-
 it("signed-out visitors see the login screen and no chrome", async () => {
-  localStorage.clear();
+  secure.clear();
   stubApi();
-  setViewport(NARROW);
   renderApp("/");
 
   await screen.findByText("Virtual Japan Tutor");
@@ -400,7 +364,7 @@ it("signed-out visitors see the login screen and no chrome", async () => {
 
 it("a narrow section route is one column — the menu lives in the hub, not the section", async () => {
   stubApi();
-  renderApp("/settings/reading"); // narrow: the hub list is not beside it
+  renderApp("/settings/reading"); // the hub list is not beside the section
   await signedIn();
 
   await screen.findByLabelText("Lookup hold before a Weak Signal (ms, 0–10000)");
@@ -410,40 +374,10 @@ it("a narrow section route is one column — the menu lives in the hub, not the 
   }
 });
 
-it("wide screens show the hub and the open section side by side", async () => {
-  stubApi();
-  renderApp("/settings");
-  const user = await signedIn(WIDE);
-
-  // P2: the wide hub opens Appearance in the right pane instead of a
-  // "pick a section" placeholder, and the Appearance row is the current one.
-  await screen.findByRole("heading", { name: "Appearance" });
-  await screen.findByText("Colour theme");
-  expect(
-    (screen.getByRole("button", { name: "Appearance" }) as HTMLElement).getAttribute("aria-current"),
-  ).toBe("page");
-  await screen.findByRole("button", { name: "MaruMori" });
-
-  await user.click(screen.getByRole("button", { name: "Reading" }));
-  await screen.findByLabelText("Lookup hold before a Weak Signal (ms, 0–10000)");
-  // Two panes, not a navigation: the menu stayed, the picked row is marked.
-  expect(screen.getByRole("button", { name: "MaruMori" })).toBeTruthy();
-  expect(
-    (screen.getByRole("button", { name: "Reading" }) as HTMLElement).getAttribute("aria-current"),
-  ).toBe("page");
-
-  // Switching sections happens inside the page.
-  await user.click(screen.getByRole("button", { name: "MaruMori" }));
-  await screen.findByLabelText("MaruMori API key");
-  expect(screen.queryByLabelText("Lookup hold before a Weak Signal (ms, 0–10000)")).toBeNull();
-  expect(screen.getByRole("button", { name: "Reading" })).toBeTruthy();
-});
-
 describe("first-run setup (#50)", () => {
   // Fresh device: nothing in the secure store — signed-out, setup never seen.
   function freshDevice() {
-    localStorage.clear();
-    setViewport(NARROW);
+    secure.clear();
   }
 
   async function logIn() {
@@ -579,7 +513,7 @@ describe("first-run setup (#50)", () => {
     await screen.findByText("Today’s Story");
     expect(screen.queryByText(/Step \d of 3/)).toBeNull();
     // The flag is marked, so the next launch does not even ask the server.
-    expect(localStorage.getItem("vjt.setupSeen")).toBe("yes");
+    expect(secure.get("vjt.setupSeen")).toBe("yes");
   });
 
   it("a /setup deep link after setup was seen falls through to Today", async () => {

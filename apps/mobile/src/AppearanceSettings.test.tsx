@@ -2,6 +2,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
+// Per-device settings persist in the Android secure store; the test host swaps
+// it for an in-memory map so the persisted values can be seeded and read back.
+const secure = vi.hoisted(() => new Map<string, string>());
+vi.mock('expo-secure-store', () => ({
+  getItemAsync: async (key: string) => secure.get(key) ?? null,
+  setItemAsync: async (key: string, value: string) => {
+    secure.set(key, value);
+  },
+  deleteItemAsync: async (key: string) => {
+    secure.delete(key);
+  },
+}));
+
 // The theme store is a module singleton and the uniwind stub records theme
 // switches for the whole process, so every test starts from a freshly
 // imported module graph (see src/theme/index.test.tsx for the same pattern).
@@ -19,7 +32,7 @@ async function freshAppearanceSettings() {
 
 describe('mobile AppearanceSettings', () => {
   beforeEach(() => {
-    localStorage.clear();
+    secure.clear();
   });
 
   it('switches the app theme immediately and remembers the choice', async () => {
@@ -29,7 +42,7 @@ describe('mobile AppearanceSettings', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Dark' }));
 
     expect(setThemeCalls).toContain('dark');
-    expect(localStorage.getItem('vjt.theme')).toBe('dark');
+    expect(secure.get('vjt.theme')).toBe('dark');
     expect(
       (screen.getByRole('button', { name: 'Dark' }) as HTMLElement).getAttribute(
         'aria-pressed',
@@ -39,7 +52,7 @@ describe('mobile AppearanceSettings', () => {
     fireEvent.click(screen.getByRole('button', { name: 'System' }));
 
     expect(setThemeCalls).toContain('system');
-    expect(localStorage.getItem('vjt.theme')).toBe('system');
+    expect(secure.get('vjt.theme')).toBe('system');
   });
 
   it('applies a story text size immediately and remembers it', async () => {
@@ -48,7 +61,7 @@ describe('mobile AppearanceSettings', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'L' }));
 
-    expect(localStorage.getItem('vjt.storyTextSize')).toBe('L');
+    expect(secure.get('vjt.storyTextSize')).toBe('L');
     expect(
       (screen.getByRole('button', { name: 'M' }) as HTMLElement).getAttribute(
         'aria-pressed',
@@ -57,8 +70,8 @@ describe('mobile AppearanceSettings', () => {
   });
 
   it('starts from the persisted choices', async () => {
-    localStorage.setItem('vjt.theme', 'light');
-    localStorage.setItem('vjt.storyTextSize', 'XL');
+    secure.set('vjt.theme', 'light');
+    secure.set('vjt.storyTextSize', 'XL');
 
     const { AppearanceSettings, ThemeProvider, StoryTextSizeProvider } =
       await freshAppearanceSettings();

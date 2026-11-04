@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { Platform } from 'react-native';
 
 import { ServerSettings } from './ServerSettings.tsx';
 import { createApiClient } from '@vjt/api-client';
@@ -45,39 +44,14 @@ function stubProbe(answer?: (url: URL) => Promise<Response>) {
   return mock;
 }
 
-describe('mobile ServerSettings (web)', () => {
-  // jsdom + react-native-web: Platform.OS === 'web', the shipped web build.
-  it('shows the health check and no address editor', async () => {
-    const client = makeClient(healthFetch());
-    render(<ServerSettings client={client} currentUrl="http://localhost:8080" onSave={async () => {}} />);
-
-    await waitFor(() => {
-      expect(
-        screen.getByText('The server is reachable and its database is connected.'),
-      ).toBeTruthy();
-    });
-    expect(
-      screen.getByText(
-        'This build is served by the Virtual Japan Tutor server itself — the address comes from the page.',
-      ),
-    ).toBeTruthy();
-    expect(screen.queryByLabelText('Server address')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Save server' })).toBeNull();
-  });
-});
-
-describe('mobile ServerSettings (Android)', () => {
-  const realOS = Platform.OS;
+describe('mobile ServerSettings', () => {
   beforeEach(() => {
-    // The address editor only exists where there is no same-origin default.
-    (Platform as { OS: string }).OS = 'android';
     healthBody = { status: 'ok', database: 'connected' };
     // Saves probe the candidate first; default: it answers healthy, so the
     // happy path reaches onSave.
     stubProbe();
   });
   afterEach(() => {
-    (Platform as { OS: string }).OS = realOS;
     vi.unstubAllGlobals();
   });
 

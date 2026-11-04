@@ -5,9 +5,9 @@ import { Today } from "../src/Today.tsx";
 import { useSession } from "../src/session.tsx";
 import { hasSetupSeen, markSetupSeen } from "../src/firstRun.ts";
 
-// Today (#47), the landing route: the app opens here on Android and web. The
-// chrome (#44) already mounts this route inside the Shell, so the tab bar or
-// sidebar is around it and its own ScrollView handles the rest.
+// Today (#47), the landing route: the app opens here. The chrome (#44) already
+// mounts this route inside the Shell, so the tab bar is around it and its own
+// ScrollView handles the rest.
 //
 // Navigation stays with the router: the Story card pushes the reader
 // (/stories/:id, the same route the Stories screen uses), the Practice CTA

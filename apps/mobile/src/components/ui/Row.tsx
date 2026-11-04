@@ -20,7 +20,7 @@ export function Row({
   right?: ReactNode;
   onPress?: () => void;
   last?: boolean;
-  /** Marks the row that is currently open (the hub's two-pane highlight). */
+  /** Marks the row that is currently selected. */
   selected?: boolean;
 }) {
   const inner = (

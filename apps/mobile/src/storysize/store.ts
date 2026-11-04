@@ -51,7 +51,7 @@ export function storyColumnWidthPx(size: StoryTextSize): number {
   return STORY_COLUMN_CHARS * STORY_TEXT_SIZE_PX[size];
 }
 
-/** Storage seam, split per platform (web = localStorage, Android = SecureStore). */
+/** Storage seam: the Android secure store (SecureStore). */
 export interface StoryTextSizeStorage {
   getItem(key: string): Promise<string | null>;
   setItem(key: string, value: string): Promise<void>;

@@ -1,23 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { normalizeServerUrl, resolveApiBaseUrl } from "./config.ts";
-import { platformApiDefault as webApiDefault } from "./platformDefault.ts";
-// Vitest runs the web variant of the platform split, so the native file is
-// imported by explicit path to exercise the other side of it.
-import { platformApiDefault as nativeApiDefault } from "./platformDefault.native.ts";
+import { platformApiDefault } from "./platformDefault.ts";
 
 describe("resolveApiBaseUrl", () => {
-  it("web with no stored url and no env uses the page's own origin", () => {
-    expect(webApiDefault()).toBe(window.location.origin);
-    expect(resolveApiBaseUrl({})).toBe(window.location.origin);
-  });
-
-  it("web never hard-defaults to the Android emulator address", () => {
-    expect(resolveApiBaseUrl({ EXPO_PUBLIC_API_URL: "" })).not.toContain("10.0.2.2");
-  });
-
-  it("native keeps the host machine as seen from the Android emulator", () => {
-    expect(nativeApiDefault()).toBe("http://10.0.2.2:8080");
-    expect(resolveApiBaseUrl({}, null, nativeApiDefault())).toBe("http://10.0.2.2:8080");
+  it("with no stored url and no env, uses the host machine as seen from the Android emulator", () => {
+    expect(platformApiDefault()).toBe("http://10.0.2.2:8080");
+    expect(resolveApiBaseUrl({}, null, platformApiDefault())).toBe("http://10.0.2.2:8080");
   });
 
   it("uses EXPO_PUBLIC_API_URL when set, without a trailing slash", () => {
@@ -26,14 +14,16 @@ describe("resolveApiBaseUrl", () => {
     );
   });
 
-  it("EXPO_PUBLIC_API_URL wins over the web origin (expo start --web dev flow)", () => {
+  it("EXPO_PUBLIC_API_URL wins over the platform default", () => {
     expect(resolveApiBaseUrl({ EXPO_PUBLIC_API_URL: "http://localhost:8081" })).toBe(
       "http://localhost:8081",
     );
   });
 
   it("treats an empty value as unset", () => {
-    expect(resolveApiBaseUrl({ EXPO_PUBLIC_API_URL: "" })).toBe(window.location.origin);
+    expect(resolveApiBaseUrl({ EXPO_PUBLIC_API_URL: "" }, null, platformApiDefault())).toBe(
+      "http://10.0.2.2:8080",
+    );
   });
 
   it("prefers a stored override over the build-time env value", () => {
@@ -42,8 +32,10 @@ describe("resolveApiBaseUrl", () => {
     ).toBe("http://saved.test:9000");
   });
 
-  it("prefers a stored override over the web origin", () => {
-    expect(resolveApiBaseUrl({}, "http://saved.test:9000")).toBe("http://saved.test:9000");
+  it("prefers a stored override over the platform default", () => {
+    expect(resolveApiBaseUrl({}, "http://saved.test:9000", platformApiDefault())).toBe(
+      "http://saved.test:9000",
+    );
   });
 
   it("ignores an unparseable stored override and falls back to the env", () => {
@@ -76,8 +68,8 @@ describe("normalizeServerUrl", () => {
 
 describe("resolveApiBaseUrl with a stored override", () => {
   it("ignores a stored url that carries credentials", () => {
-    expect(
-      resolveApiBaseUrl({}, "http://admin:hunter2@192.168.1.10:8080"),
-    ).toBe(window.location.origin);
+    expect(resolveApiBaseUrl({}, "http://admin:hunter2@192.168.1.10:8080", platformApiDefault())).toBe(
+      "http://10.0.2.2:8080",
+    );
   });
 });

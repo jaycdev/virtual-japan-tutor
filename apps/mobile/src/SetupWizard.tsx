@@ -10,7 +10,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AccessibilityInfo,
-  Platform,
   ScrollView,
   Text,
   View,
@@ -54,28 +53,18 @@ export function SetupWizard({
   }, []);
   const last = step === STEPS.length - 1;
 
-  // S4: on every step change, hand accessibility focus to the step title —
-  // DOM focus on the web host, RN's accessibility-focus event on native —
-  // so a screen reader lands on "Step 2 of 3" instead of the page top.
+  // S4: on every step change, hand accessibility focus to the step title, so a
+  // screen reader lands on "Step 2 of 3" instead of the page top.
   const titleRef = useRef<ViewInstance | null>(null);
   useEffect(() => {
     const node = titleRef.current;
     if (!node) return;
     try {
-      if (Platform.OS === "web") {
-        const el = node as unknown as HTMLElement;
-        if (el instanceof HTMLElement) {
-          el.tabIndex = -1; // headings are not focusable until asked to be
-          el.focus();
-        }
-      } else {
-        // RN 0.88 hands sendAccessibilityEvent the host instance itself —
-        // the ref of the native component — and the Fabric renderer maps it
-        // to the real view. (A findNodeHandle number belongs to the
-        // deprecated setAccessibilityFocus; the renderer refuses it with a
-        // console error, seen on device.)
-        AccessibilityInfo.sendAccessibilityEvent(node as never, "focus");
-      }
+      // RN 0.88 hands sendAccessibilityEvent the host instance itself — the ref
+      // of the native component — and the Fabric renderer maps it to the real
+      // view. (A findNodeHandle number belongs to the deprecated
+      // setAccessibilityFocus; the renderer refuses it with a console error.)
+      AccessibilityInfo.sendAccessibilityEvent(node as never, "focus");
     } catch {
       // Focus is an enhancement; a host without the hook must not break the step.
     }

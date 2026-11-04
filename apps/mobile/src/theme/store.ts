@@ -3,7 +3,7 @@ export type ResolvedTheme = "light" | "dark";
 
 export const THEME_STORAGE_KEY = "vjt.theme";
 
-/** Platform-split storage (`.native.ts` = SecureStore, `.web.ts` = localStorage). */
+/** Storage seam: the Android secure store (SecureStore). */
 export interface ThemeStorage {
   getItem(key: string): Promise<string | null>;
   setItem(key: string, value: string): Promise<void>;

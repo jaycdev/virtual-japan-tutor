@@ -1,7 +1,7 @@
 import type { Story, StoryGrammarSpan } from "@vjt/api-client";
 import type { ReadingSettingsView } from "@vjt/core";
 import { useState } from "react";
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { useStoryTextSize } from "../storysize/index.tsx";
 import { coveringSpan } from "./holdMenu.ts";
@@ -21,13 +21,12 @@ import type { EntryLookup } from "./useEntryLookup.ts";
  *
  *   sentence-mode (idle): the selected sentence (with furigana) and its
  *     Sentence Translation;
- *   lookup-mode (a token pressed, held, or hovered on web): the Lookup row
+ *   lookup-mode (a token pressed or held): the Lookup row
  *     for that word or Grammar Span (testID `panel-lookup`), while the
  *     Sentence Translation row stays put.
  *
- * The Sentence Translation starts blurred (a saved reading setting): the
- * whole row carries an inline `filter: blur(…)` on web, and Android — which
- * has no CSS filter — renders the text invisible instead. Either way it is
+ * The Sentence Translation starts hidden (a saved reading setting): Android
+ * has no CSS filter, so the row renders its text invisible instead. Either way it is
  * one tap to reveal: the tap saves the preference and reports the sentence's
  * Focus Set items as Weak Signals.
  */
@@ -35,7 +34,7 @@ import type { EntryLookup } from "./useEntryLookup.ts";
 /** The panel is 7 story-text lines tall (plan 4.1). */
 export const PANEL_LINES = 7;
 
-/** What the Lookup row is describing: the pressed/hovered token, or its Grammar Span. */
+/** What the Lookup row is describing: the pressed token, or its Grammar Span. */
 export interface LookedTarget {
   sentence: number;
   index: number;
@@ -141,15 +140,9 @@ export function ReadingPanel({
             accessibilityLabel="Sentence Translation"
             accessibilityHint={blur ? "Tap to show the translation" : "Tap to hide the translation"}
             onPress={() => void toggleBlur()}
-            // The blur is the row's own inline style: web applies a real CSS
-            // filter; Android (no filter support) hides the text outright.
-            style={
-              blur
-                ? Platform.OS === "web"
-                  ? [styles.translationRow, { filter: "blur(5px)" }]
-                  : [styles.translationRow, { opacity: 0 }]
-                : styles.translationRow
-            }
+            // The blur is the row's own inline style: Android has no filter
+            // support, so the hidden translation is made transparent.
+            style={blur ? [styles.translationRow, { opacity: 0 }] : styles.translationRow}
           >
             <Text className="text-small text-muted-foreground" style={styles.translation}>
               {sen.en}
@@ -190,7 +183,7 @@ export function ReadingPanel({
 /**
  * The Lookup row (testID `panel-lookup`). A word: the word, its reading, each
  * gloss on its own line, and on the right the pitch graph with its caption
- * then the JLPT badge — all from the cached entry the press or hover
+ * then the JLPT badge — all from the cached entry the press
  * triggered, so repeat lookups are instant. A Grammar Span instead shows the
  * Grammar Point's pattern and meaning straight from the story payload — no
  * request needed.

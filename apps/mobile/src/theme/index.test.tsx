@@ -1,13 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 
+// The per-device theme persists in the Android secure store; the test host
+// swaps it for an in-memory map so the persisted value can be seeded and read.
+const secure = vi.hoisted(() => new Map<string, string>());
+vi.mock("expo-secure-store", () => ({
+  getItemAsync: async (key: string) => secure.get(key) ?? null,
+  setItemAsync: async (key: string, value: string) => {
+    secure.set(key, value);
+  },
+  deleteItemAsync: async (key: string) => {
+    secure.delete(key);
+  },
+}));
+
 // The provider wires a module-scope store singleton (mirroring how the app
 // treats the secure store as a process singleton), so each case resets the
 // module registry and re-imports a fresh provider bound to a fresh store.
 async function freshThemeModule(seed: Record<string, string> = {}) {
   vi.resetModules();
-  localStorage.clear();
-  for (const [k, v] of Object.entries(seed)) localStorage.setItem(k, v);
+  secure.clear();
+  for (const [k, v] of Object.entries(seed)) secure.set(k, v);
   const stub = await import("uniwind");
   (stub as unknown as { setThemeCalls: string[] }).setThemeCalls.length = 0;
   const theme = await import("./index.tsx");
@@ -16,7 +29,7 @@ async function freshThemeModule(seed: Record<string, string> = {}) {
 
 describe("ThemeProvider", () => {
   beforeEach(() => {
-    localStorage.clear();
+    secure.clear();
   });
 
   it("draws nothing until the saved preference is back, then paints", async () => {
@@ -73,6 +86,6 @@ describe("ThemeProvider", () => {
     const button = await waitFor(() => screen.getByRole("button"));
     button.click();
     await waitFor(() => expect(stub.setThemeCalls).toContain("dark"));
-    expect(localStorage.getItem("vjt.theme")).toBe("dark");
+    expect(secure.get("vjt.theme")).toBe("dark");
   });
 });

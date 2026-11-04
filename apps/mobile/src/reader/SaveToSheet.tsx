@@ -20,16 +20,14 @@ import {
  * only follows a successful create.
  *
  * Issue #45 review: it is an RN Primitives Dialog like the windows, not an RN
- * Modal — bottom sheet on narrow screens, centred card on wide ones (the
- * Reader passes `narrow` from the shell's OVERLAY_BREAKPOINT). ×, tap-outside,
- * Escape and Android Back all arrive at `onClose` through the Root.
+ * Modal, pinned to the bottom edge on the phone. ×, tap-outside and Android
+ * Back all arrive at `onClose` through the Root.
  */
 export function SaveToSheet({
   lists,
   defaultListId,
   busy,
   error,
-  narrow,
   onSaveToList,
   onCreateAndSave,
   onClose,
@@ -38,7 +36,6 @@ export function SaveToSheet({
   defaultListId: string | null;
   busy: boolean;
   error: string | null;
-  narrow: boolean;
   onSaveToList: (listId: string) => void;
   onCreateAndSave: (name: string) => void;
   onClose: () => void;
@@ -57,8 +54,8 @@ export function SaveToSheet({
       <DialogPrimitives.Portal>
         <DialogPrimitives.Overlay style={styles.backdrop} className="bg-backdrop" />
         <DialogPrimitives.Content
-          style={StyleSheet.flatten([styles.sheet, narrow ? styles.sheetNarrow : styles.sheetWide])}
-          className={narrow ? "bg-card border-t border-border" : "bg-card border border-border"}
+          style={styles.sheet}
+          className="bg-card border-t border-border"
         >
           {/* The Dialog leaves the soft keyboard to the platform (Android
               resize), but the manual checklist still wants the inline "New list
@@ -144,36 +141,23 @@ export function SaveToSheet({
   );
 }
 
-// The Dialog portals leave positioning entirely to these styles: bottom sheet
-// narrow, centred card wide (fixed on web, where the portal lands at the end
-// of <body>; absolute inside the native PortalHost).
-// The sheet renders inside the primitives' portal, whose web wrapper is a
-// full-viewport fixed div, so `absolute` fills the screen there and the reader
-// host on native.
+// The Dialog portals are positioned entirely by these styles: an `absolute`
+// inset inside the Shell's PortalHost, pinned to the bottom edge.
 const positioned = { position: "absolute" as const };
 
 const styles = StyleSheet.create({
   backdrop: { ...positioned, top: 0, left: 0, right: 0, bottom: 0 },
   // the sheet's own box: it grows with the keyboard padding the view adds
   avoider: { paddingBottom: 0 },
-  sheet: { elevation: 12 },
-  sheetNarrow: {
+  sheet: {
     ...positioned,
+    elevation: 12,
     left: 0,
     right: 0,
     bottom: 0,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     paddingTop: 8,
-    paddingBottom: 18,
-  },
-  sheetWide: {
-    ...positioned,
-    top: "15%",
-    left: "25%",
-    right: "25%",
-    maxHeight: "70%",
-    paddingTop: 12,
     paddingBottom: 18,
   },
   head: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingBottom: 8 },

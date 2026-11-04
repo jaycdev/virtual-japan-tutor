@@ -1,31 +1,18 @@
 import type { ReactNode } from "react";
-import { Platform, View } from "react-native";
+import { View } from "react-native";
 
 /**
  * The card shell shared by the Today sections (issue #47) and the Practice
- * screen's cards. `fill` makes the card as tall as its row, for cards that
- * sit side by side in a stretched wide row so their edges line up. It must
- * stay off in the stacked narrow layout, and percentage heights stay off on
- * native entirely: ScrollView content has no definite height there, and a
- * 100% card balloons to the viewport. Native instead grows with the row's
- * own cross-axis stretch (`flex-1` inside a wrapper the row has already
- * stretched).
+ * screen's cards. Cards stack in one column on the phone.
  */
-export function cardFillClass(fill: boolean, os: string): string {
-  if (!fill) return "";
-  return os === "web" ? "h-full " : "flex-1 ";
-}
-
 export function Card({
   children,
   testID,
-  fill = false,
   pinned = false,
   padded = true,
 }: {
   children: ReactNode;
   testID?: string;
-  fill?: boolean;
   /**
    * The pinned (Today's Story) card reads as special: a primary-bordered
    * surface instead of the plain one (issue #48 review, plan §4.5). Token
@@ -46,7 +33,7 @@ export function Card({
       // overflow-hidden: unpadded content (Row lists) paints edge-to-edge,
       // and its separators and press highlights would square off the card's
       // rounded corners without it (review S6).
-      className={`overflow-hidden ${cardFillClass(fill, Platform.OS)}rounded-lg ${
+      className={`overflow-hidden rounded-lg ${
         pinned ? "border-2 border-primary" : "border border-border"
       } bg-card ${padded ? "gap-3 p-5" : ""}`}
     >

@@ -16,8 +16,8 @@ import { Login } from "./src/Login.tsx";
 import { ServerField } from "./src/ServerField.tsx";
 import { AuthProvider, useSession } from "./src/session.tsx";
 import { resolveApiBaseUrl } from "./src/config.ts";
-import { appFonts } from "./src/fonts";
-import { appSecureStore } from "./src/secureStore";
+import { appFonts } from "./src/fonts.ts";
+import { appSecureStore } from "./src/secureStore.ts";
 import { StoryTextSizeProvider } from "./src/storysize/index.tsx";
 import { secureStoreServerUrl, type ServerUrlStorage } from "./src/serverUrlStorage.ts";
 import { ThemeProvider } from "./src/theme/index.tsx";
@@ -25,7 +25,6 @@ import { secureStoreTokenStorage, type TokenStorage } from "./src/tokenStorage.t
 
 // One adapter pair for the whole app: the secure store is a process singleton,
 // so module scope is honest and keeps Root's defaults referentially stable.
-// (secureStore.ts / .native.ts split the storage per platform.)
 const tokenStorage = secureStoreTokenStorage(appSecureStore);
 const urlStorage = secureStoreServerUrl(appSecureStore);
 
@@ -58,8 +57,7 @@ export function AppBootstrapped({
   fetchOverride?: typeof globalThis.fetch;
   children: React.ReactNode;
 }) {
-  // Noto JP first (a no-op map on web, where global.css @font-face does it):
-  // the first frame must not flicker through the system font.
+  // Noto JP first: the first frame must not flicker through the system font.
   useFonts(appFonts);
 
   // Hydrate the server URL first: everything below (client, auth) is built on it.
@@ -138,10 +136,8 @@ function AuthGate({
           <Text className="text-small text-destructive" accessibilityRole="alert">
             Cannot reach the server: {auth.state.message}
           </Text>
-          {/* #51 review B1: an unreachable address must not be a dead end.
-              Unlike Login, where the field is Android-only, this escape is
-              shown on every platform — whoever reaches this card needs a way
-              out, including web builds pointed at the wrong address. */}
+          {/* #51 review B1: an unreachable address must not be a dead end, so
+              whoever reaches this card gets a way to change the address. */}
           <ServerField serverUrl={serverUrl} onSave={onChangeServerUrl} />
           <RetryButton onPress={auth.retry} />
         </View>

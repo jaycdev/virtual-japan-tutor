@@ -2,8 +2,7 @@ import type { StoryGrammarSpan, StorySentence, StoryToken, WeakSignalRequest } f
 
 /**
  * The Lookup Menu gesture (issue #14), as pure state so the hold/slide/release
- * rules are testable without a screen. On the web the mouse hovers, clicks, and
- * the menu is a DOM popup; on Android the finger replaces all three:
+ * rules are testable without a screen. On Android the finger does it all:
  *
  *   press   finger down on a token — the Lookup row shows the word and the
  *           hold timer starts (lookupHoldMs from the Reading Settings);

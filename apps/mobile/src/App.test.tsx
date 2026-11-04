@@ -181,10 +181,9 @@ describe('App shell (auth bootstrap)', () => {
       expect(screen.getByText(/Cannot reach the server/)).toBeTruthy();
     });
     expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
-    // #51 review B1: on web the server is the page's own origin — the error
-    // card must never show the Android emulator default.
-    expect(screen.getByText(`Server: ${window.location.origin}`)).toBeTruthy();
-    expect(screen.queryByText(/10\.0\.2\.2/)).toBeNull();
+    // The error card names the address the app is trying: with no saved address
+    // that is the Android emulator default.
+    expect(screen.getByText('Server: http://10.0.2.2:8080')).toBeTruthy();
 
     // Retry re-checks the same stored session.
     impl = makeFetch(logged);
@@ -195,8 +194,8 @@ describe('App shell (auth bootstrap)', () => {
   });
 
   it('the unreachable-server card offers the same Change server escape as Login (#51 B1)', async () => {
-    // No Platform mock: the escape must exist on web too, where the origin
-    // default can still be wrong (e.g. a build-time EXPO_PUBLIC_API_URL).
+    // The escape is always offered: the default address can be wrong (e.g. a
+    // build-time EXPO_PUBLIC_API_URL pointing at a host that is down).
     const store = fakeStore({ 'vjt.token': 'stale-session' });
     let impl: typeof fetch = vi.fn(async () => {
       throw new TypeError('fetch failed');
@@ -231,7 +230,7 @@ describe('App shell (auth bootstrap)', () => {
   });
 
   it('Android saves a new server address, forgets the old token, and talks to the new host only after a fresh sign-in', async () => {
-    // The server-address field is Android-only (web infers it from the origin).
+    // The server-address field is always shown: the app has no same-origin default.
     const os = Platform.OS;
     (Platform as { OS: typeof os }).OS = 'android';
     try {
@@ -310,10 +309,9 @@ describe('App shell (auth bootstrap)', () => {
   });
 
   it('the default export wires the real secure-store adapters', async () => {
-    // Under vitest the app's secure store is the web variant (localStorage).
+    // Under vitest the app's secure store is the in-memory expo-secure-store stub.
     // It holds no token here, so the production App (no props injected) must
     // hydrate and land on the login form.
-    localStorage.clear();
     render(<App>{null}</App>);
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Log in' })).toBeTruthy();

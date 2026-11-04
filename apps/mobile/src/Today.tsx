@@ -10,9 +10,8 @@ import {
   type StoryGenerationState,
   type TodaysStoryState,
 } from "@vjt/core";
-import { CONTENT_MAX_WIDTH, SIDEBAR_BREAKPOINT } from "./chrome/Shell.tsx";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { Card } from "./components/ui/Card.tsx";
 import { createFocusLabelResolver, FocusSetPanel, FOCUS_CHIPS_MAX } from "./components/ui/FocusSetPanel.tsx";
@@ -20,11 +19,10 @@ import { EmptyState, InlineError, ProgressBar, SkeletonBar } from "./state/state
 import { stageLabel } from "./stories-parts.tsx";
 
 /**
- * Today (issue #47), the signed-in landing screen on Android and web. Plan 4.4
- * top to bottom: greeting with the date in the Learner's Timezone, Today's
- * Story card, the Practice call to action, the Focus Set at a glance, and the
- * Last Sync line. On wide screens (the same 1024 px the chrome switches at) the
- * Story card and the Practice CTA sit side by side.
+ * Today (issue #47), the signed-in landing screen. Plan 4.4 top to bottom:
+ * greeting with the date in the Learner's Timezone, Today's Story card, the
+ * Practice call to action, the Focus Set at a glance, and the Last Sync line.
+ * The cards stack in one column.
  *
  * Every section carries its own loading, empty and error state (plan §5): one
  * section failing never blanks the rest, and each failure retries in place.
@@ -59,8 +57,6 @@ export function Today({
   const generation = useStoryGeneration(client);
   const focus = useFocusSet(client);
   const marumori = useMarumori(client);
-  const { width } = useWindowDimensions();
-  const wide = width >= SIDEBAR_BREAKPOINT;
 
   // The Learner's Timezone (plan 4.4 item 1): it decides the greeting, the
   // date, and the clock time on the Last Sync line. Unset means the server's
@@ -94,21 +90,14 @@ export function Today({
           settingsFailed={learnerSettings.status === "error"}
         />
 
-        <View className={wide ? "flex-row items-stretch gap-4" : "gap-4"}>
-          <View className={wide ? "flex-1" : undefined}>
-            <TodayStoryCard
-              today={today.today}
-              generation={generation.generation}
-              onReloadToday={reloadToday}
-              onOpenStory={onOpenStory}
-              onOpenStories={onOpenStories}
-              fill={wide}
-            />
-          </View>
-          <View className={wide ? "flex-1" : undefined}>
-            <PracticeCard focus={focus} onOpenPractice={onOpenPractice} fill={wide} />
-          </View>
-        </View>
+        <TodayStoryCard
+          today={today.today}
+          generation={generation.generation}
+          onReloadToday={reloadToday}
+          onOpenStory={onOpenStory}
+          onOpenStories={onOpenStories}
+        />
+        <PracticeCard focus={focus} onOpenPractice={onOpenPractice} />
 
         <Card>
           <FocusSetPanel
@@ -167,8 +156,7 @@ function Greeting({
         </View>
       ) : (
         <>
-          {/* Section labels read as headings to assistive tech on both hosts:
-              accessibilityRole on native, role on web (issue #47 review S4). */}
+          {/* Section labels read as headings to assistive tech (issue #47 review S4). */}
           <Text
             role="heading"
             accessibilityRole="header"
@@ -266,18 +254,16 @@ function TodayStoryCard({
   onReloadToday,
   onOpenStory,
   onOpenStories,
-  fill,
 }: {
   today: TodaysStoryState;
   generation: StoryGenerationState;
   onReloadToday: () => void;
   onOpenStory: (storyId: string) => void;
   onOpenStories: () => void;
-  fill: boolean;
 }) {
   const running = generation.status === "running" ? generation.progress : undefined;
   return (
-    <Card testID="today-story-card" fill={fill}>
+    <Card testID="today-story-card">
       <Text
         role="heading"
         accessibilityRole="header"
@@ -365,15 +351,13 @@ function storyMeta(story: Story): string {
 function PracticeCard({
   focus,
   onOpenPractice,
-  fill,
 }: {
   focus: FocusSetView;
   onOpenPractice: () => void;
-  fill: boolean;
 }) {
   const items = focus.items;
   return (
-    <Card testID="today-practice-card" fill={fill}>
+    <Card testID="today-practice-card">
       <Text
         role="heading"
         accessibilityRole="header"
@@ -628,11 +612,8 @@ function ActionButton({
 
 const styles = StyleSheet.create({
   // paddingTop matches Practice's card column (24), so the first card sits at
-  // the same height on either screen. Top safe-area insets are the Shell's
-  // job, not this screen's - follow-up filed as a Shell issue (the greeting
-  // can sit under the Android status bar until that lands).
+  // the same height on either screen. The top safe-area inset is the Shell's
+  // job (#60), so the greeting clears the Android status bar.
   page: { flexGrow: 1, padding: 16, paddingTop: 24 },
-  // The Shell caps the column on wide screens; Today only keeps the narrow
-  // reading measure when the chrome has no sidebar to do it.
-  column: { width: "100%", maxWidth: CONTENT_MAX_WIDTH, gap: 16 },
+  column: { width: "100%", gap: 16 },
 });

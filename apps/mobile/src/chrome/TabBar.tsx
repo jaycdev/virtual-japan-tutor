@@ -6,9 +6,9 @@ import { MIN_TOUCH } from "../touch.ts";
 import { DESTINATIONS, type Destination } from "./destinations.ts";
 
 /**
- * Bottom tab bar for narrow screens (<1024 px, issue #44): five destinations
- * as labelled icons. Rendered as accessibilityRole="tab" so screen readers
- * announce selection; the Shell hides it while a Story reader route is open.
+ * Bottom tab bar: five destinations as labelled icons. Rendered as
+ * accessibilityRole="tab" so screen readers announce selection; the Shell hides
+ * it while a Story reader route is open.
  * Icon strokes take the design tokens resolved at runtime — Uniwind classNames
  * do not reach SVG colour on native, so the icons get the same token-safe
  * route Icon and SwitchRow use (TRIAL_RESULTS §4, via useCSSVariable).
@@ -33,8 +33,8 @@ export function TabBar({
             accessibilityRole="tab"
             accessibilityLabel={label}
             accessibilityState={{ selected }}
-            // react-native-web (jsdom test host) maps the raw ARIA props;
-            // native reads the accessibility* pair. Same state, both hosts.
+            // role and aria-selected name the same state for hosts that read ARIA
+            // props (the test host does); native reads the accessibility* pair.
             role="tab"
             aria-selected={selected}
             onPress={() => onSelect({ path, label, icon: Icon })}

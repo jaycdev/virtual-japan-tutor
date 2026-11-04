@@ -7,17 +7,15 @@ import { JlptBadge } from "./parts.tsx";
 import { PitchGraph } from "./PitchGraph.tsx";
 
 /**
- * The Dictionary Entry and Grammar Point windows (issue #14): centred cards
- * over a dimmed story, like the web's windows. Opening one leaves the story
- * text visible behind; the reader keeps the tap-selection and the Lookup row
- * while a window is open, and Android Back closes the topmost window.
+ * The Dictionary Entry and Grammar Point windows (issue #14): bottom sheets over
+ * a dimmed story. Opening one leaves the story text visible behind; the reader
+ * keeps the tap-selection and the Lookup row while a window is open, and
+ * Android Back closes the topmost window.
  *
- * Issue #45 review: the windows are RN Primitives Dialogs, not RN Modal and
- * not hand-rolled layers — WIDE screens get the centred card, narrow ones a
- * bottom sheet (the Reader passes `narrow` from the shell's OVERLAY_BREAKPOINT).
- * The Title passes through Dialog.Title so assistive tech announces the window,
- * and every dismissal path (×, tap-outside, Escape, Android Back) arrives at
- * `onClose` through the Root's onOpenChange.
+ * The windows are RN Primitives Dialogs (issue #45 review), always pinned to the
+ * bottom edge on the phone. The Title passes through Dialog.Title so assistive
+ * tech announces the window, and every dismissal path (×, tap-outside, Back)
+ * arrives at `onClose` through the Root's onOpenChange.
  */
 
 function WindowCard({
@@ -25,7 +23,6 @@ function WindowCard({
   title,
   reading,
   jlpt,
-  narrow,
   onClose,
   children,
 }: {
@@ -33,7 +30,6 @@ function WindowCard({
   title: string;
   reading?: string;
   jlpt?: string | null;
-  narrow: boolean;
   onClose: () => void;
   children: React.ReactNode;
 }) {
@@ -45,7 +41,7 @@ function WindowCard({
           testID={testID}
           accessibilityLabel={testID === "dictionary-window" ? "Dictionary Entry window" : "Grammar Point window"}
           className="bg-card border-border"
-          style={StyleSheet.flatten([styles.card, narrow ? styles.cardNarrow : styles.cardWide])}
+          style={StyleSheet.flatten([styles.card, styles.sheet])}
           // No Description for these windows — the title says it all; this is
           // Radix's documented way to skip the aria-describedby warning.
           aria-describedby={undefined}
@@ -75,11 +71,9 @@ function WindowCard({
 
 export function DictionaryWindow({
   entry,
-  narrow,
   onClose,
 }: {
   entry: DictionaryEntry;
-  narrow: boolean;
   onClose: () => void;
 }) {
   return (
@@ -88,7 +82,6 @@ export function DictionaryWindow({
       title={entry.headword}
       reading={entry.reading !== entry.headword ? entry.reading : undefined}
       jlpt={entry.jlptLevel}
-      narrow={narrow}
       onClose={onClose}
     >
       {entry.pitch ? (
@@ -118,15 +111,13 @@ export function DictionaryWindow({
 
 export function GrammarWindow({
   span,
-  narrow,
   onClose,
 }: {
   span: StoryGrammarSpan;
-  narrow: boolean;
   onClose: () => void;
 }) {
   return (
-    <WindowCard testID="grammar-window" title={span.pattern} jlpt={span.jlptLevel} narrow={narrow} onClose={onClose}>
+    <WindowCard testID="grammar-window" title={span.pattern} jlpt={span.jlptLevel} onClose={onClose}>
       <Text className="text-body text-foreground" style={styles.senseMeaning}>
         {span.meaning}
       </Text>
@@ -134,12 +125,8 @@ export function GrammarWindow({
   );
 }
 
-// The Dialog portals leave positioning entirely to these styles: centred card
-// wide, pinned to the bottom edge narrow. fixed on web (the portal lands at
-// the end of <body>), absolute inside the native PortalHost.
-// Both overlay kinds sit inside the primitives' portal, which on web is a
-// full-viewport fixed div — an `absolute` inset fills the viewport there and the
-// reader host on native, so one value works on both platforms.
+// The Dialog portals are positioned entirely by these styles: an `absolute`
+// inset inside the Shell's PortalHost.
 const positioned = { position: "absolute" as const };
 
 const styles = StyleSheet.create({
@@ -149,14 +136,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     elevation: 8,
   },
-  cardWide: {
-    ...positioned,
-    top: "15%",
-    left: "6%",
-    right: "6%",
-    maxHeight: "70%",
-  },
-  cardNarrow: {
+  sheet: {
     ...positioned,
     left: 0,
     right: 0,
