@@ -26,14 +26,19 @@ export function useWideLayout(): boolean {
  */
 export type StepSaveOutcome = "saved" | "nothing" | "blocked";
 
+/** The step-save itself: runs the section's save, reports the outcome. */
+export type StepSaveFn = () => Promise<StepSaveOutcome>;
+
 /**
- * A ref the setup wizard holds; each section registers its own save here
- * while it is mounted, so Next/Finish reuse the section's Save rather
- * than duplicating (or drifting from) it. The hub never passes one.
+ * How a section hands its save to the setup wizard: it calls the registrar
+ * with its save while mounted (and with null on unmount), so Next/Finish
+ * reuse the section's Save rather than duplicating (or drifting from) it.
+ * The wizard keeps whatever was registered in a ref of its own — passing
+ * the wizard's ref object down instead would mean the sections mutate a
+ * prop, which the react-hooks compiler rules reject. The hub never passes
+ * a registrar.
  */
-export type StepSaveHandle = {
-  current: (() => Promise<StepSaveOutcome>) | null;
-};
+export type StepSaveRegistrar = (save: StepSaveFn | null) => void;
 
 /** Back affordance for the narrow section routes. */
 export function SectionBack({ label, onPress }: { label: string; onPress: () => void }) {

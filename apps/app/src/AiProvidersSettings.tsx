@@ -11,7 +11,7 @@ import { Row } from "./components/ui/Row.tsx";
 import { SwitchRow } from "./components/ui/SwitchRow.tsx";
 import { ActionButton } from "./stories-parts.tsx";
 import { InlineError, Skeleton, SkeletonBar } from "./state/states.tsx";
-import type { StepSaveHandle, StepSaveOutcome } from "./settingsSections.tsx";
+import type { StepSaveOutcome, StepSaveRegistrar } from "./settingsSections.tsx";
 
 const TASK_LABELS: Record<AiTask, string> = {
   story: "Story generation",
@@ -35,15 +35,16 @@ const EMPTY: FormValues = { name: "", baseUrl: "", model: "", apiKey: "", remove
  * empty field = keep; "Remove the saved key" = drop), and deleting a
  * provider that a task still uses fails with the server's 409 message.
  * First-run setup embeds this same component as its third step, and the
- * wizard's Next/Finish submits a filled form through `saveHandle` (S2).
+ * wizard's Next/Finish submits a filled form through the `registerSave`
+ * contract (S2).
  */
 export function AiProvidersSettings({
   client,
-  saveHandle,
+  registerSave,
 }: {
   client: ApiClient;
-  /** Registered by the setup wizard; absent under the Settings hub. */
-  saveHandle?: StepSaveHandle;
+  /** Handed the step-save by the setup wizard; absent under the Settings hub. */
+  registerSave?: StepSaveRegistrar;
 }) {
   const settings = useAiSettings(client);
   const { state } = settings;
@@ -105,8 +106,8 @@ export function AiProvidersSettings({
   // untouched form is "nothing"; a rejected one shows its error here and
   // the wizard stays on the step.
   useEffect(() => {
-    if (!saveHandle) return;
-    saveHandle.current = async (): Promise<StepSaveOutcome> => {
+    if (!registerSave) return;
+    registerSave(async (): Promise<StepSaveOutcome> => {
       const touched =
         form.name.trim() !== "" ||
         form.baseUrl.trim() !== "" ||
@@ -115,10 +116,8 @@ export function AiProvidersSettings({
       if (!touched) return "nothing";
       const ok = await submit();
       return ok ? "saved" : "blocked";
-    };
-    return () => {
-      saveHandle.current = null;
-    };
+    });
+    return () => registerSave(null);
   });
 
   const test = async (p: AiProvider) => {

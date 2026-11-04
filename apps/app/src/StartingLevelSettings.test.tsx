@@ -48,14 +48,14 @@ describe('mobile StartingLevelSettings', () => {
     });
   });
 
-  function renderApp(saveHandle?: {
-    current: (() => Promise<"saved" | "nothing" | "blocked">) | null;
-  }) {
+  function renderApp(registerSave?: (
+    save: (() => Promise<"saved" | "nothing" | "blocked">) | null,
+  ) => void) {
     const client = createApiClient({
       baseUrl: 'http://localhost',
       fetch: fetchMock as unknown as typeof fetch,
     });
-    return render(<StartingLevelSettings client={client} saveHandle={saveHandle} />);
+    return render(<StartingLevelSettings client={client} registerSave={registerSave} />);
   }
 
   it('shows the stored level with all five choices', async () => {
@@ -116,21 +116,21 @@ describe('mobile StartingLevelSettings', () => {
     expect(screen.getByRole('button', { name: 'Save level' })).toBeTruthy();
   });
 
-  it('the wizard save handle writes the picked chip, and reports nothing when none is picked (S2)', async () => {
+  it('the step save registered with the wizard writes the picked chip, and reports nothing when none is picked (S2)', async () => {
     status = { configured: false, level: null };
-    const saveHandle: {
-      current: (() => Promise<'saved' | 'nothing' | 'blocked'>) | null;
-    } = { current: null };
-    renderApp(saveHandle);
+    let stepSave: (() => Promise<'saved' | 'nothing' | 'blocked'>) | null = null;
+    renderApp((save) => {
+      stepSave = save;
+    });
     await screen.findByRole("button", { name: 'N4' });
-    expect(saveHandle.current).toBeTruthy();
+    expect(stepSave).toBeTruthy();
 
     // No pick yet: nothing to write, and the wizard is free to move on.
-    await expect(saveHandle.current!()).resolves.toBe('nothing');
+    await expect(stepSave!()).resolves.toBe('nothing');
     expect(writes.some((w) => w.method === 'PUT')).toBe(false);
 
     fireEvent.click(screen.getByRole('button', { name: 'N4' }));
-    await expect(saveHandle.current!()).resolves.toBe('saved');
+    await expect(stepSave!()).resolves.toBe('saved');
     const put = writes.find((w) => w.method === 'PUT');
     expect(put?.url).toContain('/starting-level');
     expect(put?.body).toEqual({ level: 'N4' });

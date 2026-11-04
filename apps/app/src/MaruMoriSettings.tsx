@@ -9,7 +9,7 @@ import { LinkButton } from "./components/ui/LinkButton.tsx";
 import { ActionButton } from "./stories-parts.tsx";
 import { formatInstant } from "./Today.tsx";
 import { InlineError, Skeleton, SkeletonBar } from "./state/states.tsx";
-import type { StepSaveHandle, StepSaveOutcome } from "./settingsSections.tsx";
+import type { StepSaveOutcome, StepSaveRegistrar } from "./settingsSections.tsx";
 
 /**
  * MaruMori connection (#6, on the #50 hub): connect with an API key, Sync
@@ -20,11 +20,11 @@ import type { StepSaveHandle, StepSaveOutcome } from "./settingsSections.tsx";
  */
 export function MaruMoriSettings({
   client,
-  saveHandle,
+  registerSave,
 }: {
   client: ApiClient;
-  /** Registered by the setup wizard; absent under the Settings hub (S2). */
-  saveHandle?: StepSaveHandle;
+  /** Handed the step-save by the setup wizard; absent under the Settings hub (S2). */
+  registerSave?: StepSaveRegistrar;
 }) {
   const maru = useMarumori(client);
   const { state } = maru;
@@ -50,10 +50,12 @@ export function MaruMoriSettings({
   };
 
   // S2: the wizard's Next/Finish connects a typed key through the same
-  // saveKey path as the Connect button. No key typed is "nothing".
+  // saveKey path as the Connect button. No key typed is "nothing". The
+  // save is re-registered after every render, so the last thing typed is
+  // what Next saves.
   useEffect(() => {
-    if (!saveHandle) return;
-    saveHandle.current = async (): Promise<StepSaveOutcome> => {
+    if (!registerSave) return;
+    registerSave(async (): Promise<StepSaveOutcome> => {
       const trimmed = key.trim();
       if (!trimmed) return "nothing";
       setBusy(true);
@@ -69,10 +71,8 @@ export function MaruMoriSettings({
       } finally {
         setBusy(false);
       }
-    };
-    return () => {
-      saveHandle.current = null;
-    };
+    });
+    return () => registerSave(null);
   });
 
   const remove = async () => {

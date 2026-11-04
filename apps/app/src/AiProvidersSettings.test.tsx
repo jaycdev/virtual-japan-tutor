@@ -111,14 +111,14 @@ describe('mobile AiProvidersSettings', () => {
     });
   });
 
-  function renderApp(saveHandle?: {
-    current: (() => Promise<'saved' | 'nothing' | 'blocked'>) | null;
-  }) {
+  function renderApp(registerSave?: (
+    save: (() => Promise<'saved' | 'nothing' | 'blocked'>) | null,
+  ) => void) {
     const client = createApiClient({
       baseUrl: 'http://localhost',
       fetch: fetchMock as unknown as typeof fetch,
     });
-    return render(<AiProvidersSettings client={client} saveHandle={saveHandle} />);
+    return render(<AiProvidersSettings client={client} registerSave={registerSave} />);
   }
 
   async function waitForLoaded() {
@@ -249,15 +249,15 @@ describe('mobile AiProvidersSettings', () => {
     });
   });
 
-  it('the wizard save handle submits a filled form, and reports nothing when it is untouched (S2)', async () => {
-    const saveHandle: {
-      current: (() => Promise<'saved' | 'nothing' | 'blocked'>) | null;
-    } = { current: null };
-    renderApp(saveHandle);
+  it('the step save registered with the wizard submits a filled form, and reports nothing when it is untouched (S2)', async () => {
+    let stepSave: (() => Promise<'saved' | 'nothing' | 'blocked'>) | null = null;
+    renderApp((save) => {
+      stepSave = save;
+    });
     await screen.findByRole('button', { name: 'Add provider' });
-    expect(saveHandle.current).toBeTruthy();
+    expect(stepSave).toBeTruthy();
 
-    await expect(saveHandle.current!()).resolves.toBe('nothing');
+    await expect(stepSave!()).resolves.toBe('nothing');
     expect(writes.some((w) => w.method === 'POST')).toBe(false);
 
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Home LLM' } });
@@ -265,7 +265,7 @@ describe('mobile AiProvidersSettings', () => {
       target: { value: 'http://localhost:11434/v1' },
     });
     fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'llama3' } });
-    await expect(saveHandle.current!()).resolves.toBe('saved');
+    await expect(stepSave!()).resolves.toBe('saved');
     const post = writes.find((w) => w.method === 'POST');
     expect(post?.url).toContain('/ai-providers');
     expect(post?.body).toMatchObject({ name: 'Home LLM' });

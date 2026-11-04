@@ -7,7 +7,7 @@ import { Card } from "./components/ui/Card.tsx";
 import { Chip, ChipRow } from "./components/ui/Chip.tsx";
 import { ActionButton } from "./stories-parts.tsx";
 import { InlineError, SkeletonBar } from "./state/states.tsx";
-import type { StepSaveHandle, StepSaveOutcome } from "./settingsSections.tsx";
+import type { StepSaveOutcome, StepSaveRegistrar } from "./settingsSections.tsx";
 
 /**
  * Starting Level (#6, on the #50 hub): N5–N1 chips pick the level; saving
@@ -16,16 +16,16 @@ import type { StepSaveHandle, StepSaveOutcome } from "./settingsSections.tsx";
  * issue — Catalogue Matching outcomes the Learner may want to glance at.
  * First-run setup shows this same component as its first step, so the
  * Settings section and the setup screen cannot drift apart — and the
- * wizard's Next/Finish runs this section's save through `saveHandle`
- * (review S2).
+ * wizard's Next/Finish runs this section's save through the `registerSave`
+ * contract (review S2).
  */
 export function StartingLevelSettings({
   client,
-  saveHandle,
+  registerSave,
 }: {
   client: ApiClient;
-  /** Registered by the setup wizard; absent under the Settings hub. */
-  saveHandle?: StepSaveHandle;
+  /** Handed the step-save by the setup wizard; absent under the Settings hub. */
+  registerSave?: StepSaveRegistrar;
 }) {
   const level = useStartingLevel(client);
   const [choice, setChoice] = useState<StartingLevel | null>(null);
@@ -51,10 +51,12 @@ export function StartingLevelSettings({
 
   // S2: the wizard's Next/Finish runs the step's entered input through the
   // same setLevel path the Save button uses. No pick yet is "nothing" —
-  // there is nothing to write, and the wizard may move on.
+  // there is nothing to write, and the wizard may move on. The effect has
+  // no dep list on purpose: the save is re-registered after every render,
+  // so what the Learner last picked is what Next saves.
   useEffect(() => {
-    if (!saveHandle) return;
-    saveHandle.current = async (): Promise<StepSaveOutcome> => {
+    if (!registerSave) return;
+    registerSave(async (): Promise<StepSaveOutcome> => {
       if (choice === null) return "nothing";
       const res = await level.setLevel(choice);
       if ("status" in res) {
@@ -64,10 +66,8 @@ export function StartingLevelSettings({
       setResult(`Grammar updated: ${res.added ?? 0} added, ${res.removed ?? 0} removed.`);
       setChoice(null);
       return "saved";
-    };
-    return () => {
-      saveHandle.current = null;
-    };
+    });
+    return () => registerSave(null);
   });
 
   if (level.state.status === "loading") {

@@ -2,12 +2,12 @@
 // device. Three steps — Starting Level, MaruMori, AI Providers — each one
 // embedding the SAME component the Settings hub uses, so the wizard can
 // never drift from the settings screen it replaces. Next and Finish save
-// what the Learner entered on the step (review S2) through a save handle
-// the section registers; "Skip this step" stays a genuine no-write skip,
-// and the whole flow is skippable. `firstRun.ts` records that the flow
-// was shown, so it never returns.
+// what the Learner entered on the step (review S2) through a save the
+// section registers with the wizard; "Skip this step" stays a genuine
+// no-write skip, and the whole flow is skippable. `firstRun.ts` records
+// that the flow was shown, so it never returns.
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AccessibilityInfo,
   findNodeHandle,
@@ -24,7 +24,7 @@ import { Card } from "./components/ui/Card.tsx";
 import { LinkButton } from "./components/ui/LinkButton.tsx";
 import { ActionButton } from "./stories-parts.tsx";
 import { InlineError, ProgressBar } from "./state/states.tsx";
-import type { StepSaveHandle } from "./settingsSections.tsx";
+import type { StepSaveFn, StepSaveRegistrar } from "./settingsSections.tsx";
 import { AiProvidersSettings } from "./AiProvidersSettings.tsx";
 import { MaruMoriSettings } from "./MaruMoriSettings.tsx";
 import { StartingLevelSettings } from "./StartingLevelSettings.tsx";
@@ -46,8 +46,13 @@ export function SetupWizard({
   const [busy, setBusy] = useState(false);
   const [blockedNote, setBlockedNote] = useState<string | undefined>();
   // The step's own save, registered by the embedded section (review S2):
-  // Next/Finish run it instead of discarding what the Learner entered.
-  const stepSave = useRef<StepSaveHandle["current"]>(null);
+  // Next/Finish run it instead of discarding what the Learner entered. The
+  // ref stays the wizard's — the section only calls the registrar, because
+  // mutating a ref passed down as a prop breaks the react-hooks rules.
+  const stepSave = useRef<StepSaveFn | null>(null);
+  const registerSave = useCallback<StepSaveRegistrar>((save) => {
+    stepSave.current = save;
+  }, []);
   const last = step === STEPS.length - 1;
 
   // S4: on every step change, hand accessibility focus to the step title —
@@ -117,9 +122,9 @@ export function SetupWizard({
           </View>
           <Text className="text-small text-muted-foreground">{STEPS[step].body}</Text>
 
-          {step === 0 ? <StartingLevelSettings client={client} saveHandle={stepSave} /> : null}
-          {step === 1 ? <MaruMoriSettings client={client} saveHandle={stepSave} /> : null}
-          {step === 2 ? <AiProvidersSettings client={client} saveHandle={stepSave} /> : null}
+          {step === 0 ? <StartingLevelSettings client={client} registerSave={registerSave} /> : null}
+          {step === 1 ? <MaruMoriSettings client={client} registerSave={registerSave} /> : null}
+          {step === 2 ? <AiProvidersSettings client={client} registerSave={registerSave} /> : null}
 
           {blockedNote ? <InlineError message={blockedNote} /> : null}
         </Card>
