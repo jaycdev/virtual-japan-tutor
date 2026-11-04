@@ -20,9 +20,10 @@ import * as grammarRoute from "../app/grammar.tsx";
 import * as grammarDetailRoute from "../app/grammar/[id].tsx";
 import * as settingsHomeRoute from "../app/settings/index.tsx";
 import * as settingsSectionRoute from "../app/settings/[section].tsx";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import * as setupRoute from "../app/setup.tsx";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { setBackHandlerForTests } from "./useHardwareBack.ts";
 import { resolveApiBaseUrl } from "./config.ts";
@@ -42,6 +43,7 @@ const ROUTE_MODULES: Record<string, RouteModule> = {
   "./grammar/[id]": grammarDetailRoute,
   "./settings/index": settingsHomeRoute,
   "./settings/[section]": settingsSectionRoute,
+  "./setup": setupRoute,
 };
 
 const NARROW = 900;
@@ -115,7 +117,14 @@ function stubApi(): ReturnType<typeof vi.fn> {
   const fetchMock = vi.fn(async (input: unknown) => {
     const request = input instanceof Request ? input : new Request(String(input));
     const path = new URL(request.url).pathname;
-    if (path === "/auth/login") return jsonResponse(200, { token: "jwt.tok.end" });
+    // LoginResponse carries the User too (api/openapi.yaml) — a stub without
+    // it leaves useAuth signed in without a user until the /me re-check lands.
+    if (path === "/auth/login")
+      return jsonResponse(200, {
+        token: "jwt.tok.end",
+        expires_at: "2026-12-01T00:00:00Z",
+        user: { userId: "u-1", username: "Learner", level: 4 },
+      });
     if (path === "/me") return jsonResponse(200, { userId: "u-1", username: "Learner", level: 4 });
     if (path === "/auth/logout") return new Response(null, { status: 204 });
     if (path === "/stories/generation") return jsonResponse(200, { status: "idle", stage: null, percent: 0 });
@@ -128,6 +137,10 @@ function stubApi(): ReturnType<typeof vi.fn> {
       return jsonResponse(200, { items: [storyView()], total: 1, limit: 10, offset: 0 });
     if (path === "/reading-settings")
       return jsonResponse(200, { blurTranslation: true, lookupHoldMs: 500 });
+    if (path === "/starting-level")
+      return jsonResponse(200, { configured: true, level: "N5" });
+    if (path === "/ai-providers") return jsonResponse(200, []);
+    if (path === "/ai-tasks") return jsonResponse(200, []);
     if (path === "/story-settings")
       return jsonResponse(200, { furiganaThresholdSrsLevel: 3, preferredGenre: "", preferredTheme: "" });
     if (path === "/item-lists")
@@ -138,6 +151,7 @@ function stubApi(): ReturnType<typeof vi.fn> {
       return jsonResponse(200, { size: 0, items: [] });
     if (path === "/marumori")
       return jsonResponse(200, { connected: false, lastSync: null, lastFailure: null, counts: null });
+    if (path === "/health") return jsonResponse(200, { status: "ok", database: "connected" });
     return jsonResponse(200, { items: [], nextCursor: null, total: 0, updatedMs: 0 });
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -160,6 +174,9 @@ beforeEach(() => {
   localStorage.clear();
   localStorage.setItem("vjt.token", "preset-token");
   localStorage.setItem("vjt.serverUrl", TEST_SERVER_URL);
+  // These tests are all past first run: the #50 setup flow gates on this flag
+  // (its own flow is covered by the setup tests below).
+  localStorage.setItem("vjt.setupSeen", "yes");
 });
 
 afterEach(() => {
@@ -212,15 +229,15 @@ it("opening a settings section pushes it and Back returns to the hub", async () 
   await user.click(screen.getByRole("tab", { name: "Settings" }));
   await screen.findByText("Starting Level");
 
-  await user.click(await screen.findByRole("button", { name: "Server" }));
-  await screen.findByDisplayValue("http://10.0.2.2:8080");
+  await user.click(await screen.findByRole("button", { name: "Reading" }));
+  await screen.findByLabelText("Lookup hold before a Weak Signal (ms, 0–10000)");
 
   // Hardware Back equivalent: expo-router drives its stack from the history
   // that Android's Back maps to on native, so history.back() pops the section
   // onto the hub.
   window.history.back();
   await screen.findByText("Starting Level");
-  expect(screen.queryByDisplayValue("http://10.0.2.2:8080")).toBeNull();
+  expect(screen.queryByLabelText("Lookup hold before a Weak Signal (ms, 0–10000)")).toBeNull();
 });
 
 it("an unknown settings section shows the EmptyState and its action returns to the hub", async () => {
@@ -272,10 +289,10 @@ it("Back from a fresh-tab story deep link replaces to the Stories tab", async ()
 
 it("Back from a fresh-tab settings deep link returns to the hub", async () => {
   stubApi();
-  renderApp("/settings/server"); // deep link in a fresh tab: nothing to pop
+  renderApp("/settings/reading"); // deep link in a fresh tab: nothing to pop
   const user = await signedIn();
 
-  await screen.findByDisplayValue("http://10.0.2.2:8080");
+  await screen.findByLabelText("Lookup hold before a Weak Signal (ms, 0–10000)");
   await user.click(await screen.findByRole("button", { name: "Back" }));
   await screen.findByText("Starting Level"); // the hub, not a dead end
 });
@@ -353,4 +370,119 @@ it("signed-out visitors see the login screen and no chrome", async () => {
 
   await screen.findByText("Virtual Japan Tutor");
   expect(screen.queryAllByRole("tab")).toHaveLength(0);
+});
+
+it("a narrow section route is one column — the menu lives in the hub, not the section", async () => {
+  stubApi();
+  renderApp("/settings/reading"); // narrow: the hub list is not beside it
+  await signedIn();
+
+  await screen.findByLabelText("Lookup hold before a Weak Signal (ms, 0–10000)");
+  expect(screen.getByText("Reading")).toBeTruthy();
+  for (const other of ["Appearance", "MaruMori", "Server"]) {
+    expect(screen.queryByRole("button", { name: other })).toBeNull();
+  }
+});
+
+it("wide screens show the hub and the open section side by side", async () => {
+  stubApi();
+  renderApp("/settings");
+  const user = await signedIn(WIDE);
+
+  await screen.findByText(
+    "Pick a settings section to change it. Changes apply as soon as you save.",
+  );
+  await screen.findByRole("button", { name: "MaruMori" });
+
+  await user.click(screen.getByRole("button", { name: "Reading" }));
+  await screen.findByLabelText("Lookup hold before a Weak Signal (ms, 0–10000)");
+  // Two panes, not a navigation: the menu stayed, the picked row is marked.
+  expect(screen.getByRole("button", { name: "MaruMori" })).toBeTruthy();
+  expect(
+    (screen.getByRole("button", { name: "Reading" }) as HTMLElement).getAttribute("aria-selected"),
+  ).toBe("true");
+
+  // Switching sections happens inside the page.
+  await user.click(screen.getByRole("button", { name: "MaruMori" }));
+  await screen.findByLabelText("MaruMori API key");
+  expect(screen.queryByLabelText("Lookup hold before a Weak Signal (ms, 0–10000)")).toBeNull();
+  expect(screen.getByRole("button", { name: "Reading" })).toBeTruthy();
+});
+
+describe("first-run setup (#50)", () => {
+  // Fresh device: nothing in the secure store — signed-out, setup never seen.
+  function freshDevice() {
+    localStorage.clear();
+    setViewport(NARROW);
+  }
+
+  async function logIn() {
+    await screen.findByLabelText("Username");
+    fireEvent.change(screen.getByLabelText("Username"), { target: { value: "learner" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "hunter2" } });
+    screen.getByRole("button", { name: "Log in" }).click();
+  }
+
+  it("the first sign-in lands in setup once — skipping it sticks across sign out and back in", async () => {
+    freshDevice();
+    stubApi();
+    renderApp("/");
+
+    await logIn();
+
+    // The landing route redirected to the wizard: not Today with a modal on
+    // top, and not a stack pop away either.
+    await screen.findByText("Step 1 of 3: Starting Level");
+    await screen.findByRole("button", { name: "Save level" });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Skip setup" }));
+    await screen.findByText("Today’s story");
+
+    // Sign out through the hub's account card…
+    await fireEvent.click(screen.getByRole("tab", { name: "Settings" }));
+    await fireEvent.click(await screen.findByRole("button", { name: "Log out" }));
+    await screen.findByLabelText("Username");
+
+    // …and back in on the same device: the seen-flag survived logout, so the
+    // wizard does not return.
+    await logIn();
+    await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(5));
+    expect(screen.queryByText(/Step \d of 3/)).toBeNull();
+  });
+
+  it("skipping each step walks the wizard to the end and fires no writes", async () => {
+    freshDevice();
+    const fetchMock = stubApi();
+    renderApp("/");
+
+    await logIn();
+    await screen.findByRole("button", { name: "Save level" }); // step 1: Starting Level
+
+    await fireEvent.click(screen.getByRole("button", { name: "Skip this step" }));
+    await screen.findByLabelText("MaruMori API key"); // step 2: MaruMori
+
+    await fireEvent.click(screen.getByRole("button", { name: "Skip this step" }));
+    await screen.findByRole("button", { name: "Add provider" }); // step 3: AI Providers
+
+    await fireEvent.click(screen.getByRole("button", { name: "Finish" }));
+    await screen.findByText("Today’s story");
+
+    // Skipping never half-saves: the wizard issued no PUT/POST the whole way
+    // (the sign-in POST itself is not the wizard's).
+    const writes = fetchMock.mock.calls.filter((call) => {
+      const request = call[0] instanceof Request ? call[0] : new Request(String(call[0]));
+      return request.method !== "GET" && !new URL(request.url).pathname.startsWith("/auth/");
+    });
+    expect(writes).toHaveLength(0);
+  });
+
+  it("a device that has seen setup never sees it again", async () => {
+    // The beforeEach already carries vjt.setupSeen = yes and a session.
+    stubApi();
+    renderApp("/");
+    await signedIn();
+
+    await screen.findByText("Today’s story");
+    expect(screen.queryByText(/Step \d of 3/)).toBeNull();
+  });
 });
