@@ -74,7 +74,11 @@ export const appRoutes: RouteObject[] = [
             children: [
               { index: true, handle: { title: "Today" } satisfies RouteHandle, lazy: placeholder("Today", 79) },
               { path: "stories", handle: { title: "Stories" } satisfies RouteHandle, lazy: placeholder("Stories", 79) },
-              { path: "stories/:storyId", handle: { title: "Story" } satisfies RouteHandle, lazy: placeholder("Story", 77) },
+              {
+                path: "stories/:storyId",
+                handle: { title: "Story" } satisfies RouteHandle,
+                lazy: () => import("./routes/StoryPage.tsx"),
+              },
               { path: "practice", handle: { title: "Practice" } satisfies RouteHandle, lazy: placeholder("Practice", 78) },
               { path: "grammar", handle: { title: "Grammar" } satisfies RouteHandle, lazy: placeholder("Grammar", 80) },
               { path: "grammar/:grammarId", handle: { title: "Grammar point" } satisfies RouteHandle, lazy: placeholder("Grammar point", 80) },
