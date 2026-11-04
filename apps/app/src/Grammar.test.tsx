@@ -218,8 +218,25 @@ describe("Grammar catalogue", () => {
     const { onOpenPoint } = renderGrammar();
     await waitFor(() => expect(screen.getByText("〜てしまう")).toBeTruthy());
 
-    fireEvent.click(screen.getByRole("button", { name: "〜てしまう, end up doing something" }));
+    fireEvent.click(screen.getByRole("button", { name: "〜てしまう, end up doing something, Seeded, 1 example" }));
     expect(onOpenPoint).toHaveBeenCalledWith(1);
+  });
+
+  it("announces status and example count in each row’s label, not just pattern and meaning", async () => {
+    renderGrammar();
+    await waitFor(() => expect(screen.getByText("〜てしまう")).toBeTruthy());
+
+    // The label replaces the row's text for a screen reader, so every fact the
+    // visible row shows has to be in it (#49 review S2).
+    expect(
+      screen.getByRole("button", { name: "〜たら, if, when (conditional), Observed, 3 examples" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "〜ようになる, come to do something, Not recorded, 2 examples" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "〜たい, want to do something, Observed, 0 examples" }),
+    ).toBeTruthy();
   });
 });
 

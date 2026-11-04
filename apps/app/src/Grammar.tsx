@@ -225,10 +225,17 @@ function PointRow({
   last: boolean;
   onOpen: () => void;
 }) {
+  // The label replaces the row's text content for TalkBack/VoiceOver, so it
+  // must carry everything the visible row shows — badge and example count
+  // included — or a screen-reader Learner hears less than a sighted one
+  // (#49 review S2).
+  const knowledge = knowledgeOf(point);
+  const status = knowledge === "seeded" ? "Seeded" : knowledge === "observed" ? "Observed" : "Not recorded";
+  const count = `${point.exampleCount} example${point.exampleCount === 1 ? "" : "s"}`;
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${point.pattern}, ${point.meaning}`}
+      accessibilityLabel={`${point.pattern}, ${point.meaning}, ${status}, ${count}`}
       onPress={onOpen}
       className={`flex-row items-center gap-3 py-3 active:opacity-80 ${
         last ? "" : "border-b border-border"
@@ -239,7 +246,7 @@ function PointRow({
         <Text className="text-small text-muted-foreground">{point.meaning}</Text>
       </View>
       <View className="items-end gap-1">
-        <SourceBadge knowledge={knowledgeOf(point)} />
+        <SourceBadge knowledge={knowledge} />
         {/* One interpolated string, so the whole caption is one text node. */}
         <Text className="text-caption text-muted-foreground">{`${point.exampleCount} example${
           point.exampleCount === 1 ? "" : "s"
