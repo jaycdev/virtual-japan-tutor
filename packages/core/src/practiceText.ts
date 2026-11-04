@@ -30,6 +30,6 @@ export function practiceSeedForStory(storyId: string): number {
  */
 export function displayPrompt(prompt: string): string {
   return prompt
-    .replace(/([＿_]+)[\s⁠]*([。、．.!?！？])/gu, "$1⁠$2")
-    .replace(/(\s)([＿_])/gu, "$1⁠$2");
+    .replace(/([＿_]+)[\s\u2060]*([。、．.!?！？])/gu, "$1\u2060$2")
+    .replace(/(\s)([＿_])/gu, "$1\u2060$2");
 }
