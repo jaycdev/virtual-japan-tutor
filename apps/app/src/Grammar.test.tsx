@@ -224,6 +224,32 @@ describe("Grammar catalogue", () => {
     await waitFor(() => expect(screen.getByText("1–50 of 120")).toBeTruthy());
   });
 
+  it("sends one debounced request for a burst of keystrokes (#49 review N3)", async () => {
+    renderGrammar();
+    await waitFor(() => expect(screen.getByText("〜てしまう")).toBeTruthy());
+
+    const input = screen.getByLabelText("Search grammar");
+    fireEvent.change(input, { target: { value: "e" } });
+    fireEvent.change(input, { target: { value: "en" } });
+    fireEvent.change(input, { target: { value: "end" } });
+
+    // All three keystrokes land well inside the 300 ms window, and the burst
+    // settles into exactly one search — the term as finally typed.
+    await waitFor(() => expect(gets.some((call) => call.includes("q=end"))).toBe(true));
+    expect(gets.filter((call) => call.includes("q="))).toHaveLength(1);
+  });
+
+  it("drops the pending search when the screen goes away mid-debounce (#49 review N3)", async () => {
+    renderGrammar();
+    await waitFor(() => expect(screen.getByText("〜てしまう")).toBeTruthy());
+
+    fireEvent.change(screen.getByLabelText("Search grammar"), { target: { value: "end" } });
+    cleanup(); // leave before the debounce deadline passes
+
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    expect(gets.filter((call) => call.includes("q="))).toHaveLength(0);
+  });
+
   it("opens a point through the host’s route, not in place", async () => {
     const { onOpenPoint } = renderGrammar();
     await waitFor(() => expect(screen.getByText("〜てしまう")).toBeTruthy());
