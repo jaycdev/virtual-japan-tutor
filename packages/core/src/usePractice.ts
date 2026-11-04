@@ -5,6 +5,7 @@ import type {
   PracticeSession,
 } from "@vjt/api-client";
 import { useCallback, useMemo, useRef, useState } from "react";
+import { FAILED, UNREACHABLE } from "./errors.ts";
 
 /**
  * State and actions behind the Practice Session screen (issue #9), shared by
@@ -22,8 +23,6 @@ import { useCallback, useMemo, useRef, useState } from "react";
  * screen to the Start form.
  */
 
-const UNREACHABLE = "Cannot reach the server";
-const FAILED = "Request failed";
 
 /** Feedback for one answered exercise. Ids are empty only for answers the view cannot attribute to an option. */
 export interface AnswerFeedback {

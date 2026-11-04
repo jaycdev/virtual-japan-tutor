@@ -1,5 +1,6 @@
 import type { ApiClient, GrammarPointDetail } from "@vjt/api-client";
 import { useCallback, useEffect, useState } from "react";
+import { FAILED, UNREACHABLE } from "./errors.ts";
 
 export type GrammarPointState =
   | { status: "idle" }
@@ -16,8 +17,6 @@ export interface GrammarPointRead {
 /** A finished read, tagged with the id it answers. */
 type Settled = { id: number; state: Extract<GrammarPointState, { status: "ready" | "error" }> };
 
-const UNREACHABLE = "Cannot reach the server";
-const FAILED = "Request failed";
 
 /**
  * One Grammar Point, read by id (issue #49 review S4). The detail screen used

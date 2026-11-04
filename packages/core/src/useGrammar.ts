@@ -7,6 +7,7 @@ import type {
 } from "@vjt/api-client";
 import { useCallback, useEffect, useState } from "react";
 import type { ActionResult } from "./useAiSettings.ts";
+import { FAILED, UNREACHABLE } from "./errors.ts";
 
 export type GrammarLevelFilter = GrammarJLPTLevel | "all";
 export type GrammarFilter = { level: GrammarLevelFilter; query: string; limit: number; offset: number };
@@ -43,8 +44,6 @@ export interface Grammar {
   regenerateExplanation(id: number): Promise<ActionResult>;
 }
 
-const UNREACHABLE = "Cannot reach the server";
-const FAILED = "Request failed";
 const DEFAULT_LIMIT = 50;
 
 function failure(error: { message?: string } | undefined, status: number): { ok: false; message: string } {

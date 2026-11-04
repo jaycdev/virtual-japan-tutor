@@ -1,6 +1,7 @@
 import type { ApiClient, ReadingSettings } from "@vjt/api-client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ActionResult } from "./useAiSettings.ts";
+import { FAILED, UNREACHABLE } from "./errors.ts";
 
 /**
  * The Learner's reader preferences (issue #11, extended by issue #12), kept
@@ -33,8 +34,6 @@ export interface ReadingSettingsView {
   reload(): void;
 }
 
-const UNREACHABLE = "Cannot reach the server";
-const FAILED = "Request failed";
 // The server's own default, used only if a setter runs before the first
 // successful load — in practice unreachable, since only a loaded settings
 // panel can call a setter.

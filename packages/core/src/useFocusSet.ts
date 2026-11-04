@@ -1,5 +1,6 @@
 import type { ApiClient, FocusSetItem } from "@vjt/api-client";
 import { useCallback, useEffect, useState } from "react";
+import { FAILED, UNREACHABLE } from "./errors.ts";
 
 /**
  * The Focus Set on its own (plan 4.4 item 4): the Today glance needs the set
@@ -21,8 +22,6 @@ export type FocusSetView = {
   retry(): void;
 };
 
-const UNREACHABLE = "Cannot reach the server";
-const FAILED = "Request failed";
 
 export function useFocusSet(client: ApiClient): FocusSetView {
   const [items, setItems] = useState<FocusSetItem[] | null>(null);

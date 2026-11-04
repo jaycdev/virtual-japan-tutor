@@ -8,6 +8,7 @@ import type {
 } from "@vjt/api-client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ActionResult } from "./useAiSettings.ts";
+import { FAILED, UNREACHABLE } from "./errors.ts";
 
 /**
  * State and actions behind the Story screens (issues #10, #31, #32), shared by
@@ -95,8 +96,6 @@ export interface StoryView {
   answer(position: number, optionIndex: number): Promise<void>;
 }
 
-const UNREACHABLE = "Cannot reach the server";
-const FAILED = "Request failed";
 const DEFAULT_LIMIT = 20;
 
 function message(error: { message?: string } | undefined, status: number): string {
