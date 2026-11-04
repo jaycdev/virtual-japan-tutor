@@ -47,7 +47,8 @@ export function GrammarPointPage({ client, pointId }: { client: ApiClient; point
 
   return (
     <div className="flex flex-col gap-6">
-      <Button variant="ghost" aria-label="Back to grammar" className="self-start px-2 text-primary hover:text-primary" onClick={back}>
+      {/* Pulled left by the ghost padding, so the chevron lines up with the content edge. */}
+      <Button variant="ghost" aria-label="Back to grammar" className="-ml-2 self-start text-primary hover:text-primary" onClick={back}>
         <ChevronLeft aria-hidden="true" />
         Grammar
       </Button>
