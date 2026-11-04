@@ -127,7 +127,10 @@ function ReadyBody({ point, onReloadExplanation }: { point: GrammarPointDetail; 
           <Text
             role="heading"
             accessibilityRole="header"
-            className="text-title font-serif font-semibold text-foreground"
+            // font-serif-bold, not font-serif + font-semibold: global.css pins
+            // the 400 face under font-serif, so the old weight class only
+            // faked bold on web (#49 review S6). Same token face richLine uses.
+            className="text-title font-serif-bold font-semibold text-foreground"
           >
             {point.pattern}
           </Text>
