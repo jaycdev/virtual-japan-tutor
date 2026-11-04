@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode, type Ref } fr
 import { Pressable, ScrollView, StyleSheet, Text, View, type ViewInstance } from "react-native";
 
 import { Icon } from "./components/ui/icon.tsx";
+import { Card as UiCard } from "./components/ui/Card.tsx";
 import { EmptyState, InlineError, ProgressBar, Skeleton } from "./state/states.tsx";
 
 /**
@@ -191,13 +192,10 @@ export function Practice({
   );
 }
 
-/** Card shell shared by the start, exercise and results states (plan 4.3). */
+/** Card shell shared by the start, exercise and results states (plan 4.3):
+ *  the ui Card itself, with the states' shared test handle. */
 function Card({ children }: { children: ReactNode }) {
-  return (
-    <View testID="practice-card" className="gap-4 rounded-lg border border-border bg-card p-5">
-      {children}
-    </View>
-  );
+  return <UiCard testID="practice-card">{children}</UiCard>;
 }
 
 function StartPractice({ practice, onStart }: { practice: PracticeView; onStart: (seed?: number) => void }) {
