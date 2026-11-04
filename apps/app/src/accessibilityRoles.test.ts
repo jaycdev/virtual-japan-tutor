@@ -60,16 +60,18 @@ function stripComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(?<!:)\/\/.*$/gm, '');
 }
 
-function findRoles(file: string): { prop: string; value: string; line: number }[] {
+function findRoles(
+  file: string,
+): { file: string; prop: string; value: string; line: number }[] {
   const stripped = stripComments(readFileSync(file, 'utf8'));
-  const found: { prop: string; value: string; line: number }[] = [];
+  const found: { file: string; prop: string; value: string; line: number }[] = [];
   for (const [prop, pattern, safe] of [
     ['accessibilityRole', /accessibilityRole="([a-z-]+)"/g, ACCESSIBILITY_ROLE_SAFE],
     ['role', /(?<!\w)role="([a-z-]+)"/g, ROLE_SAFE],
   ] as const) {
     for (const match of stripped.matchAll(pattern)) {
       if (!safe.has(match[1])) {
-        found.push({ prop, value: match[1], line: stripped.slice(0, match.index).split('\n').length });
+        found.push({ file, prop, value: match[1], line: stripped.slice(0, match.index).split('\n').length });
       }
     }
   }
@@ -77,9 +79,9 @@ function findRoles(file: string): { prop: string; value: string; line: number }[
 }
 
 describe('accessibility role literals', () => {
-  // vitest's cwd is the project root (apps/app), and import.meta.url here is
-  // a transformed module id, not a file: URL.
-  const roots = [join(process.cwd(), 'src'), join(process.cwd(), 'app')];
+  // vite-node defines __dirname as the MODULE's folder (src/), not the
+  // project root — step up for the app/ route folder.
+  const roots = [__dirname, join(__dirname, '..', 'app')];
   const files = roots.flatMap(sourceFiles);
 
   it('scans real files (a broken scan would vacuously pass)', () => {
