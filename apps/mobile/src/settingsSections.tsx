@@ -7,27 +7,8 @@ import { Pressable, Text } from "react-native";
 
 import { Icon } from "./components/ui/icon";
 
-/**
- * What a section's step-save reports to the setup wizard (review S2):
- * "saved" wrote something, "nothing" had no entered input to write,
- * "blocked" tried and failed — the section shows its own error and the
- * wizard stays put.
- */
-export type StepSaveOutcome = "saved" | "nothing" | "blocked";
-
-/** The step-save itself: runs the section's save, reports the outcome. */
-export type StepSaveFn = () => Promise<StepSaveOutcome>;
-
-/**
- * How a section hands its save to the setup wizard: it calls the registrar
- * with its save while mounted (and with null on unmount), so Next/Finish
- * reuse the section's Save rather than duplicating (or drifting from) it.
- * The wizard keeps whatever was registered in a ref of its own — passing
- * the wizard's ref object down instead would mean the sections mutate a
- * prop, which the react-hooks compiler rules reject. The hub never passes
- * a registrar.
- */
-export type StepSaveRegistrar = (save: StepSaveFn | null) => void;
+// The setup wizard's save contract lives in @vjt/core, shared with the web app.
+export type { StepSaveFn, StepSaveOutcome, StepSaveRegistrar } from "@vjt/core";
 
 /** Back affordance for the section route. */
 export function SectionBack({ label, onPress }: { label: string; onPress: () => void }) {

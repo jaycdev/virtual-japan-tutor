@@ -1,5 +1,12 @@
 import type { ApiClient } from "@vjt/api-client";
-import { deviceTimezone, TIMEZONE_OPTIONS, useStoryGeneration, useStorySettings } from "@vjt/core";
+import {
+  deviceTimezone,
+  FURIGANA_LEVELS,
+  suggestionsFor,
+  TIMEZONE_OPTIONS,
+  useStoryGeneration,
+  useStorySettings,
+} from "@vjt/core";
 import { useState } from "react";
 import { Text, View } from "react-native";
 
@@ -10,7 +17,7 @@ import { LinkButton } from "./components/ui/LinkButton.tsx";
 import { ActionButton } from "./stories-parts.tsx";
 import { InlineError, SkeletonBar } from "./state/states.tsx";
 
-const LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+const LEVELS = FURIGANA_LEVELS;
 
 /**
  * Story preferences (Furigana Threshold #10, preferred genre/theme and the
@@ -165,10 +172,8 @@ function AutocompleteField({
   maxLength?: number;
   disabled?: boolean;
 }) {
-  const [showAll, setShowAll] = useState(false);
-  const q = value.trim().toLowerCase();
-  const matches = options.filter((o) => q === "" || o.toLowerCase().includes(q));
-  const visible = matches.slice(0, 8);
+  const [focused, setFocused] = useState(false);
+  const { show, visible } = suggestionsFor(options, value, focused);
   return (
     <View className="gap-2">
       <Field
@@ -178,9 +183,9 @@ function AutocompleteField({
         placeholder={placeholder}
         maxLength={maxLength}
         disabled={disabled}
-        onFocus={() => setShowAll(true)}
+        onFocus={() => setFocused(true)}
       />
-      {!disabled && (q !== "" || showAll) && visible.length > 0 ? (
+      {!disabled && show ? (
         <ChipRow>
           {visible.map((o) => (
             <Chip

@@ -1,5 +1,13 @@
-import type { ApiClient, ItemList, ItemListMember, components } from "@vjt/api-client";
-import { useItemLists, type ActionResult } from "@vjt/core";
+import type { ApiClient, ItemList, ItemListMember } from "@vjt/api-client";
+import {
+  ITEM_KIND_LABELS,
+  ITEM_KINDS,
+  isSavedList,
+  itemListHint,
+  useItemLists,
+  type ActionResult,
+  type ItemKind,
+} from "@vjt/core";
 import { useCallback, useEffect, useState } from "react";
 import { Text, View } from "react-native";
 
@@ -13,17 +21,8 @@ import { SwitchRow } from "./components/ui/SwitchRow.tsx";
 import { ActionButton } from "./stories-parts.tsx";
 import { EmptyState, InlineError, Skeleton, SkeletonBar } from "./state/states.tsx";
 
-type ItemKind = components["schemas"]["ItemKind"];
-
-const KIND_LABELS: Record<ItemKind, string> = {
-  kanji: "Kanji",
-  vocabulary: "Word",
-  grammar: "Grammar",
-};
-const KINDS = Object.keys(KIND_LABELS) as ItemKind[];
-
-/** The built-in Saved list: it cannot be renamed or deleted, only configured. */
-const isSavedList = (l: ItemList): boolean => l.name.toLowerCase() === "saved";
+const KIND_LABELS = ITEM_KIND_LABELS;
+const KINDS = ITEM_KINDS;
 
 /** Members as read for one list; null rows mean still loading, error means the read failed. */
 interface MembersState {
@@ -132,7 +131,7 @@ function ListsMaster({
         <Card key={l.id} padded={false}>
           <Row
             label={l.name}
-            hint={`${l.isDefault ? "default · " : ""}${l.itemCount} ${l.itemCount === 1 ? "item" : "items"}${l.boosting ? " · boosting" : ""}`}
+            hint={itemListHint(l)}
             onPress={() => onOpen(l.id)}
             last
           />

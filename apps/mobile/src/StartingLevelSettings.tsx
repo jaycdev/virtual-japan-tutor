@@ -1,5 +1,14 @@
-import type { ApiClient, GrammarReviewItem } from "@vjt/api-client";
-import { STARTING_LEVELS, useGrammarReview, useStartingLevel, type StartingLevel } from "@vjt/core";
+import type { ApiClient } from "@vjt/api-client";
+import {
+  STARTING_LEVELS,
+  grammarReviewText,
+  grammarUpdatedText,
+  useGrammarReview,
+  useStartingLevel,
+  type StartingLevel,
+  type StepSaveOutcome,
+  type StepSaveRegistrar,
+} from "@vjt/core";
 import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 
@@ -7,7 +16,6 @@ import { Card } from "./components/ui/Card.tsx";
 import { Chip, ChipRow } from "./components/ui/Chip.tsx";
 import { ActionButton } from "./stories-parts.tsx";
 import { InlineError, SkeletonBar } from "./state/states.tsx";
-import type { StepSaveOutcome, StepSaveRegistrar } from "./settingsSections.tsx";
 
 /**
  * Starting Level (#6, on the #50 hub): N5–N1 chips pick the level; saving
@@ -43,7 +51,7 @@ export function StartingLevelSettings({
     try {
       const res = await level.setLevel(selected);
       if ("status" in res) setError(res.message);
-      else setResult(`Grammar updated: ${res.added ?? 0} added, ${res.removed ?? 0} removed.`);
+      else setResult(grammarUpdatedText(res));
     } finally {
       setBusy(false);
     }
@@ -63,7 +71,7 @@ export function StartingLevelSettings({
         setError(res.message);
         return "blocked";
       }
-      setResult(`Grammar updated: ${res.added ?? 0} added, ${res.removed ?? 0} removed.`);
+      setResult(grammarUpdatedText(res));
       setChoice(null);
       return "saved";
     });
@@ -119,11 +127,6 @@ export function StartingLevelSettings({
   );
 }
 
-const reviewText = (item: GrammarReviewItem): string =>
-  `${item.pattern || item.marumoriId}` +
-  (item.jlptLevel ? ` (MaruMori level ${item.jlptLevel})` : "") +
-  (item.matchedPointId ? ` — matched point ${item.matchedPointId}, level was ambiguous` : " — no Grammar Catalogue match");
-
 function GrammarReviewList({ client }: { client: ApiClient }) {
   const review = useGrammarReview(client);
   return (
@@ -146,7 +149,7 @@ function GrammarReviewList({ client }: { client: ApiClient }) {
           </Text>
           {review.state.items.map((item) => (
             <Text key={item.marumoriId} className="text-body text-foreground">
-              {reviewText(item)}
+              {grammarReviewText(item)}
             </Text>
           ))}
         </>

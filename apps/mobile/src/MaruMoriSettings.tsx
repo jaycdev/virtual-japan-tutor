@@ -1,5 +1,5 @@
-import type { ApiClient, MaruMoriSyncRun } from "@vjt/api-client";
-import { useMarumori } from "@vjt/core";
+import type { ApiClient } from "@vjt/api-client";
+import { syncOutcomeText, syncRunText, useMarumori } from "@vjt/core";
 import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 
@@ -94,7 +94,7 @@ export function MaruMoriSettings({
     try {
       const outcome = await maru.sync();
       if (outcome.status === "error") setSyncResult({ ok: false, text: outcome.message });
-      else setSyncResult({ ok: outcome.status === "ok", text: outcomeText(outcome) });
+      else setSyncResult({ ok: outcome.status === "ok", text: syncOutcomeText(outcome) });
     } finally {
       setBusy(false);
     }
@@ -207,7 +207,7 @@ export function MaruMoriSettings({
           ) : (
             maru.runs.runs.map((r) => (
               <Text key={r.id} className="text-small text-muted-foreground">
-                {runText(r)}
+                {syncRunText(r)}
               </Text>
             ))
           )}
@@ -217,14 +217,4 @@ export function MaruMoriSettings({
   );
 }
 
-const outcomeText = (run: MaruMoriSyncRun): string => {
-  if (run.status === "failed") return `Sync failed: ${run.error ?? "unknown error"}`;
-  const c = run.counts;
-  if (!c) return "Sync complete";
-  return `Sync complete — ${c.new} new Known Items, ${c.levelChanges} level changes, ${c.disappeared} disappeared`;
-};
 
-const runText = (r: MaruMoriSyncRun): string =>
-  `${r.startedAt} — ${r.status}` +
-  (r.error ? ` — ${r.error}` : "") +
-  (r.counts ? ` — ${r.counts.kanji} kanji, ${r.counts.vocabulary} vocabulary` : "");
