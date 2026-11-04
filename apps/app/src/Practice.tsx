@@ -59,7 +59,7 @@ export function Practice({
 }: {
   client: ApiClient;
   seed?: number;
-  /** Empty-state action: take the Learner to their word lists. */
+  /** Empty-state action: take the Learner to their Item Lists. */
   onOpenWordLists?: () => void;
 }) {
   const practice = usePractice(client);
@@ -230,7 +230,7 @@ function NothingToPractise({ onOpenWordLists }: { onOpenWordLists?: () => void }
     <Card>
       <EmptyState
         message="Nothing in your Focus Set to practise yet"
-        actionLabel="Open your word lists"
+        actionLabel="Open your Item Lists"
         onAction={onOpenWordLists}
       />
     </Card>
