@@ -9,15 +9,16 @@ import { Text, View } from "react-native";
 
 import { fakeBackHandler, type FakeBackHandler } from "../../test/back-handler-fake.ts";
 import { setBackHandlerForTests } from "../useHardwareBack.ts";
-import { reduceHold, type Rect } from "./holdMenu.ts";
+import { reduceHold, type Rect } from "@vjt/core";
 import { StoryReader } from "./StoryReader.tsx";
 import { StoryTextSizeProvider, useStoryTextSize, type StoryTextSize } from "../storysize/index.tsx";
 
 // Pass the module through untouched except for wrapping reduceHold in a spy:
 // one test then proves the SHIPPED reader runs the pure machine (issue #14
-// review, major 2), while every other test behaves exactly as before.
-vi.mock("./holdMenu.ts", async (importOriginal) => {
-  const mod = await importOriginal<typeof import("./holdMenu.ts")>();
+// review, major 2), while every other test behaves exactly as before. The
+// machine now lives in @vjt/core (issue #77), so that is the module to wrap.
+vi.mock("@vjt/core", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("@vjt/core")>();
   return { ...mod, reduceHold: vi.fn(mod.reduceHold) };
 });
 

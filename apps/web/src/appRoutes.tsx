@@ -8,13 +8,7 @@ import { EmptyState } from "@/components/states";
 import { SkeletonLines } from "./components/states.tsx";
 import { AppShell } from "./shell/AppShell.tsx";
 import { RequireSession } from "./routes/RequireSession.tsx";
-import { ComingSoon } from "./routes/ComingSoon.tsx";
 import { documentTitle, useRouteTitle, type RouteHandle } from "./routeTitle.ts";
-
-/** A not-yet-built destination: a lazy module that renders the placeholder. */
-function placeholder(title: string, issue: number) {
-  return async () => ({ Component: () => <ComingSoon title={title} issue={issue} /> });
-}
 
 /**
  * Shown while a lazy route module loads for the first time (React Router asks for
@@ -74,7 +68,13 @@ export const appRoutes: RouteObject[] = [
             children: [
               { index: true, handle: { title: "Today" } satisfies RouteHandle, lazy: () => import("./routes/TodayPage.tsx") },
               { path: "stories", handle: { title: "Stories" } satisfies RouteHandle, lazy: () => import("./routes/StoriesPage.tsx") },
-              { path: "stories/:storyId", handle: { title: "Story" } satisfies RouteHandle, lazy: placeholder("Story", 77) },
+              {
+                path: "stories/:storyId",
+                // wide: the reader lifts the shell's 960 px cap so the 40-character
+                // column keeps its width at the L and XL Story text sizes.
+                handle: { title: "Story", wide: true } satisfies RouteHandle,
+                lazy: () => import("./routes/StoryPage.tsx"),
+              },
               { path: "practice", handle: { title: "Practice" } satisfies RouteHandle, lazy: () => import("./routes/PracticePage.tsx") },
               {
                 path: "grammar",

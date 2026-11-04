@@ -1,14 +1,12 @@
 import type { Story, StoryGrammarSpan } from "@vjt/api-client";
-import type { ReadingSettingsView } from "@vjt/core";
+import { countGlosses, coveringSpan, firstGlosses, type EntryLookup, type ReadingSettingsView } from "@vjt/core";
 import { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { useStoryTextSize } from "../storysize/index.tsx";
-import { coveringSpan } from "./holdMenu.ts";
-import { countGlosses, firstGlosses, JlptBadge } from "./parts.tsx";
+import { JlptBadge } from "./parts.tsx";
 import { PitchGraph } from "./PitchGraph.tsx";
 import { TokenWords } from "./StoryText.tsx";
-import type { EntryLookup } from "./useEntryLookup.ts";
 
 /**
  * The Reading Panel (issues #14, #45): ONE fixed box above the story that

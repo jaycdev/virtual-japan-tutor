@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { TokenMenu } from "./TokenMenu.tsx";
-import type { MenuOption } from "./holdMenu.ts";
+import type { MenuOption } from "@vjt/core";
 
 // A phone with a 34 dp gesture bar under the sheet.
 vi.mock("react-native-safe-area-context", () => ({

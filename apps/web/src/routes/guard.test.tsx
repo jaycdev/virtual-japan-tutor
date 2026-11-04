@@ -55,7 +55,9 @@ describe("route guard", () => {
     await signIn(user);
 
     await waitFor(() => expect(currentLocation(router)).toBe("/stories/12?from=today"));
-    expect(await screen.findByRole("heading", { name: "Story" })).toBeTruthy();
+    // The Story route is the reader now (#77). This harness has no Story 12, so the
+    // reader's own error state with Retry is what the Learner lands on.
+    expect(await screen.findByRole("button", { name: "Retry" })).toBeTruthy();
   });
 
   it("omits next when the signed-out visitor wanted the landing page", async () => {
