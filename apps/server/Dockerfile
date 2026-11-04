@@ -52,7 +52,7 @@ FROM alpine:3.22 AS server
 RUN adduser -D -u 10001 app
 USER app
 COPY --from=build /out/server /usr/local/bin/server
-COPY --from=web /src/apps/app/dist /usr/share/vjt/web
+COPY --from=web /src/apps/app/dist-web /usr/share/vjt/web
 # Serve the web app at / next to the API. Unset WEB_DIR to run the API only.
 ENV WEB_DIR=/usr/share/vjt/web
 EXPOSE 8080

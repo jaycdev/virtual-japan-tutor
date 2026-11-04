@@ -268,8 +268,8 @@ from the Expo app and point the server at it, then open <http://localhost:8080>:
 
 ```sh
 pnpm --filter "@vjt/app^..." build   # @vjt/api-client and @vjt/core are consumed from their dist/
-pnpm --filter @vjt/app run build:web
-cd apps/server && WEB_DIR=../app/dist DATABASE_URL=... SECRETS_KEY=... go run ./cmd/server
+pnpm --filter @vjt/app run build:web # the web export lands in apps/app/dist-web (`build` uses dist/ for Android)
+cd apps/server && WEB_DIR=../app/dist-web DATABASE_URL=... SECRETS_KEY=... go run ./cmd/server
 ```
 
 `pnpm --filter @vjt/app dev` (hot reload; `expo start --web`) serves the app from Metro on its own port, where
