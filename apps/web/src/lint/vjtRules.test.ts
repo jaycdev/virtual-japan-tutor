@@ -23,9 +23,14 @@ describe("vjt/no-hardcoded-color", () => {
     ["a template chunk next to a substitution", "const a = <p className={`p-2 ${x} text-[#abcdef]`} />;"],
     ["an rgb() literal in a style value", 'const a = <p style={{ color: "rgb(0, 0, 0)" }} />;'],
     ["an rgb() in a template", "const a = <p style={{ color: `rgba(0,0,0,.5)` }} />;"],
-  ])("flags %s in apps/web", async (_label, code) => {
-    expect(await ruleIds("apps/web/src/probe.tsx", code)).toContain("vjt/no-hardcoded-color");
-  });
+  ])(
+    "flags %s in apps/web",
+    async (_label, code) => {
+      expect(await ruleIds("apps/web/src/probe.tsx", code)).toContain("vjt/no-hardcoded-color");
+    },
+    // The first lint pass loads the root ESLint config cold; on a shared runner that alone can pass 15 s.
+    60_000,
+  );
 
   it("flags the same pattern in the phone app", async () => {
     expect(await ruleIds("apps/mobile/src/probe.tsx", "const a = <p className={`p-2 text-[#abc]`} />;")).toContain(

@@ -35,6 +35,9 @@ describe('mobile AppearanceSettings', () => {
     secure.clear();
   });
 
+  // First test in the file: its dynamic import is the cold transform of the whole
+  // module graph, which takes far longer than 15 s on a shared runner. A timeout
+  // here also leaks this test's render into the next one, so give it room.
   it('switches the app theme immediately and remembers the choice', async () => {
     const { AppearanceSettings, setThemeCalls } = await freshAppearanceSettings();
     render(<AppearanceSettings />);
@@ -53,7 +56,7 @@ describe('mobile AppearanceSettings', () => {
 
     expect(setThemeCalls).toContain('system');
     expect(secure.get('vjt.theme')).toBe('system');
-  });
+  }, 60_000);
 
   it('applies a story text size immediately and remembers it', async () => {
     const { AppearanceSettings } = await freshAppearanceSettings();
