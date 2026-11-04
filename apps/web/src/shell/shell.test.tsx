@@ -62,4 +62,53 @@ describe("app shell", () => {
     await waitFor(() => expect(currentLocation(router)).toBe("/grammar"));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
+
+  it("moves focus to the page and announces its title after a client-side navigation", async () => {
+    const user = userEvent.setup();
+    renderAppAt("/");
+    const main = await screen.findByRole("main");
+
+    // Not a navigation: the first render leaves focus where it was.
+    expect(document.activeElement).not.toBe(main);
+    expect(screen.getByRole("status").textContent).toBe("");
+
+    await user.click(screen.getByRole("link", { name: "Practice" }));
+
+    await waitFor(() => expect(document.activeElement).toBe(main));
+    expect(screen.getByRole("status").textContent).toBe("Practice · Virtual Japan Tutor");
+    expect(screen.getByRole("status").getAttribute("aria-live")).toBe("polite");
+  });
+
+  it("closes the mobile sheet when the viewport grows to the sidebar breakpoint", async () => {
+    const user = userEvent.setup();
+    const original = window.matchMedia;
+    const listeners: Array<() => void> = [];
+    let wide = false;
+    window.matchMedia = ((query: string) => ({
+      get matches() {
+        return query === "(min-width: 1024px)" && wide;
+      },
+      media: query,
+      addEventListener: (_type: string, listener: () => void) => listeners.push(listener),
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => false,
+      onchange: null,
+    })) as unknown as typeof window.matchMedia;
+
+    try {
+      renderAppAt("/");
+      await screen.findByRole("main");
+      await user.click(screen.getByRole("button", { name: "Open navigation" }));
+      await screen.findByRole("dialog", { name: "Navigation" });
+
+      wide = true;
+      for (const listener of listeners) listener();
+
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    } finally {
+      window.matchMedia = original;
+    }
+  });
 });

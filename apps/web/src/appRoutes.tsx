@@ -1,7 +1,7 @@
 // The route table (ui-plan 3). Every screen is a lazy module, so the first
 // load is the shell, the login page and whatever the Learner opens.
 import { useEffect } from "react";
-import { Link, Navigate, Outlet, useMatches, type RouteObject } from "react-router";
+import { Link, Navigate, Outlet, type RouteObject } from "react-router";
 
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/states";
@@ -9,13 +9,7 @@ import { SkeletonLines } from "./components/states.tsx";
 import { AppShell } from "./shell/AppShell.tsx";
 import { RequireSession } from "./routes/RequireSession.tsx";
 import { ComingSoon } from "./routes/ComingSoon.tsx";
-
-interface RouteHandle {
-  /** Page title; the document title becomes "<title> · Virtual Japan Tutor". */
-  title?: string;
-}
-
-const APP_NAME = "Virtual Japan Tutor";
+import { documentTitle, useRouteTitle, type RouteHandle } from "./routeTitle.ts";
 
 /** A not-yet-built destination: a lazy module that renders the placeholder. */
 function placeholder(title: string, issue: number) {
@@ -38,13 +32,9 @@ function RouteFallback() {
 
 /** Sets document.title from the deepest matched route that declares one. */
 function TitleSync() {
-  const matches = useMatches();
-  const title = matches
-    .map((match) => (match.handle as RouteHandle | undefined)?.title)
-    .filter((t): t is string => Boolean(t))
-    .at(-1);
+  const title = useRouteTitle();
   useEffect(() => {
-    document.title = title ? `${title} · ${APP_NAME}` : APP_NAME;
+    document.title = documentTitle(title);
   }, [title]);
   return <Outlet />;
 }
