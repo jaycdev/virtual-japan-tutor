@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 
 import { fakeBackHandler, type FakeBackHandler } from "../../test/back-handler-fake.ts";
+import { flushPressConfig } from "../../test/press-config.ts";
 import { setBackHandlerForTests } from "../useHardwareBack.ts";
 import { reduceHold, type Rect } from "@vjt/core";
 import { StoryReader } from "./StoryReader.tsx";
@@ -527,6 +528,7 @@ describe("Story reader layout and Story text size (issue #45)", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Rate up" }).getAttribute("aria-disabled")).not.toBe("true"),
     );
+    await flushPressConfig();
     fireEvent.click(screen.getByRole("button", { name: "Rate up" }));
     await waitFor(() =>
       expect(requests.find((r) => r.path === "/stories/st-1/rate")?.body).toBe("up"),
@@ -543,11 +545,13 @@ describe("Story reader layout and Story text size (issue #45)", () => {
     const next = screen.getByRole("button", { name: "Next story" });
     expect(screen.getByRole("button", { name: "Previous story" }).getAttribute("aria-disabled")).toBe("true");
 
+    await flushPressConfig();
     fireEvent.click(next);
     expect(await screen.findByText("Weekend in Kyoto")).toBeTruthy();
 
     const previous = screen.getByRole("button", { name: "Previous story" });
     expect(previous.getAttribute("aria-disabled")).not.toBe("true");
+    await flushPressConfig();
     fireEvent.click(previous);
     expect(await screen.findByText("A Day at School")).toBeTruthy();
   });

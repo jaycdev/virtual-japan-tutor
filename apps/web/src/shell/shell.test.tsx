@@ -41,7 +41,7 @@ describe("app shell", () => {
   it("names the Learner and offers Log out at the foot of the sidebar", async () => {
     renderAppAt("/");
     await screen.findByRole("main");
-    expect(screen.getByText("ada")).toBeTruthy();
+    expect(await screen.findByText("ada")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Log out" })).toBeTruthy();
   });
 

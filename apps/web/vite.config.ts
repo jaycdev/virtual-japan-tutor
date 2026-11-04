@@ -6,6 +6,7 @@ import type { Plugin, ProxyOptions } from "vite";
 import { defineConfig } from "vitest/config";
 
 import { themeBootstrapScript } from "./src/theme/bootstrap.ts";
+import { repoPath, retryReporter } from "./src/test/retryReporter.ts";
 import { API_PREFIXES } from "./api-prefixes.ts";
 
 // The Go server mounts the API at the root of its origin (api/openapi.yaml) and
@@ -42,6 +43,9 @@ function themeBootstrap(): Plugin {
   };
 }
 
+// CI sets GITHUB_WORKSPACE to the checkout root; locally the package directory stands in.
+const repoRoot = process.env.GITHUB_WORKSPACE ?? process.cwd();
+
 export default defineConfig({
   plugins: [react(), tailwindcss(), themeBootstrap()],
   resolve: {
@@ -71,5 +75,16 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
     include: ["src/**/*.test.{ts,tsx}"],
+    // A findBy/waitFor can wait up to 5 s (src/test/setup.ts); the test budget
+    // must outlast that or a timed-out wait cannot report its own error.
+    testTimeout: 15_000,
+    retry: process.env.CI ? 1 : 0,
+    reporters: process.env.CI
+      ? [
+          "default",
+          ["github-actions", { onWritePath: (file: string) => repoPath(repoRoot, file) }],
+          retryReporter({ root: repoRoot, githubActions: process.env.GITHUB_ACTIONS === "true" }),
+        ]
+      : ["default"],
   },
 });

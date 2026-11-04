@@ -2,6 +2,8 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 import { transformWithOxc } from "vite";
 
+import { repoPath, retryReporter } from "./test/retry-reporter.ts";
+
 // @rn-primitives/* ship raw JSX inside their .mjs ESM bundles (Metro transforms
 // node_modules with Babel, Node's ESM loader does not). Pull them through
 // vite's transform pipeline with the jsx loader instead of leaving them external.
@@ -17,6 +19,9 @@ const rnPrimitivesJsx = {
 // Screens are tested through react-native-web: vitest has no React Native host, so
 // `react-native` is aliased to its DOM implementation and the components render in
 // jsdom for @testing-library/react. The app code itself never imports react-native-web.
+// CI sets GITHUB_WORKSPACE to the checkout root; locally the package directory stands in.
+const repoRoot = process.env.GITHUB_WORKSPACE ?? process.cwd();
+
 export default defineConfig({
   plugins: [rnPrimitivesJsx],
   resolve: {
@@ -61,6 +66,17 @@ export default defineConfig({
     globals: true, // lets @testing-library/react register its automatic cleanup
     setupFiles: ["./vitest.setup.ts"],
     include: ["src/**/*.test.{ts,tsx}", "showcase/**/*.test.{ts,tsx}", "App.test.tsx"],
+    retry: process.env.CI ? 1 : 0,
+    reporters: process.env.CI
+      ? [
+          "default",
+          ["github-actions", { onWritePath: (file: string) => repoPath(repoRoot, file) }],
+          retryReporter({ root: repoRoot, githubActions: process.env.GITHUB_ACTIONS === "true" }),
+        ]
+      : ["default"],
+    // Cold imports of the expo-router / react-native-web graph take several
+    // seconds on a loaded runner; the default 5 s test timeout cuts them off.
+    testTimeout: 15_000,
     server: {
       deps: {
         // must go through vite so the raw-JSX .mjs files above get compiled,

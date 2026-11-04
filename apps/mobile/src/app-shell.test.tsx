@@ -11,6 +11,7 @@
 import { ExpoRoot } from "expo-router";
 import { expoRouterTestContext, type RouteModule } from "../test/expo-router-app-root.ts";
 import { fakeBackHandler } from "../test/back-handler-fake.ts";
+import { flushPressConfig } from "../test/press-config.ts";
 import * as layoutRoute from "../app/_layout.tsx";
 import * as indexRoute from "../app/index.tsx";
 import * as storiesRoute from "../app/stories.tsx";
@@ -483,6 +484,7 @@ describe("first-run setup (#50)", () => {
     await screen.findByText("The step could not be saved. Fix it and try again, or skip this step.");
     expect(screen.queryByLabelText("MaruMori API key")).toBeNull();
 
+    await flushPressConfig();
     await fireEvent.click(screen.getByRole("button", { name: "Skip this step" }));
     await screen.findByLabelText("MaruMori API key"); // step 2
     expect(
