@@ -15,7 +15,7 @@ export function parseStoryTextSize(value: string | null): StoryTextSize {
 
 /**
  * The px the Story text renders at, per size. This MUST mirror the
- * `--text-story-*` tokens in global.css (a test asserts it); JS needs the
+ * `--text-story-*` tokens in packages/design (a test asserts it); JS needs the
  * numbers because the text column's width and the Reading Panel's height are
  * multiples of the story text size (plan 4.1), which the stylesheet cannot
  * compute.
@@ -29,9 +29,9 @@ export const STORY_TEXT_SIZE_PX: Record<StoryTextSize, number> = {
 
 /**
  * Line height as a multiple of the text size, per size. This MUST mirror the
- * unitless `--line-height` values under the web story styles in global.css
- * (a test asserts it); JS needs the numbers because every Story token carries
- * its own Text style, and a style sheet cannot reach those spans on Android.
+ * unitless `--line-height` values in packages/design (a test asserts it); JS
+ * needs the numbers because every Story token carries its own Text style, and
+ * a style sheet cannot reach those spans on Android.
  */
 export const STORY_TEXT_LINE_HEIGHT_RATIO: Record<StoryTextSize, number> = {
   S: 2.0,

@@ -11,6 +11,7 @@
 !apps/app
 !packages/api-client
 !packages/core
+!packages/design
 
 # Local build/spike output never goes into the image; the web stage rebuilds everything.
 **/node_modules
