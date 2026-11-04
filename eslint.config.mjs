@@ -99,22 +99,21 @@ export default tseslint.config(
     rules: { "vjt/no-hardcoded-color": "error" },
   },
   {
-    // The Story reader (#45) sets type through the token scale - text-caption /
-    // -small / -body / -title-sm - or through the Learner's saved Story text
-    // size, never through a number in a style object.
-    files: ["apps/app/src/reader/**/*.tsx"],
+    // The font-size gate (#43, widened on #48 review): every screen in apps/app
+    // sets type through the token scale - text-caption / -small / -body /
+    // -title-sm - or through the Learner's saved Story text size, never through
+    // a number in a style object.
+    files: ["apps/app/src/**/*.tsx"],
     rules: { "vjt/no-inline-font-size": "error" },
   },
   {
     // Legacy JS-styled surface (see the note above): gate stays green today,
-    // shrinks as #45..#50 port screens onto the Uniwind tokens. Listed here:
-    // the token bridge itself. The Story reader (#45) now styles through the
-    // design tokens, so it is off this list.
-    files: [
-      "apps/app/src/theme.ts",
-      "apps/app/src/Stories.test.tsx",
-    ],
-    rules: { "vjt/no-hardcoded-color": "off" },
+    // shrinks as #45..#50 port screens onto the Uniwind tokens. ui.tsx is the
+    // shared surface those legacy screens use; it comes off with the last one
+    // in #51. The Story reader (#45) and the rebuilt Stories page (#48) style
+    // through the design tokens and are not listed.
+    files: ["apps/app/src/theme.ts", "apps/app/src/ui.tsx"],
+    rules: { "vjt/no-hardcoded-color": "off", "vjt/no-inline-font-size": "off" },
   },
   {
     // `_`-prefixed arguments/variables document a signature while staying

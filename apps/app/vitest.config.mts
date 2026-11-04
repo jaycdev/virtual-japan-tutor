@@ -52,6 +52,9 @@ export default defineConfig({
       // platform-extension mechanism.
       "@rn-primitives/popover": fileURLToPath(new URL("../../node_modules/@rn-primitives/popover/dist/popover.web.mjs", import.meta.url)),
       "@rn-primitives/dialog": fileURLToPath(new URL("../../node_modules/@rn-primitives/dialog/dist/dialog.web.mjs", import.meta.url)),
+      // #48: the Library card's menu and the Generate dialog's pickers are
+      // DropdownMenus, and jsdom follows Expo's platform choice — the web build.
+      "@rn-primitives/dropdown-menu": fileURLToPath(new URL("../../node_modules/@rn-primitives/dropdown-menu/dist/dropdown-menu.web.mjs", import.meta.url)),
     },
   },
   test: {
