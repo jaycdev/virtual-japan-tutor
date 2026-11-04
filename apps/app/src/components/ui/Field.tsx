@@ -1,4 +1,5 @@
 import { Text, TextInput, View } from "react-native";
+import { useCSSVariable } from "uniwind";
 
 /**
  * Labelled text input with the Settings/Login input shape (issue #50): the
@@ -33,6 +34,12 @@ export function Field({
   testID?: string;
   onFocus?: () => void;
 }) {
+  // Placeholders read as muted, not as entered text (review B3). RN takes a
+  // colour value, not a class, so the token is resolved through the same
+  // useCSSVariable route as the icons — 5.39:1 light / 6.78:1 dark against
+  // the field's background, and it follows the app's Uniwind theme rather
+  // than the OS colour scheme.
+  const placeholderColor = useCSSVariable("--color-muted-foreground") ?? undefined;
   return (
     <View className="gap-1.5">
       <Text className="text-small text-muted-foreground">{label}</Text>
@@ -46,6 +53,7 @@ export function Field({
         onFocus={onFocus}
         secureTextEntry={secure}
         placeholder={placeholder}
+        placeholderTextColor={placeholderColor}
         keyboardType={keyboardType}
         maxLength={maxLength}
         editable={!disabled}
