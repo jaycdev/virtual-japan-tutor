@@ -4,11 +4,19 @@
 /* eslint-disable vjt/no-hardcoded-color -- the probe inputs are colour literals on purpose */
 import { ESLint } from "eslint";
 import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 // vitest runs from the package directory (apps/web); the config lives at the repo root.
 const repoRoot = resolve(process.cwd(), "../..");
 const eslint = new ESLint({ cwd: repoRoot });
+
+// The first lintText on an ESLint instance resolves the root config and loads ESLint
+// and the matched plugins cold; on a shared runner that alone can pass 15 s. Absorb
+// it once here (hook timeout, so no case body pays for it) and every case below
+// keeps the normal test timeout.
+beforeAll(async () => {
+  await eslint.lintText("", { filePath: "apps/web/src/probe.tsx" });
+}, 60_000);
 
 async function ruleIds(filePath: string, code: string): Promise<string[]> {
   const [result] = await eslint.lintText(code, { filePath });
@@ -23,14 +31,9 @@ describe("vjt/no-hardcoded-color", () => {
     ["a template chunk next to a substitution", "const a = <p className={`p-2 ${x} text-[#abcdef]`} />;"],
     ["an rgb() literal in a style value", 'const a = <p style={{ color: "rgb(0, 0, 0)" }} />;'],
     ["an rgb() in a template", "const a = <p style={{ color: `rgba(0,0,0,.5)` }} />;"],
-  ])(
-    "flags %s in apps/web",
-    async (_label, code) => {
-      expect(await ruleIds("apps/web/src/probe.tsx", code)).toContain("vjt/no-hardcoded-color");
-    },
-    // The first lint pass loads the root ESLint config cold; on a shared runner that alone can pass 15 s.
-    60_000,
-  );
+  ])("flags %s in apps/web", async (_label, code) => {
+    expect(await ruleIds("apps/web/src/probe.tsx", code)).toContain("vjt/no-hardcoded-color");
+  });
 
   it("flags the same pattern in the phone app", async () => {
     expect(await ruleIds("apps/mobile/src/probe.tsx", "const a = <p className={`p-2 text-[#abc]`} />;")).toContain(
