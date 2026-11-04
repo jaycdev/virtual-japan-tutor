@@ -113,11 +113,13 @@ function jsonResponse(status: number, body: unknown): Response {
   });
 }
 
-function stubApi(options: { startingLevelConfigured?: boolean } = {}): ReturnType<typeof vi.fn> {
+function stubApi(options: { startingLevelConfigured?: boolean; failStartingLevelPut?: boolean } = {}): ReturnType<typeof vi.fn> {
   const levelConfigured = options.startingLevelConfigured ?? true;
   const fetchMock = vi.fn(async (input: unknown) => {
     const request = input instanceof Request ? input : new Request(String(input));
     const path = new URL(request.url).pathname;
+    if (path === "/starting-level" && request.method === "PUT" && options.failStartingLevelPut)
+      return jsonResponse(400, { error: { code: "invalid_level", message: "The level is not valid." } });
     // LoginResponse carries the User too (api/openapi.yaml) — a stub without
     // it leaves useAuth signed in without a user until the /me re-check lands.
     if (path === "/auth/login")
@@ -504,6 +506,31 @@ describe("first-run setup (#50)", () => {
     });
     expect(puts).toHaveLength(1);
     expect(await (puts[0][0] as Request).json()).toEqual({ level: "N4" });
+  });
+
+  it("a blocked note belongs to the step that failed and does not follow the skip", async () => {
+    // Found on the Android run: after a blocked Next, "Skip this step" carried
+    // the wizard's "could not be saved" note onto the next step, accusing it
+    // of a save that never happened.
+    freshDevice();
+    stubApi({ startingLevelConfigured: false, failStartingLevelPut: true });
+    renderApp("/");
+
+    await logIn();
+    await screen.findByRole("button", { name: "Save level" }); // step 1
+
+    await fireEvent.click(screen.getByRole("button", { name: "N4" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Next" }));
+
+    // Blocked: still on step 1, with the wizard's way-out note showing.
+    await screen.findByText("The step could not be saved. Fix it and try again, or skip this step.");
+    expect(screen.queryByLabelText("MaruMori API key")).toBeNull();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Skip this step" }));
+    await screen.findByLabelText("MaruMori API key"); // step 2
+    expect(
+      screen.queryByText("The step could not be saved. Fix it and try again, or skip this step."),
+    ).toBeNull();
   });
 
   it("a device that has seen setup never sees it again", async () => {

@@ -81,6 +81,14 @@ export function SetupWizard({
     }
   }, [step]);
 
+  // A blocked note belongs to the step that failed; leaving it behind when
+  // the Learner skips past that step would accuse the new step of a save it
+  // never attempted (seen on device).
+  const goToStep = (next: number) => {
+    setBlockedNote(undefined);
+    setStep(next);
+  };
+
   const advance = async () => {
     setBlockedNote(undefined);
     const save = stepSave.current;
@@ -140,7 +148,7 @@ export function SetupWizard({
         <LinkButton label="Skip setup" onPress={onFinish} disabled={busy} />
         <View className="flex-row items-center gap-3">
           {!last ? (
-            <LinkButton label="Skip this step" onPress={() => setStep(step + 1)} disabled={busy} />
+            <LinkButton label="Skip this step" onPress={() => goToStep(step + 1)} disabled={busy} />
           ) : null}
           <ActionButton
             filled
