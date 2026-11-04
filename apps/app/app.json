@@ -12,7 +12,8 @@
     ],
     "web": {
       "bundler": "metro",
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "themeColor": "#FAF7F0"
     },
     "android": {
       "package": "com.jaycdev.virtualjapantutor",

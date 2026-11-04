@@ -102,7 +102,7 @@ add or confirm an AI Provider, and choose your starting level. To add accounts l
 | `apps/server`         | Go server (std `net/http`, pgx, goose migrations)                       |
 | `apps/app`            | Expo + TypeScript (Android and web)                                     |
 | `packages/api-client` | `@vjt/api-client`: TS types + client generated from the spec            |
-| `packages/core`       | `@vjt/core`: UI-agnostic hooks/state shared by the web and Expo apps    |
+| `packages/core`       | `@vjt/core`: UI-agnostic hooks/state used across the app's screens       |
 
 ### Prerequisites
 

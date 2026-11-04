@@ -19,6 +19,9 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags=
 FROM --platform=$BUILDPLATFORM node:24-alpine AS web
 RUN corepack enable
 WORKDIR /src
+# expo export in a container: no interactive prompts, no telemetry.
+ENV CI=1 \
+    EXPO_NO_TELEMETRY=1
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc tsconfig.base.json ./
 COPY apps/app/package.json apps/app/
 COPY apps/server/package.json apps/server/

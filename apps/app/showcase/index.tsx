@@ -3,8 +3,8 @@
 // className is inert (verified on device).
 import "../global.css";
 
-// `src/theme/index.tsx` (the provider), NOT `src/theme.ts` (the legacy JS
-// colour bridge) - both names exist, so the path must be explicit here too.
+// The provider is `src/theme/index.tsx`; the legacy JS colour bridge that
+// used to sit at `src/theme.ts` was deleted in #51.
 import { ThemeProvider } from "@/src/theme/index.tsx";
 
 import { Showcase as ShowcaseScreen } from "./Showcase.tsx";
