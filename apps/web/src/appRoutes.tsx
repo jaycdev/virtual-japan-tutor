@@ -75,7 +75,7 @@ export const appRoutes: RouteObject[] = [
               { index: true, handle: { title: "Today" } satisfies RouteHandle, lazy: placeholder("Today", 79) },
               { path: "stories", handle: { title: "Stories" } satisfies RouteHandle, lazy: placeholder("Stories", 79) },
               { path: "stories/:storyId", handle: { title: "Story" } satisfies RouteHandle, lazy: placeholder("Story", 77) },
-              { path: "practice", handle: { title: "Practice" } satisfies RouteHandle, lazy: placeholder("Practice", 78) },
+              { path: "practice", handle: { title: "Practice" } satisfies RouteHandle, lazy: () => import("./routes/PracticePage.tsx") },
               {
                 path: "grammar",
                 handle: { title: "Grammar" } satisfies RouteHandle,

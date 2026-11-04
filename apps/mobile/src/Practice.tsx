@@ -1,5 +1,5 @@
 import type { ApiClient } from "@vjt/api-client";
-import { usePractice, type ExerciseView, type PracticeView } from "@vjt/core";
+import { displayPrompt, usePractice, type ExerciseView, type PracticeView } from "@vjt/core";
 import { useCallback, useEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View, type ViewInstance } from "react-native";
 
@@ -20,38 +20,9 @@ import { EmptyState, InlineError, ProgressBar, Skeleton } from "./state/states.t
 /** Widest the exercise card grows; past this the margins take over (plan 4.3). */
 const CARD_MAX_WIDTH = 560;
 
-/**
- * A deterministic session seed for a Story id (the reader footer's
- * /practice?story=<id> link). The API's PracticeSessionStart takes only an
- * integer seed, not a Story reference, so the client derives one from the id:
- * the same Story and Focus Set produce the same session, and retrying the
- * link never reshuffles it. Content seeding from the Story itself waits on
- * the API (see the issue #46 notes).
- *
- * Plainly said (PR note, backend issue #57): this hash is a stand-in until
- * the API accepts a storyId on POST /practice/sessions. When that lands,
- * delete this function and pass the Story id through — the footer link
- * already carries it. Until then, two Learners sharing a Story link get
- * "the same session shape" only because their Focus Sets, not the Story,
- * pick the exercises.
- */
-export function practiceSeedForStory(storyId: string): number {
-  let hash = 5381;
-  for (let i = 0; i < storyId.length; i += 1) hash = ((hash << 5) + hash + storyId.charCodeAt(i)) >>> 0;
-  return hash;
-}
-
-/**
- * Cloze prompts break mid-token at narrow widths, stranding "＿＿＿。" on a
- * line of its own (#46 review P3). U+2060 WORD JOINER is zero-width and
- * forbids a break where it sits: one glues the blank to its punctuation, the
- * other ties the token to the word before it.
- */
-export function displayPrompt(prompt: string): string {
-  return prompt
-    .replace(/([＿_]+)[\s\u2060]*([。、．.!?！？])/gu, "$1\u2060$2")
-    .replace(/(\s)([＿_])/gu, "$1\u2060$2");
-}
+// The pure helpers live in @vjt/core (shared with apps/web, #78). Re-exported
+// here so the existing imports and tests keep their path.
+export { displayPrompt, practiceSeedForStory } from "@vjt/core";
 
 export function Practice({
   client,
