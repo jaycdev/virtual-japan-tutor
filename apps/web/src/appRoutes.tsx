@@ -8,13 +8,7 @@ import { EmptyState } from "@/components/states";
 import { SkeletonLines } from "./components/states.tsx";
 import { AppShell } from "./shell/AppShell.tsx";
 import { RequireSession } from "./routes/RequireSession.tsx";
-import { ComingSoon } from "./routes/ComingSoon.tsx";
 import { documentTitle, useRouteTitle, type RouteHandle } from "./routeTitle.ts";
-
-/** A not-yet-built destination: a lazy module that renders the placeholder. */
-function placeholder(title: string, issue: number) {
-  return async () => ({ Component: () => <ComingSoon title={title} issue={issue} /> });
-}
 
 /**
  * Shown while a lazy route module loads for the first time (React Router asks for
