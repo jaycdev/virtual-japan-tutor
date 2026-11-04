@@ -61,9 +61,6 @@ describe("Grammar point detail", () => {
       const path = url.pathname;
       gets.push(`${request.method} ${path}`);
 
-      if (path === "/grammar/points") {
-        return jsonResponse({ items: [], total: 0, limit: 50, offset: 0 });
-      }
       const match = /^\/grammar\/points\/(\d+)$/.exec(path);
       if (!match) return jsonResponse({ message: `stub: unexpected GET ${path}` }, 500);
       if (Number(match[1]) !== DETAIL.id) return jsonResponse({ message: "no such grammar point" }, 404);
@@ -91,6 +88,13 @@ describe("Grammar point detail", () => {
     expect(screen.getByText("#12")).toBeTruthy();
     expect(screen.getByText("end up doing something")).toBeTruthy();
     expect(screen.getByText("Also written 〜ちまう")).toBeTruthy();
+  });
+
+  it("reads only its own point — no catalogue page rides along (#49 review S4)", async () => {
+    renderPoint(DETAIL.id);
+    await waitFor(() => expect(screen.getByRole("heading", { name: "〜てしまう" })).toBeTruthy());
+    expect(gets.filter((call) => call === "GET /grammar/points")).toHaveLength(0);
+    expect(gets.filter((call) => call === `GET /grammar/points/${DETAIL.id}`)).toHaveLength(1);
   });
 
   it("reads the explanation as prose and bullets, not raw markdown", async () => {

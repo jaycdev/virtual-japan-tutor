@@ -1,6 +1,6 @@
 import type { ApiClient, GrammarExample, GrammarPointDetail } from "@vjt/api-client";
-import { useGrammar } from "@vjt/core";
-import { useEffect, type ReactNode } from "react";
+import { useGrammarPoint } from "@vjt/core";
+import { type ReactNode } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { CONTENT_MAX_WIDTH } from "./chrome/Shell.tsx";
@@ -17,6 +17,8 @@ import { InlineError, SkeletonBar } from "./state/states.tsx";
  * explanation and validates examples synchronously inside GET
  * /grammar/points/{id} (apps/server grammar.go), so while that request is in
  * flight the page says so and holds a skeleton shaped like the settled page.
+ * The screen reads its one point through useGrammarPoint (#49 review S4) —
+ * no catalogue page rides along with a detail view.
  *
  * This is the viewing experience the plan describes. The old web detail's
  * editing controls (save/regenerate the explanation, generate examples) stay
@@ -36,12 +38,7 @@ export function GrammarPoint({
   /** Returns to the catalogue (the router route passes router.back). */
   onBack: () => void;
 }) {
-  const grammar = useGrammar(client);
-  const { detail, open } = grammar;
-
-  useEffect(() => {
-    if (pointId !== undefined) open(pointId);
-  }, [pointId, open]);
+  const { state, reload } = useGrammarPoint(client, pointId);
 
   return (
     <ScrollView className="flex-1" accessibilityLabel="Grammar point" contentContainerStyle={styles.page}>
@@ -54,15 +51,15 @@ export function GrammarPoint({
           <Text accessibilityRole="alert" role="alert" className="text-body text-destructive">
             This is not a grammar point from the catalogue.
           </Text>
-        ) : detail.status === "loading" || detail.status === "idle" ? (
+        ) : state.status === "loading" || state.status === "idle" ? (
           <GeneratingBody />
-        ) : detail.status === "error" ? (
+        ) : state.status === "error" ? (
           <InlineError
-            message={`Cannot load this grammar point: ${detail.message}`}
-            onRetry={() => open(pointId)}
+            message={`Cannot load this grammar point: ${state.message}`}
+            onRetry={reload}
           />
         ) : (
-          <ReadyBody point={detail.point} />
+          <ReadyBody point={state.point} />
         )}
       </View>
     </ScrollView>
