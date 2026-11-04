@@ -33,7 +33,9 @@ const noHardcodedColor = {
       Literal: (node) => {
         if (typeof node.value === "string") check(node, node.value);
       },
-      TemplateElement: (node) => check(node, node.raw),
+      // The text of a template chunk is node.value.raw (ESTree); node.raw is undefined
+      // and silently disabled this handler before. Covers className={`… text-[#abc]`}.
+      TemplateElement: (node) => check(node, node.value.raw),
     };
   },
 };
@@ -55,8 +57,10 @@ const noInlineFontSize = {
   create(context) {
     // A literal size: a number (React Native) or a string that starts with a digit
     // ("16px", "1.25rem", the DOM form). A var(--…) or a keyword is not a literal.
-    const isLiteralSize = (node) =>
-      node.type === "Literal" && (typeof node.value === "number" || (typeof node.value === "string" && /^\s*\d/.test(node.value)));
+    const isLiteralSize = (node) => {
+      if (node.type === "TemplateLiteral") return /^\s*\d/.test(node.quasis[0]?.value.raw ?? "");
+      return node.type === "Literal" && (typeof node.value === "number" || (typeof node.value === "string" && /^\s*\d/.test(node.value)));
+    };
     return {
       Property(node) {
         const key = node.key;
