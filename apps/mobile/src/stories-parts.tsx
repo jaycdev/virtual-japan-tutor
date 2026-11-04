@@ -1,5 +1,6 @@
 import type { Story, StoryGenerationProgress, StorySuggestions } from "@vjt/api-client";
 import type { StoryGenerationState, StoryLibraryState } from "@vjt/core";
+import { genreLabel, originLabel, stageLabel, storyDate } from "@vjt/core";
 import * as DialogPrimitives from "@rn-primitives/dialog";
 import * as DropdownMenuPrimitive from "@rn-primitives/dropdown-menu";
 import { useState, type ReactNode } from "react";
@@ -20,53 +21,9 @@ import { EmptyState, InlineError, ProgressBar, SkeletonBar } from "./state/state
  * edges), never colour or font size.
  */
 
-/** Story Origin in Learner's words. */
-export function originLabel(story: Story): string {
-  return story.origin === "on_demand" ? "On demand" : "Automatic";
-}
-
-/** The api-client's genre ids in Learner's words; an unknown id shows as-is. */
-export function genreLabel(genre: string | null | undefined): string {
-  switch (genre) {
-    case "diary":
-      return "Diary";
-    case "travel":
-      return "Travel";
-    case "mystery":
-      return "Mystery";
-    case null:
-    case undefined:
-      return "";
-    default:
-      return genre;
-  }
-}
-
-/** The card's date, short and unambiguous: "Nov 1, 2026". */
-export function storyDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
-}
-
-/**
- * The Learner-facing stage of a generation run, in the pinned card's progress
- * and in the Generate dialog (the same words Today shows).
- */
-export function stageLabel(progress: StoryGenerationProgress): string {
-  switch (progress.stage) {
-    case "preparing":
-      return "Preparing…";
-    case "writing":
-      return progress.attempt != null && progress.maxAttempts != null
-        ? `Writing… attempt ${progress.attempt} of ${progress.maxAttempts}`
-        : "Writing…";
-    case "checking":
-      return "Checking it fits your vocabulary…";
-    case "saving":
-      return "Saving…";
-    default:
-      return "Writing…";
-  }
-}
+// The Story words moved to @vjt/core (issue #79); re-exported here so the
+// screens that import them from this file keep working.
+export { genreLabel, originLabel, stageLabel, storyDate };
 
 /**
  * The page's action control: 44 px tall and 8 px of radius like every other

@@ -1,5 +1,12 @@
 import type { ApiClient, GenerateStoryRequest, Story } from "@vjt/api-client";
-import { useStory, useStoryGeneration, type StoryGenerationState, type TodaysStoryState } from "@vjt/core";
+import {
+  storyCardMeta,
+  todayCardPhase,
+  useStory,
+  useStoryGeneration,
+  type StoryGenerationState,
+  type TodaysStoryState,
+} from "@vjt/core";
 import { useEffect, useRef, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 
@@ -12,14 +19,11 @@ import {
   FilterChip,
   GenerateDialog,
   GenerationProgress,
-  genreLabel,
   LibrarySkeleton,
   LibraryStates,
-  originLabel,
   Picker,
   StoryCard,
   StoryMenu,
-  storyDate,
 } from "./stories-parts.tsx";
 
 /**
@@ -320,7 +324,8 @@ export function Stories({ client, onOpenStory, generationPollMs }: StoriesProps)
 /**
  * The pinned Today card (issue #48): the newest Automatic Story, or the state
  * that explains why there isn't one — with the progress of a live run and a way
- * to read the Story an On-demand run just wrote.
+ * to read the Story an On-demand run just wrote. Which state shows is the shared
+ * cascade in @vjt/core (todayCardPhase, #71).
  */
 function TodayCard({
   today,
@@ -341,16 +346,15 @@ function TodayCard({
   onOpenReady: () => void;
   onOpenGenerate: () => void;
 }) {
-  const running = generation.status === "running" ? generation.progress : undefined;
+  const phase = todayCardPhase(today, generation);
   // The finished run's Story is worth opening even before the reload lands it
   // in the page; once Today shows it, the card's own Open button is the same
   // action, and the offer is gone for good once it is opened.
-  const justWritten =
-    readyStoryId !== null && (today.status !== "story" || today.story.id !== readyStoryId);
+  const justWritten = readyStoryId !== null && (phase.kind !== "story" || phase.story.id !== readyStoryId);
 
   return (
     <Card testID="today-card" pinned>
-      {today.status === "loading" ? (
+      {phase.kind === "loading" ? (
         // Shaped like the settled card: a title bar, a meta line, the button
         // block (plan §5) — so nothing jumps when the story lands.
         <View className="gap-3">
@@ -358,23 +362,23 @@ function TodayCard({
           <SkeletonBar width="45%" height={14} />
           <SkeletonBar width={96} height={44} />
         </View>
-      ) : today.status === "story" ? (
+      ) : phase.kind === "story" ? (
         <View className="gap-3">
           <Text className="text-title font-semibold text-foreground" testID="today-story-title">
-            {today.story.title}
+            {phase.story.title}
           </Text>
 
           <Text className="text-small text-muted-foreground" testID="today-story-meta">
-            {`${genreLabel(today.story.genre) || "Story"} · ${originLabel(today.story)} · ${storyDate(today.story.createdAt)}`}
+            {storyCardMeta(phase.story)}
           </Text>
           <ActionButton
-            label={today.story.readAt ? "Read again" : "Open"}
-            accessibilityLabel={today.story.readAt ? "Read today's story again" : "Open today's story"}
-            onPress={() => onOpenStory(today.story.id)}
+            label={phase.story.readAt ? "Read again" : "Open"}
+            accessibilityLabel={phase.story.readAt ? "Read today's story again" : "Open today's story"}
+            onPress={() => onOpenStory(phase.story.id)}
             filled
             testID="today-open"
           />
-          {running ? <GenerationProgress progress={running} /> : null}
+          {phase.running ? <GenerationProgress progress={phase.running} /> : null}
           {justWritten ? (
             <ActionButton
               label="Ready, read now"
@@ -384,19 +388,22 @@ function TodayCard({
             />
           ) : null}
         </View>
-      ) : running ? (
+      ) : phase.kind === "running" ? (
         <View className="gap-3">
           <Text className="text-body text-muted-foreground">A new Story is on its way.</Text>
-          <GenerationProgress progress={running} />
+          <GenerationProgress progress={phase.progress} />
         </View>
-      ) : today.status === "error" ? (
-        <TodayCardError today={today} onReloadToday={onReloadToday} />
-      ) : generation.status === "failed" ? (
+      ) : phase.kind === "error" ? (
+        <View className="gap-3">
+          <Text className="text-body text-destructive">{`Cannot load today’s Story: ${phase.message}`}</Text>
+          <ActionButton label="Check again" onPress={onReloadToday} testID="today-check-again" />
+        </View>
+      ) : phase.kind === "failed" ? (
         // The run failed rather than the read: the line is the server's own
         // words, and the way to try again is the Generate dialog.
         <View className="gap-3">
           <Text accessibilityRole="alert" role="alert" className="text-body text-destructive">
-            {generation.progress.message ?? "Couldn’t write a Story for you."}
+            {phase.message}
           </Text>
           <ActionButton label="Try again" onPress={onOpenGenerate} testID="today-retry" />
         </View>
@@ -414,22 +421,6 @@ function TodayCard({
         </View>
       )}
     </Card>
-  );
-}
-
-/** Today's read failing: the same failure words as the Library's, one Retry. */
-function TodayCardError({
-  today,
-  onReloadToday,
-}: {
-  today: Extract<TodaysStoryState, { status: "error" }>;
-  onReloadToday: () => void;
-}) {
-  return (
-    <View className="gap-3">
-      <Text className="text-body text-destructive">{`Cannot load today’s Story: ${today.message}`}</Text>
-      <ActionButton label="Check again" onPress={onReloadToday} testID="today-check-again" />
-    </View>
   );
 }
 

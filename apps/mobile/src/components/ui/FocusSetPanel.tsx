@@ -1,6 +1,13 @@
-import type { ApiClient, FocusSetItem } from "@vjt/api-client";
-import type { FocusSetView } from "@vjt/core";
-import { useEffect, useMemo, useState } from "react";
+import type { ApiClient } from "@vjt/api-client";
+import {
+  createFocusLabelResolver,
+  focusChipKey,
+  focusChipLabel,
+  useFocusChipLabels,
+  type FocusLabelResolver,
+  type FocusSetView,
+} from "@vjt/core";
+import { useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 
 import { EmptyState, InlineError, SkeletonBar } from "../../state/states.tsx";
@@ -9,7 +16,7 @@ import { EmptyState, InlineError, SkeletonBar } from "../../state/states.tsx";
  * The Focus Set panel: one list with the states and "show all" behaviour the
  * Today glance needs (plan 4.4 item 4). Practice shows its own copy of the
  * set today; when Practice is rebuilt it should render this component rather
- * than duplicating the list.
+ * than duplicating the list. The chip labels are @vjt/core's (issue #79).
  */
 
 /**
@@ -18,130 +25,6 @@ import { EmptyState, InlineError, SkeletonBar } from "../../state/states.tsx";
  */
 export const FOCUS_CHIPS_MAX = 8;
 
-/**
- * The Focus Set in their own words (plan 4.3, P7): the API's `kind` reads as
- * the exercise type - "Grammar point", not "Grammar".
- */
-export function focusKindWord(kind: FocusSetItem["kind"]): string {
-  return kind === "grammar"
-    ? "Grammar point"
-    : kind === "vocabulary"
-      ? "Word"
-      : kind.charAt(0).toUpperCase() + kind.slice(1);
-}
-
-/**
- * A Focus Set item as a chip label before its lookup resolves. The kanji
- * literal is already the label; for vocabulary and grammar `itemRef` is only
- * an id - a JMdict ent_seq or a Grammar Catalogue point id - so it stands in
- * until (issue #47 review B1) the lookup below supplies the real word or
- * pattern, and remains on screen only if that lookup fails.
- */
-export function focusChipLabel(item: FocusSetItem): string {
-  return item.kind === "kanji" ? item.itemRef : `${focusKindWord(item.kind)} ${item.itemRef}`;
-}
-
-/**
- * A chip cache key. itemRefs are unique per kind (an ent_seq and a grammar
- * point id can be the same digits), so the kind is part of the key.
- */
-function chipKey(item: FocusSetItem): string {
-  return `${item.kind}:${item.itemRef}`;
-}
-
-/**
- * Label resolution for one vocabulary/grammar chip, and null when the item
- * has no readable label to fetch.
- */
-export type FocusChipLabel = string | null;
-
-export type FocusLabelResolver = (item: FocusSetItem) => Promise<FocusChipLabel>;
-
-/**
- * The labels for shown chips come from the two catalogues Today already talks
- * to (issue #47 review B1): GET /dictionary/entries/{entSeq} for vocabulary
- * (headword plus reading, the same form the Lookup window shows) and
- * GET /grammar/points/{id} for grammar (the teaching pattern, e.g. 〜てしまう).
- * Kanji chips need no lookup: their itemRef is the literal.
- */
-export function createFocusLabelResolver(client: ApiClient): FocusLabelResolver {
-  return async (item) => {
-    if (item.kind === "vocabulary") {
-      const res = await client.GET("/dictionary/entries/{entSeq}", {
-        params: { path: { entSeq: item.itemRef } },
-      });
-      const entry = res.data;
-      if (!entry || !entry.found || !entry.headword) return null;
-      return entry.reading && entry.reading !== entry.headword
-        ? `${entry.headword} (${entry.reading})`
-        : entry.headword;
-    }
-    if (item.kind === "grammar") {
-      const res = await client.GET("/grammar/points/{id}", {
-        params: { path: { id: item.itemRef } },
-      });
-      return res.data?.pattern || null;
-    }
-    return null;
-  };
-}
-
-/**
- * Resolved labels for the Focus Set chips, cached per ApiClient. The cache
- * lives outside React (a WeakMap on the client, which the App rebakes once per
- * session) so "See all" never refetches the first eight chips and a Sync
- * refresh reuses the words it already knows. A failed lookup caches null and
- * stays the fallback - Retry on the focus set itself is what would try again.
- * Callers pass a memoised resolver, so the lookup effect starts once per
- * client and item set.
- */
-const labelCaches = new WeakMap<ApiClient, Map<string, Promise<FocusChipLabel>>>();
-
-function labelPromise(
-  cache: Map<string, Promise<FocusChipLabel>>,
-  resolve: FocusLabelResolver,
-  item: FocusSetItem,
-): Promise<FocusChipLabel> {
-  const key = chipKey(item);
-  let promise = cache.get(key);
-  if (!promise) {
-    // The cached promise never rejects: a failed lookup settles to null so
-    // the chip can fall back to its id instead of poisoning the cache.
-    promise = Promise.resolve()
-      .then(() => resolve(item))
-      .catch(() => null);
-    cache.set(key, promise);
-  }
-  return promise;
-}
-
-export function useFocusChipLabels(
-  client: ApiClient,
-  items: FocusSetItem[],
-  resolve: FocusLabelResolver,
-): Record<string, FocusChipLabel | undefined> {
-  const [labels, setLabels] = useState<Record<string, FocusChipLabel>>({});
-  useEffect(() => {
-    let cache = labelCaches.get(client);
-    if (!cache) {
-      cache = new Map();
-      labelCaches.set(client, cache);
-    }
-    const lookup = cache;
-    let live = true;
-    for (const item of items) {
-      if (item.kind === "kanji") continue;
-      const key = chipKey(item);
-      void labelPromise(lookup, resolve, item).then((label) => {
-        if (live) setLabels((prev) => ({ ...prev, [key]: label }));
-      });
-    }
-    return () => {
-      live = false;
-    };
-  }, [client, items, resolve]);
-  return labels;
-}
 
 export function FocusSetPanel({
   focus,
@@ -220,11 +103,11 @@ export function FocusSetPanel({
       ) : (
         <View className="flex-row flex-wrap gap-2">
           {shown.map((item, index) => {
-            const label = labels[chipKey(item)];
+            const label = labels[focusChipKey(item)];
             const lookingUp = item.kind !== "kanji" && label === undefined;
             return (
               <View
-                key={chipKey(item)}
+                key={focusChipKey(item)}
                 // Past the announced cap the chips stay on screen but out of the
                 // screen reader's way (P8); a hidden subtree also drops its
                 // descendants, so this keeps them readable.
