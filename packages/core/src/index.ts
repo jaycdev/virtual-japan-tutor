@@ -45,6 +45,8 @@ export type {
   StartingLevelHook,
   StartingLevelState,
 } from "./useOnboarding.ts";
+export { decideLandingSetup, hasSetupSeen, markSetupSeen, SETUP_SEEN_KEY } from "./firstRun.ts";
+export type { KeyValueStore, LandingSetupDecision } from "./firstRun.ts";
 export { memoryTokenStorage } from "./tokenStorage.ts";
 export type { TokenStorage } from "./tokenStorage.ts";
 export { deviceTimezone, TIMEZONE_OPTIONS } from "./timezones.ts";
