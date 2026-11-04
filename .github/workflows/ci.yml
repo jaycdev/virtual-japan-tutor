@@ -81,15 +81,31 @@ jobs:
   images:
     name: Docker images build
     runs-on: ubuntu-latest
+    env:
+      # The web stage pins FROM --platform=$BUILDPLATFORM, which needs BuildKit.
+      DOCKER_BUILDKIT: "1"
     steps:
       - uses: actions/checkout@v7.0.1
       # Builds both Dockerfile targets without pushing (publishing happens in publish.yml on main).
-      # TEMPORARY (#75 -> #82): the server target's web stage is a placeholder page until apps/web
-      # replaces it, so this only checks that the placeholder is in the image.
-      - name: Build server image (API + placeholder web page)
+      - name: Build server image (API + web app)
         run: docker build --target server -f apps/server/Dockerfile -t vjt-server:ci .
       - name: Build import image
         run: docker build --target import -f apps/server/Dockerfile -t vjt-import:ci .
-      - name: Server image serves the web page
+      # The web stage must have baked the real Vite build: index.html with hashed
+      # /assets/ references (not the old placeholder text), and every asset it
+      # references actually in the image.
+      - name: Server image carries the built web app
         run: |
-          docker run --rm --entrypoint sh vjt-server:ci -c 'test -f /usr/share/vjt/web/index.html'
+          docker run --rm --entrypoint sh vjt-server:ci -c '
+          set -eu
+          cd /usr/share/vjt/web
+          test -f index.html
+          if grep -q "being rebuilt" index.html; then
+            echo "index.html is still the placeholder page (#82)"
+            exit 1
+          fi
+          grep -q "/assets/" index.html
+          for f in $(grep -o "/assets/[^\" ]*" index.html | sort -u); do
+            test -f ".$f" || { echo "index.html references $f, which is not in the image"; exit 1; }
+          done
+          '

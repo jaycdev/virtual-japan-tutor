@@ -13,13 +13,30 @@ RUN go mod download
 COPY apps/server/ ./
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/ ./cmd/server ./cmd/import
 
-# TEMPORARY (#75 -> #82): the web app is being rebuilt as apps/web (#76), and apps/mobile is
-# phone-only with no web export. Until #82 wires apps/web in here, the server image serves a
-# placeholder page so the image still builds and serves / next to the API. Replace this stage
-# with the apps/web build when #82 lands.
-FROM alpine:3.22 AS web
-RUN mkdir -p /out/web \
- && echo '<!doctype html><meta charset="utf-8"><title>Virtual Japan Tutor</title><p>The web app is being rebuilt, see #73.</p>' > /out/web/index.html
+# The web app (ADR-0010): apps/web, a Vite + React SPA. The build runs once on the build
+# platform (--platform=$BUILDPLATFORM) — dist/ is static files, so every target architecture's
+# final stage just COPYs it; the Go stage above is the only per-architecture work. Node matches
+# CI/mise (mise.toml). Workspace manifests come before the sources so pnpm install is reused
+# until dependencies change. apps/mobile is deliberately absent: pnpm --frozen-lockfile accepts
+# lockfile importers that are not in the workspace, and the web build never touches it.
+# Generated code is committed, so the build runs no generators.
+FROM --platform=$BUILDPLATFORM node:24.21.0-alpine AS web
+WORKDIR /src
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json turbo.json tsconfig.base.json .npmrc ./
+COPY apps/web/package.json apps/web/
+COPY apps/server/package.json apps/server/
+COPY packages/api-client/package.json packages/api-client/
+COPY packages/core/package.json packages/core/
+COPY packages/design/package.json packages/design/
+RUN corepack enable && pnpm install --frozen-lockfile
+COPY packages/api-client packages/api-client
+COPY packages/core packages/core
+COPY packages/design packages/design
+COPY apps/web apps/web
+# The `...` suffix also runs the build scripts of the workspace deps (@vjt/design,
+# @vjt/api-client, @vjt/core) first, in topological order.
+RUN pnpm --filter @vjt/web... build
+RUN mkdir -p /out && cp -r apps/web/dist /out/web
 
 # Reference data import: JMdict, KANJIDIC2, JLPT lists, Kanjium and the Grammar Catalogue.
 # Downloads land in a cache directory meant to be a named volume (no bind mounts).
