@@ -1235,19 +1235,19 @@ func TestAutomaticGenrePreferenceShare(t *testing.T) {
 	// steered PickGenre; a random preset genre covers the case where the
 	// ratings have nothing to offer; and with no preference set at all the
 	// old behaviour is untouched.
-	if got := automaticGenre("mystery", nil, nil, 0.0); got != "mystery" {
+	if got := automaticGenre("mystery", nil, "", 0.0); got != "mystery" {
 		t.Fatalf("roll 0 with a preference = %q, want the preference", got)
 	}
-	if got := automaticGenre("mystery", nil, nil, PreferredShare-0.01); got != "mystery" {
+	if got := automaticGenre("mystery", nil, "", PreferredShare-0.01); got != "mystery" {
 		t.Fatalf("roll just under the share = %q, want the preference", got)
 	}
 	up := RatingUp
 	ratings := map[string]map[Rating]int{"travel": {up: 2}}
-	if got := automaticGenre("mystery", ratings, nil, PreferredShare); got != "travel" {
+	if got := automaticGenre("mystery", ratings, "", PreferredShare); got != "travel" {
 		t.Fatalf("variety roll with ratings = %q, want the rating-steered pick", got)
 	}
 	for i := 0; i < 20; i++ {
-		got := automaticGenre("romance", nil, nil, 0.95)
+		got := automaticGenre("romance", nil, "", 0.95)
 		if got == "romance" {
 			t.Fatalf("variety roll fell back to the preference itself (iteration %d)", i)
 		}
@@ -1255,10 +1255,15 @@ func TestAutomaticGenrePreferenceShare(t *testing.T) {
 			t.Fatalf("variety roll fallback = %q, want one of the preset genres", got)
 		}
 	}
-	if got := automaticGenre("", ratings, nil, 0.0); got != "travel" {
-		t.Fatalf("no preference, roll 0 = %q, want the rating-steered pick (today's behaviour)", got)
+	for i := 0; i < 20; i++ {
+		if got := automaticGenre("travel", nil, "food", 0.95); got == "travel" || got == "food" {
+			t.Fatalf("variety roll repeated the preference or the latest genre: %q", got)
+		}
 	}
-	if got := automaticGenre("", nil, nil, 0.0); got != "" {
+	if got := automaticGenre("", ratings, "", 0.0); got != "travel" {
+		t.Fatalf("no preference, roll 0 = %q, want the rating-steered pick", got)
+	}
+	if got := automaticGenre("", nil, "", 0.0); got != "" {
 		t.Fatalf("no preference and no ratings = %q, want surprise-me", got)
 	}
 }
@@ -1323,7 +1328,12 @@ func TestEnsureAutomaticStoryVarietyRollLeavesThemeToTheModel(t *testing.T) {
 	svc, store, _, _ := newTestService(t, provider)
 	svc.roll = func() float64 { return 0.95 } // always the variety branch
 	up := RatingUp
-	if err := store.Save(ctx, &Story{UserID: user, Genre: "travel", Validated: true, Origin: OriginOnDemand, Rating: &up}); err != nil {
+	// The upvoted travel story is older than the newest one (food), so travel
+	// is not the latest genre and the rating still steers the variety roll.
+	if err := store.Save(ctx, &Story{UserID: user, Genre: "travel", Validated: true, Origin: OriginOnDemand, Rating: &up, CreatedAt: time.Now().Add(-48 * time.Hour)}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if err := store.Save(ctx, &Story{UserID: user, Genre: "food", Validated: true, Origin: OriginOnDemand, CreatedAt: time.Now().Add(-time.Hour)}); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	if err := store.SetStoryPrefs(ctx, user, "mystery", "robots running a ramen shop", ""); err != nil {
