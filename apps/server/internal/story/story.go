@@ -211,10 +211,10 @@ type Sentence struct {
 // Known Items. Reading is the surface's kana reading (furigana material);
 // Dictionary is the dictionary form; EntSeq links linked vocabulary.
 //
-// Only content words are looked up, so non-content tokens (particles,
-// auxiliaries, inflection endings) carry no ent_seq link: the coverage gate
-// counts Known Items over content words only. Widening those links is part
-// of the #11 reading experience (tappable words), not of generation.
+// Every token except particles, auxiliaries and symbols carries an ent_seq
+// link (see isLinkable), so the reader can look any word up. Particles stay
+// unlinked on purpose. content alone says what the coverage gate counts (see
+// isContent); the link and the gate are separate decisions.
 type Token struct {
 	Pos        int
 	Surface    string

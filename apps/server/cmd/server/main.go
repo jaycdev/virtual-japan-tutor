@@ -44,7 +44,7 @@ func main() {
 	}
 }
 
-// run serves the API, or runs a subcommand (`create-user`).
+// run serves the API, or runs a subcommand (`create-user`, `relink-stories`).
 func run(args []string) error {
 	cfg, err := config.Load(os.Getenv)
 	if err != nil {
@@ -61,10 +61,14 @@ func run(args []string) error {
 	defer stop()
 
 	if len(args) > 0 {
-		if args[0] != "create-user" {
-			return fmt.Errorf("unknown command %q (available: create-user)", args[0])
+		switch args[0] {
+		case "create-user":
+			return createUserCmd(ctx, cfg, args[1:])
+		case "relink-stories":
+			return relinkStoriesCmd(ctx, cfg, args[1:])
+		default:
+			return fmt.Errorf("unknown command %q (available: create-user, relink-stories)", args[0])
 		}
-		return createUserCmd(ctx, cfg, args[1:])
 	}
 
 	pool, err := db.Open(ctx, cfg.DatabaseURL)
@@ -212,6 +216,17 @@ func prepareDatabase(ctx context.Context, cfg config.Config, svc *auth.Service, 
 		} else {
 			slog.Info("default AI provider skipped: needs exactly one user who has no providers yet")
 		}
+	}
+
+	// Give stored Stories their dictionary links (issue #94) once per database.
+	// A failure is logged, not fatal: the API keeps serving and the next start retries.
+	rep, ran, err := relinkOnce(ctx, pool)
+	switch {
+	case err != nil && ctx.Err() == nil:
+		slog.Error("relink of stored stories failed; it retries on the next start", "err", err)
+	case err == nil && ran:
+		slog.Info("relinked stored stories", "stories", rep.Stories, "stories_changed", rep.StoriesChanged,
+			"tokens_linked", rep.TokensLinked, "sentences_skipped", rep.SentencesSkipped, "failed", rep.Failed)
 	}
 }
 
