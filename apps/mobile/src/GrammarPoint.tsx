@@ -3,6 +3,7 @@ import { useGrammarPoint } from "@vjt/core";
 import { type ReactNode } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
+import { useJapaneseFont } from "./japaneseFont/index.tsx";
 import { Card } from "./components/ui/Card.tsx";
 import { Icon } from "./components/ui/icon.tsx";
 import { EmptyState, InlineError, SkeletonBar } from "./state/states.tsx";
@@ -119,6 +120,7 @@ function GeneratingBody() {
 }
 
 function ReadyBody({ point, onReloadExplanation }: { point: GrammarPointDetail; onReloadExplanation: () => void }) {
+  const jp = useJapaneseFont();
   return (
     <>
       <View className="gap-2">
@@ -126,10 +128,10 @@ function ReadyBody({ point, onReloadExplanation }: { point: GrammarPointDetail; 
           <Text
             role="heading"
             accessibilityRole="header"
-            // font-serif-bold, not font-serif + font-semibold: font-serif is
-            // the 400 face; the old weight class only
-            // faked bold (#49 review S6). Same token face richLine uses.
-            className="text-title font-serif-bold font-semibold text-foreground"
+            // Bold Japanese face, not the regular face + font-semibold: the
+            // weight class only faked bold (#49 review S6). Same token face
+            // richLine uses.
+            className={`text-title ${jp.bold} font-semibold text-foreground`}
           >
             {point.pattern}
           </Text>
@@ -194,6 +196,7 @@ function ReadyBody({ point, onReloadExplanation }: { point: GrammarPointDetail; 
  * showed it in an editable textarea, which no Learner should have to read.
  */
 export function ExplanationBody({ text }: { text: string }) {
+  const jp = useJapaneseFont();
   const paragraphs = text
     .split(/\n{2,}/)
     .map((paragraph) => paragraph.trim())
@@ -204,8 +207,8 @@ export function ExplanationBody({ text }: { text: string }) {
         const lines = paragraph.split("\n");
         if (lines.length === 1 && !paragraph.startsWith("- ")) {
           return (
-            <Text key={i} className="font-serif text-body text-foreground">
-              {richLine(paragraph)}
+            <Text key={i} className={`${jp.regular} text-body text-foreground`}>
+              {richLine(paragraph, jp.bold)}
             </Text>
           );
         }
@@ -218,9 +221,9 @@ export function ExplanationBody({ text }: { text: string }) {
                 // the text instead of under the dot (#49 review N1). Non-bullet
                 // lines keep the empty column so the block stays aligned.
                 <View key={j} className="flex-row">
-                  <Text className="w-4 font-serif text-body text-foreground">{bullet ? "•" : ""}</Text>
-                  <Text className="flex-1 font-serif text-body text-foreground">
-                    {bullet ? richLine(line.slice(2)) : richLine(line)}
+                  <Text className={`w-4 ${jp.regular} text-body text-foreground`}>{bullet ? "•" : ""}</Text>
+                  <Text className={`flex-1 ${jp.regular} text-body text-foreground`}>
+                    {bullet ? richLine(line.slice(2), jp.bold) : richLine(line, jp.bold)}
                   </Text>
                 </View>
               );
@@ -233,10 +236,10 @@ export function ExplanationBody({ text }: { text: string }) {
 }
 
 /** **bold** spans inside one line, as nested Text runs. */
-function richLine(line: string): (string | ReactNode)[] {
+function richLine(line: string, boldClass: string): (string | ReactNode)[] {
   return line.split(/\*\*/g).map((part, i) =>
     i % 2 === 1 ? (
-      <Text key={i} className="font-serif-bold font-semibold">
+      <Text key={i} className={`${boldClass} font-semibold`}>
         {part}
       </Text>
     ) : (
@@ -251,10 +254,11 @@ function richLine(line: string): (string | ReactNode)[] {
  * it.
  */
 function ExampleRow({ example }: { example: GrammarExample }) {
+  const jp = useJapaneseFont();
   const chars = Array.from(example.sentenceJa);
   return (
     <View className="gap-1">
-      <Text className="font-serif text-body text-foreground">
+      <Text className={`${jp.regular} text-body text-foreground`}>
         {chars.slice(0, example.spanStart).join("")}
         <Text className="underline">
           {chars.slice(example.spanStart, example.spanEnd).join("")}

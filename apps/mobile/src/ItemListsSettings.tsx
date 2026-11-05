@@ -11,6 +11,7 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { Text, View } from "react-native";
 
+import { useJapaneseFont } from "./japaneseFont/index.tsx";
 import { useHardwareBack } from "./useHardwareBack.ts";
 import { Card } from "./components/ui/Card.tsx";
 import { Chip, ChipRow } from "./components/ui/Chip.tsx";
@@ -169,6 +170,7 @@ function ItemListDetail({
   onBackToLists: () => void;
 }) {
   const { listItems } = lists;
+  const jp = useJapaneseFont();
   const [members, setMembers] = useState<MembersState | null>(null);
   const [error, setError] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
@@ -246,7 +248,7 @@ function ItemListDetail({
 
   return (
     <View className="gap-4">
-      <Text accessibilityRole="header" className="text-title-sm font-serif text-foreground">
+      <Text accessibilityRole="header" className={`text-title-sm ${jp.regular} text-foreground`}>
         {list.name}
       </Text>
       <LinkButton label="Close Item Lists" onPress={onBackToLists} />

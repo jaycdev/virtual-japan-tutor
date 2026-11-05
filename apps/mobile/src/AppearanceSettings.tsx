@@ -2,6 +2,7 @@ import { Text, View } from "react-native";
 
 import { Card } from "./components/ui/Card.tsx";
 import { Chip, ChipRow } from "./components/ui/Chip.tsx";
+import { useJapaneseFont, type JapaneseFont } from "./japaneseFont/index.tsx";
 import { useStoryTextSize, type StoryTextSize } from "./storysize/index.tsx";
 import { useTheme, type ThemePreference } from "./theme/index.tsx";
 
@@ -12,6 +13,11 @@ const THEME_CHOICES: { value: ThemePreference; label: string }[] = [
 ];
 
 const SIZE_CHOICES: StoryTextSize[] = ["S", "M", "L", "XL"];
+
+const JAPANESE_FONT_CHOICES: { value: JapaneseFont; label: string }[] = [
+  { value: "serif", label: "Serif" },
+  { value: "sans", label: "Sans" },
+];
 
 /**
  * The live sample is rendered at the chosen size with the very classes the
@@ -34,6 +40,7 @@ const SAMPLE_SIZE_CLASS: Record<StoryTextSize, string> = {
 export function AppearanceSettings() {
   const theme = useTheme();
   const storyText = useStoryTextSize();
+  const japanese = useJapaneseFont();
 
   return (
     <View className="gap-4">
@@ -69,9 +76,26 @@ export function AppearanceSettings() {
           ))}
         </ChipRow>
       </Card>
+      <Text className="text-small font-semibold uppercase text-muted-foreground">Japanese font</Text>
+      <Card>
+        <ChipRow>
+          {JAPANESE_FONT_CHOICES.map(({ value, label }) => (
+            <Chip
+              key={value}
+              label={label}
+              selected={japanese.font === value}
+              onPress={() => japanese.setFont(value)}
+            />
+          ))}
+        </ChipRow>
+      </Card>
+      <Text className="text-small text-muted-foreground">
+        Sans is plainer, with simpler strokes. Saved on this device only.
+      </Text>
+
       {/* A live sample at the chosen size, so picking a size shows its size:
           the story-* classes are the exact ones the reader renders with. */}
-      <Text className={`${SAMPLE_SIZE_CLASS[storyText.size]} font-serif text-foreground`}>
+      <Text className={`${SAMPLE_SIZE_CLASS[storyText.size]} ${japanese.regular} text-foreground`}>
         がっこうで べんきょうしました。
       </Text>
     </View>

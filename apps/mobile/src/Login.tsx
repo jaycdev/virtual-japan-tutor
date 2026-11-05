@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useJapaneseFont } from "./japaneseFont/index.tsx";
 import { ServerField } from "./ServerField.tsx";
 
 export interface LoginProps {
@@ -17,6 +18,7 @@ export interface LoginProps {
 }
 
 export function Login({ busy, error, serverUrl, onLogin, onSaveServerUrl }: LoginProps) {
+  const jp = useJapaneseFont();
   const insets = useSafeAreaInsets();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -40,7 +42,7 @@ export function Login({ busy, error, serverUrl, onLogin, onSaveServerUrl }: Logi
     >
       <View className="w-full max-w-[380px] gap-6 rounded-2xl bg-card p-6 shadow-md">
         <View className="items-center gap-1">
-          <Text className="text-display font-serif text-primary" allowFontScaling={false}>
+          <Text className={`text-display ${jp.regular} text-primary`} allowFontScaling={false}>
             読
           </Text>
           <Text className="text-title-sm font-semibold text-foreground">Virtual Japan Tutor</Text>

@@ -3,6 +3,7 @@ import { displayPrompt, usePractice, type ExerciseView, type PracticeView } from
 import { useCallback, useEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View, type ViewInstance } from "react-native";
 
+import { useJapaneseFont } from "./japaneseFont/index.tsx";
 import { Icon } from "./components/ui/icon.tsx";
 import { Card as UiCard } from "./components/ui/Card.tsx";
 import { EmptyState, InlineError, ProgressBar, Skeleton } from "./state/states.tsx";
@@ -219,6 +220,7 @@ function ActivePractice({
   onRetry: () => void;
   onAnswer: (exerciseId: string, optionId: string) => void;
 }) {
+  const jp = useJapaneseFont();
   const answeredCount = practice.exercises.filter((ex) => ex.answered).length;
   const skipped = practice.session?.skipped ?? 0;
   const feedback = current.feedback;
@@ -252,7 +254,7 @@ function ActivePractice({
       />
       <Card>
         <Text className="text-small text-muted-foreground">{current.instruction}</Text>
-        <Text className="text-display text-foreground font-serif">{displayPrompt(current.prompt)}</Text>
+        <Text className={`text-display text-foreground ${jp.regular}`}>{displayPrompt(current.prompt)}</Text>
         {feedback ? (
           <View
             // The verdict appears on its own: a polite live region announces

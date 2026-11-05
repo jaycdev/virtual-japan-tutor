@@ -18,6 +18,7 @@ import {
 
 import type { ApiClient } from "@vjt/api-client";
 
+import { useJapaneseFont } from "./japaneseFont/index.tsx";
 import { Card } from "./components/ui/Card.tsx";
 import { LinkButton } from "./components/ui/LinkButton.tsx";
 import { ActionButton } from "./stories-parts.tsx";
@@ -40,6 +41,7 @@ export function SetupWizard({
   client: ApiClient;
   onFinish: () => void;
 }) {
+  const jp = useJapaneseFont();
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
   const [blockedNote, setBlockedNote] = useState<string | undefined>();
@@ -103,7 +105,7 @@ export function SetupWizard({
     <View className="flex-1">
       <ScrollView className="flex-1" contentContainerStyle={{ padding: 16 }}>
         <Card>
-          <Text className="text-title font-serif text-foreground">Welcome to Virtual Japan Tutor</Text>
+          <Text className={`text-title ${jp.regular} text-foreground`}>Welcome to Virtual Japan Tutor</Text>
           <Text className="text-body text-muted-foreground">
             Three short steps to set you up — you can skip any of them and change
             everything later under Settings.
