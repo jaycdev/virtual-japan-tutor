@@ -45,7 +45,13 @@ export function expoConfig(env: BuildEnv): ExpoConfig {
       },
       predictiveBackGestureEnabled: false,
     },
-    plugins: ["expo-font", "expo-router", "./plugins/withReleaseSigning.js"],
+    plugins: [
+      "expo-font",
+      "expo-router",
+      "./plugins/withReleaseSigning.js",
+      // Trust the CAs the user installs, so self-hosters can use a self-signed or private certificate (ADR-0013).
+      "./plugins/withNetworkSecurityConfig.js",
+    ],
   };
 }
 

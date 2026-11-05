@@ -23,6 +23,12 @@ describe("expoConfig", () => {
     expect(config.android?.versionCode).toBe(1020399);
   });
 
+  it("registers the plugins that sign the release and trust user CAs", () => {
+    expect(expoConfig({}).plugins).toEqual(
+      expect.arrayContaining(["./plugins/withReleaseSigning.js", "./plugins/withNetworkSecurityConfig.js"]),
+    );
+  });
+
   it("rejects an unknown variant", () => {
     expect(() => expoConfig({ APP_VARIANT: "beta" })).toThrow(/APP_VARIANT/);
   });

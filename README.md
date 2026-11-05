@@ -86,9 +86,11 @@ open it on the phone and allow installing from that source. Optional: follow new
 - **Dev** (`virtual-japan-tutor-dev.apk`, on the rolling `dev` pre-release): a separate app, "VJT Dev", built from
   `main` on every push. It installs next to the release app and has its own data. Pair it with `VJT_VERSION=dev`.
 
-The app asks for your server address on first launch and can change it in Settings. Release builds only connect over
-HTTPS, so put the server behind a reverse proxy with a certificate before using the app away from your LAN (see
-[Keeping it safe and up to date](#keeping-it-safe-and-up-to-date)). To build the app from source instead, see
+The app asks for your server address on first launch and can change it in Settings. The app connects over HTTPS only.
+Use a certificate from a public CA, or a self-signed or private CA of your own: install that CA's certificate on the
+phone (Settings › Security & privacy › More security settings › Encryption & credentials › Install a certificate › CA
+certificate), and the app will trust it, as browsers do. Anyone who can install a CA on your phone can read the app's
+traffic, so only install CAs you control. See [ADR-0013](docs/adr/0013-trust-user-installed-certificates.md). To build the app from source instead, see
 [Development](#development) and [ADR-0012](docs/adr/0012-android-apk-built-in-github-actions.md).
 
 ### 5. Set up your account
