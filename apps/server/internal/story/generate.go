@@ -86,9 +86,10 @@ func isContent(t tokenizer.Token) bool {
 // is what makes it hoverable: the reader opens a Lookup in the Reading Panel
 // only for a linked token. Every token is linkable except particles (助詞),
 // auxiliaries (助動詞), symbols (記号) and tokens with no part of speech. A
-// Lookup on those shows nothing useful, and particles stay un-hoverable on
-// purpose. isContent implies isLinkable, so the coverage gate never counts a
-// token that cannot be linked.
+// Lookup on those shows nothing useful. A particle is hoverable without a link:
+// the store attaches a Grammar Catalogue hint to it on load (see GrammarHint,
+// issue #98), which keeps the dictionary out of particles. isContent implies
+// isLinkable, so the coverage gate never counts a token that cannot be linked.
 func isLinkable(t tokenizer.Token) bool {
 	switch posCategory(t) {
 	case "", "助詞", "助動詞", "記号":

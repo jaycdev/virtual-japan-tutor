@@ -1,6 +1,7 @@
 import type { ApiClient, Story, WeakSignalRequest } from "@vjt/api-client";
 import {
   coveringSpan,
+  grammarCue,
   holdSignal,
   menuOptions,
   saveableItem,
@@ -241,8 +242,9 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
     const tok = tokenAt(panelRef);
     if (!tok) return null;
     const span = spanAt(panelRef);
-    if (span === null && tok.entSeq === undefined) return null;
-    return { ...panelRef, kind: span ? "grammar" : "token" };
+    if (grammarCue(tok, span) === null && tok.entSeq === undefined) return null;
+    // A particle with only a hint has no entry, so its Lookup is the grammar one.
+    return { ...panelRef, kind: span || tok.entSeq === undefined ? "grammar" : "token" };
   })();
 
   const menuItems = (() => {

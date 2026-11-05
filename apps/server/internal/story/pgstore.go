@@ -212,19 +212,44 @@ func (st *PostgresStore) loadChildren(ctx context.Context, s *Story) error {
 		senByID[s.Sentences[i].ID] = &s.Sentences[i]
 	}
 
+	// The Grammar hint (issue #98) is read from the catalogue on every load,
+	// never stored: only an unlinked token whose surface is exactly a point's
+	// pattern gets one, at the lowest level that has it.
 	trows, err := st.pool.Query(ctx, `
-		SELECT sentence_id, position, surface, start, "end", reading, dictionary, ent_seq, tag, srs_level
-		FROM story_tokens WHERE story_id = $1 ORDER BY sentence_id, position`, s.ID)
+		SELECT t.sentence_id, t.position, t.surface, t.start, t."end", t.reading, t.dictionary,
+		       t.ent_seq, t.tag, t.srs_level,
+		       h.id, h.pattern, h.meaning, h.jlpt_level
+		FROM story_tokens t
+		LEFT JOIN LATERAL (
+		    SELECT g.id, g.pattern, g.meaning, g.jlpt_level
+		    FROM grammar_points g
+		    WHERE t.ent_seq IS NULL AND g.pattern = t.surface
+		    ORDER BY array_position(ARRAY['N5', 'N4', 'N3', 'N2', 'N1'], g.jlpt_level),
+		             g.catalogue_number, g.ordinal
+		    LIMIT 1
+		) h ON true
+		WHERE t.story_id = $1 ORDER BY t.sentence_id, t.position`, s.ID)
 	if err != nil {
 		return fmt.Errorf("story tokens: %w", err)
 	}
 	for trows.Next() {
 		var senID uuid.UUID
 		var t Token
+		var hintID *int64
+		var hintPattern, hintMeaning, hintLevel *string
 		if err := trows.Scan(&senID, &t.Pos, &t.Surface, &t.Start, &t.End,
-			&t.Reading, &t.Dictionary, &t.EntSeq, &t.Tag, &t.SRSLevel); err != nil {
+			&t.Reading, &t.Dictionary, &t.EntSeq, &t.Tag, &t.SRSLevel,
+			&hintID, &hintPattern, &hintMeaning, &hintLevel); err != nil {
 			trows.Close()
 			return fmt.Errorf("story tokens: %w", err)
+		}
+		if hintID != nil && hintable(t.Surface) {
+			t.Hint = &GrammarHint{
+				GrammarPointID: *hintID,
+				Pattern:        *hintPattern,
+				Meaning:        *hintMeaning,
+				JLPTLevel:      *hintLevel,
+			}
 		}
 		if sen, ok := senByID[senID]; ok {
 			sen.Tokens = append(sen.Tokens, t)

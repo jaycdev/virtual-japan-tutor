@@ -555,6 +555,14 @@ func storyView(st *story.Story, threshold int) api.Story {
 			if t.SRSLevel != nil {
 				tok.SrsLevel = t.SRSLevel
 			}
+			if h := t.Hint; h != nil {
+				tok.GrammarHint = &api.StoryTokenGrammarHint{
+					GrammarPointId: strconv.FormatInt(h.GrammarPointID, 10),
+					Pattern:        h.Pattern,
+					Meaning:        h.Meaning,
+					JlptLevel:      jlptLevel(h.JLPTLevel),
+				}
+			}
 			tokens = append(tokens, tok)
 		}
 		spans := make([]api.StoryGrammarSpan, 0, len(sen.Spans))
