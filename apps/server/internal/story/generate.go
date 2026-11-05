@@ -14,6 +14,7 @@ import (
 	"github.com/ikawaha/kagome/v2/tokenizer"
 
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/llm"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/refdata"
 )
 
 // The morphological tokeniser is kagome (github.com/ikawaha/kagome): pure Go,
@@ -622,6 +623,15 @@ func (g *Generator) gate(s *Story, settings Settings, focus FocusSet) []string {
 					"grammar span [%d,%d) %q in sentence %d (%q) opens at the content word %s, which is not part of the pattern, and was discarded; a span must cover the pattern's own characters only, never the verb or adjective stem before it (for 食べてしまった with pattern てしまった the span covers てしまった)",
 					sp.Start, sp.End, txt, sen.Pos, sen.JA, surf))
 			}
+			// Every span must realise the point it cites, wherever it opens:
+			// the stem rule above only covers spans opening at a content
+			// word, so a span over a particle was kept whatever it cited.
+			if pattern := focus.grammarPattern(sp.GrammarPointID); !miscut && !spanExpressesPattern(txt, pattern) {
+				miscut = true
+				discarded = append(discarded, fmt.Sprintf(
+					"grammar span [%d,%d) %q in sentence %d (%q) does not express point %d (%q), which it cites, and was discarded; a span must cover the characters of the pattern it cites",
+					sp.Start, sp.End, txt, sen.Pos, sen.JA, sp.GrammarPointID, pattern))
+			}
 			if miscut {
 				continue
 			}
@@ -802,6 +812,71 @@ func spanStartsLikePattern(span, pattern string) bool {
 		common++
 	}
 	return common >= min(2, len(p))
+}
+
+// spanExpressesPattern reports whether a Grammar Span's text realises the
+// pattern of the point it cites. A span matches a variant of the pattern (split
+// on ・ and /, normalised as the catalogue normalises them) when:
+//   - one contains the other (に in について, ことがある in ～ことがある);
+//   - it starts the way the variant starts (いたしました for いたします); or
+//   - the variant's dictionary forms appear in order in the span's
+//     (てしまいました for てしまう), the rule internal/grammar uses.
+//
+// An empty pattern gives nothing to judge, so the span is kept. Live, the model
+// put spans over と and について citing がり and あまり (issue #98 follow-up);
+// this is the check that discards them.
+func spanExpressesPattern(span, pattern string) bool {
+	if strings.TrimSpace(pattern) == "" {
+		return true
+	}
+	s := refdata.NormalisePattern(span)
+	if s == "" {
+		return false
+	}
+	spanSeq := baseForms(s)
+	for _, v := range refdata.SplitVariants(pattern) {
+		nv := refdata.NormalisePattern(v)
+		if nv == "" {
+			continue
+		}
+		if strings.Contains(s, nv) || strings.Contains(nv, s) || spanStartsLikePattern(s, nv) {
+			return true
+		}
+		if seq := baseForms(nv); len(seq) > 0 && isSubseq(seq, spanSeq) {
+			return true
+		}
+	}
+	return false
+}
+
+// baseForms is the dictionary-form sequence of a text, the surface standing in
+// where kagome has no base form. A text kagome cannot tokenise has none.
+func baseForms(text string) []string {
+	toks, err := tokenise(text)
+	if err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(toks))
+	for _, t := range toks {
+		if base, ok := t.BaseForm(); ok && base != "" && base != "*" {
+			out = append(out, base)
+		} else {
+			out = append(out, t.Surface)
+		}
+	}
+	return out
+}
+
+// isSubseq reports whether needle appears in hay in order, not necessarily
+// contiguously.
+func isSubseq(needle, hay []string) bool {
+	i := 0
+	for _, h := range hay {
+		if i < len(needle) && needle[i] == h {
+			i++
+		}
+	}
+	return i == len(needle)
 }
 
 // grammarPattern is the catalogue text of a suggested grammar point.

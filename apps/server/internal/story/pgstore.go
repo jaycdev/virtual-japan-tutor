@@ -277,9 +277,18 @@ func (st *PostgresStore) loadChildren(ctx context.Context, s *Story) error {
 			srows.Close()
 			return fmt.Errorf("story spans: %w", err)
 		}
-		if sen, ok := senByID[senID]; ok {
-			sen.Spans = append(sen.Spans, sp)
+		sen, ok := senByID[senID]
+		if !ok {
+			continue
 		}
+		// A Story stored before the gate checked every span can hold one
+		// citing the wrong point (live: について citing あまり). It is dropped on
+		// load rather than deleted, so it is never shown, never a Lookup and
+		// never written as a Practice Record, and the rows stay as they were.
+		if !spanExpressesPattern(runeSlice(sen.JA, sp.Start, sp.End), sp.Pattern) {
+			continue
+		}
+		sen.Spans = append(sen.Spans, sp)
 	}
 	srows.Close()
 	if err := srows.Err(); err != nil {
