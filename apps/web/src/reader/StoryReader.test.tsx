@@ -305,6 +305,40 @@ describe("Story reader: Lookup", () => {
     await waitFor(() => expect(screen.queryByTestId("panel-lookup")).toBeNull());
   });
 
+  it("a particle with a Grammar Catalogue hint shows its point on hover, with no menu and no Weak Signal (issue #98)", async () => {
+    const story = makeStory({
+      sentences: [
+        {
+          ja: "は",
+          en: "topic",
+          tokens: [
+            {
+              surface: "は",
+              start: 0,
+              end: 1,
+              reading: "は",
+              tag: "unknown",
+              showFurigana: false,
+              grammarHint: { grammarPointId: "7", pattern: "は", meaning: "topic marker", jlptLevel: "N5" },
+            },
+          ],
+          grammarSpans: [],
+        },
+      ],
+      vocabItems: [],
+    });
+    const { container, requests } = await renderReader({ story });
+    const particle = token(container, 0, 0);
+    expect(particle.tabIndex).toBe(0); // the hint makes it reachable
+    fireEvent.mouseEnter(particle);
+    const lookup = await screen.findByTestId("panel-lookup");
+    expect(within(lookup).getByText("topic marker")).toBeTruthy();
+    fireEvent.click(particle);
+    expect(screen.queryByRole("button", { name: "Dictionary" })).toBeNull(); // no Lookup Menu
+    expect(particle.getAttribute("aria-expanded")).toBe("false");
+    expect(requestsTo(requests, "/weak-signals", "POST")).toHaveLength(0);
+  });
+
   it("focusing a word (keyboard) shows the same Lookup and selects its sentence", async () => {
     const { container } = await renderReader();
     fireEvent.focus(token(container, 0, 0));

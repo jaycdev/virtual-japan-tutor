@@ -1,5 +1,5 @@
 import type { Story } from "@vjt/api-client";
-import { countGlosses, coveringSpan, firstGlosses, type EntryLookup } from "@vjt/core";
+import { countGlosses, coveringSpan, firstGlosses, grammarCue, type EntryLookup } from "@vjt/core";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -127,13 +127,13 @@ function LookupBody({ story, target, lookup }: { story: Story; target: LookTarge
   if (!sentence || !token) return null;
 
   if (target.kind === "grammar") {
-    const span = coveringSpan(sentence, token);
-    if (!span) return null;
+    const cue = grammarCue(token, coveringSpan(sentence, token));
+    if (!cue) return null;
     return (
       <div data-testid="panel-lookup" className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <p className="text-body font-semibold text-pitch">{span.pattern}</p>
-        <p className="text-small text-foreground">{span.meaning}</p>
-        <div className="ml-auto">{span.jlptLevel ? <JlptBadge level={span.jlptLevel} /> : null}</div>
+        <p className="text-body font-semibold text-pitch">{cue.pattern}</p>
+        <p className="text-small text-foreground">{cue.meaning}</p>
+        <div className="ml-auto">{cue.jlptLevel ? <JlptBadge level={cue.jlptLevel} /> : null}</div>
       </div>
     );
   }

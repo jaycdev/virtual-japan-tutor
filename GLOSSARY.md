@@ -138,7 +138,7 @@ The area fixed above a Story while reading. It shows the Sentence Translation of
 _Avoid_: Info box, sidebar, tooltip, gloss
 
 **Lookup**:
-Briefly showing a word or Grammar Span's details in the Reading Panel, by hovering over it on web or pressing and holding it on mobile. A word shows its meaning, forms and JLPT Level, and a Grammar Span shows its Grammar Point and what it does.
+Briefly showing a word or Grammar Span's details in the Reading Panel, by hovering over it on web or pressing and holding it on mobile. A word shows its meaning, forms and JLPT Level, and a Grammar Span shows its Grammar Point and what it does. A particle (は, の, に, …) with a Grammar Catalogue point shows that point, with no menu (see [ADR 0011](docs/adr/0011-particles-look-up-the-grammar-catalogue.md)).
 _Avoid_: Gloss tap, hover
 
 **Grammar Span**:

@@ -4,9 +4,11 @@ import type { StoryGrammarSpan, StorySentence, StoryToken } from "@vjt/api-clien
 
 import {
   coveringSpan,
+  grammarCue,
   holdSignal,
   IDLE,
   menuOptions,
+  opensLookupMenu,
   optionAt,
   reduceHold,
   saveableItem,
@@ -181,6 +183,41 @@ describe("coveringSpan", () => {
     expect(coveringSpan(sentence, token({ start: 3, end: 5 }))).not.toBeNull();
     expect(coveringSpan(sentence, token({ start: 0, end: 2 }))).toBeNull(); // touching, not overlapping
     expect(coveringSpan(sentence, token({ start: 4, end: 7 }))).toBeNull();
+  });
+});
+
+describe("grammarCue and opensLookupMenu (issue #98 particles)", () => {
+  const hint: NonNullable<StoryToken["grammarHint"]> = {
+    grammarPointId: "7",
+    pattern: "は",
+    meaning: "topic marker",
+    jlptLevel: "N5",
+  };
+  const particle = token({ surface: "は", entSeq: undefined, grammarHint: hint });
+  const sentence = {
+    ja: "x",
+    en: "x",
+    tokens: [],
+    grammarSpans: [span({ start: 0, end: 2 })],
+  } as StorySentence;
+
+  it("cues a particle by its hint, with no span", () => {
+    expect(grammarCue(particle, null)).toEqual(hint);
+  });
+
+  it("prefers a covering Grammar Span over a hint", () => {
+    const covering = coveringSpan(sentence, particle);
+    expect(grammarCue(particle, covering)).toBe(covering);
+  });
+
+  it("cues nothing for an unlinked word with no hint and no span", () => {
+    expect(grammarCue(token({ entSeq: undefined }), null)).toBeNull();
+  });
+
+  it("opens the Lookup Menu for a linked word or a span, never for a hint alone", () => {
+    expect(opensLookupMenu(token(), null)).toBe(true);
+    expect(opensLookupMenu(particle, span())).toBe(true);
+    expect(opensLookupMenu(particle, null)).toBe(false);
   });
 });
 

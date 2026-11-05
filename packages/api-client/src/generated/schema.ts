@@ -1433,8 +1433,19 @@ export interface components {
             tag: "known" | "unknown";
             /** @description MaruMori SRS Level for known linked items (drives furigana). */
             srsLevel?: number;
+            grammarHint?: components["schemas"]["StoryTokenGrammarHint"];
             /** @description Whether to render the reading above the surface. True only when the surface actually contains kanji AND the token is unknown, or a Known Item below the Learner's Furigana Threshold; kana-only surfaces never show ruby (their reading is the surface). */
             showFurigana: boolean;
+        };
+        /** @description Set on an unlinked token whose surface is exactly a Grammar Point's pattern, such as は or の (a particle; issue #98). It names the catalogue point the word expresses, at its lowest JLPT Level, so the reader's Lookup can show it. It is not a dictionary link: the token has no entSeq, so it is never underlined, never a Weak Signal and never saveable. */
+        StoryTokenGrammarHint: {
+            /** @description The grammar_points catalogue id. */
+            grammarPointId: string;
+            /** @description The Grammar Point's pattern as catalogued. */
+            pattern: string;
+            /** @description The Grammar Point's one-line meaning. */
+            meaning: string;
+            jlptLevel: components["schemas"]["GrammarJLPTLevel"];
         };
         StoryQuestion: {
             position: number;

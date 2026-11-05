@@ -215,6 +215,10 @@ type Sentence struct {
 // link (see isLinkable), so the reader can look any word up. Particles stay
 // unlinked on purpose. content alone says what the coverage gate counts (see
 // isContent); the link and the gate are separate decisions.
+//
+// A particle the Grammar Catalogue has a point for carries Hint instead of a
+// link (issue #98): the reader's Lookup shows the point, while the word gets
+// no underline, Weak Signal or Save, because none of those is keyed on Hint.
 type Token struct {
 	Pos        int
 	Surface    string
@@ -225,6 +229,10 @@ type Token struct {
 	EntSeq     *int64
 	Tag        string
 	SRSLevel   *int
+
+	// Hint is read-time enrichment from grammar_points (see GrammarHint), set
+	// by the store when a Story loads. Never stored on the token.
+	Hint *GrammarHint
 
 	// content marks the morphemes the coverage gate counts (nouns, verbs,
 	// adjectives, adverbs; see isContent). Set during materialisation,
@@ -259,6 +267,19 @@ type Span struct {
 	Pattern   string
 	Meaning   string
 	JLPTLevel string
+}
+
+// GrammarHint names the Grammar Point an unlinked token expresses when its
+// surface is exactly that point's pattern (issue #98): the particles は, が,
+// を, に, の, で, と, も, か, ね and よ. It is computed when a Story loads, from
+// the Grammar Catalogue as it stands, so it needs no relink and an edited
+// catalogue shows up at once. A pattern with rows at several levels resolves to
+// the lowest level (N5 first), then catalogue order.
+type GrammarHint struct {
+	GrammarPointID int64
+	Pattern        string
+	Meaning        string
+	JLPTLevel      string
 }
 
 // Question is one comprehension question. AnswerIndex is server-side only:

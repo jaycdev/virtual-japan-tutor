@@ -134,8 +134,9 @@ function Word({
   const ref: TokenRef = { sentence: sentenceIndex, index };
   const inGrammarSpan = spansCovering(token, sentence.grammarSpans).length > 0;
   // A word opens a Lookup only when there is something behind it: a Dictionary
-  // Entry, or the Grammar Span it sits in.
-  const interactive = token.entSeq !== undefined || inGrammarSpan;
+  // Entry, the Grammar Span it sits in, or a particle's Grammar Catalogue hint
+  // (issue #98).
+  const interactive = token.entSeq !== undefined || inGrammarSpan || token.grammarHint !== undefined;
   const marks = tokenMarks(token, sentence.grammarSpans, focusEntSeqs);
   const ruby = showsFurigana(token);
 
