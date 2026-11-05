@@ -1631,6 +1631,12 @@ components:
         database:
           type: string
           enum: [connected, unreachable]
+        version:
+          type: string
+          description: >-
+            Build version of the server: a release such as 1.2.3 (or 1.2.3-rc.1), dev+<short commit> for
+            builds of main, and unknown for local builds. Optional so older servers still validate.
+          example: "1.2.3"
     MaruMoriKeyRequest:
       type: object
       required: [apiKey]

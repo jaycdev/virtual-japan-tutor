@@ -11,7 +11,11 @@ WORKDIR /src
 COPY apps/server/go.mod apps/server/go.sum ./
 RUN go mod download
 COPY apps/server/ ./
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/ ./cmd/server ./cmd/import
+# VERSION is reported by GET /health (internal/buildinfo). publish.yml sets it; local builds say "unknown".
+ARG VERSION=unknown
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
+    -ldflags="-s -w -X github.com/jaycdev/virtual-japan-tutor/apps/server/internal/buildinfo.Version=${VERSION}" \
+    -o /out/ ./cmd/server ./cmd/import
 
 # The web app (ADR-0010): apps/web, a Vite + React SPA. The build runs once on the build
 # platform (--platform=$BUILDPLATFORM) — dist/ is static files, so every target architecture's

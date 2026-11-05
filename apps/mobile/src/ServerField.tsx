@@ -9,6 +9,7 @@ import { useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 
 import { normalizeServerUrl } from "./config.ts";
+import { VersionInfo } from "./VersionInfo.tsx";
 
 export function ServerField({
   serverUrl,
@@ -44,6 +45,8 @@ export function ServerField({
     return (
       <View className="gap-1">
         <Text className="text-caption text-muted-foreground">Server: {serverUrl}</Text>
+        {/* Keyed by address so a changed server is checked again. */}
+        <VersionInfo key={serverUrl} serverUrl={serverUrl} />
         <Pressable
           className="min-h-11 justify-center"
           accessibilityRole="button"

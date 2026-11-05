@@ -14,6 +14,7 @@ import (
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/aiprovider"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/api"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/auth"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/buildinfo"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/dictionary"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/grammar"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/itemlist"
@@ -182,10 +183,11 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 func (s *server) GetHealth(ctx context.Context, _ api.GetHealthRequestObject) (api.GetHealthResponseObject, error) {
 	ctx, cancel := context.WithTimeout(ctx, pingTimeout)
 	defer cancel()
+	version := buildinfo.Version
 	if err := s.db.Ping(ctx); err != nil {
-		return api.GetHealth503JSONResponse{Status: api.HealthStatusDegraded, Database: api.Unreachable}, nil
+		return api.GetHealth503JSONResponse{Status: api.HealthStatusDegraded, Database: api.Unreachable, Version: &version}, nil
 	}
-	return api.GetHealth200JSONResponse{Status: api.HealthStatusOk, Database: api.Connected}, nil
+	return api.GetHealth200JSONResponse{Status: api.HealthStatusOk, Database: api.Connected, Version: &version}, nil
 }
 
 func (s *server) Login(ctx context.Context, req api.LoginRequestObject) (api.LoginResponseObject, error) {
