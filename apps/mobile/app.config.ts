@@ -10,18 +10,19 @@ const RELEASE_PACKAGE = "com.jaycdev.virtualjapantutor";
  *
  * APP_VARIANT: "release" (default) or "dev". The dev app has its own package, so it installs
  * next to the release app. APP_VERSION_NAME / APP_VERSION_CODE come from CI
- * (scripts/android-version.ts); local builds fall back to 0.1.0 / 1.
+ * (scripts/print-android-version.mjs); local builds fall back to 0.1.0 / 1. Empty values count as unset.
  */
 export function expoConfig(env: BuildEnv): ExpoConfig {
-  const variant = env.APP_VARIANT ?? "release";
+  const variant = env.APP_VARIANT || "release";
   if (variant !== "release" && variant !== "dev") {
     throw new Error(`APP_VARIANT must be "release" or "dev", got "${variant}"`);
   }
   const dev = variant === "dev";
 
-  const versionCode = env.APP_VERSION_CODE === undefined ? 1 : Number(env.APP_VERSION_CODE);
+  const rawVersionCode = env.APP_VERSION_CODE || undefined;
+  const versionCode = rawVersionCode === undefined ? 1 : Number(rawVersionCode);
   if (!Number.isInteger(versionCode) || versionCode < 1) {
-    throw new Error(`APP_VERSION_CODE must be a positive integer, got "${env.APP_VERSION_CODE}"`);
+    throw new Error(`APP_VERSION_CODE must be a positive integer, got "${rawVersionCode}"`);
   }
 
   return {

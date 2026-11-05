@@ -27,6 +27,12 @@ describe("expoConfig", () => {
     expect(() => expoConfig({ APP_VARIANT: "beta" })).toThrow(/APP_VARIANT/);
   });
 
+  it("treats empty version variables as unset, like the version name", () => {
+    const config = expoConfig({ APP_VERSION_NAME: "", APP_VERSION_CODE: "" });
+    expect(config.version).toBe("0.1.0");
+    expect(config.android?.versionCode).toBe(1);
+  });
+
   it("rejects a version code that is not a positive integer", () => {
     expect(() => expoConfig({ APP_VERSION_CODE: "1.5" })).toThrow(/APP_VERSION_CODE/);
   });
