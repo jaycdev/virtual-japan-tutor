@@ -11,7 +11,7 @@ const Popover = PopoverPrimitive.Root;
 
 const PopoverTrigger = PopoverPrimitive.Trigger;
 
-// Stock RNR; iOS-only, dead while app.json targets android only.
+// Stock RNR; iOS-only, dead while app.config.ts targets android only.
 const FullWindowOverlay = Platform.OS === 'ios' ? RNFullWindowOverlay : React.Fragment;
 
 function PopoverContent({

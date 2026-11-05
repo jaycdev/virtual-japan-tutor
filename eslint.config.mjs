@@ -136,6 +136,13 @@ export default tseslint.config(
     rules: { "@typescript-eslint/no-require-imports": "off" },
   },
   {
+    // Build tooling for the Android APK (ADR-0012): the config plugin is CommonJS (Expo
+    // loads it with require) and the build and CLI scripts run in Node.
+    files: ["apps/mobile/plugins/**/*.js", "apps/mobile/scripts/**/*.mjs"],
+    languageOptions: { globals: globals.node },
+    rules: { "@typescript-eslint/no-require-imports": "off" },
+  },
+  {
     // Benign CommonJS shims that vitest aliases over native-only modules
     // (see apps/mobile/vitest.setup.ts): hand-written CJS, not app code.
     files: ["apps/mobile/test/cjs-stubs/**/*.cjs"],

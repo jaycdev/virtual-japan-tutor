@@ -67,7 +67,7 @@ export function SaveToSheet({
               Portal's direct child. */}
           <KeyboardAvoidingView
             style={styles.avoider}
-            // Stock RNR; iOS-only, dead while app.json targets android only.
+            // Stock RNR; iOS-only, dead while app.config.ts targets android only.
             behavior={Platform.OS === "ios" ? "padding" : undefined}
           >
             <View style={styles.head}>
