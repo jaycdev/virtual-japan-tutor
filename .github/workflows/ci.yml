@@ -93,6 +93,9 @@ jobs:
           TURBO_CACHE: local:r
       - name: Lint, typecheck, test and build (Go server excluded)
         run: pnpm exec turbo run lint typecheck test build --filter='!@vjt/server'
+      # Release version rules (ADR-0014); plain Node, so it does not need the turbo graph.
+      - name: Test the release scripts
+        run: pnpm test:scripts
 
   images:
     name: Docker images build

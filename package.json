@@ -12,7 +12,8 @@
     "typecheck": "turbo run typecheck",
     "generate": "turbo run generate",
     "generate:force": "turbo run generate --force",
-    "check:generated": "node scripts/check-generated.mjs"
+    "check:generated": "node scripts/check-generated.mjs",
+    "test:scripts": "node --test scripts/next-version.test.mts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
