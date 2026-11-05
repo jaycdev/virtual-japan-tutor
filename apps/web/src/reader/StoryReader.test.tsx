@@ -345,7 +345,7 @@ describe("Story reader: Lookup", () => {
       grammarPointId: "7",
       pattern: "は",
       meaning: "topic marker",
-      jlptLevel: "N5",
+      jlptLevel: "N5" as const,
       ...(srsLevel === undefined ? {} : { srsLevel }),
     });
     const story = makeStory({
