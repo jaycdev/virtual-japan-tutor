@@ -10,6 +10,7 @@ import { SessionBoundary, SessionProvider } from "./session/session.tsx";
 import { localTokenStorage } from "./session/tokenStorage.ts";
 import { themeStore } from "./theme/index.ts";
 import { storyTextSizeStore } from "./storysize/index.ts";
+import { japaneseFontStore } from "./japaneseFont/index.ts";
 
 // One client for the page's life. The API is on this origin (in production the
 // Go server serves both; in development Vite proxies the API paths), so the
@@ -21,7 +22,7 @@ const router = createBrowserRouter(appRoutes);
 // Read the saved preferences before the first render, so the Appearance settings
 // never show a default that is about to change. The no-flash script has already
 // set the theme class; this only loads the stores.
-void Promise.all([themeStore.hydrate(), storyTextSizeStore.hydrate()]).then(() => {
+void Promise.all([themeStore.hydrate(), storyTextSizeStore.hydrate(), japaneseFontStore.hydrate()]).then(() => {
   const container = document.getElementById("root");
   if (!container) throw new Error("index.html has no #root element");
   createRoot(container).render(

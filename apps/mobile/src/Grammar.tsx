@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useCSSVariable } from "uniwind";
 
+import { useJapaneseFont } from "./japaneseFont/index.tsx";
 import { Card } from "./components/ui/Card.tsx";
 import { Icon } from "./components/ui/icon.tsx";
 import { EmptyState, InlineError, SkeletonBar } from "./state/states.tsx";
@@ -254,6 +255,7 @@ function PointRow({
   last: boolean;
   onOpen: () => void;
 }) {
+  const jp = useJapaneseFont();
   // The label replaces the row's text content for TalkBack/VoiceOver, so it
   // must carry everything the visible row shows — badge and example count
   // included — or a screen-reader Learner hears less than a sighted one
@@ -271,7 +273,7 @@ function PointRow({
       }`}
     >
       <View className="flex-1 gap-1">
-        <Text className="text-body font-serif text-foreground">{point.pattern}</Text>
+        <Text className={`text-body ${jp.serif} text-foreground`}>{point.pattern}</Text>
         <Text className="text-small text-muted-foreground">{point.meaning}</Text>
       </View>
       <View className="items-end gap-1">

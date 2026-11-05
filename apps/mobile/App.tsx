@@ -18,6 +18,7 @@ import { AuthProvider, useSession } from "./src/session.tsx";
 import { resolveApiBaseUrl } from "./src/config.ts";
 import { appFonts } from "./src/fonts.ts";
 import { appSecureStore } from "./src/secureStore.ts";
+import { JapaneseFontProvider, useJapaneseFont } from "./src/japaneseFont/index.tsx";
 import { StoryTextSizeProvider } from "./src/storysize/index.tsx";
 import { secureStoreServerUrl, type ServerUrlStorage } from "./src/serverUrlStorage.ts";
 import { ThemeProvider } from "./src/theme/index.tsx";
@@ -34,9 +35,11 @@ export default function App({ children }: { children: React.ReactNode }) {
       {/* The Story text size (#45) hydrates from device storage; it never
           gates the first frame — it only relayouts the reader. */}
       <StoryTextSizeProvider>
-        <AppBootstrapped tokenStorage={tokenStorage} urlStorage={urlStorage}>
-          {children}
-        </AppBootstrapped>
+        <JapaneseFontProvider>
+          <AppBootstrapped tokenStorage={tokenStorage} urlStorage={urlStorage}>
+            {children}
+          </AppBootstrapped>
+        </JapaneseFontProvider>
       </StoryTextSizeProvider>
     </ThemeProvider>
   );
@@ -115,6 +118,7 @@ function AuthGate({
   children: React.ReactNode;
 }) {
   const auth = useSession();
+  const jp = useJapaneseFont();
 
   if (auth.state.status === "loading") {
     return (
@@ -128,7 +132,7 @@ function AuthGate({
       <View className="flex-1 items-center justify-center gap-4 bg-background p-6">
         <View className="w-full max-w-[380px] gap-3 rounded-2xl bg-card p-6 shadow-md">
           <View className="items-center gap-1">
-            <Text className="text-display font-serif text-primary" allowFontScaling={false}>
+            <Text className={`text-display ${jp.serif} text-primary`} allowFontScaling={false}>
               読
             </Text>
             <Text className="text-title-sm font-semibold text-foreground">Virtual Japan Tutor</Text>

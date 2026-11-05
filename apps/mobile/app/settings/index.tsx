@@ -2,6 +2,7 @@ import { ScrollView, Text } from "react-native";
 import { useRouter } from "expo-router";
 
 import { SettingsHome, type SettingsSection } from "../../src/SettingsHome.tsx";
+import { useJapaneseFont } from "../../src/japaneseFont/index.tsx";
 import { useSession } from "../../src/session.tsx";
 
 /**
@@ -9,12 +10,13 @@ import { useSession } from "../../src/session.tsx";
  * section route (`settings/[section]`), so Back from a section returns here.
  */
 export default function SettingsIndexRoute() {
+  const jp = useJapaneseFont();
   const router = useRouter();
   const session = useSession();
 
   return (
     <ScrollView className="flex-1" contentContainerStyle={{ padding: 16 }}>
-      <Text className="mb-4 text-title font-serif text-foreground">Settings</Text>
+      <Text className={`mb-4 text-title ${jp.serif} text-foreground`}>Settings</Text>
       <SettingsHome
         username={session.state.status === "signedIn" ? session.state.user.username : ""}
         onLogout={() => void session.logout()}

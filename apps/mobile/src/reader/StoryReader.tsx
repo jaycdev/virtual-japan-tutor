@@ -29,6 +29,7 @@ import {
 
 import { useHardwareBack } from "../useHardwareBack.ts";
 import { Icon } from "../components/ui/icon";
+import { useJapaneseFont } from "../japaneseFont/index.tsx";
 import { useStoryTextSize } from "../storysize/index.tsx";
 import { RatingButtons } from "./parts.tsx";
 import { ReadingPanel, type LookedTarget } from "./ReadingPanel.tsx";
@@ -92,6 +93,7 @@ export function StoryReader({
   /** Overrides the menu measuring (jsdom reports no geometry — tests inject rects). */
   measure?: (testID: string, node: MeasurableNode | null) => Rect | null;
 }) {
+  const jp = useJapaneseFont();
   const reading = useReadingSettings(client);
   const lists = useItemLists(client);
   const lookup = useEntryLookup(client);
@@ -568,7 +570,7 @@ export function StoryReader({
         {/* 40 characters of the saved Story text size, centred serif (plan 4.1). */}
         <View
           testID="story-column"
-          className="text-center font-serif"
+          className={`text-center ${jp.serif}`}
           style={[styles.column, { width: columnWidthPx }]}
         >
           {story.sentences.map((sen, i) => (

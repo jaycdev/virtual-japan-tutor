@@ -5,6 +5,7 @@
 import type { ReactNode } from "react";
 import { Pressable, Text } from "react-native";
 
+import { useJapaneseFont } from "./japaneseFont/index.tsx";
 import { Icon } from "./components/ui/icon";
 
 // The setup wizard's save contract lives in @vjt/core, shared with the web app.
@@ -27,6 +28,7 @@ export function SectionBack({ label, onPress }: { label: string; onPress: () => 
 
 /** The section's name above its content. */
 export function SectionHeading({ children }: { children: ReactNode }) {
+  const jp = useJapaneseFont();
   return (
     // text-foreground is not decoration: without an explicit colour class the
     // heading inherits the test host's default near-black, which disappears
@@ -37,7 +39,7 @@ export function SectionHeading({ children }: { children: ReactNode }) {
     // screen reader, matching the wizard's step titles (S4).
     <Text
       accessibilityRole="header"
-      className="mb-3 text-title-sm font-serif text-foreground"
+      className={`mb-3 text-title-sm ${jp.serif} text-foreground`}
     >
       {children}
     </Text>
