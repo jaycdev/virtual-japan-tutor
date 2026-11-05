@@ -7,6 +7,9 @@ on:
   push:
     branches: [main]
     tags: ["v*.*.*"]
+  # Started by release.yml after it pushes a release tag (a tag pushed with GITHUB_TOKEN would not
+  # start this workflow). The ref-check job refuses any manual run that is not for a release tag.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -17,8 +20,27 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Pushes pass straight through. A manual run must target a release tag, so no branch can move
+  # the dev tag or the dev APK (ADR-0014).
+  ref-check:
+    name: Check the ref
+    runs-on: ubuntu-latest
+    steps:
+      - name: Manual runs target a release tag
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$EVENT" != "workflow_dispatch" ]; then exit 0; fi
+          if [ "$REF_TYPE" != "tag" ] || ! echo "$REF_NAME" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.[1-9][0-9]*)?$'; then
+            echo "::error::A manual run must target a release tag (vX.Y.Z or vX.Y.Z-rc.N), not $REF_NAME"
+            exit 1
+          fi
+
   images:
     name: ${{ matrix.target }} image
+    needs: ref-check
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -70,9 +92,10 @@ jobs:
 
   # Signed Android APK (ADR-0012). A tag vX.Y.Z creates its GitHub Release with the APK attached
   # (pre-releases for -rc tags). A push to main moves the dev tag and updates the rolling `dev`
-  # pre-release with the dev app. Like the images, this does not wait for CI: tag a green commit.
+  # pre-release with the dev app. Like the images, this does not wait for CI; release.yml checks CI before it tags (ADR-0014).
   android:
     name: Android APK
+    needs: ref-check
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -154,8 +177,11 @@ jobs:
           if [ "$GITHUB_REF_TYPE" = "tag" ]; then
             prerelease=""
             case "$GITHUB_REF_NAME" in *-*) prerelease="--prerelease" ;; esac
+            # release.yml tags with grouped notes (ADR-0014). A lightweight tag pushed by hand has none.
+            tag_type=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$GITHUB_REF_NAME" --jq .object.type)
+            if [ "$tag_type" = "tag" ]; then notes="--notes-from-tag"; else notes="--generate-notes"; fi
             gh release create "$GITHUB_REF_NAME" $ASSET $CHECKSUM \
-              --title "$GITHUB_REF_NAME" --generate-notes $prerelease
+              --title "$GITHUB_REF_NAME" $notes $prerelease
           else
             # Move the dev tag to this commit, then refresh the rolling pre-release.
             gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/dev" -f sha="$GITHUB_SHA" -F force=true \
