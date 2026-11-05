@@ -7,6 +7,7 @@ import type { StoryTextSize } from "../storysize/store.ts";
 import { JlptBadge } from "./parts.tsx";
 import { PitchGraph } from "./PitchGraph.tsx";
 import { RubyText } from "./StoryText.tsx";
+import "./reader.css"; // defines --reading-panel-height
 
 /** What the Lookup describes: a word the Learner is pointing at, or its Grammar Span. */
 export interface LookTarget {
@@ -65,7 +66,7 @@ export function ReadingPanel({
       // z-10 lifts it over the story column (`relative`, later in the DOM, so it would otherwise
       // paint over the panel); every overlay is z-50 and still sits above it.
       className="sticky top-0 z-10 flex w-full flex-col overflow-hidden border-b border-border bg-card"
-      style={{ height: "calc(var(--story-text-size) * 8)" }}
+      style={{ height: "var(--reading-panel-height)" }}
     >
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-4">
         {target ? (
