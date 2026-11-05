@@ -65,10 +65,22 @@ const (
 	// far better than characters. The schema's maxItems in generate.go must
 	// equal MaxSentences.
 	MaxSentences       = 100
-	PromptMinSentences = 35
-	PromptMaxSentences = 45
-	MinQuestions       = 3
-	MaxQuestions       = 5
+	PromptMinSentences = 20
+	PromptMaxSentences = 30
+	// PromptMinSentenceRunes..PromptMaxSentenceRunes is the sentence length
+	// the prompt asks for, long enough to join related clauses inside one
+	// sentence instead of linking them with a conjunction at the start of the
+	// next.
+	PromptMinSentenceRunes = 20
+	PromptMaxSentenceRunes = 50
+	// MaxContrastiveOpeners and MaxConjunctionShare bound the style check: how
+	// many sentences may open with a contrastive conjunction (でも, しかし…),
+	// and what share of sentences may open with any conjunction. The check is
+	// soft: a Story that fails only on it is still accepted on its last attempt.
+	MaxContrastiveOpeners = 2
+	MaxConjunctionShare   = 0.2
+	MinQuestions          = 3
+	MaxQuestions          = 5
 	// DefaultCoverage is the Known-word coverage the gate enforces.
 	DefaultCoverage = 0.95
 	// DefaultFocusFraction is the share of the Focus Set's vocabulary items
@@ -238,6 +250,10 @@ type Token struct {
 	// adjectives, adverbs; see isContent). Set during materialisation,
 	// never stored: the counts it produced are stored instead.
 	content bool
+
+	// conjunction marks a 接続詞 token (see materialise). Like content it is
+	// set during materialisation and never stored; the style check reads it.
+	conjunction bool
 
 	// alts are the other dictionary entries sharing this token's spelling
 	// (see VocabHit.Alts); tagKnown links the token to the Learner's known
