@@ -530,10 +530,14 @@ export function StoryReader({
               style={styles.titleTranslation}
             >
               {/* The translation text stays in the tree either way (issue #45):
-                  Android has no filter, so a hidden translation paints transparent. */}
+                  Android has no filter, so a hidden translation is made invisible
+                  with opacity. Not `color: "transparent"` — that inline style
+                  outranks the colour class and Android falls back to the default
+                  black instead of painting nothing, which showed the hidden
+                  translation as black text on the dark palette. */}
               <Text
                 className="text-small text-muted-foreground"
-                style={titleEnRevealed ? styles.titleEn : [styles.titleEn, { color: "transparent" }]}
+                style={titleEnRevealed ? styles.titleEn : [styles.titleEn, { opacity: 0 }]}
                 numberOfLines={1}
               >
                 {story.titleEn}

@@ -1,4 +1,4 @@
-import type { ApiClient } from "@vjt/api-client";
+import type { ApiClient, StorySentence } from "@vjt/api-client";
 import { createApiClient } from "@vjt/api-client";
 import { useStory } from "@vjt/core";
 import { PortalHost } from "@rn-primitives/portal";
@@ -12,6 +12,7 @@ import { flushPressConfig } from "../../test/press-config.ts";
 import { setBackHandlerForTests } from "../useHardwareBack.ts";
 import { reduceHold, type Rect } from "@vjt/core";
 import { StoryReader } from "./StoryReader.tsx";
+import { StoryParagraph, type TokenHandlers } from "./StoryText.tsx";
 import { StoryTextSizeProvider, useStoryTextSize, type StoryTextSize } from "../storysize/index.tsx";
 
 // Pass the module through untouched except for wrapping reduceHold in a spy:
@@ -1143,5 +1144,100 @@ describe("hardware Back in the reader (mobile)", () => {
     fireEvent.click(screen.getByTestId("back-to-stories"));
     await waitFor(() => expect(screen.queryByTestId("back-to-stories")).toBeNull());
     expect(await screen.findByTestId("stories-host")).toBeTruthy();
+  });
+});
+
+/**
+ * The className tokens an element's OWN Text handed to Uniwind, stopping at the
+ * first fiber `boundary` accepts. Native Text colour does not inherit from a
+ * parent View, so an ancestor's colour class must never satisfy a Text that has
+ * none — fiberClassTokens, which walks every ancestor, would let it.
+ */
+function ownClassTokens(el: Element, boundary: (props: Record<string, unknown>) => boolean): string[] {
+  const out: string[] = [];
+  let f = fiberFrom(el);
+  while (f && !(f.memoizedProps && boundary(f.memoizedProps))) {
+    const cn = f.memoizedProps?.className;
+    if (typeof cn === "string") out.push(...cn.split(/\s+/));
+    f = f.return;
+  }
+  return out;
+}
+
+const isTokenColumn = (p: Record<string, unknown>) => typeof p.testID === "string" && p.testID.startsWith("token-");
+
+describe("Reader text colour on the dark palette (Android paints a class-less Text black)", () => {
+  it("gives every story word a colour of its own, marked or not", async () => {
+    const { client } = fakeApi();
+    await openStory(client);
+    const columns = Array.from(screen.getByTestId("story-column").querySelectorAll('[data-testid^="token-"]'));
+    expect(columns.length).toBeGreaterThan(0);
+
+    const missing: string[] = [];
+    for (const column of columns) {
+      // The word is the column's first non-empty child that is not the furigana line.
+      const word = Array.from(column.children).find(
+        (c) => (c.textContent ?? "") !== "" && !(c.getAttribute("data-testid") ?? "").startsWith("furigana-"),
+      );
+      if (!word) throw new Error(`no word text in ${column.getAttribute("data-testid")}`);
+      if (!ownClassTokens(word, isTokenColumn).includes("text-foreground")) {
+        missing.push(`${column.getAttribute("data-testid")} "${word.textContent}"`);
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+
+  it("gives the punctuation the tokeniser left out the same colour", () => {
+    const sentence: StorySentence = {
+      ja: "はい。",
+      en: "Yes.",
+      tokens: [{ surface: "はい", start: 0, end: 2, reading: "はい", tag: "known", showFurigana: false }],
+      grammarSpans: [],
+    };
+    const handlers = (): TokenHandlers => ({
+      onStartShouldSetResponder: () => true,
+      onResponderGrant: () => {},
+      onResponderMove: () => {},
+      onResponderRelease: () => {},
+      onResponderTerminate: () => {},
+      onResponderTerminationRequest: () => true,
+    });
+    render(
+      <StoryTextSizeProvider>
+        <StoryParagraph
+          sentence={sentence}
+          sentenceIndex={0}
+          selectedToken={null}
+          handlers={handlers}
+          onSelect={() => {}}
+          fontSizePx={21}
+          lineHeightPx={44}
+        />
+      </StoryTextSizeProvider>,
+    );
+    const gap = screen.getByText("。");
+    const isParagraph = (p: Record<string, unknown>) =>
+      typeof p.accessibilityLabel === "string" && p.accessibilityLabel.startsWith("Sentence ");
+    expect(ownClassTokens(gap, isParagraph)).toContain("text-foreground");
+  });
+
+  it("hides the English title with opacity, not a transparent colour Android ignores", async () => {
+    const { client } = fakeApi();
+    await openStory(client);
+    const row = screen.getByTestId("reader-title-translation");
+    const english = () => within(row).getByText("A Day at School");
+    const isRow = (p: Record<string, unknown>) => p.testID === "reader-title-translation";
+
+    // Hidden: invisible by opacity. A `color: transparent` inline style is what
+    // painted it black on a dark screen — it outranks the colour class, and Android
+    // falls back to the default text colour instead of painting nothing.
+    expect(english().getAttribute("style") ?? "").toContain("opacity: 0");
+    expect(english().getAttribute("style") ?? "").not.toContain("transparent");
+
+    // Revealed: shown in its own token colour, with no inline paint override.
+    fireEvent.click(row);
+    await waitFor(() => expect(english().getAttribute("style") ?? "").not.toContain("opacity: 0"));
+    expect(english().getAttribute("style") ?? "").not.toContain("transparent");
+    expect(ownClassTokens(english(), isRow)).toContain("text-muted-foreground");
   });
 });
