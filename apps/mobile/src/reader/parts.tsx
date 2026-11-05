@@ -10,6 +10,11 @@ import { MIN_TOUCH } from "../touch";
  * (same cap rules as the web Lookup row), and the thumbs rating buttons.
  */
 
+/** The MaruMori SRS Level, as small caption text: `SRS 4` (GLOSSARY: SRS Level). */
+export function SrsLevelText({ level }: { level: number }) {
+  return <Text className="text-caption text-muted-foreground">SRS {level}</Text>;
+}
+
 /** JLPT level pill — the caller passes the label it shows (`N2`). */
 export function JlptBadge({ level }: { level: string }) {
   return (

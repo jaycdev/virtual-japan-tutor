@@ -197,7 +197,7 @@ export function coveringSpan(sentence: StorySentence, token: StoryToken): StoryG
 }
 
 /** The grammar point a Lookup describes: its Grammar Span, else a particle's hint (issue #98). */
-export type GrammarCue = Pick<StoryGrammarSpan, "pattern" | "meaning" | "jlptLevel">;
+export type GrammarCue = Pick<StoryGrammarSpan, "pattern" | "meaning" | "jlptLevel" | "srsLevel">;
 
 export function grammarCue(token: StoryToken, span: StoryGrammarSpan | null): GrammarCue | null {
   if (span) return span;

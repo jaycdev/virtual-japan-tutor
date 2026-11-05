@@ -4,7 +4,7 @@ import { countGlosses, coveringSpan, firstGlosses, grammarCue, type EntryLookup 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { StoryTextSize } from "../storysize/store.ts";
-import { JlptBadge } from "./parts.tsx";
+import { JlptBadge, SrsLevelText } from "./parts.tsx";
 import { PitchGraph } from "./PitchGraph.tsx";
 import { RubyText } from "./StoryText.tsx";
 import "./reader.css"; // defines --reading-panel-height
@@ -133,7 +133,10 @@ function LookupBody({ story, target, lookup }: { story: Story; target: LookTarge
       <div data-testid="panel-lookup" className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <p className="text-body font-semibold text-pitch">{cue.pattern}</p>
         <p className="text-small text-foreground">{cue.meaning}</p>
-        <div className="ml-auto">{cue.jlptLevel ? <JlptBadge level={cue.jlptLevel} /> : null}</div>
+        <div className="ml-auto flex items-center gap-3">
+          {cue.srsLevel != null ? <SrsLevelText level={cue.srsLevel} /> : null}
+          {cue.jlptLevel ? <JlptBadge level={cue.jlptLevel} /> : null}
+        </div>
       </div>
     );
   }
@@ -158,6 +161,7 @@ function LookupBody({ story, target, lookup }: { story: Story; target: LookTarge
       ))}
       <div className="ml-auto flex items-center gap-3">
         {entry.pitch ? <PitchGraph pitch={entry.pitch} width={64} height={28} /> : null}
+        {entry.srsLevel != null ? <SrsLevelText level={entry.srsLevel} /> : null}
         {entry.jlptLevel ? <JlptBadge level={entry.jlptLevel} /> : null}
       </div>
     </div>

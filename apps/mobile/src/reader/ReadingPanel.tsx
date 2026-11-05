@@ -12,7 +12,7 @@ import { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { useStoryTextSize } from "../storysize/index.tsx";
-import { JlptBadge } from "./parts.tsx";
+import { JlptBadge, SrsLevelText } from "./parts.tsx";
 import { PitchGraph } from "./PitchGraph.tsx";
 import { TokenWords } from "./StoryText.tsx";
 
@@ -237,6 +237,7 @@ function LookupRow({
       ))}
       <View style={styles.lookupRight}>
         {entry?.pitch ? <PitchGraph pitch={entry.pitch} withCaption /> : null}
+        {entry?.srsLevel != null ? <SrsLevelText level={entry.srsLevel} /> : null}
         {entry?.jlptLevel ? <JlptBadge level={entry.jlptLevel} /> : null}
       </View>
     </View>
@@ -252,7 +253,10 @@ function GrammarGloss({ cue }: { cue: GrammarCue }) {
       <Text className="text-small text-foreground">
         {cue.meaning}
       </Text>
-      <View style={styles.lookupRight}>{cue.jlptLevel ? <JlptBadge level={cue.jlptLevel} /> : null}</View>
+      <View style={styles.lookupRight}>
+        {cue.srsLevel != null ? <SrsLevelText level={cue.srsLevel} /> : null}
+        {cue.jlptLevel ? <JlptBadge level={cue.jlptLevel} /> : null}
+      </View>
     </View>
   );
 }

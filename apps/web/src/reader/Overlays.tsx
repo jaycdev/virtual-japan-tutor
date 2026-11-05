@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useMediaQuery } from "@/lib/useMediaQuery";
-import { JlptBadge } from "./parts.tsx";
+import { JlptBadge, SrsLevelText } from "./parts.tsx";
 import { PitchGraph, pitchCaption } from "./PitchGraph.tsx";
 
 /**
@@ -72,6 +72,7 @@ export function DictionaryBody({ entry }: { entry: DictionaryEntry }) {
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
         {reading ? <p className="text-body text-muted-foreground">{reading}</p> : null}
+        {entry.srsLevel != null ? <SrsLevelText level={entry.srsLevel} /> : null}
         {entry.jlptLevel ? <JlptBadge level={entry.jlptLevel} /> : null}
       </div>
       {entry.pitch ? (
@@ -101,9 +102,10 @@ export function GrammarBody({ span }: { span: StoryGrammarSpan }) {
   return (
     <div className="flex flex-col gap-3">
       <p className="text-body text-foreground">{span.meaning}</p>
-      {span.jlptLevel ? (
-        <div>
-          <JlptBadge level={span.jlptLevel} />
+      {span.jlptLevel || span.srsLevel != null ? (
+        <div className="flex items-center gap-3">
+          {span.srsLevel != null ? <SrsLevelText level={span.srsLevel} /> : null}
+          {span.jlptLevel ? <JlptBadge level={span.jlptLevel} /> : null}
         </div>
       ) : null}
     </div>

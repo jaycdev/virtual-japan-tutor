@@ -587,6 +587,16 @@ describe("Story reader gestures (mobile)", () => {
     expect(requests.some((r) => r.path === "/weak-signals")).toBe(false);
   });
 
+  it("the Lookup row shows the word's current SRS Level", async () => {
+    const { client } = fakeApi();
+    await openStory(client);
+    const panel = await screen.findByLabelText("Reading Panel");
+
+    fireEvent.mouseDown(token(0, 0), { clientX: 300, clientY: 300 });
+    expect(await within(panel).findByText("SRS 4")).toBeTruthy();
+    fireEvent.mouseUp(token(0, 0), { clientX: 300, clientY: 300 });
+  });
+
   it("a hold opens the Lookup menu at the finger and reports one Weak Signal per word", async () => {
     const { client, requests } = fakeApi();
     await openStory(client);

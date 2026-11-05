@@ -47,8 +47,8 @@ How advanced an Item is, from N5 (easiest) to N1.
 _Avoid_: Level (unqualified), difficulty
 
 **SRS Level**:
-MaruMori's 1–9 stage for an Item in its spaced-repetition system. The app reads it but never changes it.
-_Avoid_: Stage, level (unqualified)
+MaruMori's 1–9 stage for an Item in its spaced-repetition system. The app reads it but never changes it. When several MaruMori items match one Item, the Item's SRS Level is the highest of theirs. Seeded Grammar has none.
+_Avoid_: Stage, level (unqualified), mastery level
 
 **Mastery**:
 How well the Learner knows a specific Item, on a 0–1 scale, combining its SRS Level, Level Trend, Practice Record and Weak Signals. Recomputed on every read; never stored.
@@ -138,7 +138,7 @@ The area fixed above a Story while reading. It shows the Sentence Translation of
 _Avoid_: Info box, sidebar, tooltip, gloss
 
 **Lookup**:
-Briefly showing a word or Grammar Span's details in the Reading Panel, by hovering over it on web or pressing and holding it on mobile. A word shows its meaning, forms and JLPT Level, and a Grammar Span shows its Grammar Point and what it does. A particle (は, の, に, …) with a Grammar Catalogue point shows that point, with no menu (see [ADR 0011](docs/adr/0011-particles-look-up-the-grammar-catalogue.md)).
+Briefly showing a word or Grammar Span's details in the Reading Panel, by hovering over it on web or pressing and holding it on mobile. A word shows its meaning, forms and JLPT Level, and a Grammar Span shows its Grammar Point and what it does. Both also show the Item's current SRS Level when it has one. A particle (は, の, に, …) with a Grammar Catalogue point shows that point, with no menu (see [ADR 0011](docs/adr/0011-particles-look-up-the-grammar-catalogue.md)).
 _Avoid_: Gloss tap, hover
 
 **Grammar Span**:
@@ -150,7 +150,7 @@ The English translation of one sentence in a Story, shown in the Reading Panel w
 _Avoid_: Translation toggle
 
 **Dictionary Entry**:
-The full dictionary view of a word, opened from a word's context menu.
+The full dictionary view of a word, opened from a word's context menu. It shows the word's current SRS Level when it has one.
 _Avoid_: Definition popup
 
 **Item List**:

@@ -1446,6 +1446,8 @@ export interface components {
             /** @description The Grammar Point's one-line meaning. */
             meaning: string;
             jlptLevel: components["schemas"]["GrammarJLPTLevel"];
+            /** @description The Grammar Point's current MaruMori SRS Level (as of the last Sync): the highest among the MaruMori grammar items matched to it. Null when none has one (Seeded Grammar, or a lesson-only point with no progress yet). */
+            srsLevel?: number | null;
         };
         StoryQuestion: {
             position: number;
@@ -1475,6 +1477,8 @@ export interface components {
             /** @description The Grammar Point's one-line meaning. */
             meaning: string;
             jlptLevel: components["schemas"]["GrammarJLPTLevel"];
+            /** @description The Grammar Point's current MaruMori SRS Level (as of the last Sync): the highest among the MaruMori grammar items matched to it. Null when none has one (Seeded Grammar, or a lesson-only point with no progress yet). */
+            srsLevel?: number | null;
         };
         /** @description Per-Learner reader preferences (issue #11, extended by issue #12), stored so the reading experience is the same in every session and on every device. */
         ReadingSettings: {

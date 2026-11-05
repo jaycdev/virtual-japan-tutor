@@ -283,6 +283,10 @@ type Span struct {
 	Pattern   string
 	Meaning   string
 	JLPTLevel string
+
+	// SRSLevel is the point's current MaruMori SRS Level, read on load: the
+	// highest among the MaruMori grammar items matched to it (nil when none has one).
+	SRSLevel *int
 }
 
 // GrammarHint names the Grammar Point an unlinked token expresses when its
@@ -296,6 +300,9 @@ type GrammarHint struct {
 	Pattern        string
 	Meaning        string
 	JLPTLevel      string
+
+	// SRSLevel is the point's current MaruMori SRS Level, read on load (nil when none).
+	SRSLevel *int
 }
 
 // hintParticles are the only surfaces a GrammarHint may attach to. A pattern

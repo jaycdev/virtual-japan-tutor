@@ -561,6 +561,7 @@ func storyView(st *story.Story, threshold int) api.Story {
 					Pattern:        h.Pattern,
 					Meaning:        h.Meaning,
 					JlptLevel:      jlptLevel(h.JLPTLevel),
+					SrsLevel:       h.SRSLevel,
 				}
 			}
 			tokens = append(tokens, tok)
@@ -575,6 +576,7 @@ func storyView(st *story.Story, threshold int) api.Story {
 				Pattern:        sp.Pattern,
 				Meaning:        sp.Meaning,
 				JlptLevel:      jlptLevel(string(sp.JLPTLevel)),
+				SrsLevel:       sp.SRSLevel,
 			})
 		}
 		sentences = append(sentences, api.StorySentence{
