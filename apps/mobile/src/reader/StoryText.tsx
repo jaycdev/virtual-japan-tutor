@@ -146,7 +146,10 @@ const StoryToken = forwardRef<MeasurableNode | null, StoryTokenProps>(function S
         // across a class-only update, so the marked span is keyed by its marks
         // and gets a fresh fiber when the marks change.
         key={"m-" + wordClasses.join("-")}
-        className={wordClasses.length > 0 ? wordClasses.join(" ") : undefined}
+        // text-foreground is not decoration: native Text takes no colour from the
+        // View around it, and without a colour class Android paints the default
+        // black — invisible on the dark palette. Every word carries it, marked or not.
+        className={["text-foreground", ...wordClasses].join(" ")}
         style={{ fontSize: fontSizePx, lineHeight: lineHeightPx, textAlign: "center" }}
       >
         {token.surface}
@@ -205,8 +208,11 @@ export const StoryParagraph = memo(function StoryParagraph({
       {sentenceSegments(sentence).map((segment) =>
         segment.kind === "gap" ? (
           // Punctuation the tokeniser left out stays a plain span with no gesture
-          // of its own — a press there selects the sentence.
-          <Text key={segment.key}>{segment.text}</Text>
+          // of its own — a press there selects the sentence. It needs its own
+          // colour for the same reason the words do (see StoryToken).
+          <Text key={segment.key} className="text-foreground">
+            {segment.text}
+          </Text>
         ) : (
           <StoryToken
             key={segment.index}
