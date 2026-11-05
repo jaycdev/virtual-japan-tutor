@@ -273,7 +273,7 @@ function PointRow({
       }`}
     >
       <View className="flex-1 gap-1">
-        <Text className={`text-body ${jp.serif} text-foreground`}>{point.pattern}</Text>
+        <Text className={`text-body ${jp.regular} text-foreground`}>{point.pattern}</Text>
         <Text className="text-small text-muted-foreground">{point.meaning}</Text>
       </View>
       <View className="items-end gap-1">

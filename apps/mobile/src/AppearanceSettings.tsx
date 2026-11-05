@@ -95,7 +95,7 @@ export function AppearanceSettings() {
 
       {/* A live sample at the chosen size, so picking a size shows its size:
           the story-* classes are the exact ones the reader renders with. */}
-      <Text className={`${SAMPLE_SIZE_CLASS[storyText.size]} ${japanese.serif} text-foreground`}>
+      <Text className={`${SAMPLE_SIZE_CLASS[storyText.size]} ${japanese.regular} text-foreground`}>
         がっこうで べんきょうしました。
       </Text>
     </View>

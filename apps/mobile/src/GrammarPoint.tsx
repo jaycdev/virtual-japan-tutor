@@ -131,7 +131,7 @@ function ReadyBody({ point, onReloadExplanation }: { point: GrammarPointDetail; 
             // Bold Japanese face, not the regular face + font-semibold: the
             // weight class only faked bold (#49 review S6). Same token face
             // richLine uses.
-            className={`text-title ${jp.serifBold} font-semibold text-foreground`}
+            className={`text-title ${jp.bold} font-semibold text-foreground`}
           >
             {point.pattern}
           </Text>
@@ -207,8 +207,8 @@ export function ExplanationBody({ text }: { text: string }) {
         const lines = paragraph.split("\n");
         if (lines.length === 1 && !paragraph.startsWith("- ")) {
           return (
-            <Text key={i} className={`${jp.serif} text-body text-foreground`}>
-              {richLine(paragraph, jp.serifBold)}
+            <Text key={i} className={`${jp.regular} text-body text-foreground`}>
+              {richLine(paragraph, jp.bold)}
             </Text>
           );
         }
@@ -221,9 +221,9 @@ export function ExplanationBody({ text }: { text: string }) {
                 // the text instead of under the dot (#49 review N1). Non-bullet
                 // lines keep the empty column so the block stays aligned.
                 <View key={j} className="flex-row">
-                  <Text className={`w-4 ${jp.serif} text-body text-foreground`}>{bullet ? "•" : ""}</Text>
-                  <Text className={`flex-1 ${jp.serif} text-body text-foreground`}>
-                    {bullet ? richLine(line.slice(2), jp.serifBold) : richLine(line, jp.serifBold)}
+                  <Text className={`w-4 ${jp.regular} text-body text-foreground`}>{bullet ? "•" : ""}</Text>
+                  <Text className={`flex-1 ${jp.regular} text-body text-foreground`}>
+                    {bullet ? richLine(line.slice(2), jp.bold) : richLine(line, jp.bold)}
                   </Text>
                 </View>
               );
@@ -258,7 +258,7 @@ function ExampleRow({ example }: { example: GrammarExample }) {
   const chars = Array.from(example.sentenceJa);
   return (
     <View className="gap-1">
-      <Text className={`${jp.serif} text-body text-foreground`}>
+      <Text className={`${jp.regular} text-body text-foreground`}>
         {chars.slice(0, example.spanStart).join("")}
         <Text className="underline">
           {chars.slice(example.spanStart, example.spanEnd).join("")}

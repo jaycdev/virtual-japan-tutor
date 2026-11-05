@@ -132,7 +132,7 @@ function AuthGate({
       <View className="flex-1 items-center justify-center gap-4 bg-background p-6">
         <View className="w-full max-w-[380px] gap-3 rounded-2xl bg-card p-6 shadow-md">
           <View className="items-center gap-1">
-            <Text className={`text-display ${jp.serif} text-primary`} allowFontScaling={false}>
+            <Text className={`text-display ${jp.regular} text-primary`} allowFontScaling={false}>
               読
             </Text>
             <Text className="text-title-sm font-semibold text-foreground">Virtual Japan Tutor</Text>

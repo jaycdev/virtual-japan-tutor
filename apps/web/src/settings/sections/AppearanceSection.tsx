@@ -1,8 +1,8 @@
-// Appearance (ui-plan 2.3, 2.4, 4.7): the theme and the Story text size, both
-// saved per device. The sample changes at once, through the same CSS variable
-// the reader uses.
+// Appearance (ui-plan 2.3, 2.4, 4.7): the theme, the Story text size and the
+// Japanese font, all saved per device. The sample changes at once, through the
+// same CSS variables the reader uses.
 import { useJapaneseFont } from "../../japaneseFont/index.ts";
-import { JAPANESE_FONTS, type JapaneseFont } from "../../japaneseFont/store.ts";
+import type { JapaneseFont } from "../../japaneseFont/store.ts";
 import { useStoryTextSize } from "../../storysize/index.ts";
 import { STORY_TEXT_SIZES } from "../../storysize/store.ts";
 import { useThemePreference } from "../../theme/index.ts";
@@ -14,10 +14,10 @@ const THEME_OPTIONS = [
   { value: "system", label: "System" },
 ] as const;
 
-const JAPANESE_FONT_OPTIONS = JAPANESE_FONTS.map((value) => ({
-  value,
-  label: value === "serif" ? "Serif" : "Sans",
-}));
+const JAPANESE_FONT_OPTIONS: { value: JapaneseFont; label: string }[] = [
+  { value: "serif", label: "Serif" },
+  { value: "sans", label: "Sans" },
+];
 
 export function AppearanceSection() {
   const { preference, setPreference } = useThemePreference();

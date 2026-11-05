@@ -570,7 +570,7 @@ export function StoryReader({
         {/* 40 characters of the saved Story text size, centred serif (plan 4.1). */}
         <View
           testID="story-column"
-          className={`text-center ${jp.serif}`}
+          className={`text-center ${jp.regular}`}
           style={[styles.column, { width: columnWidthPx }]}
         >
           {story.sentences.map((sen, i) => (

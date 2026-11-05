@@ -248,7 +248,7 @@ function ItemListDetail({
 
   return (
     <View className="gap-4">
-      <Text accessibilityRole="header" className={`text-title-sm ${jp.serif} text-foreground`}>
+      <Text accessibilityRole="header" className={`text-title-sm ${jp.regular} text-foreground`}>
         {list.name}
       </Text>
       <LinkButton label="Close Item Lists" onPress={onBackToLists} />

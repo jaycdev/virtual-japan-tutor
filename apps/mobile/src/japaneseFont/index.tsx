@@ -34,15 +34,18 @@ export function JapaneseFontProvider({ children }: { children: React.ReactNode }
 export interface JapaneseFontClasses {
   font: JapaneseFont;
   setFont: (font: JapaneseFont) => void;
-  /** Regular Japanese text. */
-  serif: "font-serif" | "font-sans";
+  /** Regular-weight Japanese text. */
+  regular: "font-serif" | "font-sans";
   /** Bold Japanese text. */
-  serifBold: "font-serif-bold" | "font-sans-bold";
+  bold: "font-serif-bold" | "font-sans-bold";
 }
+
+const CLASSES: Record<JapaneseFont, Pick<JapaneseFontClasses, "regular" | "bold">> = {
+  serif: { regular: "font-serif", bold: "font-serif-bold" },
+  sans: { regular: "font-sans", bold: "font-sans-bold" },
+};
 
 export function useJapaneseFont(): JapaneseFontClasses {
   const state = useSyncExternalStore<JapaneseFontState>(store.subscribe, store.getSnapshot, () => SERVER_SNAPSHOT);
-  return state.font === "sans"
-    ? { font: "sans", setFont: store.setFont, serif: "font-sans", serifBold: "font-sans-bold" }
-    : { font: "serif", setFont: store.setFont, serif: "font-serif", serifBold: "font-serif-bold" };
+  return { font: state.font, setFont: store.setFont, ...CLASSES[state.font] };
 }

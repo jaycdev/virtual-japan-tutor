@@ -39,7 +39,7 @@ export function SectionHeading({ children }: { children: ReactNode }) {
     // screen reader, matching the wizard's step titles (S4).
     <Text
       accessibilityRole="header"
-      className={`mb-3 text-title-sm ${jp.serif} text-foreground`}
+      className={`mb-3 text-title-sm ${jp.regular} text-foreground`}
     >
       {children}
     </Text>

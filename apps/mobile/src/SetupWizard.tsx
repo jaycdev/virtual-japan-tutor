@@ -105,7 +105,7 @@ export function SetupWizard({
     <View className="flex-1">
       <ScrollView className="flex-1" contentContainerStyle={{ padding: 16 }}>
         <Card>
-          <Text className={`text-title ${jp.serif} text-foreground`}>Welcome to Virtual Japan Tutor</Text>
+          <Text className={`text-title ${jp.regular} text-foreground`}>Welcome to Virtual Japan Tutor</Text>
           <Text className="text-body text-muted-foreground">
             Three short steps to set you up — you can skip any of them and change
             everything later under Settings.

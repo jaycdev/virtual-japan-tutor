@@ -254,7 +254,7 @@ function ActivePractice({
       />
       <Card>
         <Text className="text-small text-muted-foreground">{current.instruction}</Text>
-        <Text className={`text-display text-foreground ${jp.serif}`}>{displayPrompt(current.prompt)}</Text>
+        <Text className={`text-display text-foreground ${jp.regular}`}>{displayPrompt(current.prompt)}</Text>
         {feedback ? (
           <View
             // The verdict appears on its own: a polite live region announces
