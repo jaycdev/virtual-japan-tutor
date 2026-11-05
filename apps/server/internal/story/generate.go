@@ -183,7 +183,7 @@ type Request struct {
 	// AvoidRecentGenres names the genres of the Learner's most recent
 	// Stories as "avoid too" in the prompt. Issue #33's Surprise mode sets
 	// it — with the preferences off, the recent genres are the only variety
-	// signal left. Automatic keeps its variety through PickGenre instead.
+	// signal left. Automatic sets it too whenever no genre was picked.
 	AvoidRecentGenres []string
 	// ReportStage, when set, receives the generation's stage transitions —
 	// writing before each model call, checking once the answer is in hand

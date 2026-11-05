@@ -576,7 +576,7 @@ export interface paths {
         put?: never;
         /**
          * Thumbs up or down on a story
-         * @description One rating per story, replaceable: up or down. Ratings steer the genre/theme of future generations — genres the Learner rated up are preferred, otherwise recent reading history, otherwise the generator asks the model to surprise them.
+         * @description One rating per story, replaceable: up or down. Ratings steer the genre/theme of future generations — genres the Learner rated up are preferred, except the genre of their newest Story, which is not repeated straight away; otherwise the generator asks the model to surprise them, avoiding the genres they have just read.
          */
         post: operations["rateStory"];
         delete?: never;

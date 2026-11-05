@@ -326,7 +326,10 @@ func (s *Service) runGeneration(ctx context.Context, userID uuid.UUID, opts OnDe
 	case opts.Genre != "":
 		req.Genre = opts.Genre
 	default:
-		req.Genre = automaticGenre(prefGenre, ratings, recent, s.roll())
+		req.Genre = automaticGenre(prefGenre, ratings, latestGenre(recent), s.roll())
+		if req.Genre == "" {
+			req.AvoidRecentGenres = recent // the model surprises, away from what was just read
+		}
 	}
 	if !opts.Surprise {
 		if opts.Theme != "" {
@@ -478,21 +481,26 @@ func (s *Service) ensureAutomaticStory(ctx context.Context, userID uuid.UUID) er
 	started := s.now()
 
 	// Genre and theme are decided separately (issue #32): the Learner's
-	// preference steers about 70% of Automatic Stories, the rest keeps the
-	// rating-steered variety — see automaticGenre and automaticTheme.
-	// Disliked genres (net-down-rated) are named in the prompt as "avoid"
-	// and already dropped from PickGenre's fallback.
+	// preference steers about 70% of Automatic Stories, the rest varies — see
+	// automaticGenre and automaticTheme. When no genre is picked the model
+	// surprises the reader, and the genres just read go in the prompt as
+	// "avoid" so the model does not repeat them. Disliked genres (net-down-
+	// rated) are named the same way.
+	genre := automaticGenre(prefGenre, ratings, latestGenre(recent), s.roll())
 	req := Request{
 		UserID:         userID,
 		Settings:       s.settings,
 		Focus:          fset,
 		Known:          s.focus,
 		KnownWords:     knownWords,
-		Genre:          automaticGenre(prefGenre, ratings, recent, s.roll()),
+		Genre:          genre,
 		Theme:          automaticTheme(prefTheme, s.roll()),
 		Origin:         OriginAutomatic,
 		DislikedGenres: dislikedGenres(ratings),
 		ReportStage:    func(stage GenerationStage, attempt int) { s.setStage(userID, stage, attempt) },
+	}
+	if genre == "" {
+		req.AvoidRecentGenres = recent
 	}
 	st, genErr := s.gen.Generate(ctx, resolved.Client, req)
 	if st == nil {
@@ -911,13 +919,23 @@ func (sc *Scheduler) pass(ctx context.Context) {
 	}
 }
 
-// PickGenre chooses the genre/theme for the next generation: genres the user
-// rated up (net of downvotes, ties broken randomly) come first, then genres
-// of the stories they read most recently — minus any the user rated net
-// down, which are never re-picked even when they were read recently. An
-// empty result means "surprise me" — issue #10's story-rating-steers-genre
-// rule.
-func PickGenre(ratings map[string]map[Rating]int, recentGenres []string) string {
+// latestGenre is the genre of the Learner's newest validated Story, or ""
+// when they have none. recent is newest-first, as GenresByLastActivity
+// returns it.
+func latestGenre(recent []string) string {
+	if len(recent) == 0 {
+		return ""
+	}
+	return recent[0]
+}
+
+// PickGenre chooses the genre for the next Automatic Story from the
+// Learner's ratings: the genre rated up most (net of downvotes, ties broken
+// randomly). It never returns latest, the genre of the Learner's newest
+// Story, so a single upvote cannot repeat the same genre every day (issue
+// #10's story-rating-steers-genre rule, without the lock-in). An empty result
+// means "surprise me": the model chooses, avoiding the recent genres.
+func PickGenre(ratings map[string]map[Rating]int, latest string) string {
 	type gs struct {
 		genre string
 		score int
@@ -928,40 +946,30 @@ func PickGenre(ratings map[string]map[Rating]int, recentGenres []string) string 
 	}
 	var best []gs
 	for g := range ratings {
-		if net(g) <= 0 {
+		if g == latest || net(g) <= 0 {
 			continue
 		}
 		best = append(best, gs{g, net(g)})
 	}
-	if len(best) > 0 {
-		sort.Slice(best, func(i, j int) bool {
-			if best[i].score != best[j].score {
-				return best[i].score > best[j].score
-			}
-			return best[i].genre < best[j].genre
-		})
-		var top []string
-		for _, b := range best {
-			if b.score == best[0].score {
-				top = append(top, b.genre)
-			}
-		}
-		if len(top) == 1 {
-			return top[0]
-		}
-		return top[rand.Intn(len(top))]
+	if len(best) == 0 {
+		return ""
 	}
-	var fallback []string
-	for _, g := range recentGenres {
-		if net(g) < 0 {
-			continue // disliked: ratings steer away even from recent reading
+	sort.Slice(best, func(i, j int) bool {
+		if best[i].score != best[j].score {
+			return best[i].score > best[j].score
 		}
-		fallback = append(fallback, g)
+		return best[i].genre < best[j].genre
+	})
+	var top []string
+	for _, b := range best {
+		if b.score == best[0].score {
+			top = append(top, b.genre)
+		}
 	}
-	if len(fallback) > 0 {
-		return fallback[rand.Intn(len(fallback))]
+	if len(top) == 1 {
+		return top[0]
 	}
-	return ""
+	return top[rand.Intn(len(top))]
 }
 
 // dislikedGenres lists the genres the user rated net down, sorted for a
@@ -991,28 +999,27 @@ var presetGenres = []string{
 	"city life", "nature", "mystery",
 }
 
-// automaticGenre decides an Automatic Story's genre (issue #32): with no
-// Preferred Genre the rating-steered PickGenre decides, exactly as before;
-// with one, the preference wins about 70% of the rolls, and the rest fall
-// back to PickGenre — and to a random preset genre when the ratings have
-// nothing to offer.
-func automaticGenre(pref string, ratings map[string]map[Rating]int, recent []string, roll float64) string {
+// automaticGenre decides an Automatic Story's genre (issue #32): with a
+// Preferred Genre it wins about 70% of the rolls. The rest go to PickGenre,
+// and then to a random preset genre other than the preference and the latest
+// genre. An empty result leaves the choice to the model.
+func automaticGenre(pref string, ratings map[string]map[Rating]int, latest string, roll float64) string {
 	if pref != "" && roll < PreferredShare {
 		return pref
 	}
-	if g := PickGenre(ratings, recent); g != "" {
+	if g := PickGenre(ratings, latest); g != "" {
 		return g
 	}
-	if pref != "" {
-		others := make([]string, 0, len(presetGenres))
-		for _, g := range presetGenres {
-			if g != pref {
-				others = append(others, g)
-			}
-		}
-		return others[rand.Intn(len(others))]
+	if pref == "" {
+		return ""
 	}
-	return ""
+	others := make([]string, 0, len(presetGenres))
+	for _, g := range presetGenres {
+		if g != pref && g != latest {
+			others = append(others, g)
+		}
+	}
+	return others[rand.Intn(len(others))]
 }
 
 // automaticTheme decides an Automatic Story's theme ask (issue #32): with no

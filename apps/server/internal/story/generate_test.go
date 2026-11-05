@@ -628,33 +628,36 @@ func TestPickGenreSteeredByRatings(t *testing.T) {
 		"travel":  {RatingUp: 3, RatingDown: 1},
 		"cooking": {RatingUp: 1},
 		"mystery": {RatingDown: 2},
-	}, []string{"fairy tale"})
+	}, "")
 	if got != "travel" {
 		t.Fatalf("PickGenre = %q, want the most-upvoted genre", got)
 	}
-	// No ratings: recent reading history seeds the choice.
-	got = PickGenre(map[string]map[Rating]int{}, []string{"fairy tale"})
-	if got != "fairy tale" {
-		t.Fatalf("PickGenre = %q, want the recent genre", got)
+	// No ratings: nothing to steer by, so the model surprises the reader.
+	if got = PickGenre(map[string]map[Rating]int{}, "fairy tale"); got != "" {
+		t.Fatalf("PickGenre = %q, want surprise-me (empty) with no ratings", got)
 	}
 	// Nothing known: empty string means "surprise me".
-	if got = PickGenre(nil, nil); got != "" {
+	if got = PickGenre(nil, ""); got != "" {
 		t.Fatalf("PickGenre = %q, want surprise-me (empty)", got)
 	}
 	// Ties pick randomly among the tied genres.
-	got = PickGenre(map[string]map[Rating]int{"a": {RatingUp: 1}, "b": {RatingUp: 1}}, nil)
+	got = PickGenre(map[string]map[Rating]int{"a": {RatingUp: 1}, "b": {RatingUp: 1}}, "")
 	if got != "a" && got != "b" {
 		t.Fatalf("PickGenre = %q, want one of the tied upvoted genres", got)
 	}
-	// Disliked genres drop out of the recent-reading fallback: ratings
-	// steer away even from what the learner just read.
-	got = PickGenre(map[string]map[Rating]int{"mystery": {RatingDown: 1}}, []string{"mystery", "fairy tale"})
-	if got != "fairy tale" {
-		t.Fatalf("PickGenre = %q, want the disliked recent genre skipped", got)
+	// The genre of the newest Story is never picked again, even when it is
+	// the only upvoted one: a single upvote must not lock the Learner in.
+	if got = PickGenre(map[string]map[Rating]int{"comedy": {RatingUp: 1}}, "comedy"); got != "" {
+		t.Fatalf("PickGenre = %q, want surprise-me when the only upvoted genre is the latest", got)
 	}
-	// All recent genres disliked: surprise me rather than re-serve them.
-	if got = PickGenre(map[string]map[Rating]int{"mystery": {RatingDown: 1}}, []string{"mystery"}); got != "" {
-		t.Fatalf("PickGenre = %q, want surprise-me when every recent genre is disliked", got)
+	// ...but the next-best upvoted genre is picked instead.
+	got = PickGenre(map[string]map[Rating]int{"comedy": {RatingUp: 2}, "travel": {RatingUp: 1}}, "comedy")
+	if got != "travel" {
+		t.Fatalf("PickGenre = %q, want the next upvoted genre when the latest is the top one", got)
+	}
+	// Disliked genres are never picked.
+	if got = PickGenre(map[string]map[Rating]int{"mystery": {RatingDown: 1}}, ""); got != "" {
+		t.Fatalf("PickGenre = %q, want surprise-me when the only rated genre is disliked", got)
 	}
 	// dislikedGenres lists the net-down genres for the prompt's avoid
 	// line, sorted for a stable prompt. Net-neutral genres are not listed.
