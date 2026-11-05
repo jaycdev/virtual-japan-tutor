@@ -57,10 +57,12 @@ func TestPostgresStoreAgainstPostgres(t *testing.T) {
 			Tokens: []Token{
 				{Pos: 0, Surface: "がっこう", Start: 0, End: 4, Reading: "がっこう", Dictionary: "がっこう", EntSeq: &ent, Tag: TagKnown, SRSLevel: &srs},
 				{Pos: 1, Surface: "で", Start: 4, End: 5, Reading: "で", Dictionary: "で", Tag: TagUnknown},
-				{Pos: 2, Surface: "べんきょう", Start: 5, End: 9, Reading: "べんきょう", Dictionary: "べんきょう", EntSeq: ptr(int64(entFire)), Tag: TagUnknown},
-				{Pos: 3, Surface: "しました", Start: 9, End: 13, Reading: "しました", Dictionary: "する", Tag: TagUnknown},
+				{Pos: 2, Surface: "べんきょう", Start: 5, End: 10, Reading: "べんきょう", Dictionary: "べんきょう", EntSeq: ptr(int64(entFire)), Tag: TagUnknown},
+				{Pos: 3, Surface: "しました", Start: 10, End: 14, Reading: "しました", Dictionary: "する", Tag: TagUnknown},
 			},
-			Spans: []Span{{Start: 9, End: 13, GrammarPointID: grammarPoint, IsFocus: true}},
+			// しました: [10,14) in runes. (These offsets were one short, which
+			// spanned うしまし; loading now drops a span that is not its pattern.)
+			Spans: []Span{{Start: 10, End: 14, GrammarPointID: grammarPoint, IsFocus: true}},
 		}},
 		Questions: []Question{
 			{Pos: 0, PromptJA: "どこで べんきょう しましたか。", OptionsJA: []string{"がっこう", "いえ"}, AnswerIndex: 0},
@@ -114,7 +116,7 @@ func TestPostgresStoreAgainstPostgres(t *testing.T) {
 	if sen.Tokens[0].SRSLevel == nil || *sen.Tokens[0].SRSLevel != 4 {
 		t.Errorf("token srs level: %+v", sen.Tokens[0])
 	}
-	if len(sen.Spans) != 1 || sen.Spans[0].GrammarPointID != grammarPoint || sen.Spans[0].Start != 9 || sen.Spans[0].End != 13 {
+	if len(sen.Spans) != 1 || sen.Spans[0].GrammarPointID != grammarPoint || sen.Spans[0].Start != 10 || sen.Spans[0].End != 14 {
 		t.Errorf("grammar spans: %+v", sen.Spans)
 	}
 	if !sen.Spans[0].IsFocus {

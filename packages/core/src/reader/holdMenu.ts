@@ -196,6 +196,25 @@ export function coveringSpan(sentence: StorySentence, token: StoryToken): StoryG
   return null;
 }
 
+/** The grammar point a Lookup describes: its Grammar Span, else a particle's hint (issue #98). */
+export type GrammarCue = Pick<StoryGrammarSpan, "pattern" | "meaning" | "jlptLevel">;
+
+export function grammarCue(token: StoryToken, span: StoryGrammarSpan | null): GrammarCue | null {
+  if (span) return span;
+  if (token.grammarHint) return token.grammarHint;
+  return null;
+}
+
+/**
+ * Whether a word is a particle with only its catalogue hint behind it: no
+ * dictionary entry and no Grammar Span. It shows its Lookup row on hover or
+ * press, but opens no Lookup Menu and reports no Weak Signal, since there is
+ * nothing to look up in a dictionary or save.
+ */
+export function hintOnly(token: StoryToken, span: StoryGrammarSpan | null): boolean {
+  return token.entSeq === undefined && span === null && token.grammarHint !== undefined;
+}
+
 /**
  * The Reading Panel's one shrink step: the sentence box starts at full size;
  * when the text overflows it drops to the shrunk size exactly once and then

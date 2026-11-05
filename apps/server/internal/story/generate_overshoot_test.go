@@ -48,6 +48,7 @@ func TestShortfallHintGivesExactTargets(t *testing.T) {
 		{"plenty of short sentences", 26, 10, "140 characters too short", "You wrote 26 sentences averaging 10 characters (260 in total)"},
 		{"a few sentences", 4, 20, "320 characters too short", "You wrote 4 sentences averaging 20 characters (80 in total)"},
 		{"just under the floor", 20, 19, "20 characters too short", "You wrote 20 sentences averaging 19 characters (380 in total)"},
+		{"very short sentences", 3, 2, "394 characters too short", "You wrote 3 sentences averaging 2 characters (6 in total)"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			hint := shortfallHint(storyOfSentences(c.n, c.each))

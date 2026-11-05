@@ -134,8 +134,10 @@ function Word({
   const ref: TokenRef = { sentence: sentenceIndex, index };
   const inGrammarSpan = spansCovering(token, sentence.grammarSpans).length > 0;
   // A word opens a Lookup only when there is something behind it: a Dictionary
-  // Entry, or the Grammar Span it sits in.
-  const interactive = token.entSeq !== undefined || inGrammarSpan;
+  // Entry, the Grammar Span it sits in, or a particle's Grammar Catalogue hint
+  // (issue #98).
+  const interactive = token.entSeq !== undefined || inGrammarSpan || token.grammarHint !== undefined;
+  const opensMenu = token.entSeq !== undefined || inGrammarSpan;
   const marks = tokenMarks(token, sentence.grammarSpans, focusEntSeqs);
   const ruby = showsFurigana(token);
 
@@ -155,10 +157,13 @@ function Word({
   return (
     <span
       data-token={`${sentenceIndex}-${index}`}
-      role={interactive ? "button" : undefined}
+      // A hint-only particle opens no menu, so it is not a button: it stays
+      // focusable so a keyboard user gets its Lookup on focus, but claims no
+      // popup or expanded state that Enter would not deliver.
+      role={opensMenu ? "button" : undefined}
       tabIndex={interactive ? 0 : undefined}
-      aria-haspopup={interactive ? "dialog" : undefined}
-      aria-expanded={interactive ? open : undefined}
+      aria-haspopup={opensMenu ? "dialog" : undefined}
+      aria-expanded={opensMenu ? open : undefined}
       // The name of the word as a button is its surface alone: a screen reader
       // would otherwise read the <rt> reading as part of it. A non-interactive
       // span takes no aria-label (nothing would read it, issue #77 review).

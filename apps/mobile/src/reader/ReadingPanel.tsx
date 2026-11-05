@@ -1,5 +1,13 @@
-import type { Story, StoryGrammarSpan } from "@vjt/api-client";
-import { countGlosses, coveringSpan, firstGlosses, type EntryLookup, type ReadingSettingsView } from "@vjt/core";
+import type { Story } from "@vjt/api-client";
+import {
+  countGlosses,
+  coveringSpan,
+  firstGlosses,
+  grammarCue,
+  type EntryLookup,
+  type GrammarCue,
+  type ReadingSettingsView,
+} from "@vjt/core";
 import { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
@@ -200,9 +208,9 @@ function LookupRow({
   const token = sen.tokens[looked.index];
   if (!token) return null;
   if (looked.kind === "grammar") {
-    const span = coveringSpan(sen, token);
-    if (!span) return null;
-    return <GrammarGloss span={span} />;
+    const cue = grammarCue(token, coveringSpan(sen, token));
+    if (!cue) return null;
+    return <GrammarGloss cue={cue} />;
   }
   const entry = token.entSeq !== undefined ? lookup.peek(token.entSeq, token.surface, token.reading) : undefined;
   // The row only appears once there is real data to show: a lookup in flight,
@@ -235,16 +243,16 @@ function LookupRow({
   );
 }
 
-function GrammarGloss({ span }: { span: StoryGrammarSpan }) {
+function GrammarGloss({ cue }: { cue: GrammarCue }) {
   return (
     <View testID="panel-lookup" style={styles.lookupContent}>
       <Text className="text-body text-pitch" style={styles.lookupWord}>
-        {span.pattern}
+        {cue.pattern}
       </Text>
       <Text className="text-small text-foreground">
-        {span.meaning}
+        {cue.meaning}
       </Text>
-      <View style={styles.lookupRight}>{span.jlptLevel ? <JlptBadge level={span.jlptLevel} /> : null}</View>
+      <View style={styles.lookupRight}>{cue.jlptLevel ? <JlptBadge level={cue.jlptLevel} /> : null}</View>
     </View>
   );
 }

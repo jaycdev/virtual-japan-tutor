@@ -4,6 +4,7 @@ import {
   holdSignal,
   IDLE,
   menuOptions,
+  hintOnly,
   optionAt,
   reduceHold,
   saveableItem,
@@ -190,7 +191,10 @@ export function StoryReader({
     const sen = story.sentences[target.sentence];
     const tok = sen?.tokens[target.index];
     if (!sen || !tok) return null;
-    return { ...target, kind: coveringSpan(sen, tok) ? "grammar" : "token" };
+    // A particle with only a hint has no entry, so its Lookup row is the grammar one.
+    const span = coveringSpan(sen, tok);
+    const grammar = span !== null || (tok.entSeq === undefined && tok.grammarHint !== undefined);
+    return { ...target, kind: grammar ? "grammar" : "token" };
   }, [gesture.token, story]);
 
   const menuOpen = gesture.phase === "menu";
@@ -244,6 +248,9 @@ export function StoryReader({
     // Item Lists or Reading Settings, which arrive after the press. The menu
     // options those need are derived at render instead (see openOptions),
     // so nothing here can go stale (issue #14 review, minor 7).
+    // A particle with only its catalogue hint has no menu to open (issue #98):
+    // its Lookup row shows on press and there is no hold to time.
+    if (hintOnly(token, coveringSpan(sen, token))) return;
     const holdMs = reading.state.status === "ready" ? reading.state.settings.lookupHoldMs : 800;
     holdTimer.current = setTimeout(() => {
       holdTimer.current = null;

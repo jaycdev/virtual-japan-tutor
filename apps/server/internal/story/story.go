@@ -65,10 +65,22 @@ const (
 	// far better than characters. The schema's maxItems in generate.go must
 	// equal MaxSentences.
 	MaxSentences       = 100
-	PromptMinSentences = 35
-	PromptMaxSentences = 45
-	MinQuestions       = 3
-	MaxQuestions       = 5
+	PromptMinSentences = 20
+	PromptMaxSentences = 30
+	// PromptMinSentenceRunes..PromptMaxSentenceRunes is the sentence length
+	// the prompt asks for, long enough to join related clauses inside one
+	// sentence instead of linking them with a conjunction at the start of the
+	// next.
+	PromptMinSentenceRunes = 20
+	PromptMaxSentenceRunes = 50
+	// MaxContrastiveOpeners and MaxConjunctionShare bound the style check: how
+	// many sentences may open with a contrastive conjunction (でも, しかし…),
+	// and what share of sentences may open with any conjunction. The check is
+	// soft: a Story that fails only on it is still accepted on its last attempt.
+	MaxContrastiveOpeners = 2
+	MaxConjunctionShare   = 0.2
+	MinQuestions          = 3
+	MaxQuestions          = 5
 	// DefaultCoverage is the Known-word coverage the gate enforces.
 	DefaultCoverage = 0.95
 	// DefaultFocusFraction is the share of the Focus Set's vocabulary items
@@ -215,6 +227,10 @@ type Sentence struct {
 // link (see isLinkable), so the reader can look any word up. Particles stay
 // unlinked on purpose. content alone says what the coverage gate counts (see
 // isContent); the link and the gate are separate decisions.
+//
+// A particle the Grammar Catalogue has a point for carries Hint instead of a
+// link (issue #98): the reader's Lookup shows the point, while the word gets
+// no underline, Weak Signal or Save, because none of those is keyed on Hint.
 type Token struct {
 	Pos        int
 	Surface    string
@@ -226,10 +242,18 @@ type Token struct {
 	Tag        string
 	SRSLevel   *int
 
+	// Hint is read-time enrichment from grammar_points (see GrammarHint), set
+	// by the store when a Story loads. Never stored on the token.
+	Hint *GrammarHint
+
 	// content marks the morphemes the coverage gate counts (nouns, verbs,
 	// adjectives, adverbs; see isContent). Set during materialisation,
 	// never stored: the counts it produced are stored instead.
 	content bool
+
+	// conjunction marks a 接続詞 token (see materialise). Like content it is
+	// set during materialisation and never stored; the style check reads it.
+	conjunction bool
 
 	// alts are the other dictionary entries sharing this token's spelling
 	// (see VocabHit.Alts); tagKnown links the token to the Learner's known
@@ -260,6 +284,33 @@ type Span struct {
 	Meaning   string
 	JLPTLevel string
 }
+
+// GrammarHint names the Grammar Point an unlinked token expresses when its
+// surface is exactly that point's pattern (issue #98): the particles は, が,
+// を, に, の, で, と, も, か, ね and よ. It is computed when a Story loads, from
+// the Grammar Catalogue as it stands, so it needs no relink and an edited
+// catalogue shows up at once. A pattern with rows at several levels resolves to
+// the lowest level (N5 first), then catalogue order.
+type GrammarHint struct {
+	GrammarPointID int64
+	Pattern        string
+	Meaning        string
+	JLPTLevel      string
+}
+
+// hintParticles are the only surfaces a GrammarHint may attach to. A pattern
+// match alone is not enough: the catalogue has single-kana rows such as な
+// (N4, "don't ~") and kagome leaves the auxiliary な unlinked too, so a bare
+// match would hint きれいな with the wrong meaning. The stored token keeps no
+// part of speech, so the rule is an explicit list of particles instead.
+var hintParticles = map[string]bool{
+	"は": true, "が": true, "を": true, "に": true, "の": true, "で": true,
+	"と": true, "も": true, "へ": true, "や": true, "か": true, "ね": true,
+	"よ": true, "から": true, "まで": true, "より": true,
+}
+
+// hintable reports whether a token's surface may carry a GrammarHint.
+func hintable(surface string) bool { return hintParticles[surface] }
 
 // Question is one comprehension question. AnswerIndex is server-side only:
 // the API view never reveals it before the Learner answers.

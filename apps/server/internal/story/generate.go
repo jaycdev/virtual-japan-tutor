@@ -14,6 +14,7 @@ import (
 	"github.com/ikawaha/kagome/v2/tokenizer"
 
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/llm"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/refdata"
 )
 
 // The morphological tokeniser is kagome (github.com/ikawaha/kagome): pure Go,
@@ -86,9 +87,10 @@ func isContent(t tokenizer.Token) bool {
 // is what makes it hoverable: the reader opens a Lookup in the Reading Panel
 // only for a linked token. Every token is linkable except particles (助詞),
 // auxiliaries (助動詞), symbols (記号) and tokens with no part of speech. A
-// Lookup on those shows nothing useful, and particles stay un-hoverable on
-// purpose. isContent implies isLinkable, so the coverage gate never counts a
-// token that cannot be linked.
+// Lookup on those shows nothing useful. A particle is hoverable without a link:
+// the store attaches a Grammar Catalogue hint to it on load (see GrammarHint,
+// issue #98), which keeps the dictionary out of particles. isContent implies
+// isLinkable, so the coverage gate never counts a token that cannot be linked.
 func isLinkable(t tokenizer.Token) bool {
 	switch posCategory(t) {
 	case "", "助詞", "助動詞", "記号":
@@ -217,6 +219,9 @@ func (g *Generator) Generate(ctx context.Context, client ChatClient, req Request
 	// brief).
 	brief := msgs[1].Content
 	var last *Story
+	// styleOnly is the newest candidate that passed every hard check but
+	// failed the soft style check. A later failure must not discard it.
+	var styleOnly *Story
 	var lastErr error
 	// attemptsUsed counts every attempt that reached the model, parse and
 	// materialise failures included, so the stored candidate's Attempts says
@@ -234,6 +239,9 @@ func (g *Generator) Generate(ctx context.Context, client ChatClient, req Request
 		if err != nil {
 			// Provider-level failure: gate feedback cannot fix it. Report
 			// the last candidate if a previous attempt got that far.
+			if styleOnly != nil {
+				return acceptStyleOnly(styleOnly, attemptsUsed), nil
+			}
 			if last != nil {
 				return last, lastErr
 			}
@@ -268,10 +276,20 @@ func (g *Generator) Generate(ctx context.Context, client ChatClient, req Request
 			return nil, err
 		}
 		problems := g.gate(story, settings, req.Focus)
-		if len(problems) == 0 {
+		style := styleProblems(story)
+		if len(problems) == 0 && len(style) == 0 {
 			story.Validated = true
 			return story, nil
 		}
+		if len(problems) == 0 {
+			// Style is soft: a choppy passage that clears every hard check is
+			// still a Story once the attempts run out.
+			if attempt == settings.MaxAttempts {
+				return acceptStyleOnly(story, attemptsUsed), nil
+			}
+			styleOnly = story
+		}
+		problems = append(problems, style...)
 		story.Validated = false
 		last = story
 		// Keep every attempt's complaints, not just the last: a final
@@ -285,10 +303,21 @@ func (g *Generator) Generate(ctx context.Context, client ChatClient, req Request
 			)
 		}
 	}
+	if styleOnly != nil {
+		return acceptStyleOnly(styleOnly, attemptsUsed), nil
+	}
 	if last != nil {
 		last.Attempts = attemptsUsed
 	}
 	return last, lastErr
+}
+
+// acceptStyleOnly validates a candidate that cleared the hard gate and failed
+// only the soft style check.
+func acceptStyleOnly(s *Story, attempts int) *Story {
+	s.Validated = true
+	s.Attempts = attempts
+	return s
 }
 
 // materialise converts the model's JSON into a Story: tokenising every
@@ -330,6 +359,7 @@ func (g *Generator) materialise(ctx context.Context, raw *storyJSON, req Request
 			// look up every word that isLinkable, so the two rules are kept
 			// apart: content is set for every token, the link for linkable ones.
 			tok.content = isContent(kt)
+			tok.conjunction = posCategory(kt) == "接続詞"
 			if isLinkable(kt) {
 				if _, err := linker.link(ctx, &tok, base); err != nil {
 					return nil, err
@@ -593,6 +623,15 @@ func (g *Generator) gate(s *Story, settings Settings, focus FocusSet) []string {
 					"grammar span [%d,%d) %q in sentence %d (%q) opens at the content word %s, which is not part of the pattern, and was discarded; a span must cover the pattern's own characters only, never the verb or adjective stem before it (for 食べてしまった with pattern てしまった the span covers てしまった)",
 					sp.Start, sp.End, txt, sen.Pos, sen.JA, surf))
 			}
+			// Every span must realise the point it cites, wherever it opens:
+			// the stem rule above only covers spans opening at a content
+			// word, so a span over a particle was kept whatever it cited.
+			if pattern := focus.grammarPattern(sp.GrammarPointID); !miscut && !spanExpressesPattern(txt, pattern) {
+				miscut = true
+				discarded = append(discarded, fmt.Sprintf(
+					"grammar span [%d,%d) %q in sentence %d (%q) does not express point %d (%q), which it cites, and was discarded; a span must cover the characters of the pattern it cites",
+					sp.Start, sp.End, txt, sen.Pos, sen.JA, sp.GrammarPointID, pattern))
+			}
 			if miscut {
 				continue
 			}
@@ -627,6 +666,60 @@ func (g *Generator) gate(s *Story, settings Settings, focus FocusSet) []string {
 	// discarded; one that fails is told, so the retry can fix the cause.
 	if len(problems) > 0 {
 		problems = append(problems, discarded...)
+	}
+	return problems
+}
+
+// contrastiveOpeners are the contrastive conjunctions the style check counts
+// at the start of a sentence, longest first so a prefix never shadows one.
+var contrastiveOpeners = []string{"けれども", "ところが", "しかし", "だが", "でも"}
+
+// openingConjunction reports the conjunction a sentence opens with, if any,
+// and whether it is a contrastive one. A contrastive opener is matched by its
+// text, so a conjunction the tokeniser tags differently still counts.
+func openingConjunction(sen Sentence) (word string, contrastive, ok bool) {
+	for _, w := range contrastiveOpeners {
+		if strings.HasPrefix(sen.JA, w) && onTokenBoundary(sen.Tokens, 0, utf8.RuneCountInString(w)) {
+			return w, true, true
+		}
+	}
+	if len(sen.Tokens) > 0 && sen.Tokens[0].conjunction {
+		return sen.Tokens[0].Surface, false, true
+	}
+	return "", false, false
+}
+
+// styleProblems is the soft style check: too many sentences opening with a
+// contrastive conjunction, or too many opening with any conjunction. It is
+// kept apart from gate because a Story that fails only here is still accepted
+// on its last attempt.
+func styleProblems(s *Story) []string {
+	n := len(s.Sentences)
+	if n == 0 {
+		return nil
+	}
+	var problems []string
+	var contrastive []string
+	conjunctive := 0
+	for _, sen := range s.Sentences {
+		word, isContrastive, ok := openingConjunction(sen)
+		if !ok {
+			continue
+		}
+		conjunctive++
+		if isContrastive {
+			contrastive = append(contrastive, fmt.Sprintf("%s (%q)", word, sen.JA))
+		}
+	}
+	if len(contrastive) > MaxContrastiveOpeners {
+		problems = append(problems, fmt.Sprintf(
+			"%d sentences open with a contrastive conjunction, at most %d are allowed: %s. Use one only where the passage really turns against what came before, and link other ideas with clause endings (〜けど, 〜ので, 〜て), time words such as その後, or no connector at all",
+			len(contrastive), MaxContrastiveOpeners, strings.Join(contrastive, "; ")))
+	}
+	if share := float64(conjunctive) / float64(n); share > MaxConjunctionShare {
+		problems = append(problems, fmt.Sprintf(
+			"%d of %d sentences (%.0f%%) open with a conjunction, at most %.0f%% may; join related clauses inside one sentence instead of starting a new sentence with そして, それから or a conjunction",
+			conjunctive, n, share*100, MaxConjunctionShare*100))
 	}
 	return problems
 }
@@ -719,6 +812,71 @@ func spanStartsLikePattern(span, pattern string) bool {
 		common++
 	}
 	return common >= min(2, len(p))
+}
+
+// spanExpressesPattern reports whether a Grammar Span's text realises the
+// pattern of the point it cites. A span matches a variant of the pattern (split
+// on ・ and /, normalised as the catalogue normalises them) when:
+//   - one contains the other (に in について, ことがある in ～ことがある);
+//   - it starts the way the variant starts (いたしました for いたします); or
+//   - the variant's dictionary forms appear in order in the span's
+//     (てしまいました for てしまう), the rule internal/grammar uses.
+//
+// An empty pattern gives nothing to judge, so the span is kept. Live, the model
+// put spans over と and について citing がり and あまり (issue #98 follow-up);
+// this is the check that discards them.
+func spanExpressesPattern(span, pattern string) bool {
+	if strings.TrimSpace(pattern) == "" {
+		return true
+	}
+	s := refdata.NormalisePattern(span)
+	if s == "" {
+		return false
+	}
+	spanSeq := baseForms(s)
+	for _, v := range refdata.SplitVariants(pattern) {
+		nv := refdata.NormalisePattern(v)
+		if nv == "" {
+			continue
+		}
+		if strings.Contains(s, nv) || strings.Contains(nv, s) || spanStartsLikePattern(s, nv) {
+			return true
+		}
+		if seq := baseForms(nv); len(seq) > 0 && isSubseq(seq, spanSeq) {
+			return true
+		}
+	}
+	return false
+}
+
+// baseForms is the dictionary-form sequence of a text, the surface standing in
+// where kagome has no base form. A text kagome cannot tokenise has none.
+func baseForms(text string) []string {
+	toks, err := tokenise(text)
+	if err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(toks))
+	for _, t := range toks {
+		if base, ok := t.BaseForm(); ok && base != "" && base != "*" {
+			out = append(out, base)
+		} else {
+			out = append(out, t.Surface)
+		}
+	}
+	return out
+}
+
+// isSubseq reports whether needle appears in hay in order, not necessarily
+// contiguously.
+func isSubseq(needle, hay []string) bool {
+	i := 0
+	for _, h := range hay {
+		if i < len(needle) && needle[i] == h {
+			i++
+		}
+	}
+	return i == len(needle)
 }
 
 // grammarPattern is the catalogue text of a suggested grammar point.
@@ -820,10 +978,13 @@ func userPrompt(req Request, settings Settings) string {
 	fmt.Fprintf(&b, `Write a Japanese reading passage for a learner.
 
 Passage rules:
-- %d to %d characters total (counting every character), split into %d to %d sentences. That is about 20 to 30 characters per sentence, so write a complete sentence in each entry and do not stop early: a passage of fewer than %d characters is rejected. Never put several sentences into one entry.
+- %d to %d characters total (counting every character), split into %d to %d sentences. That is about %d to %d characters per sentence, so write a complete sentence in each entry and do not stop early: a passage of fewer than %d characters is rejected. Never put several sentences into one entry.
+- Join closely related clauses inside one sentence (with the te-form, けど, ので, から or のに) instead of starting a new sentence for each step.
+- Use at most %d contrastive conjunctions (でも, しかし, ところが, けれども, だが) in the whole passage, and only for a real contrast. Link other ideas with clause endings, time words (その後, 次の日) or no connector at all. Keep the sentences that open with any conjunction to %.0f%% or fewer.
+- Introduce every person the first time with a name or relationship (生徒の田中さん, 田中さんのお母さん), and refer to them the same way afterwards. In narration the narrator's own family is 母 or 父. Keep the cast to about three people.
 - Natural modern Japanese in kana and kanji, plain text: no markdown, no quotes, no brackets.
 - Use only words from the Known Words list below. A word not in the list is an error the checker will reject.
-`, PromptMinChars, PromptMaxChars, PromptMinSentences, PromptMaxSentences, MinChars)
+`, PromptMinChars, PromptMaxChars, PromptMinSentences, PromptMaxSentences, PromptMinSentenceRunes, PromptMaxSentenceRunes, MinChars, MaxContrastiveOpeners, MaxConjunctionShare*100)
 	if req.Genre != "" {
 		fmt.Fprintf(&b, "- Genre/theme: %s. Repeat it in the genre field.\n", req.Genre)
 	} else {
@@ -842,7 +1003,7 @@ Passage rules:
 	if len(req.Focus.Vocab) > 0 {
 		minUse := int(float64(len(req.Focus.Vocab))*settings.MinFocusFraction + 0.999)
 		fmt.Fprintf(&b, `
-Focus words (the words this lesson targets — at least %d of the %d must appear, and the passage should be about them):
+Focus words (the words this lesson targets — at least %d of the %d must appear. Work them in where they fit naturally, and leave a word out rather than force it into an unrelated sentence):
 %s
 `, minUse, len(req.Focus.Vocab), vocabLines(req.Focus.Vocab))
 	}
