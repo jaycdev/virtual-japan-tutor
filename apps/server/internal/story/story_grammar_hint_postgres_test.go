@@ -41,6 +41,8 @@ func TestPostgresStoryLoadsGrammarHintForParticles(t *testing.T) {
 	waN5 := insertPoint("N5", 990101, wa, "topic marker")
 	noPat := "の"
 	noID := insertPoint("N5", 990103, noPat, "possessive particle")
+	// な has a catalogue row, but as an auxiliary it must never get a hint.
+	insertPoint("N4", 990104, "な", "don't ~")
 
 	var ent int64 = 990199
 	if _, err := pool.Exec(ctx, `INSERT INTO jmdict_entries (ent_seq, is_common) VALUES ($1, true)`, ent); err != nil {
@@ -65,6 +67,7 @@ func TestPostgresStoryLoadsGrammarHintForParticles(t *testing.T) {
 	insert(101, noPat, nil)
 	insert(102, "へ", nil)
 	insert(103, wa, &ent) // linked: a dictionary link wins, so no hint
+	insert(104, "な", nil) // a catalogue row, but not a particle: no hint
 
 	got, err := st.Get(ctx, saved.ID, user)
 	if err != nil {
@@ -92,5 +95,8 @@ func TestPostgresStoryLoadsGrammarHintForParticles(t *testing.T) {
 	}
 	if h := byPos[103].Hint; h != nil {
 		t.Errorf("linked は hint = %+v, want none: a dictionary link is never replaced by a hint", *h)
+	}
+	if h := byPos[104].Hint; h != nil {
+		t.Errorf("な (an auxiliary with a catalogue row) hint = %+v, want none", *h)
 	}
 }

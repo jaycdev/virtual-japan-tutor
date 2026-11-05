@@ -335,7 +335,8 @@ describe("Story reader: Lookup", () => {
     expect(within(lookup).getByText("topic marker")).toBeTruthy();
     fireEvent.click(particle);
     expect(screen.queryByRole("button", { name: "Dictionary" })).toBeNull(); // no Lookup Menu
-    expect(particle.getAttribute("aria-expanded")).toBe("false");
+    expect(particle.getAttribute("aria-expanded")).toBeNull(); // no popup to expand
+    expect(particle.getAttribute("aria-haspopup")).toBeNull();
     expect(requestsTo(requests, "/weak-signals", "POST")).toHaveLength(0);
   });
 

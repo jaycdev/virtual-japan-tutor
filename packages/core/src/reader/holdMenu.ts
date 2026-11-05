@@ -206,13 +206,13 @@ export function grammarCue(token: StoryToken, span: StoryGrammarSpan | null): Gr
 }
 
 /**
- * Whether a word opens the Lookup Menu at all: a dictionary entry or a Grammar
- * Span. A particle's hint alone does not: it shows its Lookup row on hover or
- * press, but offers no menu, no Weak Signal and nothing to save, since the
- * word has no entry and no Grammar Span to save against.
+ * Whether a word is a particle with only its catalogue hint behind it: no
+ * dictionary entry and no Grammar Span. It shows its Lookup row on hover or
+ * press, but opens no Lookup Menu and reports no Weak Signal, since there is
+ * nothing to look up in a dictionary or save.
  */
-export function opensLookupMenu(token: StoryToken, span: StoryGrammarSpan | null): boolean {
-  return token.entSeq !== undefined || span !== null;
+export function hintOnly(token: StoryToken, span: StoryGrammarSpan | null): boolean {
+  return token.entSeq === undefined && span === null && token.grammarHint !== undefined;
 }
 
 /**

@@ -282,6 +282,20 @@ type GrammarHint struct {
 	JLPTLevel      string
 }
 
+// hintParticles are the only surfaces a GrammarHint may attach to. A pattern
+// match alone is not enough: the catalogue has single-kana rows such as な
+// (N4, "don't ~") and kagome leaves the auxiliary な unlinked too, so a bare
+// match would hint きれいな with the wrong meaning. The stored token keeps no
+// part of speech, so the rule is an explicit list of particles instead.
+var hintParticles = map[string]bool{
+	"は": true, "が": true, "を": true, "に": true, "の": true, "で": true,
+	"と": true, "も": true, "へ": true, "や": true, "か": true, "ね": true,
+	"よ": true, "から": true, "まで": true, "より": true,
+}
+
+// hintable reports whether a token's surface may carry a GrammarHint.
+func hintable(surface string) bool { return hintParticles[surface] }
+
 // Question is one comprehension question. AnswerIndex is server-side only:
 // the API view never reveals it before the Learner answers.
 type Question struct {

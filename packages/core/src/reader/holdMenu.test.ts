@@ -5,10 +5,10 @@ import type { StoryGrammarSpan, StorySentence, StoryToken } from "@vjt/api-clien
 import {
   coveringSpan,
   grammarCue,
+  hintOnly,
   holdSignal,
   IDLE,
   menuOptions,
-  opensLookupMenu,
   optionAt,
   reduceHold,
   saveableItem,
@@ -186,7 +186,7 @@ describe("coveringSpan", () => {
   });
 });
 
-describe("grammarCue and opensLookupMenu (issue #98 particles)", () => {
+describe("grammarCue and hintOnly (issue #98 particles)", () => {
   const hint: NonNullable<StoryToken["grammarHint"]> = {
     grammarPointId: "7",
     pattern: "は",
@@ -214,10 +214,11 @@ describe("grammarCue and opensLookupMenu (issue #98 particles)", () => {
     expect(grammarCue(token({ entSeq: undefined }), null)).toBeNull();
   });
 
-  it("opens the Lookup Menu for a linked word or a span, never for a hint alone", () => {
-    expect(opensLookupMenu(token(), null)).toBe(true);
-    expect(opensLookupMenu(particle, span())).toBe(true);
-    expect(opensLookupMenu(particle, null)).toBe(false);
+  it("is hint-only for a particle with nothing else behind it, and never for a linked word or a span", () => {
+    expect(hintOnly(particle, null)).toBe(true);
+    expect(hintOnly(particle, span())).toBe(false); // a span is a menu target
+    expect(hintOnly(token(), null)).toBe(false); // a linked word
+    expect(hintOnly(token({ entSeq: undefined }), null)).toBe(false); // unlinked, no hint: unchanged
   });
 });
 

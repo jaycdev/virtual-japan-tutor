@@ -243,7 +243,7 @@ func (st *PostgresStore) loadChildren(ctx context.Context, s *Story) error {
 			trows.Close()
 			return fmt.Errorf("story tokens: %w", err)
 		}
-		if hintID != nil {
+		if hintID != nil && hintable(t.Surface) {
 			t.Hint = &GrammarHint{
 				GrammarPointID: *hintID,
 				Pattern:        *hintPattern,
