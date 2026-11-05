@@ -145,7 +145,8 @@ jobs:
             echo "run=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          changed=$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}")
+          # Three dots: the changes this PR makes, not changes that landed on main after it branched.
+          changed=$(git diff --name-only "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}")
           if echo "$changed" | grep -Eq '^(apps/mobile/|packages/|pnpm-lock\.yaml$|\.github/workflows/ci\.yml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else

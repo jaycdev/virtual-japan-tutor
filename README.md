@@ -163,7 +163,7 @@ Compose refuses to start without `SECRETS_KEY`. Set `VJT_BOOTSTRAP_USERNAME` / `
 to get a first account on first boot (see [Authentication](#authentication)). Ports are published on the
 machine running the Docker daemon. Optional overrides (credentials, `SERVER_PORT`) go in `.env`.
 
-### Publishing images
+### Publishing
 
 `.github/workflows/publish.yml` builds the `server` and `import` targets of `apps/server/Dockerfile` for
 `linux/amd64` and `linux/arm64` and pushes them to GitHub Container Registry

@@ -167,4 +167,23 @@ describe('mobile ServerSettings', () => {
       ).toBeTruthy();
     });
   });
+
+  it('shows the server version from /health', async () => {
+    healthBody = { status: 'ok', database: 'connected', version: '1.2.3' };
+    const client = makeClient(healthFetch());
+    render(<ServerSettings client={client} currentUrl="http://10.0.2.2:8080" onSave={async () => {}} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Server version: 1.2.3')).toBeTruthy();
+    });
+  });
+
+  it('shows "unknown" when /health carries no version', async () => {
+    const client = makeClient(healthFetch());
+    render(<ServerSettings client={client} currentUrl="http://10.0.2.2:8080" onSave={async () => {}} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Server version: unknown')).toBeTruthy();
+    });
+  });
 });
