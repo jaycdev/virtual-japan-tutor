@@ -340,6 +340,45 @@ describe("Story reader: Lookup", () => {
     expect(requestsTo(requests, "/weak-signals", "POST")).toHaveLength(0);
   });
 
+  it("a Lookup shows the current SRS Level of its word, and of its Grammar Point, and nothing when there is none", async () => {
+    const hint = (srsLevel?: number) => ({
+      grammarPointId: "7",
+      pattern: "は",
+      meaning: "topic marker",
+      jlptLevel: "N5" as const,
+      ...(srsLevel === undefined ? {} : { srsLevel }),
+    });
+    const story = makeStory({
+      sentences: [
+        {
+          ja: "はは",
+          en: "topic",
+          tokens: [
+            { surface: "は", start: 0, end: 1, reading: "は", tag: "unknown", showFurigana: false, grammarHint: hint(5) },
+            { surface: "は", start: 1, end: 2, reading: "は", tag: "unknown", showFurigana: false, grammarHint: hint() },
+          ],
+          grammarSpans: [],
+        },
+      ],
+      vocabItems: [],
+    });
+    const { container } = await renderReader({ story });
+    fireEvent.mouseEnter(token(container, 0, 0));
+    expect(within(await screen.findByTestId("panel-lookup")).getByText("SRS 5")).toBeTruthy();
+    fireEvent.mouseLeave(token(container, 0, 0));
+    await waitFor(() => expect(screen.queryByTestId("panel-lookup")).toBeNull());
+    fireEvent.mouseEnter(token(container, 0, 1));
+    const bare = await screen.findByTestId("panel-lookup");
+    expect(within(bare).queryByText(/^SRS /)).toBeNull();
+  });
+
+  it("the dictionary Lookup row shows the word's SRS Level", async () => {
+    const { container } = await renderReader();
+    fireEvent.mouseEnter(token(container, 0, 0));
+    const lookup = await screen.findByTestId("panel-lookup");
+    expect(within(lookup).getByText("SRS 4")).toBeTruthy();
+  });
+
   it("focusing a word (keyboard) shows the same Lookup and selects its sentence", async () => {
     const { container } = await renderReader();
     fireEvent.focus(token(container, 0, 0));

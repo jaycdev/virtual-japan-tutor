@@ -4,7 +4,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { Icon } from "../components/ui/icon";
 import { useSheetBottomInset } from "../components/ui/sheet.ts";
-import { JlptBadge } from "./parts.tsx";
+import { JlptBadge, SrsLevelText } from "./parts.tsx";
 import { PitchGraph } from "./PitchGraph.tsx";
 
 /**
@@ -24,6 +24,7 @@ function WindowCard({
   title,
   reading,
   jlpt,
+  srs,
   onClose,
   children,
 }: {
@@ -31,6 +32,7 @@ function WindowCard({
   title: string;
   reading?: string;
   jlpt?: string | null;
+  srs?: number | null;
   onClose: () => void;
   children: React.ReactNode;
 }) {
@@ -59,6 +61,7 @@ function WindowCard({
                 {reading}
               </Text>
             ) : null}
+            {srs != null ? <SrsLevelText level={srs} /> : null}
             {jlpt ? <JlptBadge level={jlpt} /> : null}
             <Pressable accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} hitSlop={8} style={styles.close}>
               <Icon name="close" size="md" strokeWidth={2.5} className="text-muted-foreground" />
@@ -84,6 +87,7 @@ export function DictionaryWindow({
       title={entry.headword}
       reading={entry.reading !== entry.headword ? entry.reading : undefined}
       jlpt={entry.jlptLevel}
+      srs={entry.srsLevel}
       onClose={onClose}
     >
       {entry.pitch ? (
@@ -119,7 +123,7 @@ export function GrammarWindow({
   onClose: () => void;
 }) {
   return (
-    <WindowCard testID="grammar-window" title={span.pattern} jlpt={span.jlptLevel} onClose={onClose}>
+    <WindowCard testID="grammar-window" title={span.pattern} jlpt={span.jlptLevel} srs={span.srsLevel} onClose={onClose}>
       <Text className="text-body text-foreground" style={styles.senseMeaning}>
         {span.meaning}
       </Text>

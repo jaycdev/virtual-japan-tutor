@@ -218,8 +218,9 @@ func (st *PostgresStore) loadChildren(ctx context.Context, s *Story) error {
 	trows, err := st.pool.Query(ctx, `
 		SELECT t.sentence_id, t.position, t.surface, t.start, t."end", t.reading, t.dictionary,
 		       t.ent_seq, t.tag, t.srs_level,
-		       h.id, h.pattern, h.meaning, h.jlpt_level
+		       h.id, h.pattern, h.meaning, h.jlpt_level, hl.srs_level
 		FROM story_tokens t
+		JOIN stories st ON st.id = t.story_id
 		LEFT JOIN LATERAL (
 		    SELECT g.id, g.pattern, g.meaning, g.jlpt_level
 		    FROM grammar_points g
@@ -228,6 +229,7 @@ func (st *PostgresStore) loadChildren(ctx context.Context, s *Story) error {
 		             g.catalogue_number, g.ordinal
 		    LIMIT 1
 		) h ON true
+		LEFT JOIN LATERAL (`+currentGrammarSRSLevel("st.user_id", "h.id")+`) hl ON h.id IS NOT NULL
 		WHERE t.story_id = $1 ORDER BY t.sentence_id, t.position`, s.ID)
 	if err != nil {
 		return fmt.Errorf("story tokens: %w", err)
@@ -237,9 +239,10 @@ func (st *PostgresStore) loadChildren(ctx context.Context, s *Story) error {
 		var t Token
 		var hintID *int64
 		var hintPattern, hintMeaning, hintLevel *string
+		var hintSRS *int
 		if err := trows.Scan(&senID, &t.Pos, &t.Surface, &t.Start, &t.End,
 			&t.Reading, &t.Dictionary, &t.EntSeq, &t.Tag, &t.SRSLevel,
-			&hintID, &hintPattern, &hintMeaning, &hintLevel); err != nil {
+			&hintID, &hintPattern, &hintMeaning, &hintLevel, &hintSRS); err != nil {
 			trows.Close()
 			return fmt.Errorf("story tokens: %w", err)
 		}
@@ -249,6 +252,7 @@ func (st *PostgresStore) loadChildren(ctx context.Context, s *Story) error {
 				Pattern:        *hintPattern,
 				Meaning:        *hintMeaning,
 				JLPTLevel:      *hintLevel,
+				SRSLevel:       hintSRS,
 			}
 		}
 		if sen, ok := senByID[senID]; ok {
@@ -262,9 +266,11 @@ func (st *PostgresStore) loadChildren(ctx context.Context, s *Story) error {
 
 	srows, err := st.pool.Query(ctx, `
 		SELECT sp.id, sp.sentence_id, sp.start, sp."end", sp.grammar_point_id, sp.is_focus,
-		       gp.pattern, gp.meaning, gp.jlpt_level
+		       gp.pattern, gp.meaning, gp.jlpt_level, sl.srs_level
 		FROM story_grammar_spans sp
+		JOIN stories st ON st.id = sp.story_id
 		JOIN grammar_points gp ON gp.id = sp.grammar_point_id
+		LEFT JOIN LATERAL (`+currentGrammarSRSLevel("st.user_id", "sp.grammar_point_id")+`) sl ON true
 		WHERE sp.story_id = $1 ORDER BY sp.sentence_id, sp.start`, s.ID)
 	if err != nil {
 		return fmt.Errorf("story spans: %w", err)
@@ -273,7 +279,7 @@ func (st *PostgresStore) loadChildren(ctx context.Context, s *Story) error {
 		var sp Span
 		var senID uuid.UUID
 		if err := srows.Scan(&sp.ID, &senID, &sp.Start, &sp.End, &sp.GrammarPointID, &sp.IsFocus,
-			&sp.Pattern, &sp.Meaning, &sp.JLPTLevel); err != nil {
+			&sp.Pattern, &sp.Meaning, &sp.JLPTLevel, &sp.SRSLevel); err != nil {
 			srows.Close()
 			return fmt.Errorf("story spans: %w", err)
 		}
@@ -314,6 +320,18 @@ func (st *PostgresStore) loadChildren(ctx context.Context, s *Story) error {
 		return err
 	}
 	return nil
+}
+
+// currentGrammarSRSLevel is a lateral subquery that yields the Learner's current
+// SRS Level for a Grammar Point: the highest level among the MaruMori grammar
+// items matched to it (NULL when none has one). It is read on every load, never
+// stored, so it reflects the last Sync. The arguments are SQL column references.
+func currentGrammarSRSLevel(userCol, pointCol string) string {
+	return `SELECT max(m.srs_level) AS srs_level
+		FROM known_grammar_observations o
+		JOIN marumori_grammar_observations m
+		  ON m.user_id = o.user_id AND m.marumori_id = o.marumori_id
+		WHERE o.user_id = ` + userCol + ` AND o.matched_point = ` + pointCol
 }
 
 // List returns validated stories only — failed stories are kept for analysis,
