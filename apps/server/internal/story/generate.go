@@ -218,6 +218,9 @@ func (g *Generator) Generate(ctx context.Context, client ChatClient, req Request
 	// brief).
 	brief := msgs[1].Content
 	var last *Story
+	// styleOnly is the newest candidate that passed every hard check but
+	// failed the soft style check. A later failure must not discard it.
+	var styleOnly *Story
 	var lastErr error
 	// attemptsUsed counts every attempt that reached the model, parse and
 	// materialise failures included, so the stored candidate's Attempts says
@@ -235,6 +238,9 @@ func (g *Generator) Generate(ctx context.Context, client ChatClient, req Request
 		if err != nil {
 			// Provider-level failure: gate feedback cannot fix it. Report
 			// the last candidate if a previous attempt got that far.
+			if styleOnly != nil {
+				return acceptStyleOnly(styleOnly, attemptsUsed), nil
+			}
 			if last != nil {
 				return last, lastErr
 			}
@@ -269,10 +275,20 @@ func (g *Generator) Generate(ctx context.Context, client ChatClient, req Request
 			return nil, err
 		}
 		problems := g.gate(story, settings, req.Focus)
-		if len(problems) == 0 {
+		style := styleProblems(story)
+		if len(problems) == 0 && len(style) == 0 {
 			story.Validated = true
 			return story, nil
 		}
+		if len(problems) == 0 {
+			// Style is soft: a choppy passage that clears every hard check is
+			// still a Story once the attempts run out.
+			if attempt == settings.MaxAttempts {
+				return acceptStyleOnly(story, attemptsUsed), nil
+			}
+			styleOnly = story
+		}
+		problems = append(problems, style...)
 		story.Validated = false
 		last = story
 		// Keep every attempt's complaints, not just the last: a final
@@ -286,10 +302,21 @@ func (g *Generator) Generate(ctx context.Context, client ChatClient, req Request
 			)
 		}
 	}
+	if styleOnly != nil {
+		return acceptStyleOnly(styleOnly, attemptsUsed), nil
+	}
 	if last != nil {
 		last.Attempts = attemptsUsed
 	}
 	return last, lastErr
+}
+
+// acceptStyleOnly validates a candidate that cleared the hard gate and failed
+// only the soft style check.
+func acceptStyleOnly(s *Story, attempts int) *Story {
+	s.Validated = true
+	s.Attempts = attempts
+	return s
 }
 
 // materialise converts the model's JSON into a Story: tokenising every
@@ -331,6 +358,7 @@ func (g *Generator) materialise(ctx context.Context, raw *storyJSON, req Request
 			// look up every word that isLinkable, so the two rules are kept
 			// apart: content is set for every token, the link for linkable ones.
 			tok.content = isContent(kt)
+			tok.conjunction = posCategory(kt) == "接続詞"
 			if isLinkable(kt) {
 				if _, err := linker.link(ctx, &tok, base); err != nil {
 					return nil, err
@@ -632,6 +660,60 @@ func (g *Generator) gate(s *Story, settings Settings, focus FocusSet) []string {
 	return problems
 }
 
+// contrastiveOpeners are the contrastive conjunctions the style check counts
+// at the start of a sentence, longest first so a prefix never shadows one.
+var contrastiveOpeners = []string{"けれども", "ところが", "しかし", "だが", "でも"}
+
+// openingConjunction reports the conjunction a sentence opens with, if any,
+// and whether it is a contrastive one. A contrastive opener is matched by its
+// text, so a conjunction the tokeniser tags differently still counts.
+func openingConjunction(sen Sentence) (word string, contrastive, ok bool) {
+	for _, w := range contrastiveOpeners {
+		if strings.HasPrefix(sen.JA, w) && onTokenBoundary(sen.Tokens, 0, utf8.RuneCountInString(w)) {
+			return w, true, true
+		}
+	}
+	if len(sen.Tokens) > 0 && sen.Tokens[0].conjunction {
+		return sen.Tokens[0].Surface, false, true
+	}
+	return "", false, false
+}
+
+// styleProblems is the soft style check: too many sentences opening with a
+// contrastive conjunction, or too many opening with any conjunction. It is
+// kept apart from gate because a Story that fails only here is still accepted
+// on its last attempt.
+func styleProblems(s *Story) []string {
+	n := len(s.Sentences)
+	if n == 0 {
+		return nil
+	}
+	var problems []string
+	var contrastive []string
+	conjunctive := 0
+	for _, sen := range s.Sentences {
+		word, isContrastive, ok := openingConjunction(sen)
+		if !ok {
+			continue
+		}
+		conjunctive++
+		if isContrastive {
+			contrastive = append(contrastive, fmt.Sprintf("%s (%q)", word, sen.JA))
+		}
+	}
+	if len(contrastive) > MaxContrastiveOpeners {
+		problems = append(problems, fmt.Sprintf(
+			"%d sentences open with a contrastive conjunction, at most %d are allowed: %s. Use one only where the passage really turns against what came before, and link other ideas with clause endings (〜けど, 〜ので, 〜て), time words such as その後, or no connector at all",
+			len(contrastive), MaxContrastiveOpeners, strings.Join(contrastive, "; ")))
+	}
+	if share := float64(conjunctive) / float64(n); share > MaxConjunctionShare {
+		problems = append(problems, fmt.Sprintf(
+			"%d of %d sentences (%.0f%%) open with a conjunction, at most %.0f%% may; join related clauses inside one sentence instead of starting a new sentence with そして, それから or a conjunction",
+			conjunctive, n, share*100, MaxConjunctionShare*100))
+	}
+	return problems
+}
+
 // listWords joins up to max words for feedback, saying how many were left out.
 func listWords(words []string, max int) string {
 	if len(words) <= max {
@@ -821,10 +903,13 @@ func userPrompt(req Request, settings Settings) string {
 	fmt.Fprintf(&b, `Write a Japanese reading passage for a learner.
 
 Passage rules:
-- %d to %d characters total (counting every character), split into %d to %d sentences. That is about 20 to 30 characters per sentence, so write a complete sentence in each entry and do not stop early: a passage of fewer than %d characters is rejected. Never put several sentences into one entry.
+- %d to %d characters total (counting every character), split into %d to %d sentences. That is about %d to %d characters per sentence, so write a complete sentence in each entry and do not stop early: a passage of fewer than %d characters is rejected. Never put several sentences into one entry.
+- Join closely related clauses inside one sentence (with the te-form, けど, ので, から or のに) instead of starting a new sentence for each step.
+- Use at most %d contrastive conjunctions (でも, しかし, ところが, けれども, だが) in the whole passage, and only for a real contrast. Link other ideas with clause endings, time words (その後, 次の日) or no connector at all. Keep the sentences that open with any conjunction to %.0f%% or fewer.
+- Introduce every person the first time with a name or relationship (生徒の田中さん, 田中さんのお母さん), and refer to them the same way afterwards. In narration the narrator's own family is 母 or 父. Keep the cast to about three people.
 - Natural modern Japanese in kana and kanji, plain text: no markdown, no quotes, no brackets.
 - Use only words from the Known Words list below. A word not in the list is an error the checker will reject.
-`, PromptMinChars, PromptMaxChars, PromptMinSentences, PromptMaxSentences, MinChars)
+`, PromptMinChars, PromptMaxChars, PromptMinSentences, PromptMaxSentences, PromptMinSentenceRunes, PromptMaxSentenceRunes, MinChars, MaxContrastiveOpeners, MaxConjunctionShare*100)
 	if req.Genre != "" {
 		fmt.Fprintf(&b, "- Genre/theme: %s. Repeat it in the genre field.\n", req.Genre)
 	} else {
@@ -843,7 +928,7 @@ Passage rules:
 	if len(req.Focus.Vocab) > 0 {
 		minUse := int(float64(len(req.Focus.Vocab))*settings.MinFocusFraction + 0.999)
 		fmt.Fprintf(&b, `
-Focus words (the words this lesson targets — at least %d of the %d must appear, and the passage should be about them):
+Focus words (the words this lesson targets — at least %d of the %d must appear. Work them in where they fit naturally, and leave a word out rather than force it into an unrelated sentence):
 %s
 `, minUse, len(req.Focus.Vocab), vocabLines(req.Focus.Vocab))
 	}
