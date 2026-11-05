@@ -7,6 +7,21 @@
   width: min(100%, calc(var(--story-text-size) * 40));
 }
 
+/* The Reading Panel's height: 8 lines at the saved Story text size. Defined once
+   because the panel (ReadingPanel.tsx) and the scroll margin below must agree. */
+:root {
+  --reading-panel-height: calc(var(--story-text-size) * 8);
+}
+
+/* The Reading Panel is sticky over the top of the viewport, so anything the
+   browser scrolls into view (arrow-key sentence moves, Tab to a word) must stop
+   below it, not at the viewport edge behind it. The margin is the panel's own
+   height plus a little air. */
+.story-text [data-sentence],
+.story-text [data-token] {
+  scroll-margin-top: calc(var(--reading-panel-height) + 0.5rem);
+}
+
 /* Ruby: the reading sits over its word, centred on it, and never takes part in
    a copy or a selection (copyText strips <rt> too, this is the belt to that
    braces). The base text stays the only thing a screen reader or a paste gets. */
