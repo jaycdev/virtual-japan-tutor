@@ -6,10 +6,40 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/config"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/db"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/story"
 )
+
+// relinkJob names the relink of stored Stories in maintenance_jobs. Once its row
+// exists the startup hook skips it, so the relink does not re-tokenise every
+// Story on each boot.
+const relinkJob = "relink-stories-94"
+
+// relinkOnce runs the relink on startup unless it already completed. It reports
+// whether it ran. A run that fails or is cancelled records nothing, so the next
+// start retries it. The relink only fills missing links, so a retry is safe.
+func relinkOnce(ctx context.Context, pool *pgxpool.Pool) (story.RelinkReport, bool, error) {
+	var done bool
+	if err := pool.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM maintenance_jobs WHERE name = $1)`, relinkJob).Scan(&done); err != nil {
+		return story.RelinkReport{}, false, fmt.Errorf("relink marker: %w", err)
+	}
+	if done {
+		return story.RelinkReport{}, false, nil
+	}
+	rep, err := story.NewRelinker(pool).Run(ctx)
+	if err != nil {
+		return rep, true, err
+	}
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO maintenance_jobs (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`, relinkJob); err != nil {
+		return rep, true, fmt.Errorf("relink marker: %w", err)
+	}
+	return rep, true, nil
+}
 
 // relinkStoriesCmd implements `server relink-stories`: a one-off, idempotent
 // repair that gives already-stored Stories the dictionary links generation did

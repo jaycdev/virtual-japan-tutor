@@ -217,6 +217,17 @@ func prepareDatabase(ctx context.Context, cfg config.Config, svc *auth.Service, 
 			slog.Info("default AI provider skipped: needs exactly one user who has no providers yet")
 		}
 	}
+
+	// Give stored Stories their dictionary links (issue #94) once per database.
+	// A failure is logged, not fatal: the API keeps serving and the next start retries.
+	rep, ran, err := relinkOnce(ctx, pool)
+	switch {
+	case err != nil && ctx.Err() == nil:
+		slog.Error("relink of stored stories failed; it retries on the next start", "err", err)
+	case err == nil && ran:
+		slog.Info("relinked stored stories", "stories", rep.Stories, "stories_changed", rep.StoriesChanged,
+			"tokens_linked", rep.TokensLinked, "sentences_skipped", rep.SentencesSkipped, "failed", rep.Failed)
+	}
 }
 
 // retry runs fn with backoff until it succeeds (true) or ctx is cancelled (false).

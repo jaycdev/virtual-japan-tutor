@@ -318,17 +318,25 @@ No account exists on a fresh database. Either:
 #### Relinking stored Stories
 
 Stories generated before the fix for issue #94 have no dictionary link on most of their words, so those
-words cannot be looked up in the reader. After upgrading, run `server relink-stories` once to give them
-links. It is idempotent and safe to re-run: it only fills in missing links, never changes an existing
-link, the stored gate counts or the Focus flags already on a Story, and it prints a summary line.
-The summary goes to stderr. A sentence whose stored tokens no longer match the tokeniser is skipped with a
-warning, not counted as a failure. The command exits non-zero if any Story failed.
+words cannot be looked up in the reader. The server gives them links **automatically on startup**, once per
+database: after migrations it runs the relink and records completion in the `maintenance_jobs` table. Later
+starts skip it. Nothing to run by hand. The relink logs a summary line. If it fails, the error is logged, the
+API keeps serving, and the next start retries it.
+
+The relink is idempotent and only fills in missing links. It never changes an existing link, the stored gate
+counts or the Focus flags already on a Story. A sentence whose stored tokens no longer match the tokeniser is
+skipped with a warning, not counted as a failure.
+
+To re-run it by hand (for example after a failure you want to see at once), use the subcommand:
 
 ```sh
 cd apps/server && DATABASE_URL=... SECRETS_KEY=... go run ./cmd/server relink-stories
 # in compose (run next to docker-compose.yml):
 docker compose exec -T server server relink-stories
 ```
+
+The subcommand always runs the relink, regardless of the `maintenance_jobs` marker. It exits non-zero if any
+Story failed.
 
 ### Secrets
 
