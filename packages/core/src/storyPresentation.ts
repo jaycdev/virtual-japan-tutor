@@ -4,7 +4,8 @@ import {
   type InterfaceLanguage,
 } from "./i18n/language.ts";
 import type { StringKey } from "./i18n/strings.ts";
-import { translatePlain } from "./i18n/translate.ts";
+import { translate, translatePlain, type TranslateParams } from "./i18n/translate.ts";
+import type { RubyText } from "./i18n/ruby.ts";
 
 /**
  * Story words in the Learner's language, shared by the Stories screens (issue
@@ -73,12 +74,24 @@ export function genreLabel(
 const EN_DATE = new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric" });
 const JA_DATE = new Intl.DateTimeFormat("ja-JP", { year: "numeric", month: "long", day: "numeric" });
 
-/** The card's date, short and unambiguous: "Nov 1, 2026" / "2026年11月1日". */
+/**
+ * The card's date, short and unambiguous: "Nov 1, 2026" / "2026年11月1日".
+ */
 export function storyDate(
   iso: string,
   lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
 ): string {
   return (lang === "en" ? EN_DATE : JA_DATE).format(new Date(iso));
+}
+
+/**
+ * The Reader's meta line exactly as English showed it before the string table
+ * (#125 review S1): the raw Genre (empty when there is none, not "Story"),
+ * the two Origin words, and the toDateString() date. English stays byte-identical
+ * to that; Japanese gets the translated line from storyCardMeta.
+ */
+export function storyMetaEn(story: Story): string {
+  return `${story.genre} · ${story.origin === "on_demand" ? "On demand" : "Automatic"} · ${new Date(story.createdAt).toDateString()}`;
 }
 
 /**
@@ -89,6 +102,37 @@ export function storyCardMeta(story: Story, lang: InterfaceLanguage = DEFAULT_IN
   return `${genreLabel(story.genre, lang) || translatePlain(lang, "story.noGenre")} · ${originLabel(story, lang)} · ${storyDate(story.createdAt, lang)}`;
 }
 
+/**
+ * Story Origin as base/reading segments, for screens that draw furigana with
+ * <TableText> — the same words as originLabel, readings kept in ja-furigana
+ * (#125 review B3 coverage).
+ */
+export function originRuby(story: Pick<Story, "origin">, lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE): RubyText {
+  return translate(lang, story.origin === "on_demand" ? "story.originOnDemand" : "story.originAutomatic");
+}
+
+/** The Genre in the same segment form; a genre the table has never seen passes through plain. */
+export function genreRuby(genre: string | null | undefined, lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE): RubyText {
+  if (genre === null || genre === undefined) return [];
+  const table = GENRE_STRINGS[lang];
+  const id = lang === "en" ? genre : genre.toLowerCase();
+  const key = Object.hasOwn(table, id) ? table[id] : undefined;
+  return key === undefined ? [{ text: genre }] : translate(lang, key);
+}
+
+/** The card's meta line as segments: genre · origin · date, furigana included. */
+export function storyCardMetaRuby(story: Story, lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE): RubyText {
+  const genre = genreRuby(story.genre, lang);
+  const head = genre.length > 0 ? genre : translate(lang, "story.noGenre");
+  return [
+    ...head,
+    { text: " · " },
+    ...originRuby(story, lang),
+    { text: " · " },
+    { text: storyDate(story.createdAt, lang) },
+  ];
+}
+
 const STAGE_STRINGS = {
   preparing: "stage.preparing",
   writing: "stage.writing",
@@ -96,20 +140,34 @@ const STAGE_STRINGS = {
   saving: "stage.saving",
 } as const;
 
+/**
+ * The table entry naming a run's stage. Screens that render copy through <T>
+ * use this with progressStageParams so the visible line keeps its furigana
+ * (#125 review B3); stageLabel stays the plain-text form for aria labels.
+ */
+export function progressStageKey(progress: StoryGenerationProgress): StringKey {
+  const key = STAGE_STRINGS[progress.stage as keyof typeof STAGE_STRINGS];
+  if (key === undefined) return "stage.writing";
+  if (progress.stage === "writing" && progress.attempt != null && progress.maxAttempts != null) {
+    return "stage.writingAttempt";
+  }
+  return key;
+}
+
+/** The {placeholders} progressStageKey's entry fills; empty for the plain stages. */
+export function progressStageParams(progress: StoryGenerationProgress): TranslateParams {
+  if (progressStageKey(progress) === "stage.writingAttempt") {
+    return { attempt: progress.attempt ?? 1, max: progress.maxAttempts ?? 1 };
+  }
+  return {};
+}
+
 /** The Learner-facing stage of a generation run, in every place a run shows progress. */
 export function stageLabel(
   progress: StoryGenerationProgress,
   lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
 ): string {
-  const key = STAGE_STRINGS[progress.stage as keyof typeof STAGE_STRINGS];
-  if (key === undefined) return translatePlain(lang, "stage.writing");
-  if (progress.stage === "writing" && progress.attempt != null && progress.maxAttempts != null) {
-    return translatePlain(lang, "stage.writingAttempt", {
-      attempt: progress.attempt,
-      max: progress.maxAttempts,
-    });
-  }
-  return translatePlain(lang, key);
+  return translatePlain(lang, progressStageKey(progress), progressStageParams(progress));
 }
 
 /** The progress line a run shows: its stage and the rounded percent. */

@@ -59,7 +59,7 @@ export { strings } from "./i18n/strings.ts";
 export type { StringKey } from "./i18n/strings.ts";
 export { parseRuby, stripRuby } from "./i18n/ruby.ts";
 export type { RubySegment, RubyText } from "./i18n/ruby.ts";
-export { translate, translatePlain } from "./i18n/translate.ts";
+export { translate, translatePlain, pluralEn } from "./i18n/translate.ts";
 export type { TranslateParams } from "./i18n/translate.ts";
 export {
   ERROR_CODES,
@@ -67,6 +67,7 @@ export {
   errorCode,
   EXERCISE_KINDS,
   exerciseInstruction,
+  exerciseInstructionKey,
   failureText,
   httpFailureText,
 } from "./i18n/errorMessages.ts";
@@ -88,7 +89,14 @@ export type { KeyValueStore, LandingSetupDecision } from "./firstRun.ts";
 export { memoryTokenStorage } from "./tokenStorage.ts";
 export type { TokenStorage } from "./tokenStorage.ts";
 export { deviceTimezone, TIMEZONE_OPTIONS } from "./timezones.ts";
-export { SETTINGS_SECTIONS, findSettingsSection, sectionBlurb, sectionTitle } from "./settingsSections.ts";
+export {
+  SETTINGS_SECTIONS,
+  findSettingsSection,
+  sectionBlurb,
+  sectionBlurbKey,
+  sectionTitle,
+  sectionTitleKey,
+} from "./settingsSections.ts";
 export type { SettingsSection, StepSaveFn, StepSaveOutcome, StepSaveRegistrar } from "./settingsSections.ts";
 export { probeServerHealth, PROBE_TIMEOUT_MS } from "./serverHealth.ts";
 export type { FetchLike } from "./serverHealth.ts";
@@ -134,7 +142,20 @@ export {
 } from "./learnerTime.ts";
 export { FAILED_RUN_FALLBACK, todayCardPhase } from "./todayCard.ts";
 export type { TodayCardPhase } from "./todayCard.ts";
-export { genreLabel, originLabel, progressLabel, stageLabel, storyCardMeta, storyDate } from "./storyPresentation.ts";
+export {
+  genreLabel,
+  genreRuby,
+  originLabel,
+  originRuby,
+  progressLabel,
+  progressStageKey,
+  progressStageParams,
+  stageLabel,
+  storyCardMeta,
+  storyCardMetaRuby,
+  storyDate,
+  storyMetaEn,
+} from "./storyPresentation.ts";
 export {
   createFocusLabelResolver,
   focusChipKey,

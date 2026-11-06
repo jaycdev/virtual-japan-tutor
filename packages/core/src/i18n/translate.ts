@@ -9,6 +9,14 @@ import { strings, type StringKey } from "./strings.ts";
 /** Values substituted for {placeholders}. Numbers are accepted where counts show. */
 export type TranslateParams = Record<string, string | number>;
 
+/**
+ * The English plural "s" passed as a translation param: Japanese counts carry no
+ * ending, so the param exists only to keep English wording byte-identical.
+ */
+export function pluralEn(language: InterfaceLanguage, count: number): "s" | "" {
+  return language === "en" && count !== 1 ? "s" : "";
+}
+
 const PLACEHOLDER = /\{([A-Za-z0-9_]+)\}/g;
 
 /**
