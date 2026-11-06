@@ -159,6 +159,11 @@ describe('mobile StartingLevelSettings', () => {
       '～にちかい (MaruMori level N4) — no Grammar Catalogue match',
       '～ておいたほうがいい — matched point 412, level was ambiguous',
     ]);
+    // English has no readings, so each row is one Text paragraph — no inner
+    // pieces — exactly as the row rendered before issue #125.
+    for (const row of rows) {
+      expect(row.querySelectorAll("*")).toHaveLength(0);
+    }
     // Read-only: the list issues no writes.
     expect(writes.some((w) => w.method !== 'GET')).toBe(false);
   });

@@ -1,7 +1,9 @@
 import type { ApiClient } from "@vjt/api-client";
 import {
   STARTING_LEVELS,
+  grammarReviewPatternRuby,
   grammarReviewTailRuby,
+  grammarReviewText,
   grammarUpdatedRuby,
   useGrammarReview,
   useStartingLevel,
@@ -158,20 +160,33 @@ function GrammarReviewList({ client }: { client: ApiClient }) {
       {review.state.status === "ready" && review.state.items.length > 0 ? (
         <>
           <T k="settings.reviewNote" className="text-small text-muted-foreground" />
-          {review.state.items.map((item) => (
-            // The Pattern is Learner-catalogue content and rides unannotated;
-            // the coverage check exempts just that piece, by its testID — the
-            // connectives beside it are ours, and stay under the check.
-            <View key={item.marumoriId} testID="grammar-review-row" className="flex-row flex-wrap items-end">
-              <Text testID="grammar-review-pattern" className="text-body text-foreground">
-                {item.pattern || item.marumoriId}
-              </Text>
-              <TableText
-                segments={grammarReviewTailRuby(item, language)}
-                className="text-body text-foreground"
-              />
-            </View>
-          ))}
+          {review.state.items.map((item) => {
+            const tail = grammarReviewTailRuby(item, language);
+            if (!tail.some((segment) => segment.ruby)) {
+              // Nothing to annotate (en, ja): the whole row as one Text,
+              // one paragraph that wraps under itself — exactly the row as
+              // it rendered before issue #125.
+              return (
+                <Text key={item.marumoriId} testID="grammar-review-row" className="text-body text-foreground">
+                  {grammarReviewText(item, language)}
+                </Text>
+              );
+            }
+            // With readings the row is the wrap row of columns: the Pattern
+            // is Learner-catalogue content and rides unannotated — the
+            // coverage check exempts just that piece, by its testID, while
+            // the connectives beside it stay under the check.
+            return (
+              <View key={item.marumoriId} testID="grammar-review-row" className="flex-row flex-wrap items-end">
+                <TableText
+                  testID="grammar-review-pattern"
+                  segments={grammarReviewPatternRuby(item)}
+                  className="text-body text-foreground"
+                />
+                <TableText segments={tail} className="text-body text-foreground" />
+              </View>
+            );
+          })}
         </>
       ) : null}
     </View>
