@@ -26,8 +26,13 @@ export function Ruby({ runs }: { runs: RubyRun[] }) {
           // and the whole base sits centred instead. index.css pairs this with
           // ruby-overhang: auto. The text content is unchanged.
           <ruby key={i} className="ui-ruby">
-            <span className="inline-block">{run.text}</span>
-            <rt className="text-furigana-m text-furigana">{run.reading}</rt>
+            {/* text-decoration: inherit keeps an underline (a link, an error
+                squiggle) running through the base even though the inline-block
+                would otherwise start its own decoration. (#125 round-3 nit) */}
+            <span className="inline-block [text-decoration:inherit]">{run.text}</span>
+            {/* aria-hidden: the reading is a visual aid; a screen reader gets
+                the base alone, not base+reading. (#125 round-3 nit) */}
+            <rt aria-hidden="true" className="text-furigana-m text-furigana">{run.reading}</rt>
           </ruby>
         ) : (
           // A bare text node, not a wrapper span: the sentence stays one run of

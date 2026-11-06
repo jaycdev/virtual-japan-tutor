@@ -148,6 +148,10 @@
   }
   ruby.ui-ruby rt {
     white-space: nowrap;
+    /* Selecting UI text copies the words, not the readings printed above them
+       (round-3 review nit); -webkit- prefix for older Chromium/Safari. */
+    user-select: none;
+    -webkit-user-select: none;
   }
 
   @media (prefers-reduced-motion: reduce) {

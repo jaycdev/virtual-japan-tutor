@@ -676,9 +676,10 @@ describe("Practice (web)", () => {
       </MemoryRouter>,
     );
 
-    // The Start button's accessible name interleaves the <rt> readings with
-    // spaces ("練習 れんしゅう を 始 はじ める"), hence the kana regex.
-    fireEvent.click(screen.getByRole("button", { name: /れんしゅう/ }));
+    // The Start button's accessible name is the base text alone — the <rt>
+    // readings carry aria-hidden, so a screen reader never hears them doubled
+    // with the kanji (round-3 review nit). Computed name: "練習 を 始 める".
+    fireEvent.click(screen.getByRole("button", { name: "練習 を 始 める" }));
     await screen.findByText(/どれですか/);
     expect(container.querySelectorAll("ruby").length).toBeGreaterThan(0);
 

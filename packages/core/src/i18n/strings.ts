@@ -297,7 +297,7 @@ export const strings = {
   },
   "server.answeredButDegraded": {
     en: "The server answered, but reports a degraded part.",
-    ja: "サーバーは応答《おうとう》しましたが、一部《いちぶ》の機能《きのう》が劣化《れっか》しています。",
+    ja: "サーバーは応答《おうとう》しましたが、一部《いちぶ》の機能《きのう》に問題《もんだい》があります。",
   },
   "server.checkAgain": { en: "Check again", ja: "もう一度《いちど》確認《かくにん》" },
 
