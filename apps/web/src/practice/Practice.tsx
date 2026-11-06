@@ -356,6 +356,10 @@ function ActivePractice({
     optionRefs.current[next]?.focus();
   }
 
+  // English keeps the server's own sentence; Japanese renders the table entry
+  // through <T> so it carries furigana (#125 review B3; hoisted per round-2 N4).
+  const instructionKey = language === "en" ? null : exerciseInstructionKey(current.kind);
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-2">
@@ -386,12 +390,7 @@ function ActivePractice({
       <PracticeCard>
         <div className="flex flex-col gap-3">
           <p id={instructionId} className="text-small text-muted-foreground">
-            {(() => {
-              // English keeps the server's own sentence; Japanese renders the
-              // table entry through <T> so it carries furigana (#125 review B3).
-              const key = language === "en" ? null : exerciseInstructionKey(current.kind);
-              return key === null ? current.instruction : <T k={key} />;
-            })()}
+            {instructionKey === null ? current.instruction : <T k={instructionKey} />}
           </p>
           <p id={promptTextId} lang="ja" className="font-serif text-display text-foreground">
             <PromptText text={current.prompt} />
