@@ -4,7 +4,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import {
   grammarReviewText,
-  grammarUpdatedText,
   STARTING_LEVELS,
   useGrammarReview,
   useStartingLevel,
@@ -16,11 +15,12 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { ErrorState, SkeletonLines } from "../../components/states.tsx";
+import { T } from "../../components/Text.tsx";
 import { useSession } from "../../session/session.tsx";
 import { ChoiceGroup, Note, SaveStatus, SectionBody, Subheading, type SaveState } from "../parts.tsx";
 
 export function StartingLevelSection({ registerSave }: { registerSave?: StepSaveRegistrar }) {
-  const { language, tp } = useT();
+  const { language } = useT();
   const { client } = useSession();
   const level = useStartingLevel(client);
   const review = useGrammarReview(client);
@@ -42,7 +42,7 @@ export function StartingLevelSection({ registerSave }: { registerSave?: StepSave
       return "blocked";
     }
     setChoice(null);
-    setSave({ kind: "saved", message: grammarUpdatedText(res, language) });
+    setSave({ kind: "saved", message: <T k="grammar.updated" params={{ added: res.added ?? 0, removed: res.removed ?? 0 }} /> });
     return "saved";
   };
 
@@ -56,7 +56,7 @@ export function StartingLevelSection({ registerSave }: { registerSave?: StepSave
   if (level.state.status === "loading") return <SkeletonLines lines={2} />;
   if (level.state.status === "error") {
     return (
-      <ErrorState message={tp("settings.levelLoadFailed", { message: level.state.message })} onRetry={level.reload} />
+      <ErrorState message={<T k="settings.levelLoadFailed" params={{ message: level.state.message }} />} onRetry={level.reload} />
     );
   }
 
@@ -70,12 +70,12 @@ export function StartingLevelSection({ registerSave }: { registerSave?: StepSave
     <SectionBody>
       <p className="text-body text-foreground">
         {level.state.level.configured
-          ? tp("settings.levelCurrent", { level: level.state.level.level ?? "" })
-          : tp("settings.levelUnset")}
+          ? <T k="settings.levelCurrent" params={{ level: level.state.level.level ?? "" }} />
+          : <T k="settings.levelUnset" />}
       </p>
       <form className="flex flex-col gap-4" onSubmit={(event) => void submit(event)}>
         <ChoiceGroup
-          legend={tp("settings.levelLegend")}
+          legend={<T k="settings.levelLegend" />}
           options={STARTING_LEVELS.map((l) => ({ value: l, label: l }))}
           value={selected}
           onChange={setChoice}
@@ -84,24 +84,24 @@ export function StartingLevelSection({ registerSave }: { registerSave?: StepSave
         <div className="flex flex-wrap items-center gap-4">
           {/* Save level is only offered when a pick is pending; the picker alone shows the current level. */}
           <Button type="submit" disabled={busy || choice === null}>
-            {tp("settings.levelSave")}
+            <T k="settings.levelSave" />
           </Button>
           <SaveStatus state={save} />
         </div>
       </form>
 
       <div className="flex flex-col gap-2">
-        <Subheading>{tp("settings.levelReviewHeading")}</Subheading>
+        <Subheading><T k="settings.levelReviewHeading" /></Subheading>
         {review.state.status === "loading" ? <SkeletonLines lines={1} /> : null}
         {review.state.status === "error" ? (
-          <ErrorState message={tp("settings.reviewLoadFailed", { message: review.state.message })} onRetry={review.reload} />
+          <ErrorState message={<T k="settings.reviewLoadFailed" params={{ message: review.state.message }} />} onRetry={review.reload} />
         ) : null}
         {review.state.status === "ready" && review.state.items.length === 0 ? (
-          <p className="text-body text-muted-foreground">{tp("settings.reviewEmpty")}</p>
+          <p className="text-body text-muted-foreground"><T k="settings.reviewEmpty" /></p>
         ) : null}
         {review.state.status === "ready" && review.state.items.length > 0 ? (
           <>
-            <Note>{tp("settings.reviewNote")}</Note>
+            <Note><T k="settings.reviewNote" /></Note>
             <ul className="flex list-disc flex-col gap-1 pl-5">
               {review.state.items.map((item) => (
                 <li key={item.marumoriId} className="text-body text-foreground">

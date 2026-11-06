@@ -102,7 +102,12 @@ export function SetupWizard({ onFinish }: { onFinish: () => void }) {
 
       <ProgressStatus
         value={(step + 1) / STEPS.length}
-        label={`${tp("setup.stepOf", { step: step + 1, total: STEPS.length })}: ${tp(current.titleKey)}`}
+        label={
+          <>
+            <T k="setup.stepOf" params={{ step: step + 1, total: STEPS.length }} />: <T k={current.titleKey} />
+          </>
+        }
+        ariaLabel={`${tp("setup.stepOf", { step: step + 1, total: STEPS.length })}: ${tp(current.titleKey)}`}
       />
 
       <section aria-labelledby="setup-step-title" className="flex flex-col gap-4">

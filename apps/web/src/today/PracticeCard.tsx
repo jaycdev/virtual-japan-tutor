@@ -1,6 +1,6 @@
 // The Practice call to action (plan 4.4 item 3): how many Focus Set items are
 // waiting, and one Start button to /practice.
-import { translatePlain, useT, type FocusSetView, type InterfaceLanguage } from "@vjt/core";
+import { pluralEn, useT, type FocusSetView } from "@vjt/core";
 import { Link } from "react-router";
 
 import { Button } from "@/components/ui/button";
@@ -30,7 +30,12 @@ export function PracticeCard({ focus }: { focus: FocusSetView }) {
       ) : (
         <div className="flex flex-col items-start gap-3">
           <p className="text-body text-muted-foreground" id="practice-waiting">
-            {waitingLine(count, language)}
+            {count === 0 ? (
+              <T k="today.practiceWaitingNone" />
+            ) : (
+              // English plural -s as a parameter; the Japanese column receives "" (issue #125).
+              <T k="today.practiceWaitingCount" params={{ count, plural: pluralEn(language, count) }} />
+            )}
           </p>
           <Button asChild>
             <Link
@@ -50,13 +55,4 @@ export function PracticeCard({ focus }: { focus: FocusSetView }) {
       )}
     </Card>
   );
-}
-
-function waitingLine(count: number, language: InterfaceLanguage): string {
-  if (count === 0) return translatePlain(language, "today.practiceWaitingNone");
-  // English plural -s as a parameter; the Japanese column receives "" (issue #125).
-  return translatePlain(language, "today.practiceWaitingCount", {
-    count,
-    plural: language === "en" && count !== 1 ? "s" : "",
-  });
 }

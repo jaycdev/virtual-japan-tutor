@@ -7,8 +7,8 @@
 import { Link, Navigate, useParams } from "react-router";
 import {
   findSettingsSection,
-  sectionBlurb,
-  sectionTitle,
+  sectionBlurbKey,
+  sectionTitleKey,
   SETTINGS_SECTIONS,
   useT,
   type SettingsSection,
@@ -34,7 +34,6 @@ import { useWideLayout } from "../settings/useWideLayout.ts";
 const FOCUS_DEEP_LINK_ID = "focus" as const;
 
 export function Component() {
-  const { language, tp } = useT();
   const { section } = useParams();
   const wide = useWideLayout();
   const found = findSettingsSection(section);
@@ -50,7 +49,7 @@ export function Component() {
           <T k="nav.settings" />
         </h1>
         <EmptyState
-          message={tp("settings.notFound")}
+          message={<T k="settings.notFound" />}
           action={
             <Button asChild variant="outline">
               <Link to="/settings">
@@ -92,7 +91,7 @@ export function Component() {
         {/* data-page-focus: the shell focuses this heading after a section switch
             (handle `shellFocus: false`), so Tab reaches the content directly. */}
         <h1 tabIndex={-1} data-page-focus className="text-title font-semibold text-foreground focus:outline-none">
-          {isFocus ? tp("settings.focusTitle") : found ? sectionTitle(found.id, language) : ""}
+          {isFocus ? <T k="settings.focusTitle" /> : found ? <T k={sectionTitleKey(found.id)} /> : ""}
         </h1>
         <SectionContent section={isFocus ? FOCUS_DEEP_LINK_ID : (section as SettingsSection)} />
       </section>
@@ -102,7 +101,7 @@ export function Component() {
 
 /** The section list: one link per section, the open one marked with aria-current. */
 function SectionList({ current }: { current: SettingsSection | null }) {
-  const { language, tp } = useT();
+  const { tp } = useT();
   return (
     <nav aria-label={tp("settings.sectionsAria")}>
       <ul className="flex flex-col gap-1">
@@ -118,8 +117,10 @@ function SectionList({ current }: { current: SettingsSection | null }) {
                   active ? "bg-accent font-semibold text-accent-foreground" : "text-foreground hover:bg-accent",
                 )}
               >
-                <span>{sectionTitle(item.id, language)}</span>
-                <span className="text-small font-normal text-muted-foreground">{sectionBlurb(item.id, language)}</span>
+                <span><T k={sectionTitleKey(item.id)} /></span>
+                <span className="text-small font-normal text-muted-foreground">
+                  <T k={sectionBlurbKey(item.id)} />
+                </span>
               </Link>
             </li>
           );

@@ -13,6 +13,7 @@ import {
 import { useMemo } from "react";
 
 import { ErrorState, SkeletonLines } from "../../components/states.tsx";
+import { T } from "../../components/Text.tsx";
 import { useSession } from "../../session/session.tsx";
 import { Note, SectionBody } from "../parts.tsx";
 
@@ -26,17 +27,17 @@ export function FocusSetSection() {
 
   if (focus.loading && focus.items === null) return <SkeletonLines lines={3} />;
   if (focus.error)
-    return <ErrorState message={tp("settings.focusLoadFailed", { message: focus.error })} onRetry={focus.retry} />;
+    return <ErrorState message={<T k="settings.focusLoadFailed" params={{ message: focus.error }} />} onRetry={focus.retry} />;
 
   return (
     <SectionBody>
       <Note>
         {focus.size === null
-          ? tp("settings.focusNote")
-          : tp("settings.focusNoteLimit", { size: focus.size })}
+          ? <T k="settings.focusNote" />
+          : <T k="settings.focusNoteLimit" params={{ size: focus.size }} />}
       </Note>
       {items.length === 0 ? (
-        <p className="text-body text-muted-foreground">{tp("settings.focusEmpty")}</p>
+        <p className="text-body text-muted-foreground"><T k="settings.focusEmpty" /></p>
       ) : (
         <ul className="flex flex-wrap gap-1.5" aria-label={tp("settings.focusAria")}>
           {items.map((item) => (

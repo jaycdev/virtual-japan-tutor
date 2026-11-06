@@ -10,10 +10,12 @@ import {
   useStoryGeneration,
   useStorySettings,
   useT,
+  type StringKey,
 } from "@vjt/core";
 
 import { Button } from "@/components/ui/button";
 import { ErrorState, SkeletonLines } from "../../components/states.tsx";
+import { T } from "../../components/Text.tsx";
 import { useSession } from "../../session/session.tsx";
 import { ChoiceGroup, Note, SaveStatus, SectionBody, TextField, type SaveState } from "../parts.tsx";
 
@@ -38,7 +40,7 @@ export function StoriesSection() {
   if (stories.settings.status === "error") {
     return (
       <ErrorState
-        message={tp("settings.loadFailed", { what: tp("settings.storyWhat"), message: stories.settings.message })}
+        message={<T k="settings.loadFailed" params={{ what: tp("settings.storyWhat"), message: stories.settings.message }} />}
         onRetry={stories.reloadSettings}
       />
     );
@@ -63,7 +65,7 @@ export function StoriesSection() {
     });
     if (res.ok) {
       setDraft({});
-      setSave({ kind: "saved", message: tp("settings.storySaved") });
+      setSave({ kind: "saved", message: <T k="settings.storySaved" /> });
     } else setSave({ kind: "error", message: res.message });
   };
 
@@ -71,17 +73,17 @@ export function StoriesSection() {
     <form className="flex flex-col gap-6" onSubmit={(event) => void submit(event)}>
       <SectionBody>
         <ChoiceGroup
-          legend={tp("settings.furiganaLegend")}
+          legend={<T k="settings.furiganaLegend" />}
           options={THRESHOLD_OPTIONS}
           value={threshold}
           onChange={(value) => setDraft({ ...draft, threshold: value })}
           disabled={busy}
         />
-        <Note>{tp("settings.furiganaNote")}</Note>
+        <Note><T k="settings.furiganaNote" /></Note>
 
         <Suggested
           id="stories-genre"
-          label={tp("settings.genreLabel")}
+          labelKey="settings.genreLabel"
           placeholder={tp("settings.genrePlaceholder")}
           value={genre}
           options={generation.suggestions.genres}
@@ -91,7 +93,7 @@ export function StoriesSection() {
         />
         <Suggested
           id="stories-theme"
-          label={tp("settings.themeLabel")}
+          labelKey="settings.themeLabel"
           placeholder={tp("settings.themePlaceholder")}
           value={theme}
           options={generation.suggestions.themes}
@@ -100,10 +102,10 @@ export function StoriesSection() {
           onChange={(value) => setDraft({ ...draft, theme: value })}
         />
 
-        <Note>{tp("settings.timezoneNote")}</Note>
+        <Note><T k="settings.timezoneNote" /></Note>
         <Suggested
           id="stories-timezone"
-          label={tp("settings.timezoneLabel")}
+          labelKey="settings.timezoneLabel"
           placeholder={tp("settings.timezonePlaceholder")}
           value={timezone}
           options={TIMEZONE_OPTIONS}
@@ -114,14 +116,14 @@ export function StoriesSection() {
         {device ? (
           <div>
             <Button type="button" variant="link" className="px-0" disabled={busy} onClick={() => setDraft({ ...draft, timezone: device })}>
-              {tp("settings.timezoneDevice", { tz: device })}
+              <T k="settings.timezoneDevice" params={{ tz: device }} />
             </Button>
           </div>
         ) : null}
 
         <div className="flex flex-wrap items-center gap-4">
           <Button type="submit" disabled={busy}>
-            {tp("settings.saveStories")}
+            <T k="settings.saveStories" />
           </Button>
           <SaveStatus state={save} />
         </div>
@@ -136,7 +138,7 @@ export function StoriesSection() {
  */
 function Suggested({
   id,
-  label,
+  labelKey,
   placeholder,
   value,
   options,
@@ -145,7 +147,7 @@ function Suggested({
   onChange,
 }: {
   id: string;
-  label: string;
+  labelKey: StringKey;
   placeholder: string;
   value: string;
   options: readonly string[];
@@ -160,7 +162,7 @@ function Suggested({
     <div className="flex flex-col gap-2">
       <TextField
         id={id}
-        label={label}
+        label={<T k={labelKey} />}
         value={value}
         placeholder={placeholder}
         maxLength={maxLength}
@@ -171,7 +173,7 @@ function Suggested({
         onFocus={() => setFocused(true)}
       />
       {!disabled && show ? (
-        <ul className="flex flex-wrap gap-2" aria-label={tp("settings.suggestionsAria", { label })}>
+        <ul className="flex flex-wrap gap-2" aria-label={tp("settings.suggestionsAria", { label: tp(labelKey) })}>
           {visible.map((option) => {
             const selected = option.toLowerCase() === value.trim().toLowerCase();
             return (

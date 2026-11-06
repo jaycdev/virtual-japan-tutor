@@ -37,14 +37,13 @@ function TitleSync() {
 }
 
 function NotFound() {
-  const { tp } = useT();
   return (
     <section className="flex flex-col gap-4">
       <h1 className="text-title font-semibold text-foreground">
         <T k="title.notFound" />
       </h1>
       <EmptyState
-        message={tp("notFound.message")}
+        message={<T k="notFound.message" />}
         action={
           <Button asChild variant="outline">
             <Link to="/"><T k="notFound.goToToday" /></Link>
@@ -78,7 +77,7 @@ export const appRoutes: RouteObject[] = [
                 path: "stories/:storyId",
                 // wide: the reader lifts the shell's 960 px cap so the 40-character
                 // column keeps its width at the L and XL Story text sizes.
-                handle: { title: "story.noGenre", wide: true } satisfies RouteHandle,
+                handle: { title: "title.story", wide: true } satisfies RouteHandle,
                 lazy: () => import("./routes/StoryPage.tsx"),
               },
               { path: "practice", handle: { title: "nav.practice" } satisfies RouteHandle, lazy: () => import("./routes/PracticePage.tsx") },

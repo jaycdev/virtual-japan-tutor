@@ -69,7 +69,7 @@ export function GrammarPointPage({ client, pointId }: { client: ApiClient; point
       ) : state.status === "loading" || state.status === "idle" ? (
         <GeneratingBody />
       ) : state.status === "error" ? (
-        <ErrorState message={tp("grammar.detailLoadFailed", { message: state.message })} onRetry={reload} />
+        <ErrorState message={<T k="grammar.detailLoadFailed" params={{ message: state.message }} />} onRetry={reload} />
       ) : (
         <ReadyBody point={state.point} onReload={reload} />
       )}
@@ -109,7 +109,6 @@ function GeneratingBody() {
 }
 
 function ReadyBody({ point, onReload }: { point: GrammarPointDetail; onReload: () => void }) {
-  const { tp } = useT();
   return (
     <>
       <header className="flex flex-col gap-2">
@@ -118,7 +117,7 @@ function ReadyBody({ point, onReload }: { point: GrammarPointDetail; onReload: (
           <Badge variant="secondary">{point.jlptLevel}</Badge>
           <span className="text-caption text-muted-foreground">{`#${point.catalogueNumber}`}</span>
         </div>
-        <p className="text-body text-foreground">{point.meaning}</p>
+        <p lang="en" className="text-body text-foreground">{point.meaning}</p>
         {point.variants.length > 0 ? (
           <p className="text-caption text-muted-foreground">
             <T k="grammar.alsoWritten" params={{ variants: point.variants.join(", ") }} />
@@ -138,7 +137,7 @@ function ReadyBody({ point, onReload }: { point: GrammarPointDetail; onReload: (
             // give the way out.
             <EmptyState
               compact
-              message={tp("grammar.explainFailed")}
+              message={<T k="grammar.explainFailed" />}
               action={
                 <Button variant="outline" onClick={onReload}>
                   <T k="grammar.reload" />
@@ -244,7 +243,7 @@ function ExampleRow({ example }: { example: GrammarExample }) {
         </mark>
         <Ruby runs={tail} />
       </p>
-      <p className="text-small text-muted-foreground">{example.translationEn}</p>
+      <p lang="en" className="text-small text-muted-foreground">{example.translationEn}</p>
     </div>
   );
 }

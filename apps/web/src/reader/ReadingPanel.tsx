@@ -101,7 +101,7 @@ export function ReadingPanel({
               aria-describedby={blur ? "translation-hidden-note" : undefined}
               className="block w-full rounded-sm text-left text-small text-muted-foreground italic hover:text-foreground"
             >
-              <span className={cn(blur && "blur-xs select-none")}>{sentence.en}</span>
+              <span lang="en" className={cn(blur && "blur-xs select-none")}>{sentence.en}</span>
             </button>
             {blur ? (
               <p id="translation-hidden-note" data-testid="translation-hidden-note" className="text-caption text-muted-foreground">
@@ -114,7 +114,9 @@ export function ReadingPanel({
         {blurError ? (
           // The message says the reveal did not stick; Retry sends the same save again.
           <div role="alert" className="flex flex-wrap items-center gap-3 text-small text-destructive">
-            <span className="flex-1">{tp("reader.blurSaveFailed", { message: blurError })}</span>
+            <span className="flex-1">
+              <T k="reader.blurSaveFailed" params={{ message: blurError }} />
+            </span>
             <Button variant="outline" onClick={onRetryBlur}>
               <T k="common.retry" />
             </Button>

@@ -5,9 +5,10 @@
 // whole tree: loading, and "cannot reach the server" with Retry.
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import type { ApiClient } from "@vjt/api-client";
-import { useAuth, useT, type Auth, type TokenStorage } from "@vjt/core";
+import { useAuth, type Auth, type TokenStorage } from "@vjt/core";
 
 import { ErrorState, SkeletonLines } from "../components/states";
+import { T } from "../components/Text.tsx";
 
 /**
  * The auth state plus the client it talks through. `endedByChoice` is true from
@@ -78,7 +79,6 @@ export function useSession(): Session {
  */
 export function SessionBoundary({ children }: { children: ReactNode }) {
   const { state, retry } = useSession();
-  const { tp } = useT();
   if (state.status === "loading") {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-background p-6" aria-busy="true">
@@ -92,7 +92,7 @@ export function SessionBoundary({ children }: { children: ReactNode }) {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-background p-6">
         <div className="w-full max-w-sm">
-          <ErrorState message={`${tp("errors.unreachable")}: ${state.message}`} onRetry={retry} />
+          <ErrorState message={<><T k="errors.unreachable" />: {state.message}</>} onRetry={retry} />
         </div>
       </div>
     );

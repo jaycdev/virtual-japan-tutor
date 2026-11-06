@@ -8,11 +8,10 @@
 // The state cascade on the pinned card and every word it speaks is the shared
 // @vjt/core code (todayCardPhase, issue #71); this file adds only the web form:
 // links instead of taps, dropdown menus and centered dialogs instead of sheets.
-import type { ApiClient, GenerateStoryRequest, Story } from "@vjt/api-client";
+import type { ApiClient, GenerateStoryRequest, Story, StoryGenerationProgress } from "@vjt/api-client";
 import {
   genreLabel,
-  progressLabel,
-  storyCardMeta,
+  storyCardMetaRuby,
   translatePlain,
   useStory,
   useStoryGeneration,
@@ -20,7 +19,7 @@ import {
   type InterfaceLanguage,
   type StringKey,
 } from "@vjt/core";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router";
 import { Check, Grid2x2, List, MoreHorizontal, Trash2, X } from "lucide-react";
 
@@ -41,10 +40,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
-import { EmptyState, ErrorState, ProgressStatus, SkeletonLines } from "@/components/states";
-import { T } from "@/components/Text.tsx";
+import { EmptyState, ErrorState, SkeletonLines } from "@/components/states";
+import { T, TableText } from "@/components/Text.tsx";
 import { cn } from "@/lib/utils";
 import { useMinuteClock } from "@/lib/useMinuteClock";
+import { StoryProgress } from "./StoryProgress.tsx";
 import { TodayStoryCard } from "./TodayStoryCard.tsx";
 
 /** Page size of the Library's pager; the server's default is the same. */
@@ -263,7 +263,7 @@ export function Stories({ client, generationPollMs }: StoriesProps) {
               data-testid="genre-filter"
             >
               <option value="">
-                <T k="stories.allGenres" />
+                {tp("stories.allGenres")}
               </option>
               {genreChoices.map((option) => (
                 <option key={option} value={option}>
@@ -325,7 +325,7 @@ export function Stories({ client, generationPollMs }: StoriesProps) {
             {visible.length === 0 && items.length > 0 ? (
               <EmptyState
                 compact
-                message={tp("stories.noneMatch")}
+                message={<T k="stories.noneMatch" />}
                 action={
                   <Button
                     variant="outline"
@@ -340,8 +340,8 @@ export function Stories({ client, generationPollMs }: StoriesProps) {
                 compact
                 message={
                   filtered
-                    ? tp("stories.noneFiltered")
-                    : tp("stories.noneAny")
+                    ? <T k="stories.noneFiltered" />
+                    : <T k="stories.noneAny" />
                 }
                 action={
                   <Button variant="outline" onClick={openGenerate}>
@@ -395,13 +395,10 @@ export function Stories({ client, generationPollMs }: StoriesProps) {
         onGenreChange={setPickGenre}
         onThemeChange={setPickTheme}
         running={status === "running"}
-        progressLabel={
-          status === "running" ? progressLabel(gen.generation.progress, language) : ""
-        }
-        progressValue={status === "running" ? (gen.generation.progress.percent ?? 0) / 100 : 0}
+        progress={status === "running" ? gen.generation.progress : null}
         error={
           runHere && status === "failed"
-            ? (gen.generation.progress.message ?? tp("story.runFailed"))
+            ? (gen.generation.progress.message ?? <T k="story.runFailed" />)
             : runHere
               ? gen.error
               : null
@@ -416,7 +413,9 @@ export function Stories({ client, generationPollMs }: StoriesProps) {
             <DialogTitle>
               <T k="stories.deleteTitle" />
             </DialogTitle>
-            <DialogDescription>{tp("stories.deleteBody", { title: confirmTarget?.title ?? "" })}</DialogDescription>
+            <DialogDescription>
+              <T k="stories.deleteBody" params={{ title: confirmTarget?.title ?? "" }} />
+            </DialogDescription>
           </DialogHeader>
           {confirmTarget && view.error ? (
             <p role="alert" className="text-small text-destructive">{view.error}</p>
@@ -549,13 +548,14 @@ function StoryCard({
           aria-label={revealed ? undefined : tp("stories.ariaShowTranslation")}
           className="relative z-10 self-start text-left text-small text-muted-foreground hover:underline"
           data-testid={`title-translation-${story.id}`}
+          lang="en"
         >
           {revealed ? story.titleEn : <T k="stories.translationHidden" />}
         </button>
       ) : null}
 
       <p className="text-caption text-muted-foreground" data-testid={`story-meta-${story.id}`}>
-        {storyCardMeta(story, language)}
+        <TableText segments={storyCardMetaRuby(story, language)} />
       </p>
     </Card>
   );
@@ -575,8 +575,7 @@ function GenerateDialog({
   onGenreChange,
   onThemeChange,
   running,
-  progressLabel,
-  progressValue,
+  progress,
   error,
   onGenerate,
   onClose,
@@ -588,13 +587,12 @@ function GenerateDialog({
   onGenreChange: (genre: string | null) => void;
   onThemeChange: (theme: string | null) => void;
   running: boolean;
-  progressLabel: string;
-  progressValue: number;
-  error: string | null;
+  progress: StoryGenerationProgress | null;
+  error: ReactNode;
   onGenerate: () => void;
   onClose: () => void;
 }) {
-  const { language } = useT();
+  const { language, tp } = useT();
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
       <DialogContent>
@@ -617,7 +615,7 @@ function GenerateDialog({
               data-testid="generate-genre-picker"
             >
               <option value="">
-                <T k="stories.anyGenre" />
+                {tp("stories.anyGenre")}
               </option>
               {suggestions.genres.map((option) => (
                 <option key={option} value={option}>
@@ -635,7 +633,7 @@ function GenerateDialog({
               data-testid="generate-theme-picker"
             >
               <option value="">
-                <T k="stories.anyTheme" />
+                {tp("stories.anyTheme")}
               </option>
               {suggestions.themes.map((option) => (
                 <option key={option} value={option}>
@@ -646,9 +644,9 @@ function GenerateDialog({
           </label>
         </div>
 
-        {running ? (
+        {running && progress ? (
           <div className="flex flex-col gap-2" data-testid="generate-progress">
-            <ProgressStatus value={progressValue} label={progressLabel} />
+            <StoryProgress progress={progress} language={language} />
             <p className="text-caption text-muted-foreground">
               <T k="stories.keepWriting" />
             </p>

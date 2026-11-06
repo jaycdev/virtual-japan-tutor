@@ -3,7 +3,6 @@
 // @vjt/core's useAuth (through the session); this file is presentation only.
 import { useEffect, useState, type FormEvent } from "react";
 import { Navigate, useSearchParams } from "react-router";
-import { useT } from "@vjt/core";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +17,6 @@ const ERROR_ID = "login-error";
 
 export function Component() {
   const { state, busy, login, endedByChoice, clearEndedByChoice } = useSession();
-  const { tp } = useT();
   const [params] = useSearchParams();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -49,7 +47,7 @@ export function Component() {
       <div className="flex w-full max-w-sm flex-col gap-6 rounded-2xl border border-border bg-card p-6 shadow-md">
         <div className="flex flex-col items-center gap-1">
           <Wordmark className="text-display" />
-          <h1 className="text-title-sm font-semibold text-foreground">{tp("brand.app")}</h1>
+          <h1 className="text-title-sm font-semibold text-foreground"><T k="brand.app" /></h1>
         </div>
 
         <form className="flex flex-col gap-6" onSubmit={submit} noValidate>
@@ -101,8 +99,9 @@ export function Component() {
         </form>
 
         {/* Pre-login the page cannot ask the server anything, but the interface
-            language is device-saved, so it can already be switched here (issue #125). */}
-        <InterfaceLanguageChoice />
+            language is device-saved, so it can already be switched here (issue #125).
+            Compact: one row, no legend taking a row of its own (review V7). */}
+        <InterfaceLanguageChoice compact />
       </div>
     </div>
   );

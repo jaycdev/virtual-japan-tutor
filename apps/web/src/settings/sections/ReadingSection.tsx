@@ -21,7 +21,7 @@ export function ReadingSection() {
   if (reading.state.status === "error") {
     return (
       <ErrorState
-        message={tp("settings.loadFailed", { what: tp("settings.readingWhat"), message: reading.state.message })}
+        message={<T k="settings.loadFailed" params={{ what: tp("settings.readingWhat"), message: reading.state.message }} />}
         onRetry={reading.reload}
       />
     );
@@ -30,7 +30,7 @@ export function ReadingSection() {
   const stored = reading.state.settings;
   const holdValue = hold ?? String(stored.lookupHoldMs);
   const parsed = parseLookupHold(holdValue, language);
-  const holdError = hold !== null && !parsed.ok ? parsed.message : undefined;
+  const holdError = hold !== null && !parsed.ok ? <T k="settings.lookupHoldRule" /> : undefined;
   const busy = save.kind === "saving";
 
   const toggleBlur = async (blurTranslation: boolean) => {
@@ -46,7 +46,7 @@ export function ReadingSection() {
     const res = await reading.setLookupHoldMs(parsed.ms);
     if (res.ok) {
       setHold(null);
-      setSave({ kind: "saved", message: tp("settings.readingSaved") });
+      setSave({ kind: "saved", message: <T k="settings.readingSaved" /> });
     } else setSave({ kind: "error", message: res.message });
   };
 
@@ -54,8 +54,8 @@ export function ReadingSection() {
     <SectionBody>
       <SwitchField
         id="reading-blur"
-        label={tp("settings.blurLabel")}
-        hint={tp("settings.blurHint")}
+        label={<T k="settings.blurLabel" />}
+        hint={<T k="settings.blurHint" />}
         checked={stored.blurTranslation}
         disabled={busy}
         onChange={(checked) => void toggleBlur(checked)}
@@ -67,7 +67,7 @@ export function ReadingSection() {
         </Note>
         <TextField
           id="reading-hold"
-          label={tp("settings.holdLabel")}
+          label={<T k="settings.holdLabel" />}
           inputMode="numeric"
           autoComplete="off"
           value={holdValue}

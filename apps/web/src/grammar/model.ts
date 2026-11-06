@@ -4,7 +4,7 @@
 // position was left so Back can return to it. No React here, so the rules are
 // tested without a DOM.
 import type { GrammarJLPTLevel, GrammarPointSummary } from "@vjt/api-client";
-import { translatePlain, type InterfaceLanguage } from "@vjt/core";
+import { translatePlain, pluralEn, type InterfaceLanguage } from "@vjt/core";
 
 /** How long a typed search term settles before the catalogue re-reads (ui-plan 4.6). */
 export const SEARCH_DEBOUNCE_MS = 300;
@@ -81,7 +81,7 @@ export function offsetForPage(page: number): number {
 export function exampleCountLabel(count: number, lang: InterfaceLanguage = "en"): string {
   return translatePlain(lang, "grammar.exampleCount", {
     count,
-    plural: lang === "en" && count !== 1 ? "s" : "",
+    plural: pluralEn(lang, count),
   });
 }
 

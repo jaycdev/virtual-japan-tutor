@@ -83,7 +83,7 @@ export function AppShell() {
         <header className="flex items-center justify-between border-b border-border bg-card px-4 py-2 lg:hidden">
           <div className="flex items-center gap-2">
             <Wordmark className="text-title" />
-            <span className="text-small font-semibold text-muted-foreground">{tp("brand.app")}</span>
+            <span className="text-small font-semibold text-muted-foreground"><T k="brand.app" /></span>
           </div>
           <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
             <SheetTrigger asChild>

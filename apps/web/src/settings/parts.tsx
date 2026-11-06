@@ -37,7 +37,7 @@ export function TextField({
   error,
   className,
   ...input
-}: Omit<ComponentProps<"input">, "id"> & { id: string; label: string; hint?: string; error?: string }) {
+}: Omit<ComponentProps<"input">, "id"> & { id: string; label: ReactNode; hint?: ReactNode; error?: ReactNode }) {
   const hintId = hint ? `${id}-hint` : undefined;
   const errorId = error ? `${id}-error` : undefined;
   const describedBy = [hintId, errorId].filter(Boolean).join(" ") || undefined;
@@ -77,7 +77,7 @@ export function ChoiceGroup<T extends string | number>({
   disabled = false,
 }: {
   legend: ReactNode;
-  options: readonly { value: T; label: string }[];
+  options: readonly { value: T; label: ReactNode }[];
   value: T | null;
   onChange: (value: T) => void;
   disabled?: boolean;
@@ -115,8 +115,8 @@ export function SwitchField({
   onChange,
 }: {
   id: string;
-  label: string;
-  hint?: string;
+  label: ReactNode;
+  hint?: ReactNode;
   checked: boolean;
   disabled?: boolean;
   onChange: (checked: boolean) => void;
@@ -148,8 +148,13 @@ export function SwitchField({
   );
 }
 
-/** Where a save stands. The status line is announced to screen readers. */
-export type SaveState = { kind: "idle" } | { kind: "saving" } | { kind: "saved"; message?: string } | { kind: "error"; message: string };
+/**
+ * Where a save stands. The status line is announced to screen readers.
+ * `message` is a ReactNode so callers can pass a <T> element: storing the
+ * element, not the resolved string, keeps the line in the Learner's language
+ * if they switch while it is on screen (issue #125 review B3).
+ */
+export type SaveState = { kind: "idle" } | { kind: "saving" } | { kind: "saved"; message?: ReactNode } | { kind: "error"; message: ReactNode };
 
 export function SaveStatus({ state }: { state: SaveState }) {
   if (state.kind === "saving") {
@@ -177,7 +182,7 @@ export function SaveStatus({ state }: { state: SaveState }) {
 }
 
 /** Read-only facts (the Server address, the key state). */
-export function Fact({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
+export function Fact({ label, children, className }: { label: ReactNode; children: ReactNode; className?: string }) {
   return (
     <div className={cn("flex flex-col gap-0.5", className)}>
       <dt className="text-small font-medium text-muted-foreground">{label}</dt>

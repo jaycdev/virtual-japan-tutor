@@ -6,20 +6,20 @@ import { useHealth, useT } from "@vjt/core";
 
 import { Button } from "@/components/ui/button";
 import { ErrorState, SkeletonLines } from "../../components/states.tsx";
+import { T } from "../../components/Text.tsx";
 import { useSession } from "../../session/session.tsx";
 import { Fact, Note, SectionBody } from "../parts.tsx";
 
 export function ServerSection() {
-  const { tp } = useT();
   const { client } = useSession();
   // Bumped by "Check again"; keys the health read so it runs again (useHealth fetches on mount).
   const [attempt, setAttempt] = useState(0);
   return (
     <SectionBody>
       <dl className="flex flex-col gap-1">
-        <Fact label={tp("server.addressLabel")}>{window.location.origin}</Fact>
+        <Fact label={<T k="server.addressLabel" />}>{window.location.origin}</Fact>
       </dl>
-      <Note>{tp("server.addressNote")}</Note>
+      <Note><T k="server.addressNote" /></Note>
       <HealthLine key={attempt} client={client} onRecheck={() => setAttempt((n) => n + 1)} />
     </SectionBody>
   );
@@ -30,23 +30,28 @@ function HealthLine({ client, onRecheck }: { client: ReturnType<typeof useSessio
   const health = useHealth(client);
   if (health.state === "loading") return <SkeletonLines lines={1} />;
   if (health.state === "error") {
-    return <ErrorState message={tp("server.unreachable", { message: health.message })} onRetry={onRecheck} />;
+    return <ErrorState message={<T k="server.unreachable" params={{ message: health.message }} />} onRetry={onRecheck} />;
   }
   return (
     <div className="flex flex-col items-start gap-3">
       {health.state === "ok" ? (
         <p role="status" className="text-body text-success">
-          {tp("server.healthy")}
+          <T k="server.healthy" />
         </p>
       ) : (
         <p role="status" className="text-body text-destructive">
-          {tp("server.answeredBut", {
-            what: health.health.database === "unreachable" ? tp("server.dbUnreachable") : tp("server.degradedPart"),
-          })}
+          <T
+            k="server.answeredBut"
+            // The {what} slot takes plain text: table params are never parsed
+            // for furigana (issue #125).
+            params={{
+              what: health.health.database === "unreachable" ? tp("server.dbUnreachable") : tp("server.degradedPart"),
+            }}
+          />
         </p>
       )}
       <Button type="button" variant="outline" onClick={onRecheck}>
-        {tp("server.checkAgain")}
+        <T k="server.checkAgain" />
       </Button>
     </div>
   );

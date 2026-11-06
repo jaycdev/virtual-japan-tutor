@@ -70,7 +70,7 @@ export function AiProvidersSection({ registerSave }: { registerSave?: StepSaveRe
       return "blocked";
     }
     stopEdit();
-    setSave({ kind: "saved", message: tp(editing ? "ai.saved" : "ai.added") });
+    setSave({ kind: "saved", message: <T k={editing ? "ai.saved" : "ai.added"} /> });
     return "saved";
   };
 
@@ -82,7 +82,7 @@ export function AiProvidersSection({ registerSave }: { registerSave?: StepSaveRe
     registerSave(async () => {
       if (!isProviderFormTouched(form)) return "nothing" as const;
       if (!canSubmitProviderForm(form)) {
-        setSave({ kind: "error", message: tp("ai.formIncomplete") });
+        setSave({ kind: "error", message: <T k="ai.formIncomplete" /> });
         return "blocked" as const;
       }
       return submit();
@@ -92,7 +92,7 @@ export function AiProvidersSection({ registerSave }: { registerSave?: StepSaveRe
 
   if (settings.state.status === "loading") return <SkeletonLines lines={3} />;
   if (settings.state.status === "error") {
-    return <ErrorState message={tp("ai.loadFailed", { message: settings.state.message })} onRetry={settings.reload} />;
+    return <ErrorState message={<T k="ai.loadFailed" params={{ message: settings.state.message }} />} onRetry={settings.reload} />;
   }
 
   const { providers, tasks } = settings.state;
@@ -124,7 +124,7 @@ export function AiProvidersSection({ registerSave }: { registerSave?: StepSaveRe
     // focus the clicked button leaves behind (issue #81 review).
     providersRef.current?.focus();
     if (res.ok) {
-      setSave({ kind: "saved", message: tp("ai.deleted") });
+      setSave({ kind: "saved", message: <T k="ai.deleted" /> });
       if (editing?.id === provider.id) stopEdit();
     } else setSave({ kind: "error", message: res.message });
   };
@@ -132,7 +132,7 @@ export function AiProvidersSection({ registerSave }: { registerSave?: StepSaveRe
   const assign = async (task: AiTask, providerId: string | null) => {
     setSave({ kind: "saving" });
     const res = await settings.assign(task, providerId);
-    setSave(res.ok ? { kind: "saved", message: tp("ai.assignmentSaved") } : { kind: "error", message: res.message });
+    setSave(res.ok ? { kind: "saved", message: <T k="ai.assignmentSaved" /> } : { kind: "error", message: res.message });
   };
 
   const keyIsSet = editing?.hasApiKey === true;
@@ -205,7 +205,7 @@ export function AiProvidersSection({ registerSave }: { registerSave?: StepSaveRe
         </Subheading>
         <TextField
           id="ai-name"
-          label={tp("ai.nameLabel")}
+          label={<T k="ai.nameLabel" />}
           required
           value={form.name}
           disabled={busy}
@@ -213,7 +213,7 @@ export function AiProvidersSection({ registerSave }: { registerSave?: StepSaveRe
         />
         <TextField
           id="ai-base-url"
-          label={tp("ai.baseUrlLabel")}
+          label={<T k="ai.baseUrlLabel" />}
           inputMode="url"
           autoComplete="off"
           placeholder={tp("ai.baseUrlPlaceholder")}
@@ -223,7 +223,7 @@ export function AiProvidersSection({ registerSave }: { registerSave?: StepSaveRe
         />
         <TextField
           id="ai-model"
-          label={tp("ai.modelLabel")}
+          label={<T k="ai.modelLabel" />}
           autoComplete="off"
           value={form.model}
           disabled={busy}
@@ -246,20 +246,20 @@ export function AiProvidersSection({ registerSave }: { registerSave?: StepSaveRe
           {(!keyIsSet || replacingKey) && !form.removeKey ? (
             <TextField
               id="ai-key"
-              label={tp("ai.newKeyLabel")}
+              label={<T k="ai.newKeyLabel" />}
               type="password"
               autoComplete="off"
               spellCheck={false}
               value={form.apiKey}
               disabled={busy}
-              hint={keyIsSet ? tp("ai.keyHintKeep") : tp("ai.keyHintNone")}
+              hint={keyIsSet ? <T k="ai.keyHintKeep" /> : <T k="ai.keyHintNone" />}
               onChange={(event) => setForm({ ...form, apiKey: event.target.value })}
             />
           ) : null}
           {keyIsSet ? (
             <SwitchField
               id="ai-remove-key"
-              label={tp("ai.removeKeyLabel")}
+              label={<T k="ai.removeKeyLabel" />}
               checked={form.removeKey}
               disabled={busy}
               onChange={(removeKey) => setForm({ ...form, removeKey, apiKey: removeKey ? "" : form.apiKey })}

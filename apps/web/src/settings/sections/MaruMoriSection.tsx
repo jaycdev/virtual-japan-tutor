@@ -35,7 +35,7 @@ export function MaruMoriSection({ registerSave }: { registerSave?: StepSaveRegis
     if (res.ok) {
       setDraft("");
       setReplacing(false);
-      setSave({ kind: "saved", message: tp("marumori.connected") });
+      setSave({ kind: "saved", message: <T k="marumori.connected" /> });
       return "saved";
     }
     setSave({ kind: "error", message: res.message });
@@ -50,7 +50,7 @@ export function MaruMoriSection({ registerSave }: { registerSave?: StepSaveRegis
 
   if (maru.state.status === "loading") return <SkeletonLines lines={3} />;
   if (maru.state.status === "error") {
-    return <ErrorState message={tp("marumori.loadFailed", { message: maru.state.message })} onRetry={maru.reload} />;
+    return <ErrorState message={<T k="marumori.loadFailed" params={{ message: maru.state.message }} />} onRetry={maru.reload} />;
   }
 
   const status = maru.state.marumori;
@@ -68,7 +68,7 @@ export function MaruMoriSection({ registerSave }: { registerSave?: StepSaveRegis
     setSave({ kind: "saving" });
     const res = await maru.removeKey();
     keyHeadingRef.current?.focus();
-    setSave(res.ok ? { kind: "saved", message: tp("marumori.keyRemoved") } : { kind: "error", message: res.message });
+    setSave(res.ok ? { kind: "saved", message: <T k="marumori.keyRemoved" /> } : { kind: "error", message: res.message });
   };
 
   const sync = async () => {
@@ -127,7 +127,7 @@ export function MaruMoriSection({ registerSave }: { registerSave?: StepSaveRegis
           // valid markup (issue #81 review), and the label keeps the heading from
           // repeating above.
           <dl className="flex flex-col gap-2">
-            <Fact label={tp("marumori.savedKey")}>
+            <Fact label={<T k="marumori.savedKey" />}>
               <span className="flex flex-wrap items-center gap-3">
                 <T k="marumori.keySet" />
                 <Button type="button" variant="outline" disabled={busy} onClick={() => setReplacing(true)}>
@@ -141,13 +141,13 @@ export function MaruMoriSection({ registerSave }: { registerSave?: StepSaveRegis
           <form className="flex flex-col gap-4" onSubmit={(event) => void submitKey(event)} noValidate>
             <TextField
               id="marumori-key"
-              label={tp("marumori.keyLabel")}
+              label={<T k="marumori.keyLabel" />}
               type="password"
               autoComplete="off"
               spellCheck={false}
               value={draft}
               disabled={busy}
-              hint={connected ? tp("marumori.keyHint") : undefined}
+              hint={connected ? <T k="marumori.keyHint" /> : undefined}
               onChange={(event) => setDraft(event.target.value)}
             />
             <div className="flex flex-wrap items-center gap-4">
@@ -202,7 +202,7 @@ export function MaruMoriSection({ registerSave }: { registerSave?: StepSaveRegis
           ) : null}
           {showRuns && maru.runs.status === "loading" ? <SkeletonLines lines={3} /> : null}
           {showRuns && maru.runs.status === "error" ? (
-            <ErrorState message={tp("marumori.runsLoadFailed", { message: maru.runs.message })} />
+            <ErrorState message={<T k="marumori.runsLoadFailed" params={{ message: maru.runs.message }} />} />
           ) : null}
           {showRuns && maru.runs.status === "ready" ? (
             maru.runs.runs.length === 0 ? (

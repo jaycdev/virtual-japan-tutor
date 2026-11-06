@@ -5,7 +5,8 @@ import {
   holdSignal,
   menuOptions,
   saveableItem,
-  storyCardMeta,
+  storyCardMetaRuby,
+  storyMetaEn,
   useEntryLookup,
   useItemLists,
   useReadingSettings,
@@ -20,7 +21,7 @@ import { Link, useNavigate } from "react-router";
 
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
-import { T } from "@/components/Text.tsx";
+import { T, TableText } from "@/components/Text.tsx";
 import { ErrorState, SkeletonLines } from "@/components/states";
 import { cn } from "@/lib/utils";
 import { useStoryTextSize } from "../storysize/index.ts";
@@ -465,7 +466,15 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
             </span>
           </button>
         ) : null}
-        <p className="text-caption text-muted-foreground">{storyCardMeta(story, language)}</p>
+        {/* English keeps the pre-#125 Reader meta line byte-for-byte (review S1);
+            Japanese speaks the same facts through the table. */}
+        <p className="text-caption text-muted-foreground">
+          {language === "en" ? (
+            storyMetaEn(story)
+          ) : (
+            <TableText segments={storyCardMetaRuby(story, language)} />
+          )}
+        </p>
         {saveNote ? (
           <p role="status" className="text-small text-muted-foreground">
             {saveNote}

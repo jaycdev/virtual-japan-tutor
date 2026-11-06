@@ -2,11 +2,10 @@
 // Today page and the Stories page show the same state cascade (@vjt/core's
 // todayCardPhase, issue #71) and differ only in the words and the actions the
 // card offers, set by `variant`.
-import type { Story } from "@vjt/api-client";
+import type { Story, StoryGenerationProgress } from "@vjt/api-client";
 import {
-  progressLabel,
   stillUnreadFrom,
-  storyCardMeta,
+  storyCardMetaRuby,
   todayCardPhase,
   useT,
   type StoryGenerationState,
@@ -17,8 +16,9 @@ import { Link } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { EmptyState, ErrorState, ProgressStatus } from "@/components/states";
-import { T } from "@/components/Text.tsx";
+import { EmptyState, ErrorState } from "@/components/states";
+import { T, TableText } from "@/components/Text.tsx";
+import { StoryProgress } from "./StoryProgress.tsx";
 
 export interface TodayStoryCardProps {
   today: TodaysStoryState;
@@ -48,7 +48,7 @@ export function TodayStoryCard({
   readyStoryId = null,
   onOpenReady,
 }: TodayStoryCardProps) {
-  const { tp, language } = useT();
+  const { language } = useT();
   const phase = todayCardPhase(today, generation);
   // The finished run's Story is worth opening even before the reload lands it;
   // once Today shows it, the card's own Open is the same action.
@@ -82,8 +82,7 @@ export function TodayStoryCard({
         <StoryBody
           story={phase.story}
           unreadFrom={stillUnreadFrom(phase.story, now, timezone, language)}
-          running={phase.running ? progressLabel(phase.running, language) : null}
-          runningValue={phase.running ? (phase.running.percent ?? 0) / 100 : 0}
+          running={phase.running}
           justWritten={justWritten ? readyStoryId : null}
           onOpenReady={onOpenReady}
         />
@@ -92,14 +91,11 @@ export function TodayStoryCard({
           <p className="text-body text-muted-foreground">
             <T k="today.storyGenerating" />
           </p>
-          <ProgressStatus
-            value={(phase.progress.percent ?? 0) / 100}
-            label={progressLabel(phase.progress, language)}
-          />
+          <StoryProgress progress={phase.progress} language={language} />
         </div>
       ) : phase.kind === "error" ? (
         <ErrorState
-          message={tp("today.storyError", { message: phase.message })}
+          message={<T k="today.storyError" params={{ message: phase.message }} />}
           onRetry={onReloadToday}
         />
       ) : phase.kind === "failed" ? (
@@ -123,7 +119,7 @@ export function TodayStoryCard({
       ) : variant === "today" ? (
         <EmptyState
           compact
-          message={tp("today.storyEmptyToday")}
+          message={<T k="today.storyEmptyToday" />}
           action={
             <Button asChild variant="outline">
               <Link to="/stories">
@@ -150,15 +146,13 @@ function StoryBody({
   story,
   unreadFrom,
   running,
-  runningValue,
   justWritten,
   onOpenReady,
 }: {
   story: Story;
   unreadFrom: string | null;
-  /** The label of a run in flight, which is for a newer Story than this one. */
-  running: string | null;
-  runningValue: number;
+  /** A run in flight, which is for a newer Story than this one; null when idle. */
+  running: StoryGenerationProgress | null;
   justWritten: string | null;
   onOpenReady?: () => void;
 }) {
@@ -168,7 +162,9 @@ function StoryBody({
       <p lang="ja" className="text-title font-semibold text-foreground">
         {story.title}
       </p>
-      <p className="text-small text-muted-foreground">{storyCardMeta(story, language)}</p>
+      <p className="text-small text-muted-foreground">
+        <TableText segments={storyCardMetaRuby(story, language)} />
+      </p>
       {unreadFrom ? (
         <p className="text-small text-muted-foreground">
           <T k="today.storyStillUnread" params={{ date: unreadFrom }} />
@@ -204,7 +200,7 @@ function StoryBody({
           <p className="text-caption text-muted-foreground">
             <T k="today.storyNewerWriting" />
           </p>
-          <ProgressStatus value={runningValue} label={running} />
+          <StoryProgress progress={running} language={language} />
         </div>
       ) : null}
     </div>

@@ -35,7 +35,7 @@ export function ItemListsSection() {
   if (lists.state.status === "error") {
     return (
       <ErrorState
-        message={tp("settings.loadFailed", { what: tp("settings.listsWhat"), message: lists.state.message })}
+        message={<T k="settings.loadFailed" params={{ what: tp("settings.listsWhat"), message: lists.state.message }} />}
         onRetry={lists.reload}
       />
     );
@@ -154,7 +154,7 @@ function ListsMaster({
         </Subheading>
         <TextField
           id="list-name"
-          label={tp("lists.nameLabel")}
+          label={<T k="lists.nameLabel" />}
           value={name}
           maxLength={60}
           placeholder={tp("lists.namePlaceholder")}
@@ -272,7 +272,7 @@ function ListDetail({
         <form className="flex flex-col gap-4" onSubmit={(event) => void rename(event)} noValidate>
           <TextField
             id="list-rename"
-            label={tp("lists.renameLabel")}
+            label={<T k="lists.renameLabel" />}
             value={renameValue}
             maxLength={60}
             disabled={busy}
@@ -292,8 +292,8 @@ function ListDetail({
           <Subheading ref={nameRef}>{list.name}</Subheading>
           <SwitchField
             id="list-boosting"
-            label={tp("lists.boostingLabel")}
-            hint={tp("lists.boostingHint")}
+            label={<T k="lists.boostingLabel" />}
+            hint={<T k="lists.boostingHint" />}
             checked={list.boosting}
             disabled={busy}
             onChange={(boosting) => void run(() => lists.updateList(list.id, { boosting }))}
@@ -389,7 +389,7 @@ function ListDetail({
           <T k="lists.addItemHeading" />
         </Subheading>
         <ChoiceGroup
-          legend={tp("lists.kindLegend")}
+          legend={<T k="lists.kindLegend" />}
           options={ITEM_KINDS.map((k) => ({ value: k, label: itemKindLabel(k, language) }))}
           value={kind}
           onChange={setKind}
@@ -397,8 +397,8 @@ function ListDetail({
         />
         <TextField
           id="list-item-ref"
-          label={tp("lists.refLabel")}
-          hint={kind === "kanji" ? tp("lists.kanjiRefHint") : undefined}
+          label={<T k="lists.refLabel" />}
+          hint={kind === "kanji" ? <T k="lists.kanjiRefHint" /> : undefined}
           value={itemRef}
           inputMode={kind === "kanji" ? "text" : "numeric"}
           autoComplete="off"

@@ -6,12 +6,12 @@
 // catalogue server-side. "/" focuses search from anywhere outside a field.
 // Opening a point and pressing Back returns here with the same view and scroll.
 import type { ApiClient, GrammarPointSummary } from "@vjt/api-client";
-import { useGrammar, useT, type GrammarLevelFilter } from "@vjt/core";
+import { useGrammar, useT, pluralEn, type GrammarLevelFilter } from "@vjt/core";
 import { ChevronRight, Search, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { Link, useLocation, useSearchParams } from "react-router";
 
-import { T, pluralEn } from "@/components/Text";
+import { T } from "@/components/Text";
 import { EmptyState, ErrorState } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -51,7 +51,7 @@ function isEditable(target: EventTarget | null): boolean {
 const LEVEL_CHOICES: GrammarLevelFilter[] = ["all", ...LEVEL_ORDER];
 
 export function GrammarCatalogue({ client }: { client: ApiClient }) {
-  const { language, tp } = useT();
+  const { language } = useT();
   const location = useLocation();
   const [params, setParams] = useSearchParams();
   const urlQuery = params.get("q") ?? "";
@@ -184,13 +184,13 @@ export function GrammarCatalogue({ client }: { client: ApiClient }) {
             </div>
           ) : state.status === "error" ? (
             <ErrorState
-              message={tp("grammar.loadFailed", { message: state.message })}
+              message={<T k="grammar.loadFailed" params={{ message: state.message }} />}
               onRetry={reload}
             />
           ) : state.page.items.length === 0 ? (
             searching ? (
               <EmptyState
-                message={tp("grammar.noSearchMatch", { query: filter.query })}
+                message={<T k="grammar.noSearchMatch" params={{ query: filter.query }} />}
                 action={
                   <Button variant="outline" onClick={() => setTerm("")}>
                     <T k="grammar.clearSearch" />
@@ -199,7 +199,7 @@ export function GrammarCatalogue({ client }: { client: ApiClient }) {
               />
             ) : levelChosen ? (
               <EmptyState
-                message={tp("grammar.noLevelPoints", { level: filter.level })}
+                message={<T k="grammar.noLevelPoints" params={{ level: filter.level }} />}
                 action={
                   <Button variant="outline" onClick={() => chooseLevel("all")}>
                     <T k="grammar.showAllLevels" />
@@ -207,7 +207,7 @@ export function GrammarCatalogue({ client }: { client: ApiClient }) {
                 }
               />
             ) : (
-              <EmptyState message={tp("grammar.emptyCatalogue")} />
+              <EmptyState message={<T k="grammar.emptyCatalogue" />} />
             )
           ) : (
             <>
@@ -375,7 +375,7 @@ function PointRow({
   // The label replaces the row's text for a screen reader, so it carries the
   // status (when there is one) and the example count too.
   const status = statusOf(point);
-  const statusText = status === undefined ? undefined : statusLabel(status, tp);
+  const statusText = status === undefined ? undefined : tp(statusKey(status));
   const count = exampleCountLabel(point.exampleCount, language);
   return (
     <Link
@@ -387,10 +387,10 @@ function PointRow({
     >
       <span className="flex min-w-0 flex-1 flex-col gap-1">
         <span className="font-serif text-body text-foreground">{point.pattern}</span>
-        <span className="text-small text-muted-foreground">{point.meaning}</span>
+        <span lang="en" className="text-small text-muted-foreground">{point.meaning}</span>
       </span>
       <span className="flex shrink-0 flex-col items-end gap-1">
-        {status === undefined ? null : <StatusMark status={status} tp={tp} />}
+        {status === undefined ? null : <StatusMark status={status} />}
         <span className="text-caption text-muted-foreground">{count}</span>
       </span>
       <ChevronRight aria-hidden="true" className="size-5 shrink-0 text-muted-foreground" />
@@ -398,26 +398,25 @@ function PointRow({
   );
 }
 
-function statusLabel(
-  status: "seeded" | "observed" | "notKnown",
-  tp: (k: StringKey, params?: TranslateParams) => string,
-): string {
-  if (status === "seeded") return tp("grammar.statusSeeded");
-  if (status === "observed") return tp("grammar.statusObserved");
-  return tp("grammar.statusNotKnown");
+function statusKey(status: "seeded" | "observed" | "notKnown"): StringKey {
+  if (status === "seeded") return "grammar.statusSeeded";
+  if (status === "observed") return "grammar.statusObserved";
+  return "grammar.statusNotKnown";
 }
 
 /** Seeded and Observed as a quiet pill; "Not known" as a caption, since there is no fact to badge. */
-function StatusMark({
-  status,
-  tp,
-}: {
-  status: "seeded" | "observed" | "notKnown";
-  tp: (k: StringKey, params?: TranslateParams) => string;
-}) {
+function StatusMark({ status }: { status: "seeded" | "observed" | "notKnown" }) {
   if (status === "notKnown")
-    return <span className="text-caption text-muted-foreground">{tp("grammar.statusNotKnown")}</span>;
-  return <Badge variant="secondary">{statusLabel(status, tp)}</Badge>;
+    return (
+      <span className="text-caption text-muted-foreground">
+        <T k="grammar.statusNotKnown" />
+      </span>
+    );
+  return (
+    <Badge variant="secondary">
+      <T k={statusKey(status)} />
+    </Badge>
+  );
 }
 
 function LevelGroupSkeleton() {
@@ -461,7 +460,9 @@ function Pager({
       <Button variant="outline" disabled={offset === 0} onClick={() => onOffset(Math.max(0, offset - limit))}>
         <T k="common.previous" />
       </Button>
-      <p className="text-caption text-muted-foreground">{tp("grammar.pageRange", { from, to, total })}</p>
+      <p className="text-caption text-muted-foreground">
+        <T k="grammar.pageRange" params={{ from, to, total }} />
+      </p>
       <Button variant="outline" disabled={to >= total} onClick={() => onOffset(offset + limit)}>
         <T k="common.next" />
       </Button>

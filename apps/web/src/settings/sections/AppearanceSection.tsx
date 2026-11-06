@@ -1,7 +1,7 @@
 // Appearance (ui-plan 2.3, 2.4, 4.7): the theme, the Story text size, the
 // Japanese font and the Interface Language, all saved per device. The sample
 // changes at once, through the same CSS variables the reader uses.
-import { useT } from "@vjt/core";
+import type { ReactNode } from "react";
 
 import { T } from "../../components/Text.tsx";
 import { InterfaceLanguageChoice } from "../../interfacelanguage/LanguageChoice.tsx";
@@ -16,18 +16,17 @@ export function AppearanceSection() {
   const { preference, setPreference } = useThemePreference();
   const { size, setSize } = useStoryTextSize();
   const { font, setFont } = useJapaneseFont();
-  const { tp } = useT();
 
   const themeOptions = [
-    { value: "light", label: tp("settings.themeLight") },
-    { value: "dark", label: tp("settings.themeDark") },
-    { value: "system", label: tp("settings.themeSystem") },
+    { value: "light", label: <T k="settings.themeLight" /> },
+    { value: "dark", label: <T k="settings.themeDark" /> },
+    { value: "system", label: <T k="settings.themeSystem" /> },
   ] as const;
 
   const fontOptions = [
-    { value: "serif", label: tp("settings.fontSerif") },
-    { value: "sans", label: tp("settings.fontSans") },
-  ] as const satisfies { value: JapaneseFont; label: string }[];
+    { value: "serif", label: <T k="settings.fontSerif" /> },
+    { value: "sans", label: <T k="settings.fontSans" /> },
+  ] as const satisfies { value: JapaneseFont; label: ReactNode }[];
 
   return (
     <SectionBody>

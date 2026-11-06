@@ -5,12 +5,12 @@
 import type { MaruMoriSyncRun } from "@vjt/api-client";
 import {
   formatInstant,
-  translatePlain,
+  pluralEn,
   useT,
   type InterfaceLanguage,
   type MaruMori,
 } from "@vjt/core";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Link } from "react-router";
 
 import { Button } from "@/components/ui/button";
@@ -26,9 +26,11 @@ export function SyncCard({
   marumori: MaruMori;
   timezone: string | undefined;
 }) {
-  const { tp, language } = useT();
+  const { language } = useT();
   const [syncing, setSyncing] = useState(false);
-  const [syncNote, setSyncNote] = useState<string | null>(null);
+  // The note is a <T> element, not a resolved string: it stays in the Learner's
+  // language if they switch while it is on screen (issue #125 review B3).
+  const [syncNote, setSyncNote] = useState<ReactNode>(null);
 
   const connected = marumori.state.status === "ready" && marumori.state.marumori.connected;
 
@@ -44,11 +46,11 @@ export function SyncCard({
         // The run ran and failed: the server's Learner-facing reason, which
         // is more useful than anything the screen could invent (issue #47
         // review S1).
-        setSyncNote(outcome.error ?? tp("today.syncFailedFallback"));
+        setSyncNote(outcome.error ?? <T k="today.syncFailedFallback" />);
       } else {
         // sync() already re-read the status on success, so the Last Sync line
         // under this note is the fresh one without a second reload (S3).
-        setSyncNote(tp("today.syncSucceededNote"));
+        setSyncNote(<T k="today.syncSucceededNote" />);
       }
     });
   };
@@ -123,9 +125,7 @@ function SyncLine({
     return (
       <div className="flex flex-col gap-2">
         <p className="text-body text-destructive">
-          {translatePlain(language, "today.syncFailedLine", {
-            time: formatInstant(failed.finishedAt ?? failed.startedAt, timezone, language),
-          })}
+          <T k="today.syncFailedLine" params={{ time: formatInstant(failed.finishedAt ?? failed.startedAt, timezone, language) }} />
         </p>
         {failed.error ? <p className="text-small text-muted-foreground">{failed.error}</p> : null}
       </div>
@@ -143,9 +143,7 @@ function SyncLine({
       {/* Explicit about what the timestamp is (issue #47 review polish): a
           bare clock time does not read as "this sync worked". */}
       <p className="text-body text-foreground">
-        {translatePlain(language, "today.syncSucceededLine", {
-          time: formatInstant(lastSync.finishedAt ?? lastSync.startedAt, timezone, language),
-        })}
+        <T k="today.syncSucceededLine" params={{ time: formatInstant(lastSync.finishedAt ?? lastSync.startedAt, timezone, language) }} />
       </p>
       <p className="text-small text-muted-foreground">
         {syncResultLine(lastSync, language)}
@@ -158,17 +156,21 @@ function newer(a: string, b: string): boolean {
   return new Date(a).getTime() > new Date(b).getTime();
 }
 
-function syncResultLine(run: MaruMoriSyncRun, language: InterfaceLanguage): string {
+function syncResultLine(run: MaruMoriSyncRun, language: InterfaceLanguage): ReactNode {
   const counts = run.counts;
-  if (!counts) return translatePlain(language, "today.syncNoCounts");
+  if (!counts) return <T k="today.syncNoCounts" />;
   // The English column carries the plural -s as a parameter; the Japanese
   // column keeps the same placeholder and always receives "" (issue #125).
-  const plural = (n: number) => (language === "en" && n !== 1 ? "s" : "");
-  return translatePlain(language, "today.syncResultCounts", {
-    new: counts.new,
-    newPlural: plural(counts.new),
-    levelChanges: counts.levelChanges,
-    levelPlural: plural(counts.levelChanges),
-    linked: counts.linked,
-  });
+  return (
+    <T
+      k="today.syncResultCounts"
+      params={{
+        new: counts.new,
+        newPlural: pluralEn(language, counts.new),
+        levelChanges: counts.levelChanges,
+        levelPlural: pluralEn(language, counts.levelChanges),
+        linked: counts.linked,
+      }}
+    />
+  );
 }

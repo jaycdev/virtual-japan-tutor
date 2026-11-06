@@ -15,6 +15,8 @@
 import type { ApiClient } from "@vjt/api-client";
 import {
   displayPrompt,
+  exerciseInstructionKey,
+  pluralEn,
   translatePlain,
   usePractice,
   useT,
@@ -32,7 +34,6 @@ import { EmptyState, ErrorState, SkeletonLines } from "@/components/states";
 import { cn } from "@/lib/utils";
 
 export function Practice({ client, seed }: { client: ApiClient; seed?: number }) {
-  const { tp } = useT();
   const practice = usePractice(client);
   const { start, answer, refresh } = practice;
   // The exercise on screen. It stays up after answering so the Learner sees
@@ -126,7 +127,11 @@ export function Practice({ client, seed }: { client: ApiClient; seed?: number })
   } else if (practice.state === "done") {
     body = <PracticeResults practice={practice} onAgain={practiceAgain} />;
   } else {
-    body = <p className="text-body text-muted-foreground">{tp("practice.next")}</p>;
+    body = (
+      <p className="text-body text-muted-foreground">
+        <T k="practice.next" />
+      </p>
+    );
   }
 
   return (
@@ -139,7 +144,7 @@ export function Practice({ client, seed }: { client: ApiClient; seed?: number })
           here: the app shell's route announcer is one, and the two must not be
           confused (aria-live alone is enough for a persistent region). */}
       <p data-testid="practice-status" aria-live="polite" className="text-body text-muted-foreground">
-        {practice.state === "starting" ? tp("practice.building") : ""}
+        {practice.state === "starting" ? <T k="practice.building" /> : ""}
       </p>
       {body}
     </section>
@@ -213,12 +218,11 @@ function StartingCard() {
 
 /** The Focus Set has no practisable content: one line, one way forward. */
 function NothingToPractise() {
-  const { tp } = useT();
   return (
     <PracticeCard>
       <EmptyState
         compact
-        message={tp("practice.empty")}
+        message={<T k="practice.empty" />}
         action={
           <Button asChild variant="outline">
             <Link to="/settings/lists">
@@ -256,10 +260,12 @@ function ActivePractice({
   const settled = feedback !== null;
   const locked = settled || practice.pending;
   const percent = practice.target ? Math.round((answeredCount / practice.target) * 100) : 0;
+  // aria-valuetext needs plain text, so the visible line below renders <T>
+  // elements and this stays a resolved string (issue #125 review B3).
   const progressText =
     tp("practice.exerciseOf", { n: Math.max(1, position), total: practice.target }) +
     (skipped > 0
-      ? ` ${tp("practice.skipped", { count: skipped, plural: language === "en" && skipped !== 1 ? "s" : "" })}`
+      ? ` ${tp("practice.skipped", { count: skipped, plural: pluralEn(language, skipped) })}`
       : "");
 
   const continueRef = useRef<HTMLButtonElement | null>(null);
@@ -353,7 +359,15 @@ function ActivePractice({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-2">
-        <p className="text-caption text-muted-foreground">{progressText}</p>
+        <p className="text-caption text-muted-foreground">
+          <T k="practice.exerciseOf" params={{ n: Math.max(1, position), total: practice.target }} />
+          {skipped > 0 ? (
+            <>
+              {" "}
+              <T k="practice.skipped" params={{ count: skipped, plural: pluralEn(language, skipped) }} />
+            </>
+          ) : null}
+        </p>
         <div
           role="progressbar"
           aria-label={tp("practice.progressAria")}
@@ -372,7 +386,12 @@ function ActivePractice({
       <PracticeCard>
         <div className="flex flex-col gap-3">
           <p id={instructionId} className="text-small text-muted-foreground">
-            {current.instruction}
+            {(() => {
+              // English keeps the server's own sentence; Japanese renders the
+              // table entry through <T> so it carries furigana (#125 review B3).
+              const key = language === "en" ? null : exerciseInstructionKey(current.kind);
+              return key === null ? current.instruction : <T k={key} />;
+            })()}
           </p>
           <p id={promptTextId} lang="ja" className="font-serif text-display text-foreground">
             <PromptText text={current.prompt} />
@@ -544,7 +563,7 @@ export function destinationForItem(
 }
 
 function PracticeResults({ practice, onAgain }: { practice: PracticeView; onAgain: () => void }) {
-  const { language, tp } = useT();
+  const { language } = useT();
   const headingRef = useRef<HTMLHeadingElement | null>(null);
   const exercises = practice.session?.exercises ?? [];
   const items = practice.results?.items ?? [];
@@ -565,12 +584,15 @@ function PracticeResults({ practice, onAgain }: { practice: PracticeView; onAgai
         <T k="practice.sessionComplete" />
       </h2>
       <p className="text-body text-muted-foreground">
-        {tp("practice.scoreLine", {
-          correct: practice.results?.correct ?? 0,
-          total: practice.results?.total ?? 0,
-          count: totalExercises,
-          plural: language === "en" && totalExercises !== 1 ? "s" : "",
-        })}
+        <T
+          k="practice.scoreLine"
+          params={{
+            correct: practice.results?.correct ?? 0,
+            total: practice.results?.total ?? 0,
+            count: totalExercises,
+            plural: pluralEn(language, totalExercises),
+          }}
+        />
       </p>
       {again.length > 0 ? (
         <section className="flex flex-col gap-3" aria-labelledby="practice-needs-look">

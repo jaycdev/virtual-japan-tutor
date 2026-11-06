@@ -143,7 +143,7 @@ export function SaveBody({
     <div className="flex flex-col gap-4">
       {error ? (
         <p role="alert" className="text-small text-destructive">
-          {tp("reader.saveFailed", { message: error })}
+          <T k="reader.saveFailed" params={{ message: error }} />
         </p>
       ) : null}
       <ul className="flex max-h-64 flex-col overflow-y-auto">
