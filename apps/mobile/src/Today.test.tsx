@@ -3,8 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Today, formatInstant, learnerClock } from './Today.tsx';
 import { createApiClient } from '@vjt/api-client';
+import { InterfaceLanguageProvider } from '@vjt/core';
 
 import { flushPressConfig } from '../test/press-config.ts';
+import { unrubyfiedKanji } from './test/kanjiCoverage.ts';
 
 /**
  * Today (#47). The screen reads five endpoints and acts on three of them, so
@@ -639,6 +641,43 @@ describe('Today', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Link MaruMori' }));
     expect(handlers.onOpenMarumoriSettings).toHaveBeenCalled();
+  });
+
+  it('in ja-furigana every interface kanji on the screen stands in a reading column', async () => {
+    // The RN twin of web Today’s "every kanji of the page sits inside a <ruby>":
+    // RN has no ruby element, so the reading column that TableText and the core
+    // date helpers stand over each kanji is the marker that the reading came
+    // with the string, not the Learner’s own text. A frozen instant fixes the
+    // Japanese date. The Story title — Learner content, never translated or
+    // annotated — is exempted by its testID.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-04T22:30:00Z'));
+    fixture.timezone = 'Asia/Tokyo';
+
+    const client = createApiClient({
+      baseUrl: 'http://localhost',
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+    render(
+      <InterfaceLanguageProvider language="ja-furigana" setLanguage={() => undefined}>
+        <Today
+          client={client}
+          onOpenStory={vi.fn()}
+          onOpenPractice={vi.fn()}
+          onOpenStories={vi.fn()}
+          onOpenWordLists={vi.fn()}
+          onOpenMarumoriSettings={vi.fn()}
+        />
+      </InterfaceLanguageProvider>,
+    );
+    // The card settles: the title is the last thing to arrive.
+    await waitFor(() => {
+      expect(screen.getByText('雨の日の駅')).toBeTruthy();
+    });
+
+    // Chrome kanji — headings, the sync line, the date — carries reading slots.
+    expect(document.querySelectorAll("[style*='font-size']").length).toBeGreaterThan(0);
+    expect(unrubyfiedKanji(document.body, ['today-story-card', 'focus-chip-label'])).toEqual([]);
   });
 });
 
