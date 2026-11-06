@@ -44,4 +44,24 @@ describe("T", () => {
     const { container } = renderT("en", "lists.itemsHeading", { count: 3 });
     expect(container.textContent).toBe("Items (3)");
   });
+
+  it("gives furigana mode one plain accessible copy (review A1)", () => {
+    const { container } = renderT("ja-furigana", "settings.focusAria");
+    // The drawn ruby half is hidden from assistive tech whole…
+    const visual = container.querySelector("span[aria-hidden='true']");
+    expect(visual?.querySelectorAll("ruby")).toHaveLength(1);
+    // …and one sr-only span carries the sentence with no readings between.
+    const plain = container.querySelector("span.sr-only");
+    expect(plain?.textContent).toBe("重点項目");
+    // select-none: the plain copy never doubles into selected text.
+    expect(plain?.className).toContain("select-none");
+  });
+
+  it("renders no assistive-tech scaffolding when there is nothing to annotate", () => {
+    for (const language of ["en", "ja"] as const) {
+      const { container } = renderT(language, "settings.focusAria");
+      expect(container.querySelector("span[aria-hidden='true']")).toBeNull();
+      expect(container.querySelector("span.sr-only")).toBeNull();
+    }
+  });
 });

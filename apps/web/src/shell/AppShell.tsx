@@ -68,19 +68,13 @@ export function AppShell() {
 
   return (
     <div className="flex min-h-dvh bg-background text-foreground">
-      {/* Two forms of the same words: the visible one carries furigana in
-          ja-furigana but is hidden from assistive tech outright; the plain
-          tp() span gives the link its accessible name, so a screen reader
-          never says the reading too. The inner sr-only span stays hidden when
-          the link is focused (focus:not-sr-only applies to the link), and the
-          ruby form is only drawn then, clipped by the link's own sr-only
-          otherwise. #125 round-3 review S2 (was V2). */}
+      {/* A <T> in furigana draws its ruby aria-hidden and carries a plain
+          sr-only copy, so the link's name is the words alone (round-4 A1). */}
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[60] focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-body focus:text-primary-foreground focus:outline-none focus:ring-2 focus:ring-ring"
       >
-        <span aria-hidden="true"><T k="shell.skipToContent" /></span>
-        <span className="sr-only">{tp("shell.skipToContent")}</span>
+        <T k="shell.skipToContent" />
       </a>
 
       <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col justify-between overflow-y-auto border-r border-border bg-card lg:flex">

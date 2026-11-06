@@ -676,11 +676,12 @@ describe("Practice (web)", () => {
       </MemoryRouter>,
     );
 
-    // The Start button's accessible name is the base text alone — the <rt>
-    // readings carry aria-hidden, so a screen reader never hears them doubled
-    // with the kanji (round-3 review nit). Computed name: "練習 を 始 める".
-    fireEvent.click(screen.getByRole("button", { name: "練習 を 始 める" }));
-    await screen.findByText(/どれですか/);
+    // A1 (round-4): the furigana half is aria-hidden and one sr-only span
+    // carries the sentence plain, so the name is the words, readings aside.
+    fireEvent.click(screen.getByRole("button", { name: "練習を始める" }));
+    // The full plain sentence now exists exactly once: the drawn line is split
+    // by the ruby pairs, so this query lands on the sr-only copy (A1).
+    await screen.findByText("意味はどれですか？");
     expect(container.querySelectorAll("ruby").length).toBeGreaterThan(0);
 
     // The prompt and options are learning content (lang="ja"); everything the
