@@ -4,6 +4,8 @@ import { XIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
+import { T } from "../Text.tsx"
+
 // shadcn/ui Dialog (new-york v4) on Radix Dialog: focus is trapped, Escape closes
 // it and focus returns to the trigger. Colours are the @vjt/design tokens (the
 // backdrop token for the overlay, the popover surface for the panel), and the
@@ -65,7 +67,9 @@ function DialogContent({
             className="absolute top-4 right-4 rounded-xs text-muted-foreground opacity-70 transition-opacity hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
           >
             <XIcon />
-            <span className="sr-only">Close</span>
+            <span className="sr-only">
+              <T k="common.close" />
+            </span>
           </DialogPrimitive.Close>
         )}
       </DialogPrimitive.Content>

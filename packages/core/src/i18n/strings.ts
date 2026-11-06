@@ -936,6 +936,7 @@ export const strings = {
   "ai.addSubmit": { en: "Add provider", ja: "プロバイダを加《くわ》える" },
   "ai.assignmentHeading": { en: "Which provider to use", ja: "使《つか》うプロバイダ" },
   "common.none": { en: "None", ja: "なし" },
+  "common.close": { en: "Close", ja: "閉《と》じる" },
   "common.rename": { en: "Rename", ja: "名前《なまえ》の変更《へんこう》" },
   "common.remove": { en: "Remove", ja: "削除《さくじょ》" },
   "common.confirmDelete": { en: "Confirm delete", ja: "削除《さくじょ》を確定《かくてい》" },
