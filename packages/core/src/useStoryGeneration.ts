@@ -6,7 +6,7 @@ import type {
 } from "@vjt/api-client";
 import { useCallback, useEffect, useState } from "react";
 import type { ActionResult } from "./useAiSettings.ts";
-import { errorMessage, errorCode } from "./errors.ts";
+import { errorMessage, errorCode } from "./i18n/errorMessages.ts";
 import { useInterfaceLanguage } from "./i18n/context.ts";
 import { translatePlain } from "./i18n/translate.ts";
 

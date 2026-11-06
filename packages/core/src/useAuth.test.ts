@@ -1,7 +1,10 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { createApiClient } from "@vjt/api-client";
+import { createElement, useState, type ReactNode } from "react";
 import { describe, expect, it } from "vitest";
 import { memoryTokenStorage, useAuth } from "./index.ts";
+import { InterfaceLanguageProvider } from "./i18n/context.ts";
+import type { InterfaceLanguage } from "./i18n/language.ts";
 
 const alice = { id: "11111111-1111-1111-1111-111111111111", username: "alice" };
 
@@ -44,6 +47,24 @@ function fakeServer(routes: Record<string, (call: Call) => Response | Promise<Re
 
 const meOk = (call: Call) => (call.authorization === "Bearer tok-1" ? json(200, alice) : json(401, unauth));
 const unauth = { code: "unauthorized", message: "Missing, invalid or expired session token" };
+
+/**
+ * Renders the hook under an Interface Language the test can switch after
+ * mount: the wrapper owns the provider state (renderHook's `wrapper` takes
+ * only children; its props never reach it).
+ */
+function languageHarness() {
+  let change: (language: InterfaceLanguage) => void = () => undefined;
+  function LanguageWrapper({ children }: { children: ReactNode }) {
+    const [language, setLanguage] = useState<InterfaceLanguage>("en");
+    change = setLanguage;
+    return createElement(InterfaceLanguageProvider, { language, setLanguage: () => undefined, children });
+  }
+  return {
+    wrapper: LanguageWrapper,
+    switchLanguage: (language: InterfaceLanguage) => act(() => change(language)),
+  };
+}
 
 describe("useAuth: restoring a session", () => {
   it("is signed out, without touching the network, when no token is stored", async () => {
@@ -88,6 +109,27 @@ describe("useAuth: restoring a session", () => {
     up = true;
     act(() => result.current.retry());
     await waitFor(() => expect(result.current.state).toEqual({ status: "signedIn", user: alice }));
+  });
+
+  it("re-labels a failed session check in the new language without checking again (B1)", async () => {
+    const storage = memoryTokenStorage("tok-1");
+    const { client, calls } = fakeServer({
+      "GET /me": () => json(500, { code: "internal", message: "Internal server error" }),
+    });
+    const { wrapper, switchLanguage } = languageHarness();
+    const { result } = renderHook(() => useAuth(client, storage), { wrapper });
+
+    await waitFor(() => expect(result.current.state).toEqual({ status: "error", message: "Server answered 500" }));
+
+    // Switching the Interface Language re-labels the failure that is already
+    // held: still `error` (never back to `loading`), the server asked once.
+    switchLanguage("ja");
+    expect(result.current.state).toEqual({ status: "error", message: "サーバーが 500 と応答しました" });
+    expect(calls.filter((c) => c.path === "/me")).toHaveLength(1);
+
+    switchLanguage("en");
+    expect(result.current.state).toEqual({ status: "error", message: "Server answered 500" });
+    expect(calls.filter((c) => c.path === "/me")).toHaveLength(1);
   });
 });
 

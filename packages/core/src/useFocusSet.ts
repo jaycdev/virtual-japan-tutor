@@ -1,13 +1,16 @@
 import type { ApiClient, FocusSetItem } from "@vjt/api-client";
-import { useCallback, useEffect, useState } from "react";
-import { errorMessage, errorCode, failureText, httpFailureText } from "./errors.ts";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useInterfaceLanguage } from "./i18n/context.ts";
+import { apiFailure, renderFailure, UNREACHABLE_FAILURE, type Failure } from "./i18n/failure.ts";
 
 /**
  * The Focus Set on its own (plan 4.4 item 4): the Today glance needs the set
  * and nothing else, and `usePractice` only loads it as a side effect of a
  * session. One read of `GET /focus-set`, never rejected — a failure lands in
  * `error` where the screen can show it with a Retry (plan §5).
+ *
+ * The failure is stored untranslated and rendered in the current Interface
+ * Language, so switching languages re-labels it without another fetch (B1).
  */
 
 export type FocusSetView = {
@@ -28,7 +31,7 @@ export function useFocusSet(client: ApiClient): FocusSetView {
   const { language } = useInterfaceLanguage();
   const [items, setItems] = useState<FocusSetItem[] | null>(null);
   const [size, setSize] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<Failure | null>(null);
   const [loading, setLoading] = useState(true);
   const [attempt, setAttempt] = useState(0);
 
@@ -43,11 +46,10 @@ export function useFocusSet(client: ApiClient): FocusSetView {
         if (data) {
           setItems(data.items);
           setSize(data.size);
-          setError(null);
-        } else
-          setError(errorMessage(language, errorCode(err), err?.message ?? httpFailureText(language, response.status)));
+          setFailure(null);
+        } else setFailure(apiFailure(err, response.status));
       } catch {
-        if (!cancelled) setError(failureText(language));
+        if (!cancelled) setFailure(UNREACHABLE_FAILURE);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -55,12 +57,17 @@ export function useFocusSet(client: ApiClient): FocusSetView {
     return () => {
       cancelled = true;
     };
-  }, [client, attempt, language]);
+  }, [client, attempt]);
 
   const retry = useCallback(() => {
     setLoading(true);
     setAttempt((n) => n + 1);
   }, []);
+
+  const error = useMemo(
+    () => (failure === null ? null : renderFailure(language, failure)),
+    [failure, language],
+  );
 
   return { loading, error, items, size, retry };
 }

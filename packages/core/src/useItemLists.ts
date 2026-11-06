@@ -6,11 +6,10 @@ import type {
   ItemListMember,
   WeakSignalRequest,
 } from "@vjt/api-client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ActionResult } from "./useAiSettings.ts";
-import { errorMessage, errorCode, failureText, httpFailureText } from "./errors.ts";
 import { useInterfaceLanguage } from "./i18n/context.ts";
-import type { InterfaceLanguage } from "./i18n/language.ts";
+import { apiFailure, renderFailure, UNREACHABLE_FAILURE, type Failure } from "./i18n/failure.ts";
 
 /**
  * The Learner's Item Lists (issue #12) — named groups of Words, Kanji and
@@ -21,12 +20,20 @@ import type { InterfaceLanguage } from "./i18n/language.ts";
  * re-fetch so the counts and the Default marker stay honest.
  *
  * Like the other hooks this never rejects: failures land in `state` or in the
- * returned ActionResult.
+ * returned ActionResult. The view's failure is held untranslated and
+ * rendered in the current Interface Language, so a language switch needs no
+ * refetch (B1); ActionResult messages belong to the call that produced them
+ * and are rendered at call time.
  */
 
 export type ItemListsState =
   | { status: "loading" }
   | { status: "error"; message: string }
+  | { status: "ready"; lists: ItemList[]; defaultListId: string | null };
+
+type HeldItemListsState =
+  | { status: "loading" }
+  | { status: "error"; failure: Failure }
   | { status: "ready"; lists: ItemList[]; defaultListId: string | null };
 
 export interface ItemListsView {
@@ -60,14 +67,9 @@ export interface ItemListsView {
   reload(): void;
 }
 
-
-function message(lang: InterfaceLanguage, error: { message?: string } | undefined, status: number): string {
-  return errorMessage(lang, errorCode(error), error?.message ?? httpFailureText(lang, status));
-}
-
 export function useItemLists(client: ApiClient): ItemListsView {
   const { language } = useInterfaceLanguage();
-  const [state, setState] = useState<ItemListsState>({ status: "loading" });
+  const [held, setHeld] = useState<HeldItemListsState>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
@@ -77,21 +79,21 @@ export function useItemLists(client: ApiClient): ItemListsView {
         const { data, error: err, response } = await client.GET("/item-lists");
         if (cancelled) return;
         if (data)
-          setState({
+          setHeld({
             status: "ready",
             lists: data.items ?? [],
             defaultListId: data.defaultListId ?? null,
           });
-        else setState({ status: "error", message: message(language, err, response.status) });
+        else setHeld({ status: "error", failure: apiFailure(err, response.status) });
       } catch {
-        if (!cancelled) setState({ status: "error", message: failureText(language) });
+        if (!cancelled) setHeld({ status: "error", failure: UNREACHABLE_FAILURE });
       }
     };
     void load();
     return () => {
       cancelled = true;
     };
-  }, [client, attempt, language]);
+  }, [client, attempt]);
 
   /**
    * Re-read after a mutation. A failed re-read never clobbers what is on
@@ -103,7 +105,7 @@ export function useItemLists(client: ApiClient): ItemListsView {
     try {
       const { data } = await client.GET("/item-lists");
       if (data)
-        setState({
+        setHeld({
           status: "ready",
           lists: data.items ?? [],
           defaultListId: data.defaultListId ?? null,
@@ -125,9 +127,9 @@ export function useItemLists(client: ApiClient): ItemListsView {
           await refresh();
           return { ok: true, list: created };
         }
-        return { ok: false, message: message(language, err, response.status) };
+        return { ok: false, message: renderFailure(language, apiFailure(err, response.status)) };
       } catch {
-        return { ok: false, message: failureText(language) };
+        return { ok: false, message: renderFailure(language, UNREACHABLE_FAILURE) };
       }
     },
     [client, refresh, language],
@@ -144,9 +146,9 @@ export function useItemLists(client: ApiClient): ItemListsView {
           await refresh();
           return { ok: true };
         }
-        return { ok: false, message: message(language, err, response.status) };
+        return { ok: false, message: renderFailure(language, apiFailure(err, response.status)) };
       } catch {
-        return { ok: false, message: failureText(language) };
+        return { ok: false, message: renderFailure(language, UNREACHABLE_FAILURE) };
       }
     },
     [client, refresh, language],
@@ -162,9 +164,9 @@ export function useItemLists(client: ApiClient): ItemListsView {
           await refresh();
           return { ok: true };
         }
-        return { ok: false, message: message(language, err, response.status) };
+        return { ok: false, message: renderFailure(language, apiFailure(err, response.status)) };
       } catch {
-        return { ok: false, message: failureText(language) };
+        return { ok: false, message: renderFailure(language, UNREACHABLE_FAILURE) };
       }
     },
     [client, refresh, language],
@@ -180,9 +182,9 @@ export function useItemLists(client: ApiClient): ItemListsView {
           await refresh();
           return { ok: true };
         }
-        return { ok: false, message: message(language, err, response.status) };
+        return { ok: false, message: renderFailure(language, apiFailure(err, response.status)) };
       } catch {
-        return { ok: false, message: failureText(language) };
+        return { ok: false, message: renderFailure(language, UNREACHABLE_FAILURE) };
       }
     },
     [client, refresh, language],
@@ -199,9 +201,9 @@ export function useItemLists(client: ApiClient): ItemListsView {
           await refresh();
           return { ok: true };
         }
-        return { ok: false, message: message(language, err, response.status) };
+        return { ok: false, message: renderFailure(language, apiFailure(err, response.status)) };
       } catch {
-        return { ok: false, message: failureText(language) };
+        return { ok: false, message: renderFailure(language, UNREACHABLE_FAILURE) };
       }
     },
     [client, refresh, language],
@@ -217,9 +219,9 @@ export function useItemLists(client: ApiClient): ItemListsView {
           await refresh();
           return { ok: true };
         }
-        return { ok: false, message: message(language, err, response.status) };
+        return { ok: false, message: renderFailure(language, apiFailure(err, response.status)) };
       } catch {
-        return { ok: false, message: failureText(language) };
+        return { ok: false, message: renderFailure(language, UNREACHABLE_FAILURE) };
       }
     },
     [client, refresh, language],
@@ -232,9 +234,9 @@ export function useItemLists(client: ApiClient): ItemListsView {
           params: { path: { listId } },
         });
         if (response.status === 200 && data) return { ok: true, members: data.items ?? [] };
-        return { ok: false, message: message(language, err, response.status) };
+        return { ok: false, message: renderFailure(language, apiFailure(err, response.status)) };
       } catch {
-        return { ok: false, message: failureText(language) };
+        return { ok: false, message: renderFailure(language, UNREACHABLE_FAILURE) };
       }
     },
     [client, language],
@@ -248,15 +250,20 @@ export function useItemLists(client: ApiClient): ItemListsView {
           body: { signals },
         });
         if (response.status === 204) return { ok: true };
-        return { ok: false, message: message(language, err, response.status) };
+        return { ok: false, message: renderFailure(language, apiFailure(err, response.status)) };
       } catch {
-        return { ok: false, message: failureText(language) };
+        return { ok: false, message: renderFailure(language, UNREACHABLE_FAILURE) };
       }
     },
     [client, language],
   );
 
   const reload = useCallback(() => setAttempt((n) => n + 1), []);
+
+  const state = useMemo<ItemListsState>(() => {
+    if (held.status !== "error") return held;
+    return { status: "error", message: renderFailure(language, held.failure) };
+  }, [held, language]);
 
   const defaultListId = state.status === "ready" ? state.defaultListId : null;
 

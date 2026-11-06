@@ -1,7 +1,7 @@
 import type { ApiClient, GrammarPointDetail } from "@vjt/api-client";
 import { useCallback, useEffect, useState } from "react";
-import { errorMessage, errorCode, failureText, httpFailureText } from "./errors.ts";
 import { useInterfaceLanguage } from "./i18n/context.ts";
+import { apiFailure, renderFailure, UNREACHABLE_FAILURE, type Failure } from "./i18n/failure.ts";
 
 export type GrammarPointState =
   | { status: "idle" }
@@ -15,8 +15,12 @@ export interface GrammarPointRead {
   reload(): void;
 }
 
-/** A finished read, tagged with the id it answers. */
-type Settled = { id: number; state: Extract<GrammarPointState, { status: "ready" | "error" }> };
+/** A finished read, tagged with the id it answers. The failure is held untranslated (B1). */
+type HeldSettledState =
+  | { status: "ready"; point: GrammarPointDetail }
+  | { status: "error"; failure: Failure };
+
+type Settled = { id: number; state: HeldSettledState };
 
 
 /**
@@ -37,6 +41,10 @@ type Settled = { id: number; state: Extract<GrammarPointState, { status: "ready"
  * landing at all, and every settled answer carries the id it belongs to, so
  * one that no longer matches the screen never paints. The visible state is
  * derived from those two facts — no setState runs in the effect body.
+ *
+ * The failure is stored untranslated and rendered in the current Interface
+ * Language while deriving the visible state, so switching languages never
+ * re-runs the read (issue #125 B1).
  */
 export function useGrammarPoint(client: ApiClient, id: number | undefined): GrammarPointRead {
   const { language } = useInterfaceLanguage();
@@ -51,28 +59,23 @@ export function useGrammarPoint(client: ApiClient, id: number | undefined): Gram
       .then(({ data, error, response }) => {
         if (cancelled) return;
         if (data) setSettled({ id, state: { status: "ready", point: data } });
-        else
-          setSettled({
-            id,
-            state: {
-              status: "error",
-              message: errorMessage(language, errorCode(error), error?.message ?? httpFailureText(language, response.status)),
-            },
-          });
+        else setSettled({ id, state: { status: "error", failure: apiFailure(error, response.status) } });
       })
       .catch(() => {
-        if (!cancelled) setSettled({ id, state: { status: "error", message: failureText(language) } });
+        if (!cancelled) setSettled({ id, state: { status: "error", failure: UNREACHABLE_FAILURE } });
       });
     return () => {
       cancelled = true;
     };
-  }, [client, id, attempt, language]);
+  }, [client, id, attempt]);
 
   const state: GrammarPointState =
     id === undefined
       ? { status: "idle" }
       : settled !== null && settled.id === id
-        ? settled.state
+        ? settled.state.status === "error"
+          ? { status: "error", message: renderFailure(language, settled.state.failure) }
+          : settled.state
         : { status: "loading" };
 
   const reload = useCallback(() => setAttempt((n) => n + 1), []);

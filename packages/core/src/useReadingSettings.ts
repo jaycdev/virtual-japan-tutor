@@ -1,9 +1,8 @@
 import type { ApiClient, ReadingSettings } from "@vjt/api-client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ActionResult } from "./useAiSettings.ts";
-import { errorMessage, errorCode, failureText, httpFailureText } from "./errors.ts";
 import { useInterfaceLanguage } from "./i18n/context.ts";
-import type { InterfaceLanguage } from "./i18n/language.ts";
+import { apiFailure, renderFailure, UNREACHABLE_FAILURE, type Failure } from "./i18n/failure.ts";
 
 /**
  * The Learner's reader preferences (issue #11, extended by issue #12), kept
@@ -15,12 +14,18 @@ import type { InterfaceLanguage } from "./i18n/language.ts";
  *
  * The PUT body carries both fields (the spec requires the whole settings
  * object), so each setter merges with the last settings the server returned.
- * Like the other hooks this never rejects: failures land in `state`.
+ * Like the other hooks this never rejects: failures land in `state`, held
+ * untranslated and rendered in the current Interface Language (B1).
  */
 
 export type ReadingSettingsState =
   | { status: "loading" }
   | { status: "error"; message: string }
+  | { status: "ready"; settings: ReadingSettings };
+
+type HeldReadingSettingsState =
+  | { status: "loading" }
+  | { status: "error"; failure: Failure }
   | { status: "ready"; settings: ReadingSettings };
 
 export interface ReadingSettingsView {
@@ -41,13 +46,9 @@ export interface ReadingSettingsView {
 // panel can call a setter.
 const DEFAULT_LOOKUP_HOLD_MS = 800;
 
-function message(lang: InterfaceLanguage, error: { message?: string } | undefined, status: number): string {
-  return errorMessage(lang, errorCode(error), error?.message ?? httpFailureText(lang, status));
-}
-
 export function useReadingSettings(client: ApiClient): ReadingSettingsView {
   const { language } = useInterfaceLanguage();
-  const [state, setState] = useState<ReadingSettingsState>({ status: "loading" });
+  const [held, setHeld] = useState<HeldReadingSettingsState>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
   const last = useRef<ReadingSettings | null>(null);
 
@@ -59,17 +60,17 @@ export function useReadingSettings(client: ApiClient): ReadingSettingsView {
         if (cancelled) return;
         if (data) {
           last.current = data;
-          setState({ status: "ready", settings: data });
-        } else setState({ status: "error", message: message(language, err, response.status) });
+          setHeld({ status: "ready", settings: data });
+        } else setHeld({ status: "error", failure: apiFailure(err, response.status) });
       } catch {
-        if (!cancelled) setState({ status: "error", message: failureText(language) });
+        if (!cancelled) setHeld({ status: "error", failure: UNREACHABLE_FAILURE });
       }
     };
     void load();
     return () => {
       cancelled = true;
     };
-  }, [client, attempt, language]);
+  }, [client, attempt]);
 
   const put = useCallback(
     async (body: ReadingSettings): Promise<ActionResult> => {
@@ -77,12 +78,13 @@ export function useReadingSettings(client: ApiClient): ReadingSettingsView {
         const { data, error: err, response } = await client.PUT("/reading-settings", { body });
         if (data) {
           last.current = data;
-          setState({ status: "ready", settings: data });
+          setHeld({ status: "ready", settings: data });
           return { ok: true };
         }
-        return { ok: false, message: message(language, err, response.status) };
+        // One-shot ActionResult: rendered in the language of the call.
+        return { ok: false, message: renderFailure(language, apiFailure(err, response.status)) };
       } catch {
-        return { ok: false, message: failureText(language) };
+        return { ok: false, message: renderFailure(language, UNREACHABLE_FAILURE) };
       }
     },
     [client, language],
@@ -106,6 +108,11 @@ export function useReadingSettings(client: ApiClient): ReadingSettingsView {
   );
 
   const reload = useCallback(() => setAttempt((n) => n + 1), []);
+
+  const state = useMemo<ReadingSettingsState>(() => {
+    if (held.status !== "error") return held;
+    return { status: "error", message: renderFailure(language, held.failure) };
+  }, [held, language]);
 
   return { state, setBlurTranslation, setLookupHoldMs, reload };
 }
