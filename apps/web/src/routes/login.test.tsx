@@ -50,4 +50,23 @@ describe("Login", () => {
     const { router } = renderAppAt("/login?next=%2Fgrammar", { signedIn: true });
     await waitFor(() => expect(currentLocation(router)).toBe("/grammar"));
   });
+
+  // Issue #125: the language is device-saved, so the login card can already switch it.
+  it("switches its own labels with the compact language choice", async () => {
+    const user = userEvent.setup();
+    renderAppAt("/login", { signedIn: false });
+
+    await user.click(await screen.findByRole("button", { name: "日本語" }));
+
+    expect(await screen.findByLabelText("ユーザー名")).toBeTruthy();
+    expect(screen.getByLabelText("パスワード")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "ログイン" })).toBeTruthy();
+    // The label names itself in every language.
+    expect(screen.getByRole("button", { name: "English" })).toBeTruthy();
+    await waitFor(() => expect(document.documentElement.lang).toBe("ja"));
+
+    await user.click(screen.getByRole("button", { name: "English" }));
+    expect(await screen.findByLabelText("Username")).toBeTruthy();
+    await waitFor(() => expect(document.documentElement.lang).toBe("en"));
+  });
 });

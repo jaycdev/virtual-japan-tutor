@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { createApiClient } from "@vjt/api-client";
-import { displayPrompt, practiceSeedForStory } from "@vjt/core";
+import { displayPrompt, InterfaceLanguageProvider, practiceSeedForStory } from "@vjt/core";
 
 import { Practice, destinationForItem } from "./Practice.tsx";
 
@@ -639,6 +639,31 @@ describe("Practice (web)", () => {
     expect(grammarLink.textContent).toMatch(/Open Grammar Point$/);
     expect(destinationForItem("grammar", "42")).toEqual({ to: "/grammar/42", label: "Open Grammar Point" });
     expect(destinationForItem("vocabulary", "1234")).toEqual({ to: "/settings/lists", label: "Open Item Lists" });
+  });
+
+  // Issue #125: the exercise INSTRUCTION is interface text and translates; the
+  // Learner's content (prompt, options) comes from the server and never does.
+  it("in Japanese the instruction is translated while the session content stays as served", async () => {
+    render(
+      <MemoryRouter>
+        <InterfaceLanguageProvider language="ja" setLanguage={() => undefined}>
+          <Practice client={makeClient()} seed={undefined} />
+        </InterfaceLanguageProvider>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "練習を始める" }));
+    await waitFor(() => {
+      expect(screen.getByText("2問中1問目")).toBeTruthy();
+    });
+
+    // The instruction line reads in Japanese, not the server's English...
+    expect(screen.getByText("意味はどれですか？")).toBeTruthy();
+    expect(screen.queryByText("What does this mean?")).toBeNull();
+    // ...while the item itself is exactly what the server served.
+    expect(screen.getByText("学")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "learn" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "tree" })).toBeTruthy();
   });
 
   describe("keyboard", () => {
