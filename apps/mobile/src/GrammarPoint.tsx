@@ -1,11 +1,12 @@
 import type { ApiClient, GrammarExample, GrammarPointDetail } from "@vjt/api-client";
-import { useGrammarPoint } from "@vjt/core";
+import { useGrammarPoint, useT } from "@vjt/core";
 import { type ReactNode } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { useJapaneseFont } from "./japaneseFont/index.tsx";
 import { Card } from "./components/ui/Card.tsx";
 import { Icon } from "./components/ui/icon.tsx";
+import { T } from "./components/Text.tsx";
 import { EmptyState, InlineError, SkeletonBar } from "./state/states.tsx";
 
 /**
@@ -39,23 +40,22 @@ export function GrammarPoint({
   onBack: () => void;
 }) {
   const { state, reload } = useGrammarPoint(client, pointId);
+  const { tp } = useT();
 
   return (
-    <ScrollView className="flex-1" accessibilityLabel="Grammar point" contentContainerStyle={styles.page}>
+    <ScrollView className="flex-1" accessibilityLabel={tp("focus.grammarPoint")} contentContainerStyle={styles.page}>
       <View className="w-full gap-4" style={styles.column}>
         <BackRow onBack={onBack} />
 
         {pointId === undefined ? (
           // A route :id that is not a catalogue id: say so plainly; Back above
           // is the way out, so no Retry button (there is nothing to retry).
-          <Text accessibilityRole="alert" role="alert" className="text-body text-destructive">
-            This is not a grammar point from the catalogue.
-          </Text>
+          <T k="grammar.notCataloguePoint" accessibilityRole="alert" className="text-body text-destructive" />
         ) : state.status === "loading" || state.status === "idle" ? (
           <GeneratingBody />
         ) : state.status === "error" ? (
           <InlineError
-            message={`Cannot load this grammar point: ${state.message}`}
+            message={<T k="grammar.detailLoadFailed" params={{ message: state.message }} />}
             onRetry={reload}
           />
         ) : (
@@ -67,15 +67,16 @@ export function GrammarPoint({
 }
 
 function BackRow({ onBack }: { onBack: () => void }) {
+  const { tp } = useT();
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel="Back to grammar"
+      accessibilityLabel={tp("grammar.backAria")}
       onPress={onBack}
       className="min-h-11 flex-row items-center gap-1 self-start active:opacity-80"
     >
       <Icon name="chevron-left" size="sm" className="text-primary" />
-      <Text className="text-body font-semibold text-primary">Grammar</Text>
+      <T k="grammar.title" className="text-body font-semibold text-primary" />
     </Pressable>
   );
 }
@@ -93,9 +94,11 @@ function GeneratingBody() {
         <SkeletonBar width="70%" height={18} />
       </View>
       <Card>
-        <Text accessibilityLiveRegion="polite" role="status" className="text-body text-muted-foreground">
-          Preparing this page — the tutor writes a Grammar Point’s explanation the first time it is opened.
-        </Text>
+        <T
+          k="grammar.generating"
+          accessibilityLiveRegion="polite"
+          className="text-body text-muted-foreground"
+        />
         <View className="gap-2">
           <SkeletonBar width="100%" height={16} />
           <SkeletonBar width="100%" height={16} />
@@ -142,18 +145,16 @@ function ReadyBody({ point, onReloadExplanation }: { point: GrammarPointDetail; 
         </View>
         <Text className="text-body text-foreground">{point.meaning}</Text>
         {point.variants.length > 0 ? (
-          <Text className="text-caption text-muted-foreground">{`Also written ${point.variants.join(", ")}`}</Text>
+          <T
+            k="grammar.alsoWritten"
+            params={{ variants: point.variants.join(", ") }}
+            className="text-caption text-muted-foreground"
+          />
         ) : null}
       </View>
 
       <Card testID="grammar-explanation-card">
-        <Text
-          role="heading"
-          accessibilityRole="header"
-          className="text-title-sm font-semibold text-foreground"
-        >
-          Explanation
-        </Text>
+        <T k="grammar.explanation" accessibilityRole="header" className="text-title-sm font-semibold text-foreground" />
         {point.explanation === "" ? (
           // #49 review S1: the server attempts generation inside this very GET
           // (grammar.go), so an empty explanation on a page that was just
@@ -162,8 +163,8 @@ function ReadyBody({ point, onReloadExplanation }: { point: GrammarPointDetail; 
           // ("writes one the first time this page is opened") was a lie here.
           <EmptyState
             compact
-            message="The tutor could not generate this explanation. Check the AI Provider for grammar content in Settings, then reload this page."
-            actionLabel="Reload"
+            message={<T k="grammar.explainFailed" />}
+            actionLabel={<T k="grammar.reload" />}
             onAction={onReloadExplanation}
           />
         ) : (
@@ -172,15 +173,9 @@ function ReadyBody({ point, onReloadExplanation }: { point: GrammarPointDetail; 
       </Card>
 
       <Card testID="grammar-examples-card">
-        <Text
-          role="heading"
-          accessibilityRole="header"
-          className="text-title-sm font-semibold text-foreground"
-        >
-          Example sentences
-        </Text>
+        <T k="grammar.examples" accessibilityRole="header" className="text-title-sm font-semibold text-foreground" />
         {point.examples.length === 0 ? (
-          <Text className="text-body text-muted-foreground">No validated examples yet.</Text>
+          <T k="grammar.noValidatedExamples" className="text-body text-muted-foreground" />
         ) : (
           point.examples.map((example) => <ExampleRow key={example.id} example={example} />)
         )}

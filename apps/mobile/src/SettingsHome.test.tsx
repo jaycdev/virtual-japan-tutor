@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { InterfaceLanguageProvider } from '@vjt/core';
 import { fireEvent, render, screen } from '@testing-library/react';
 
 import { SettingsHome, type SettingsSection } from './SettingsHome.tsx';
+import { unrubyfiedKanji } from './test/kanjiCoverage.ts';
 
 function renderHome() {
   const opened: SettingsSection[] = [];
@@ -55,5 +57,17 @@ describe('mobile SettingsHome', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'Log out' }));
     expect(loggedOut).toBe(true);
+  });
+
+  it('in Japanese (furigana) every chrome kanji stands in a reading column', () => {
+    // The hub is pure chrome: every row label, the account card and the
+    // Log out button come from the string table.
+    render(
+      <InterfaceLanguageProvider language="ja-furigana" setLanguage={() => undefined}>
+        <SettingsHome username="learner" onLogout={() => {}} onOpenSection={() => {}} />
+      </InterfaceLanguageProvider>,
+    );
+    expect(document.querySelectorAll("[style*='font-size']").length).toBeGreaterThan(0);
+    expect(unrubyfiedKanji(document.body)).toEqual([]);
   });
 });

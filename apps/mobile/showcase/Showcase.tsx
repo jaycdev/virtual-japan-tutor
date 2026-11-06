@@ -1,3 +1,5 @@
+/* eslint-disable vjt/no-raw-jsx-text -- dev-only component catalogue: these labels are
+   demo fixtures for the review screen, not shipped interface chrome. */
 import { Button } from '@/components/ui/button';
 import {
   Dialog,

@@ -1,11 +1,19 @@
 import type { DictionaryEntry, StoryGrammarSpan } from "@vjt/api-client";
+import { type RubyText, type StringKey, useT } from "@vjt/core";
 import * as DialogPrimitives from "@rn-primitives/dialog";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { Icon } from "../components/ui/icon";
+import { TableText } from "../components/Text.tsx";
 import { useSheetBottomInset } from "../components/ui/sheet.ts";
 import { JlptBadge, SrsLevelText } from "./parts.tsx";
 import { PitchGraph } from "./PitchGraph.tsx";
+
+/** The pitch spelled out, with Kanjium's own tag last: the graph's caption. */
+function pitchCaptionSegments(t: ReturnType<typeof useT>["t"], pitch: NonNullable<DictionaryEntry["pitch"]>): RubyText {
+  const base = pitch.heiban ? t("reader.pitchHeiban") : t("reader.pitchDownstep", { n: pitch.downstepAfterMora });
+  return pitch.tag ? [...base, { text: ` — ${pitch.tag}` }] : base;
+}
 
 /**
  * The Dictionary Entry and Grammar Point windows (issue #14): bottom sheets over
@@ -21,6 +29,7 @@ import { PitchGraph } from "./PitchGraph.tsx";
 
 function WindowCard({
   testID,
+  ariaKey,
   title,
   reading,
   jlpt,
@@ -29,6 +38,8 @@ function WindowCard({
   children,
 }: {
   testID: string;
+  /** Names the window for assistive tech, from the string table. */
+  ariaKey: StringKey;
   title: string;
   reading?: string;
   jlpt?: string | null;
@@ -37,13 +48,14 @@ function WindowCard({
   children: React.ReactNode;
 }) {
   const inset = useSheetBottomInset();
+  const { tp } = useT();
   return (
     <DialogPrimitives.Root open onOpenChange={(open) => !open && onClose()}>
       <DialogPrimitives.Portal>
         <DialogPrimitives.Overlay style={styles.backdrop} className="bg-backdrop" />
         <DialogPrimitives.Content
           testID={testID}
-          accessibilityLabel={testID === "dictionary-window" ? "Dictionary Entry window" : "Grammar Point window"}
+          accessibilityLabel={tp(ariaKey)}
           className="bg-card border-border"
           style={StyleSheet.flatten([styles.card, styles.sheet, { paddingBottom: inset }])}
           // No Description for these windows — the title says it all; this is
@@ -63,7 +75,7 @@ function WindowCard({
             ) : null}
             {srs != null ? <SrsLevelText level={srs} /> : null}
             {jlpt ? <JlptBadge level={jlpt} /> : null}
-            <Pressable accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} hitSlop={8} style={styles.close}>
+            <Pressable accessibilityRole="button" accessibilityLabel={tp("common.close")} onPress={onClose} hitSlop={8} style={styles.close}>
               <Icon name="close" size="md" strokeWidth={2.5} className="text-muted-foreground" />
             </Pressable>
           </View>
@@ -81,9 +93,11 @@ export function DictionaryWindow({
   entry: DictionaryEntry;
   onClose: () => void;
 }) {
+  const { t } = useT();
   return (
     <WindowCard
       testID="dictionary-window"
+      ariaKey="mobile.readerDictWindowAria"
       title={entry.headword}
       reading={entry.reading !== entry.headword ? entry.reading : undefined}
       jlpt={entry.jlptLevel}
@@ -93,10 +107,10 @@ export function DictionaryWindow({
       {entry.pitch ? (
         <View style={styles.pitchRow}>
           <PitchGraph pitch={entry.pitch} />
-          <Text className="text-caption text-muted-foreground">
-            {entry.pitch.heiban ? "heiban (flat)" : `downstep after mora ${entry.pitch.downstepAfterMora}`}
-            {entry.pitch.tag ? ` — ${entry.pitch.tag}` : ""}
-          </Text>
+          <TableText
+            className="text-caption text-muted-foreground"
+            segments={pitchCaptionSegments(t, entry.pitch)}
+          />
         </View>
       ) : null}
       {entry.senses.map((sense, i) => (
@@ -123,7 +137,7 @@ export function GrammarWindow({
   onClose: () => void;
 }) {
   return (
-    <WindowCard testID="grammar-window" title={span.pattern} jlpt={span.jlptLevel} srs={span.srsLevel} onClose={onClose}>
+    <WindowCard testID="grammar-window" ariaKey="mobile.readerGrammarWindowAria" title={span.pattern} jlpt={span.jlptLevel} srs={span.srsLevel} onClose={onClose}>
       <Text className="text-body text-foreground" style={styles.senseMeaning}>
         {span.meaning}
       </Text>

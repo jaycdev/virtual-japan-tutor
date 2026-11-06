@@ -1,9 +1,10 @@
 import type { ApiClient, GenerateStoryRequest, Story } from "@vjt/api-client";
 import {
-  storyCardMeta,
+  storyCardMetaRuby,
   todayCardPhase,
   useStory,
   useStoryGeneration,
+  useT,
   type StoryGenerationState,
   type TodaysStoryState,
 } from "@vjt/core";
@@ -11,7 +12,8 @@ import { useEffect, useRef, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { Card } from "./components/ui/Card.tsx";
-import { pageSummary } from "./reader/parts.tsx";
+import { T, TableText } from "./components/Text.tsx";
+import { PageRange } from "./reader/parts.tsx";
 import { SkeletonBar } from "./state/states.tsx";
 import {
   ActionButton,
@@ -151,15 +153,14 @@ export function Stories({ client, onOpenStory, generationPollMs }: StoriesProps)
   }
 
   const page = view.library.status === "ready" ? view.library.page : null;
+  const { tp } = useT();
 
   return (
-    <ScrollView className="flex-1" accessibilityLabel="Stories" contentContainerStyle={styles.page}>
+    <ScrollView className="flex-1" accessibilityLabel={tp("nav.stories")} contentContainerStyle={styles.page}>
       <View className="w-full gap-5" style={styles.column}>
         {/* ── Today's Story, pinned, with Generate beside it ─────────────── */}
         <View testID="today-section" className="gap-3">
-          <Text role="heading" accessibilityRole="header" className="text-title-sm font-semibold text-foreground">
-            Today&rsquo;s Story
-          </Text>
+          <T k="today.storyHeading" className="text-title-sm font-semibold text-foreground" accessibilityRole="header" />
           <TodayCard
             today={view.today}
             generation={gen.generation}
@@ -178,8 +179,14 @@ export function Stories({ client, onOpenStory, generationPollMs }: StoriesProps)
           {/* Secondary/outline: the pinned card's Open stays the page's only
               filled primary, the two stack (issue #48 review). */}
           <ActionButton
-            label={status === "running" ? "Writing…" : "Generate"}
-            accessibilityHint="Writes one new Story now, with an optional Genre and Theme"
+            label={
+              <T
+                k={status === "running" ? "stories.writing" : "stories.generateConfirm"}
+                className="text-body font-semibold text-foreground"
+              />
+            }
+            accessibilityLabel={tp(status === "running" ? "stories.writing" : "stories.generateConfirm")}
+            accessibilityHint={tp("mobile.storiesGenerateHint")}
             disabled={status === "running"}
             fullWidth
             onPress={openGenerate}
@@ -189,20 +196,28 @@ export function Stories({ client, onOpenStory, generationPollMs }: StoriesProps)
 
         {/* ── The Story Library ─────────────────────────────────────────── */}
         <View testID="library-section" className="gap-3">
-          <Text role="heading" accessibilityRole="header" className="text-title-sm font-semibold text-foreground">
-            Story Library
-          </Text>
+          <T k="stories.libraryHeading" className="text-title-sm font-semibold text-foreground" accessibilityRole="header" />
 
           <View testID="library-filters" style={styles.filterRow}>
             <View style={styles.chipRow}>
               <FilterChip
-                label="Unread"
+                label={
+                  <T
+                    k="stories.filterUnread"
+                    className={`text-small ${unreadOnly ? "font-semibold text-foreground" : "text-muted-foreground"}`}
+                  />
+                }
                 active={unreadOnly}
                 onPress={() => setUnreadOnly(true)}
                 testID="filter-unread"
               />
               <FilterChip
-                label="All"
+                label={
+                  <T
+                    k="stories.filterAll"
+                    className={`text-small ${!unreadOnly ? "font-semibold text-foreground" : "text-muted-foreground"}`}
+                  />
+                }
                 active={!unreadOnly}
                 onPress={() => setUnreadOnly(false)}
                 testID="filter-all"
@@ -210,8 +225,9 @@ export function Stories({ client, onOpenStory, generationPollMs }: StoriesProps)
             </View>
             <Picker
               testID="genre-filter"
-              ariaLabel="Genre filter"
-              placeholder="All genres"
+              ariaLabel={tp("mobile.genreFilterAria")}
+              placeholder={tp("stories.allGenres")}
+              placeholderKey="stories.allGenres"
               value={genre}
               options={genreChoices}
               onChange={setGenre}
@@ -262,26 +278,28 @@ export function Stories({ client, onOpenStory, generationPollMs }: StoriesProps)
           )}
 
           {hiddenByFilter > 0 ? (
-            <Text className="text-caption text-muted-foreground" testID="library-filter-note">
-              {`${hiddenByFilter} of the ${items.length} Stories on this page are hidden by your filters.`}
-            </Text>
+            <View testID="library-filter-note">
+              <T
+                k="stories.hiddenByFilter"
+                params={{ hidden: hiddenByFilter, total: items.length }}
+                className="text-caption text-muted-foreground"
+              />
+            </View>
           ) : null}
 
           {page && page.total > page.items.length ? (
             <View testID="library-pager" style={styles.pager}>
               <ActionButton
-                label="Newer stories"
-                accessibilityLabel="Newer stories"
+                label={<T k="stories.newer" className="text-body font-semibold text-foreground" />}
+                accessibilityLabel={tp("stories.newer")}
                 disabled={page.offset === 0}
                 onPress={() => void view.loadPage(Math.max(0, page.offset - page.limit))}
                 testID="pager-newer"
               />
-              <Text className="text-caption text-muted-foreground" testID="library-page-summary">
-                {pageSummary(page)}
-              </Text>
+              <PageRange page={page} testID="library-page-summary" />
               <ActionButton
-                label="Older stories"
-                accessibilityLabel="Older stories"
+                label={<T k="stories.older" className="text-body font-semibold text-foreground" />}
+                accessibilityLabel={tp("stories.older")}
                 disabled={page.offset + page.items.length >= page.total}
                 onPress={() => void view.loadPage(page.offset + page.items.length)}
                 testID="pager-older"
@@ -346,6 +364,7 @@ function TodayCard({
   onOpenReady: () => void;
   onOpenGenerate: () => void;
 }) {
+  const { tp, language } = useT();
   const phase = todayCardPhase(today, generation);
   // The finished run's Story is worth opening even before the reload lands it
   // in the page; once Today shows it, the card's own Open button is the same
@@ -368,12 +387,17 @@ function TodayCard({
             {phase.story.title}
           </Text>
 
-          <Text className="text-small text-muted-foreground" testID="today-story-meta">
-            {storyCardMeta(phase.story)}
-          </Text>
+          <View testID="today-story-meta">
+            <TableText segments={storyCardMetaRuby(phase.story, language)} className="text-small text-muted-foreground" />
+          </View>
           <ActionButton
-            label={phase.story.readAt ? "Read again" : "Open"}
-            accessibilityLabel={phase.story.readAt ? "Read today's story again" : "Open today's story"}
+            label={
+              <T
+                k={phase.story.readAt ? "today.storyReadAgain" : "today.storyOpen"}
+                className="text-body font-semibold text-primary-foreground"
+              />
+            }
+            accessibilityLabel={tp(phase.story.readAt ? "mobile.storyAriaReadAgainToday" : "mobile.storyAriaOpenToday")}
             onPress={() => onOpenStory(phase.story.id)}
             filled
             testID="today-open"
@@ -381,8 +405,9 @@ function TodayCard({
           {phase.running ? <GenerationProgress progress={phase.running} /> : null}
           {justWritten ? (
             <ActionButton
-              label="Ready, read now"
-              accessibilityHint="Opens the Story that was just written"
+              label={<T k="today.storyReadyNow" className="text-body font-semibold text-foreground" />}
+              accessibilityLabel={tp("today.storyReadyNow")}
+              accessibilityHint={tp("mobile.storyReadyHint")}
               onPress={onOpenReady}
               testID="today-ready"
             />
@@ -390,13 +415,18 @@ function TodayCard({
         </View>
       ) : phase.kind === "running" ? (
         <View className="gap-3">
-          <Text className="text-body text-muted-foreground">A new Story is on its way.</Text>
+          <T k="mobile.storyOnTheWay" className="text-body text-muted-foreground" />
           <GenerationProgress progress={phase.progress} />
         </View>
       ) : phase.kind === "error" ? (
         <View className="gap-3">
-          <Text className="text-body text-destructive">{`Cannot load today’s Story: ${phase.message}`}</Text>
-          <ActionButton label="Check again" onPress={onReloadToday} testID="today-check-again" />
+          <T k="today.storyError" params={{ message: phase.message }} className="text-body text-destructive" />
+          <ActionButton
+            label={<T k="today.storyCheckAgain" className="text-body font-semibold text-foreground" />}
+            accessibilityLabel={tp("today.storyCheckAgain")}
+            onPress={onReloadToday}
+            testID="today-check-again"
+          />
         </View>
       ) : phase.kind === "failed" ? (
         // The run failed rather than the read: the line is the server's own
@@ -405,16 +435,20 @@ function TodayCard({
           <Text accessibilityRole="alert" role="alert" className="text-body text-destructive">
             {phase.message}
           </Text>
-          <ActionButton label="Try again" onPress={onOpenGenerate} testID="today-retry" />
+          <ActionButton
+            label={<T k="today.storyRetry" className="text-body font-semibold text-foreground" />}
+            accessibilityLabel={tp("today.storyRetry")}
+            onPress={onOpenGenerate}
+            testID="today-retry"
+          />
         </View>
       ) : (
         <View className="gap-3">
-          <Text className="text-body text-muted-foreground">
-            No Story for today yet — the tutor writes one for you every day.
-          </Text>
+          <T k="today.storyEmptyStories" className="text-body text-muted-foreground" />
           <ActionButton
-            label="Check again"
-            accessibilityHint="Asks the tutor whether today's Story has been written"
+            label={<T k="today.storyCheckAgain" className="text-body font-semibold text-foreground" />}
+            accessibilityLabel={tp("today.storyCheckAgain")}
+            accessibilityHint={tp("mobile.storyCheckHint")}
             onPress={onReloadToday}
             testID="today-check-again"
           />

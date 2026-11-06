@@ -1,6 +1,9 @@
 import { Pressable, Text, View } from "react-native";
 import type { ReactNode } from "react";
 
+import { useT } from "@vjt/core";
+import { Labeled, labelAria } from "../Text.tsx";
+
 /**
  * One line inside a Card (issue #50): label, optional hint underneath,
  * optional trailing control, separator to the next row unless `last`. A row
@@ -14,19 +17,24 @@ export function Row({
   onPress,
   last = false,
 }: {
-  label: string;
-  hint?: string;
+  label: ReactNode;
+  hint?: ReactNode;
   right?: ReactNode;
   onPress?: () => void;
   last?: boolean;
 }) {
+  const { tp } = useT();
   const inner = (
     <View
       className={`min-h-11 flex-row items-center gap-3 px-4 py-2 ${last ? "" : "border-b border-border"}`}
     >
       <View className="flex-1 gap-0.5">
-        <Text className="text-body text-foreground">{label}</Text>
-        {hint ? <Text className="text-small text-muted-foreground">{hint}</Text> : null}
+        {typeof label === "string" ? <Text className="text-body text-foreground">{label}</Text> : label}
+        {hint
+          ? typeof hint === "string"
+            ? <Text className="text-small text-muted-foreground">{hint}</Text>
+            : hint
+          : null}
       </View>
       {right ? <View className="flex-row items-center gap-2">{right}</View> : null}
     </View>
@@ -35,12 +43,16 @@ export function Row({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityHint={hint}
+      // Plain strings double as the accessible name, and so do <T> elements
+      // — through the plain-Japanese text the entry draws.
+      accessibilityLabel={labelAria(label, tp)}
+      accessibilityHint={labelAria(hint, tp)}
       onPress={onPress}
       className="active:bg-accent"
     >
-      {inner}
+      {/* The row's name is the label + hint; the drawn lines stay out of the
+          accessibility tree so a Listener hears the row once. */}
+      <Labeled>{inner}</Labeled>
     </Pressable>
   );
 }

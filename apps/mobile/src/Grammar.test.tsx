@@ -1,9 +1,11 @@
 import { createApiClient, type ApiClient } from "@vjt/api-client";
+import { InterfaceLanguageProvider } from "@vjt/core";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { flushPressConfig } from "../test/press-config.ts";
 import { Grammar, groupByLevel, resetGrammarBrowsePosition } from "./Grammar.tsx";
+import { unrubyfiedKanji } from "./test/kanjiCoverage.ts";
 
 /**
  * Grammar Catalogue (#49). The stub is the catalogue API the way the Go server
@@ -317,6 +319,24 @@ describe("Grammar catalogue", () => {
     expect(gets.slice(callsBefore).filter((c) => c.startsWith("GET /grammar/points"))).toEqual([
       expect.stringContaining("offset=50"),
     ]);
+  });
+
+  it("in Japanese (furigana) every chrome kanji stands in a reading column", async () => {
+    // The page chrome — title, status badges, the count caption, the pager —
+    // comes from the string table; the Patterns and Meanings are the
+    // catalogue's own content and sit outside the rule. 〜文N puts kanji in
+    // every row so a bare pattern would be caught.
+    fixture.points = MANY_POINTS;
+    const client = createApiClient({ baseUrl: "http://localhost", fetch: fetchMock as unknown as typeof fetch });
+    render(
+      <InterfaceLanguageProvider language="ja-furigana" setLanguage={() => undefined}>
+        <Grammar client={client} onOpenPoint={vi.fn()} />
+      </InterfaceLanguageProvider>,
+    );
+    await waitFor(() => expect(screen.getAllByTestId("grammar-pattern").length).toBeGreaterThan(0));
+
+    expect(document.querySelectorAll("[style*='font-size']").length).toBeGreaterThan(0);
+    expect(unrubyfiedKanji(document.body, ["grammar-pattern", "grammar-meaning"])).toEqual([]);
   });
 });
 

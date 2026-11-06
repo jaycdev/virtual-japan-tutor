@@ -1,5 +1,7 @@
 import type { ItemList } from "@vjt/api-client";
+import { useT, type EntryRef } from "@vjt/core";
 import { Icon } from "../components/ui/icon";
+import { T, TableText } from "../components/Text.tsx";
 import { useSheetBottomInset } from "../components/ui/sheet.ts";
 import * as DialogPrimitives from "@rn-primitives/dialog";
 import { useState } from "react";
@@ -36,13 +38,15 @@ export function SaveToSheet({
   lists: ItemList[];
   defaultListId: string | null;
   busy: boolean;
-  error: string | null;
+  /** A table entry (+params), so the note follows the Interface Language. */
+  error: EntryRef | null;
   onSaveToList: (listId: string) => void;
   onCreateAndSave: (name: string) => void;
   onClose: () => void;
 }) {
   const [name, setName] = useState("");
   const inset = useSheetBottomInset();
+  const { t, tp } = useT();
 
   const create = () => {
     const trimmed = name.trim();
@@ -71,15 +75,20 @@ export function SaveToSheet({
             behavior={Platform.OS === "ios" ? "padding" : undefined}
           >
             <View style={styles.head}>
-              <DialogPrimitives.Title asChild>
-                <Text className="text-title-sm text-foreground" style={styles.title}>
-                  Save to…
-                </Text>
-              </DialogPrimitives.Title>
+              {/* The primitives want their title/description as their own Text; a
+                  furigana line is a row of columns, not a string. So the a11y
+                  names sit hidden and the visible lines draw with readings. */}
+              <DialogPrimitives.Title style={styles.srOnly}>{tp("reader.menu.saveTo")}</DialogPrimitives.Title>
+              <TableText
+                segments={t("reader.menu.saveTo")}
+                className="text-title-sm text-foreground"
+                style={styles.title}
+                accessibilityRole="header"
+              />
               <Pressable
                 testID="sheet-close"
                 accessibilityRole="button"
-                accessibilityLabel="Close"
+                accessibilityLabel={tp("common.close")}
                 onPress={onClose}
                 hitSlop={8}
                 style={styles.close}
@@ -87,15 +96,22 @@ export function SaveToSheet({
                 <Icon name="close" size="md" strokeWidth={2.5} className="text-muted-foreground" />
               </Pressable>
             </View>
-            <DialogPrimitives.Description asChild>
-              <Text className="text-caption text-muted-foreground" style={styles.subtitle}>
-                Save the word or pattern to one of your lists.
-              </Text>
+            <DialogPrimitives.Description style={styles.srOnly}>
+              {tp("reader.saveToDescription")}
             </DialogPrimitives.Description>
+            <TableText
+              segments={t("reader.saveToDescription")}
+              className="text-caption text-muted-foreground"
+              style={styles.subtitle}
+            />
             {error ? (
-              <Text accessibilityRole="alert" className="text-small text-destructive" style={styles.error}>
-                Could not save — {error}
-              </Text>
+              <T
+                k={error.k}
+                params={error.params}
+                accessibilityRole="alert"
+                className="text-small text-destructive"
+                style={styles.error}
+              />
             ) : null}
             <ScrollView style={styles.list}>
               {lists.map((list) => (
@@ -111,7 +127,7 @@ export function SaveToSheet({
                   <Text className="text-body text-foreground">
                     {list.name}
                   </Text>
-                  {list.id === defaultListId ? <Text className="text-caption text-muted-foreground">default</Text> : null}
+                  {list.id === defaultListId ? <T k="itemList.defaultWord" className="text-caption text-muted-foreground" /> : null}
                 </Pressable>
               ))}
             </ScrollView>
@@ -119,22 +135,20 @@ export function SaveToSheet({
               <TextInput
                 value={name}
                 onChangeText={setName}
-                placeholder="New list name"
+                placeholder={tp("reader.newListName")}
                 className="text-body text-foreground placeholder:text-muted-foreground bg-background border border-border"
                 style={styles.input}
               />
               <Pressable
                 testID="create-list"
                 accessibilityRole="button"
-                accessibilityLabel="Create a new list and save"
+                accessibilityLabel={tp("reader.createAndSaveAria")}
                 disabled={busy || !name.trim()}
                 onPress={create}
                 style={styles.createButton}
                 className="bg-primary"
               >
-                <Text className="text-body text-primary-foreground">
-                  Create
-                </Text>
+                <T k="reader.create" className="text-body text-primary-foreground" />
               </Pressable>
             </View>
           </KeyboardAvoidingView>
@@ -164,6 +178,7 @@ const styles = StyleSheet.create({
     paddingBottom: 18,
   },
   head: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingBottom: 8 },
+  srOnly: { left: -9999, opacity: 0, position: "absolute" },
   title: { fontWeight: "600" },
   close: { marginLeft: "auto", width: 22, height: 22, alignItems: "center", justifyContent: "center" },
   subtitle: { marginBottom: 8, paddingHorizontal: 16 },

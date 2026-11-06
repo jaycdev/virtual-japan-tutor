@@ -3,13 +3,21 @@
 // Styled purely with design-token utility classes (no palette literals): the
 // Today screen (#47), Story reader work (#48) and Grammar (#50) all compose
 // these, so the states look the same everywhere.
+//
+// The messages are ReactNode (#125) so callers can hand in a <T> element and
+// the text follows the Interface Language — screen-owned text only, as ever;
+// hook-supplied failure details stay plain strings.
 
+import { useT } from "@vjt/core";
+import type { ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
+
+import { Labeled, T } from "../components/Text.tsx";
 
 /**
  * One shimmering placeholder bar. Exported so a screen can lay its skeleton
- * out like the content that will replace it — a title bar, a meta bar, a
- * button block — instead of a generic stack of lines (issue #47 review S7).
+ * out like the content that will replace it — a title bar, a meta bar,
+ * a button block — instead of a generic stack of lines (issue #47 review S7).
  */
 export function SkeletonBar({
   width,
@@ -68,23 +76,35 @@ export function EmptyState({
   onAction,
   compact = false,
 }: {
-  message: string;
-  actionLabel?: string;
+  message: ReactNode;
+  actionLabel?: ReactNode;
   onAction?: () => void;
   /** For use inside a card or other already-padded surface. */
   compact?: boolean;
 }) {
   return (
     <View className={`${compact ? "" : "p-6 "}flex-1 items-center justify-center gap-3`}>
-      <Text className="text-center text-body text-muted-foreground">{message}</Text>
+      {typeof message === "string" ? (
+        <Text className="text-center text-body text-muted-foreground">{message}</Text>
+      ) : (
+        // A <T> element brings its own text classes and may be a row of
+        // furigana columns, so the slot around it is a View, not a Text.
+        <View className="items-center">{message}</View>
+      )}
       {actionLabel && onAction ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={actionLabel}
+          // A plain string label doubles as the a11y label; a <T> element
+          // carries its own Japanese label inside.
+          accessibilityLabel={typeof actionLabel === "string" ? actionLabel : undefined}
           onPress={onAction}
           className="min-h-11 justify-center rounded-lg border border-primary px-4 active:bg-accent"
         >
-          <Text className="text-body font-semibold text-primary">{actionLabel}</Text>
+          {typeof actionLabel === "string" ? (
+            <Text className="text-body font-semibold text-primary">{actionLabel}</Text>
+          ) : (
+            actionLabel
+          )}
         </Pressable>
       ) : null}
     </View>
@@ -100,24 +120,32 @@ export function InlineError({
   message,
   onRetry,
 }: {
-  message: string;
+  message: ReactNode;
   onRetry?: () => void;
 }) {
+  const { tp } = useT();
   return (
     <View
       accessibilityRole="alert"
       role="alert"
       className="min-h-11 flex-row flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive p-3"
     >
-      <Text className="flex-1 text-body text-destructive">{message}</Text>
+      {typeof message === "string" ? (
+        <Text className="flex-1 text-body text-destructive">{message}</Text>
+      ) : (
+        <View className="flex-1">{message}</View>
+      )}
       {onRetry ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Retry"
+          accessibilityLabel={tp("common.retry")}
           onPress={onRetry}
           className="min-h-11 justify-center rounded-md bg-destructive px-4 active:opacity-80"
         >
-          <Text className="text-body font-semibold text-destructive-foreground">Retry</Text>
+          {/* The button names itself; the drawn line stays hidden. */}
+          <Labeled>
+            <T k="common.retry" className="text-body font-semibold text-destructive-foreground" />
+          </Labeled>
         </Pressable>
       ) : null}
     </View>
@@ -135,7 +163,7 @@ export function ProgressBar({
   /** 0–1; values outside that range are clamped. */
   value: number;
   /** The status line under the bar. */
-  label: string;
+  label: ReactNode;
 }) {
   const percent = Math.round(Math.min(1, Math.max(0, value)) * 100);
   return (
@@ -154,7 +182,11 @@ export function ProgressBar({
       >
         <View className="h-2 rounded-full bg-primary" style={{ width: `${percent}%` }} />
       </View>
-      <Text className="text-caption text-muted-foreground">{label}</Text>
+      {typeof label === "string" ? (
+        <Text className="text-caption text-muted-foreground">{label}</Text>
+      ) : (
+        <View>{label}</View>
+      )}
     </View>
   );
 }

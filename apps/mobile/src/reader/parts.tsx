@@ -1,9 +1,10 @@
 import type { StoryRating } from "@vjt/api-client";
-import type { StoryView } from "@vjt/core";
+import { useT, type StoryView } from "@vjt/core";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { Icon } from "../components/ui/icon";
 import { MIN_TOUCH } from "../touch";
+import { T } from "../components/Text.tsx";
 
 /**
  * Small shared pieces of the mobile reader: the JLPT badge, the gloss helpers
@@ -12,7 +13,7 @@ import { MIN_TOUCH } from "../touch";
 
 /** The MaruMori SRS Level, as small caption text: `SRS 4` (GLOSSARY: SRS Level). */
 export function SrsLevelText({ level }: { level: number }) {
-  return <Text className="text-caption text-muted-foreground">SRS {level}</Text>;
+  return <T k="reader.srs" params={{ level }} className="text-caption text-muted-foreground" />;
 }
 
 /** JLPT level pill — the caller passes the label it shows (`N2`). */
@@ -41,6 +42,7 @@ export function RatingButtons({
   storyId: string;
   rating: StoryRating | null | undefined;
 }) {
+  const { tp: plain } = useT();
   const thumb = (value: StoryRating, glyph: "thumbs-up" | "thumbs-down", label: string) => (
     <Pressable
       accessibilityRole="button"
@@ -61,15 +63,32 @@ export function RatingButtons({
   );
   return (
     <View style={styles.rating}>
-      {thumb("up", "thumbs-up", "Rate up")}
-      {thumb("down", "thumbs-down", "Rate down")}
+      {thumb("up", "thumbs-up", plain("reader.rateUpAria"))}
+      {thumb("down", "thumbs-down", plain("reader.rateDownAria"))}
     </View>
   );
 }
 
-/** `1–10 of 23` — the library page's position line (same words as the web). */
-export function pageSummary(page: { items: unknown[]; total: number; limit: number; offset: number }) {
-  return `${page.offset + 1}–${Math.min(page.offset + page.items.length, page.total)} of ${page.total}`;
+/** `1–10 of 23` — the library page's position line, in the Learner's language. */
+export function PageRange({
+  page,
+  testID,
+}: {
+  page: { items: unknown[]; total: number; limit: number; offset: number };
+  testID?: string;
+}) {
+  return (
+    <T
+      k="mobile.pageRange"
+      params={{
+        from: page.offset + 1,
+        to: Math.min(page.offset + page.items.length, page.total),
+        total: page.total,
+      }}
+      className="text-caption text-muted-foreground"
+      testID={testID}
+    />
+  );
 }
 
 const styles = StyleSheet.create({

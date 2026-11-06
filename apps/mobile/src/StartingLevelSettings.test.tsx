@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { InterfaceLanguageProvider } from '@vjt/core';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { StartingLevelSettings } from './StartingLevelSettings.tsx';
 import { createApiClient } from '@vjt/api-client';
+import { unrubyfiedKanji } from './test/kanjiCoverage.ts';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -150,8 +152,18 @@ describe('mobile StartingLevelSettings', () => {
         'These MaruMori grammar points did not match the Catalogue cleanly. They re-check themselves on later Syncs.',
       ),
     ).toBeTruthy();
-    expect(screen.getByText('～にちかい (MaruMori level N4) — no Grammar Catalogue match')).toBeTruthy();
-    expect(screen.getByText('～ておいたほうがいい — matched point 412, level was ambiguous')).toBeTruthy();
+    // The row draws its Pattern (Learner content) beside the table's
+    // connectives, so check the whole row by its testID.
+    const rows = await screen.findAllByTestId('grammar-review-row');
+    expect(rows.map((row) => row.textContent)).toEqual([
+      '～にちかい (MaruMori level N4) — no Grammar Catalogue match',
+      '～ておいたほうがいい — matched point 412, level was ambiguous',
+    ]);
+    // English has no readings, so each row is one Text paragraph — no inner
+    // pieces — exactly as the row rendered before issue #125.
+    for (const row of rows) {
+      expect(row.querySelectorAll("*")).toHaveLength(0);
+    }
     // Read-only: the list issues no writes.
     expect(writes.some((w) => w.method !== 'GET')).toBe(false);
   });
@@ -160,5 +172,30 @@ describe('mobile StartingLevelSettings', () => {
     renderApp();
     await screen.findByRole('heading', { name: 'Review these grammar matches' });
     expect(await screen.findByText('Nothing needs a second look.')).toBeTruthy();
+  });
+
+  it('in Japanese (furigana) every chrome kanji stands in a reading column', async () => {
+    // Prose, headings, chip row and buttons come from the table, and the
+    // review rows' connective words now ride the twins — so the only bare
+    // kanji left is the Pattern itself, Learner-catalogue content exempt by
+    // its own testID while the words beside it stay under the check.
+    reviewItems = [{ marumoriId: 'Grammar/6578', pattern: '〜未知', jlptLevel: 'N4', matchedPointId: 12, flagged: true }];
+    const client = createApiClient({ baseUrl: 'http://localhost', fetch: fetchMock as unknown as typeof fetch });
+    render(
+      <InterfaceLanguageProvider language="ja-furigana" setLanguage={() => undefined}>
+        <StartingLevelSettings client={client} />
+      </InterfaceLanguageProvider>,
+    );
+    await screen.findByTestId('grammar-review-row');
+    expect(document.querySelectorAll("[style*='font-size']").length).toBeGreaterThan(0);
+    expect(unrubyfiedKanji(document.body, ['grammar-review-pattern'])).toEqual([]);
+
+    // The result line after a save is drawn from the server's counts, not a
+    // frozen sentence: it carries readings in this language too.
+    fireEvent.click(screen.getByRole('button', { name: 'レベルを保存' }));
+    await waitFor(() =>
+      expect(document.body.textContent).toContain('追加'),
+    );
+    expect(unrubyfiedKanji(document.body, ['grammar-review-pattern'])).toEqual([]);
   });
 });

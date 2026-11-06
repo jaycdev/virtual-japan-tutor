@@ -1,22 +1,27 @@
+import type { StringKey } from "@vjt/core";
 import { Text, View } from "react-native";
 
 import { Card } from "./components/ui/Card.tsx";
 import { Chip, ChipRow } from "./components/ui/Chip.tsx";
+import { T } from "./components/Text.tsx";
 import { useJapaneseFont, type JapaneseFont } from "./japaneseFont/index.tsx";
+import { InterfaceLanguageChoice } from "./interfacelanguage/LanguageChoice.tsx";
 import { useStoryTextSize, type StoryTextSize } from "./storysize/index.tsx";
 import { useTheme, type ThemePreference } from "./theme/index.tsx";
 
-const THEME_CHOICES: { value: ThemePreference; label: string }[] = [
-  { value: "light", label: "Light" },
-  { value: "dark", label: "Dark" },
-  { value: "system", label: "System" },
+const THEME_CHOICES: { value: ThemePreference; key: StringKey }[] = [
+  { value: "light", key: "settings.themeLight" },
+  { value: "dark", key: "settings.themeDark" },
+  { value: "system", key: "settings.themeSystem" },
 ];
 
+// The size names are the same letters in every Interface Language — the
+// Learner picks S/M/L/XL whatever the chrome around them speaks.
 const SIZE_CHOICES: StoryTextSize[] = ["S", "M", "L", "XL"];
 
-const JAPANESE_FONT_CHOICES: { value: JapaneseFont; label: string }[] = [
-  { value: "serif", label: "Serif" },
-  { value: "sans", label: "Sans" },
+const JAPANESE_FONT_CHOICES: { value: JapaneseFont; key: StringKey }[] = [
+  { value: "serif", key: "settings.fontSerif" },
+  { value: "sans", key: "settings.fontSans" },
 ];
 
 /**
@@ -44,26 +49,22 @@ export function AppearanceSettings() {
 
   return (
     <View className="gap-4">
-      <Text className="text-small font-semibold uppercase text-muted-foreground">Colour theme</Text>
+      <T k="mobile.themeLegend" className="text-small font-semibold uppercase text-muted-foreground" />
       <Card>
         <ChipRow>
-          {THEME_CHOICES.map(({ value, label }) => (
+          {THEME_CHOICES.map(({ value, key }) => (
             <Chip
               key={value}
-              label={label}
+              label={<T k={key} className="text-body" />}
               selected={theme.preference === value}
               onPress={() => theme.setPreference(value)}
             />
           ))}
         </ChipRow>
       </Card>
-      <Text className="text-small text-muted-foreground">
-        System follows the device. The choice is saved on this device only.
-      </Text>
+      <T k="mobile.themeNote" className="text-small text-muted-foreground" />
 
-      <Text className="text-small font-semibold uppercase text-muted-foreground">
-        Story text size
-      </Text>
+      <T k="settings.storySizeLegend" className="text-small font-semibold uppercase text-muted-foreground" />
       <Card>
         <ChipRow>
           {SIZE_CHOICES.map((size) => (
@@ -76,28 +77,32 @@ export function AppearanceSettings() {
           ))}
         </ChipRow>
       </Card>
-      <Text className="text-small font-semibold uppercase text-muted-foreground">Japanese font</Text>
+      <T k="settings.japaneseFontLegend" className="text-small font-semibold uppercase text-muted-foreground" />
       <Card>
         <ChipRow>
-          {JAPANESE_FONT_CHOICES.map(({ value, label }) => (
+          {JAPANESE_FONT_CHOICES.map(({ value, key }) => (
             <Chip
               key={value}
-              label={label}
+              label={<T k={key} className="text-body" />}
               selected={japanese.font === value}
               onPress={() => japanese.setFont(value)}
             />
           ))}
         </ChipRow>
       </Card>
-      <Text className="text-small text-muted-foreground">
-        Sans is plainer, with simpler strokes. Saved on this device only.
-      </Text>
+      <T k="mobile.fontNote" className="text-small text-muted-foreground" />
+
+      <InterfaceLanguageChoice withHint />
 
       {/* A live sample at the chosen size, so picking a size shows its size:
-          the story-* classes are the exact ones the reader renders with. */}
+          the story-* classes are the exact ones the reader renders with.
+          Learning content: the sentence is an example of Japanese, never chrome,
+          so it stays out of the string table (issue #125). */}
+      {/* eslint-disable vjt/no-raw-jsx-text -- Japanese sample sentence, never translated */}
       <Text className={`${SAMPLE_SIZE_CLASS[storyText.size]} ${japanese.regular} text-foreground`}>
         がっこうで べんきょうしました。
       </Text>
+      {/* eslint-enable vjt/no-raw-jsx-text */}
     </View>
   );
 }

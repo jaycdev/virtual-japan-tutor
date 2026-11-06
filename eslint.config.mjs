@@ -92,7 +92,8 @@ const noInlineFontSize = {
 // escape hatch for the handful of slots that only accept a string (aria-label,
 // placeholder, document.title). The few deliberate exceptions (the 読 logotype,
 // the 吾輩は猫である sample line) carry targeted eslint-disable comments with a
-// reason. apps/mobile keeps its own conventions and is not covered.
+// reason. apps/mobile is covered by the same rule (#125), with the React Native
+// text attributes added to TEXT_ATTRIBUTES below.
 const LETTER = /\p{L}/u;
 function isCopy(value) {
   return LETTER.test(value);
@@ -112,6 +113,12 @@ const TEXT_ATTRIBUTES = new Set([
   "legend",
   "alt",
   "description",
+  // React Native props that carry copy on mobile (#125): announced by
+  // TalkBack (accessibilityLabel/Hint/Value) or read by our own components
+  // (label on form fields). accessibilityRole is an enum, not copy.
+  "accessibilityLabel",
+  "accessibilityHint",
+  "accessibilityValue",
 ]);
 
 // Walk one expression for raw copy. Only leaf kinds are checked; calls (tp(…),
@@ -248,10 +255,12 @@ export default tseslint.config(
     rules: { "vjt/no-inline-font-size": "error" },
   },
   {
-    // The interface-language gate (#125): apps/web only, source files only -
-    // tests may quote raw copy, and apps/mobile has its own conventions.
-    files: ["apps/web/src/**/*.tsx"],
-    ignores: ["apps/web/src/**/*.test.tsx"],
+    // The interface-language gate (#125): apps/web and apps/mobile, source
+    // files only - tests may quote raw copy. Mobile copy also comes from the
+    // @vjt/core table via <T> / <TableText>; tp() covers the string-only slots
+    // (accessibilityLabel, placeholder, Alert titles, header/tab titles).
+    files: ["apps/web/src/**/*.tsx", "apps/mobile/**/*.tsx"],
+    ignores: ["apps/web/src/**/*.test.tsx", "apps/mobile/**/*.test.tsx"],
     rules: { "vjt/no-raw-jsx-text": "error" },
   },
   {

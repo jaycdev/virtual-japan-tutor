@@ -14,6 +14,13 @@ import { strings, type StringKey } from "./strings.ts";
 export type TranslateParams = Record<string, string | number | RubyText>;
 
 /**
+ * A string-table entry kept unresolved — key plus params — so a UI can hold it
+ * in state and draw it through the Interface Language whenever it renders;
+ * resolving it at the moment of failure would freeze that moment's language.
+ */
+export type EntryRef = { k: StringKey; params?: TranslateParams };
+
+/**
  * The English plural "s" passed as a translation param: Japanese counts carry no
  * ending, so the param exists only to keep English wording byte-identical.
  */

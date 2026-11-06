@@ -1,5 +1,9 @@
+import type { ReactNode } from "react";
 import { Text, TextInput, View } from "react-native";
 import { useCSSVariable } from "uniwind";
+
+import { useT } from "@vjt/core";
+import { labelAria } from "../Text.tsx";
 
 /**
  * Labelled text input with the Settings/Login input shape (issue #50): the
@@ -21,7 +25,7 @@ export function Field({
   testID,
   onFocus,
 }: {
-  label: string;
+  label: ReactNode;
   value: string;
   onChangeText: (text: string) => void;
   onSubmit?: () => void;
@@ -40,11 +44,16 @@ export function Field({
   // the field's background, and it follows the app's Uniwind theme rather
   // than the OS colour scheme.
   const placeholderColor = useCSSVariable("--color-muted-foreground") ?? undefined;
+  const { tp } = useT();
+  const aria = labelAria(label, tp);
   return (
     <View className="gap-1.5">
-      <Text className="text-small text-muted-foreground">{label}</Text>
+      {/* A string label gets the field's own Text; a <T> brings its own line. */}
+      {typeof label === "string" ? <Text className="text-small text-muted-foreground">{label}</Text> : label}
       <TextInput
-        accessibilityLabel={label}
+        // A plain-string label names the input, and so does a <T> — through
+        // the table entry it draws, readings and all left out.
+        accessibilityLabel={aria}
         testID={testID}
         className="min-h-11 rounded-lg border border-input bg-background px-3 text-body text-foreground"
         value={value}

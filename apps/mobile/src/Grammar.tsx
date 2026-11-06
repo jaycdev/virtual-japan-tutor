@@ -1,5 +1,5 @@
 import type { ApiClient, GrammarJLPTLevel, GrammarPointSummary } from "@vjt/api-client";
-import { useGrammar } from "@vjt/core";
+import { type StringKey, pluralEn, useGrammar, useT } from "@vjt/core";
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useCSSVariable } from "uniwind";
@@ -7,6 +7,7 @@ import { useCSSVariable } from "uniwind";
 import { useJapaneseFont } from "./japaneseFont/index.tsx";
 import { Card } from "./components/ui/Card.tsx";
 import { Icon } from "./components/ui/icon.tsx";
+import { T, Labeled } from "./components/Text.tsx";
 import { EmptyState, InlineError, SkeletonBar } from "./state/states.tsx";
 
 /**
@@ -54,6 +55,7 @@ export function Grammar({
 }) {
   const grammar = useGrammar(client, { query: browsePosition.term, offset: browsePosition.offset });
   const { state, filter, setQuery, setOffset, reload } = grammar;
+  const { language, tp } = useT();
 
   // The typed term is local until the debounce fires: useGrammar re-reads the
   // page the instant query changes, and one request per keystroke is noise.
@@ -70,15 +72,17 @@ export function Grammar({
   }, [term, filter.query, setQuery]);
 
   return (
-    <ScrollView className="flex-1" accessibilityLabel="Grammar" contentContainerStyle={styles.page}>
+    <ScrollView
+      className="flex-1"
+      accessibilityLabel={tp("nav.grammar")}
+      contentContainerStyle={styles.page}
+    >
       <View className="w-full gap-4" style={styles.column}>
-        <Text
-          role="heading"
+        <T
+          k="grammar.title"
           accessibilityRole="header"
           className="text-display font-semibold text-foreground"
-        >
-          Grammar
-        </Text>
+        />
 
         <SearchField term={term} onTermChange={setTerm} />
 
@@ -91,17 +95,25 @@ export function Grammar({
           </View>
         ) : state.status === "error" ? (
           <InlineError
-            message={`Cannot load grammar points: ${state.message}`}
+            message={<T k="grammar.loadFailed" params={{ message: state.message }} />}
             onRetry={reload}
           />
         ) : state.page.items.length === 0 ? (
           <EmptyState
             message={
-              filter.query === ""
-                ? "No grammar points yet — a MaruMori sync fills this catalogue."
-                : `Nothing matches “${filter.query}” — try another word.`
+              filter.query === "" ? (
+                <T k="grammar.emptyCatalogue" className="text-center text-body text-muted-foreground" />
+              ) : (
+                <T
+                  k="grammar.noSearchMatch"
+                  params={{ query: filter.query }}
+                  className="text-center text-body text-muted-foreground"
+                />
+              )
             }
-            actionLabel={filter.query === "" ? undefined : "Clear search"}
+            actionLabel={
+              filter.query === "" ? undefined : <T k="grammar.clearSearch" className="text-body font-semibold text-primary" />
+            }
             onAction={filter.query === "" ? undefined : () => setTerm("")}
           />
         ) : (
@@ -129,9 +141,11 @@ export function Grammar({
               // #49 review S5: with one page of results the Previous/Next pair
               // is dead UI — two disabled buttons and a "1–1 of 1" caption.
               // One quiet count line says everything the pager had to say.
-              <Text className="text-caption text-muted-foreground">
-                {`${state.page.total} Grammar Point${state.page.total === 1 ? "" : "s"}`}
-              </Text>
+              <T
+                k="grammar.pointCount"
+                params={{ count: state.page.total, plural: pluralEn(language, state.page.total) }}
+                className="text-caption text-muted-foreground"
+              />
             )}
           </>
         )}
@@ -149,21 +163,22 @@ function SearchField({ term, onTermChange }: { term: string; onTermChange: (term
   // takes placeholderTextColor directly, react-native-web maps it onto the
   // input's ::placeholder via --placeholderTextColor.
   const placeholderColor = useCSSVariable("--color-muted-foreground");
+  const { tp } = useT();
   return (
     <View className="flex-row items-center gap-2">
       <TextInput
         value={term}
         onChangeText={onTermChange}
-        placeholder="Search pattern or meaning"
+        placeholder={tp("grammar.searchPlaceholder")}
         placeholderTextColor={placeholderColor ?? undefined}
-        accessibilityLabel="Search grammar"
+        accessibilityLabel={tp("grammar.searchLabel")}
         autoCorrect={false}
         className="min-h-11 flex-1 rounded-lg border border-input bg-card px-3 text-body text-foreground"
       />
       {term !== "" ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Clear search term"
+          accessibilityLabel={tp("grammar.clearSearchAria")}
           onPress={() => onTermChange("")}
           className="min-h-11 min-w-11 items-center justify-center rounded-lg active:opacity-80"
         >
@@ -256,13 +271,23 @@ function PointRow({
   onOpen: () => void;
 }) {
   const jp = useJapaneseFont();
+  const { language, tp } = useT();
   // The label replaces the row's text content for TalkBack/VoiceOver, so it
   // must carry everything the visible row shows — badge and example count
   // included — or a screen-reader Learner hears less than a sighted one
   // (#49 review S2).
   const knowledge = knowledgeOf(point);
-  const status = knowledge === "seeded" ? "Seeded" : knowledge === "observed" ? "Observed" : "Not recorded";
-  const count = `${point.exampleCount} example${point.exampleCount === 1 ? "" : "s"}`;
+  const statusKey =
+    knowledge === "seeded"
+      ? "grammar.statusSeeded"
+      : knowledge === "observed"
+        ? "grammar.statusObserved"
+        : "mobile.grammarStatusNotRecorded";
+  const status = tp(statusKey);
+  const count = tp("grammar.exampleCount", {
+    count: point.exampleCount,
+    plural: pluralEn(language, point.exampleCount),
+  });
   return (
     <Pressable
       accessibilityRole="button"
@@ -273,15 +298,26 @@ function PointRow({
       }`}
     >
       <View className="flex-1 gap-1">
-        <Text className={`text-body ${jp.regular} text-foreground`}>{point.pattern}</Text>
-        <Text className="text-small text-muted-foreground">{point.meaning}</Text>
+        {/* Pattern and Meaning are Learner-catalogue content: the app never
+            translates or annotates them — the coverage check exempts them by
+            these testIDs. */}
+        <Text testID="grammar-pattern" className={`text-body ${jp.regular} text-foreground`}>{point.pattern}</Text>
+        <Text testID="grammar-meaning" className="text-small text-muted-foreground">{point.meaning}</Text>
       </View>
       <View className="items-end gap-1">
-        <SourceBadge knowledge={knowledge} />
+        {/* The row names itself with everything it shows; the drawn badge and
+            count stay out of the tree so the caption is not announced twice. */}
+        <Labeled>
+          <SourceBadge knowledge={knowledge} />
+        </Labeled>
         {/* One interpolated string, so the whole caption is one text node. */}
-        <Text className="text-caption text-muted-foreground">{`${point.exampleCount} example${
-          point.exampleCount === 1 ? "" : "s"
-        }`}</Text>
+        <Labeled>
+          <T
+            k="grammar.exampleCount"
+            params={{ count: point.exampleCount, plural: pluralEn(language, point.exampleCount) }}
+            className="text-caption text-muted-foreground"
+          />
+        </Labeled>
       </View>
       <Icon name="chevron-right" size="sm" className="text-muted-foreground" />
     </Pressable>
@@ -295,12 +331,14 @@ function PointRow({
  * fact to badge, only the absence of one.
  */
 function SourceBadge({ knowledge }: { knowledge: GrammarKnowledge | undefined }) {
-  if (!knowledge) return <Text className="text-caption text-muted-foreground">Not recorded</Text>;
+  if (!knowledge)
+    return <T k="mobile.grammarStatusNotRecorded" className="text-caption text-muted-foreground" />;
   return (
     <View className="rounded-full border border-border bg-secondary px-2.5 py-0.5">
-      <Text className="text-caption font-semibold text-secondary-foreground">
-        {knowledge === "seeded" ? "Seeded" : "Observed"}
-      </Text>
+      <T
+        k={knowledge === "seeded" ? "grammar.statusSeeded" : "grammar.statusObserved"}
+        className="text-caption font-semibold text-secondary-foreground"
+      />
     </View>
   );
 }
@@ -343,13 +381,13 @@ function Pager({
   return (
     <View className="flex-row items-center justify-between gap-3">
       <PagerButton
-        label="Previous"
+        labelKey="common.previous"
         disabled={offset === 0}
         onPress={() => onOffset(Math.max(0, offset - limit))}
       />
-      <Text className="text-caption text-muted-foreground">{`${from}–${to} of ${total}`}</Text>
+      <T k="grammar.pageRange" params={{ from, to, total }} className="text-caption text-muted-foreground" />
       <PagerButton
-        label="Next"
+        labelKey="common.next"
         disabled={to >= total}
         onPress={() => onOffset(offset + limit)}
       />
@@ -358,11 +396,11 @@ function Pager({
 }
 
 function PagerButton({
-  label,
+  labelKey,
   onPress,
   disabled,
 }: {
-  label: string;
+  labelKey: StringKey;
   onPress: () => void;
   disabled: boolean;
 }) {
@@ -378,7 +416,7 @@ function PagerButton({
     >
       {/* Text size before colour: uniwind drops a colour class placed before a
           custom text-size class on native. */}
-      <Text className="text-body font-semibold text-foreground">{label}</Text>
+      <T k={labelKey} className="text-body font-semibold text-foreground" />
     </Pressable>
   );
 }

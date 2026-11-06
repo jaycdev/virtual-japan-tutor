@@ -93,9 +93,27 @@ describe("vjt/no-raw-jsx-text (#125)", () => {
     expect(await ruleIds("apps/web/src/probe.tsx", code)).not.toContain("vjt/no-raw-jsx-text");
   });
 
-  it("does not apply to apps/mobile", async () => {
-    expect(await ruleIds("apps/mobile/src/probe.tsx", "const a = <p>Interface text</p>;")).not.toContain(
+  it.each([
+    ["a raw accessibilityLabel", 'const a = <Pressable accessibilityLabel="Close" />;'],
+    ["a string-expression accessibilityLabel", 'const a = <Pressable accessibilityLabel={"Close"} />;'],
+    ["a raw accessibilityHint", 'const a = <Pressable accessibilityHint="Opens the reader" />;'],
+    ["a string-expression accessibilityValue", 'const a = <Slider accessibilityValue={"3 of 5"} />;'],
+  ])("flags %s in apps/mobile (#125)", async (_label, code) => {
+    expect(await ruleIds("apps/mobile/src/probe.tsx", code)).toContain("vjt/no-raw-jsx-text");
+  });
+
+  it("applies to apps/mobile source and not to its tests", async () => {
+    expect(await ruleIds("apps/mobile/src/probe.tsx", "const a = <p>Interface text</p>;")).toContain(
       "vjt/no-raw-jsx-text",
     );
+    expect(await ruleIds("apps/mobile/src/probe.test.tsx", "const a = <p>Interface text</p>;")).not.toContain(
+      "vjt/no-raw-jsx-text",
+    );
+  });
+
+  it("passes a translated accessibilityLabel in apps/mobile", async () => {
+    expect(
+      await ruleIds("apps/mobile/src/probe.tsx", 'const a = <Pressable accessibilityLabel={tp("nav.back")} />;'),
+    ).not.toContain("vjt/no-raw-jsx-text");
   });
 });

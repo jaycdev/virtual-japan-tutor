@@ -3,8 +3,10 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { Practice, displayPrompt, practiceSeedForStory } from './Practice.tsx';
 import { createApiClient } from '@vjt/api-client';
+import { InterfaceLanguageProvider } from '@vjt/core';
 
 import { flushPressConfig } from '../test/press-config.ts';
+import { unrubyfiedKanji } from './test/kanjiCoverage.ts';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -144,6 +146,46 @@ describe('mobile Practice', () => {
     expect(screen.getByText('学')).toBeTruthy();
     expect(screen.queryByText(/Correct|Not quite/)).toBeNull();
     expect(posts).toHaveLength(1);
+  });
+
+  it('in Japanese the instruction line translates while the exercise itself stays the server’s own', async () => {
+    const client = createApiClient({ baseUrl: 'http://localhost', fetch: fetchMock as unknown as typeof fetch });
+    render(
+      <InterfaceLanguageProvider language="ja" setLanguage={() => undefined}>
+        <Practice client={client} />
+      </InterfaceLanguageProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '練習を始める' }));
+    await waitFor(() => expect(screen.getByText('2問中1問目')).toBeTruthy());
+
+    // The chrome follows the Interface Language: the server's "What does this
+    // mean?" is replaced by its table entry.
+    expect(screen.getByText('意味はどれですか？')).toBeTruthy();
+    expect(screen.queryByText('What does this mean?')).toBeNull();
+    // The exercise is learning content: the prompt and its English options are
+    // the server's own words, never run through the table.
+    expect(screen.getByText('学')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'learn' })).toBeTruthy();
+  });
+
+  it('in ja-furigana the chrome kanji stands in reading columns, the exercise kanji alone', async () => {
+    // The RN twin of web Practice's ruby check: chrome kanji gets a reading
+    // column; only the server's own prompt shows kanji without one.
+    const client = createApiClient({ baseUrl: 'http://localhost', fetch: fetchMock as unknown as typeof fetch });
+    render(
+      <InterfaceLanguageProvider language="ja-furigana" setLanguage={() => undefined}>
+        <Practice client={client} />
+      </InterfaceLanguageProvider>,
+    );
+
+    // The button's spoken name is the plain entry, whatever it draws.
+    fireEvent.click(screen.getByRole('button', { name: '練習を始める' }));
+    // The exercise opens: the prompt is on screen.
+    await waitFor(() => expect(screen.getByText('学')).toBeTruthy());
+
+    expect(document.querySelectorAll("[style*='font-size']").length).toBeGreaterThan(0);
+    expect(unrubyfiedKanji(document.body, ['practice-prompt'])).toEqual([]);
   });
 
   it('reveals no correct option before answering', async () => {

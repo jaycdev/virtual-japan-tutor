@@ -61,7 +61,7 @@ export { parseRuby, stripRuby } from "./i18n/ruby.ts";
 export type { RubySegment, RubyText } from "./i18n/ruby.ts";
 export { formatDateRuby } from "./i18n/dates.ts";
 export { translate, translatePlain, pluralEn } from "./i18n/translate.ts";
-export type { TranslateParams } from "./i18n/translate.ts";
+export type { TranslateParams, EntryRef } from "./i18n/translate.ts";
 export {
   ERROR_CODES,
   errorMessage,
@@ -117,11 +117,17 @@ export { ITEM_KIND_LABELS, ITEM_KINDS, isSavedList, itemKindLabel, itemListHint 
 export type { ItemKind } from "./itemLists.ts";
 export {
   FURIGANA_LEVELS,
+  grammarReviewPatternRuby,
+  grammarReviewRuby,
+  grammarReviewTailRuby,
   grammarReviewText,
+  grammarUpdatedRuby,
   grammarUpdatedText,
   parseLookupHold,
   suggestionsFor,
+  syncOutcomeRuby,
   syncOutcomeText,
+  syncRunRuby,
   syncRunText,
 } from "./settingsText.ts";
 // The Story reader's pure logic, shared by the phone and the web reader (issue #77).

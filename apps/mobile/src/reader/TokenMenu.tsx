@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text } from "react-native";
 
 import * as DialogPrimitive from "@rn-primitives/dialog";
+import { useT } from "@vjt/core";
 import { useSheetBottomInset } from "../components/ui/sheet.ts";
 
 import type { MeasurableNode, MenuOption, MenuOptionId, Rect } from "@vjt/core";
@@ -36,6 +37,7 @@ export function TokenMenu({
   onDismiss: () => void;
 }) {
   const inset = useSheetBottomInset();
+  const { tp } = useT();
   const cardRef = useRef<MeasurableNode | null>(null);
   const optionRefs = useRef(new Map<MenuOptionId, MeasurableNode>());
   // The sheet's layout can land after this component first renders; each
@@ -93,7 +95,7 @@ export function TokenMenu({
         >
           {/* The menu is labelled by its options; the dialog still wants a
               title for screen readers, so it gets one nobody sees. */}
-          <DialogPrimitive.Title style={styles.srOnly}>Lookup menu</DialogPrimitive.Title>
+          <DialogPrimitive.Title style={styles.srOnly}>{tp("mobile.readerMenuAria")}</DialogPrimitive.Title>
           {rows}
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
