@@ -646,7 +646,7 @@ export function Picker({
           style={styles.picker}
           className="rounded-md border border-border bg-card active:bg-accent"
         >
-          <TableText segments={shownSegments} className="text-small text-foreground" />
+          <TableText segments={shownSegments} className="text-small text-foreground" numberOfLines={1} />
           <Icon name="chevron-down" size="xs" className="text-muted-foreground" />
         </Pressable>
       </DropdownMenuPrimitive.Trigger>

@@ -4,10 +4,12 @@
 // reuses the Story reader's token-column layout (src/reader/StoryText.tsx):
 // each annotated unit is its own column — a reading slot above its base — in a
 // wrapping row, exactly how the reader lays a sentence out. Only the units the
-// string table annotates become columns; plain runs split per character (any
-// two Japanese characters are a break opportunity) so a long run wraps with
-// the sentence instead of jumping whole, and `en`/`ja` carry no readings at
-// all and render as one plain Text — the sentence as it always rendered.
+// string table annotates become columns; plain runs split into wrap pieces
+// (`wrapPieces` below): kanji and kana break between any two characters, an
+// ASCII or digit run — a word, a number, a URL — never does, and fullwidth
+// punctuation never strands a bracket at a line edge. `en`/`ja` carry no
+// readings at all and render as one plain Text — the sentence as it always
+// rendered.
 //
 // The reading sits at half the base's size (9 px floor, the reader's own
 // ratio in `furiganaPxFor`) in the `--furigana` colour, and a button or pill
@@ -50,6 +52,76 @@ function basePxFor(className: string | undefined): number {
   return BASE_PX["text-body"];
 }
 
+// Where a plain run may break when the row wraps (issue #125 review, S1). The
+// reader's own rule for Japanese: any two kana or kanji are a break
+// opportunity. An ASCII or digit run is not — a Latin word, a number, a URL
+// or a server's {message} crosses a line the way the browser would break it,
+// not one character at a time. And the breaks must not strand fullwidth
+// marks: 。、」… never start a piece, 「（ never end one.
+const WIDE_RANGES: [number, number][] = [
+  [0x2e80, 0x2eff], // CJK radicals
+  [0x3000, 0x30ff], // CJK punctuation, kana, the prolonged-sound ー
+  [0x31f0, 0x31ff], // katakana extensions
+  [0x3400, 0x4dbf], // CJK extension A
+  [0x4e00, 0x9fff], // CJK ideographs
+  [0xf900, 0xfaff], // CJK compatibility ideographs
+  [0xfe10, 0xfe4f], // vertical and CJK compatibility forms
+  [0xff00, 0xff60], // fullwidth forms
+  [0xff65, 0xffdc], // halfwidth katakana
+  [0xffe0, 0xffe6], // fullwidth signs
+];
+/** Fullwidth marks glued to the piece before them: they never start a line. */
+const CLOSE_MARKS = "。、，．・：；！？）］》〉」』】〉々〆ー…｡､｣";
+/** Brackets glued to the piece after them: they never end a line. */
+const OPEN_MARKS = "（(「『《〈［";
+
+function isWide(ch: string): boolean {
+  const cp = ch.codePointAt(0) ?? 0;
+  return WIDE_RANGES.some(([lo, hi]) => cp >= lo && cp <= hi);
+}
+
+/**
+ * The wrap pieces of a plain run: one per kanji or kana (with any closing
+ * mark glued on), each ASCII/digit word, number or URL in one whole piece,
+ * opening brackets carried onto the piece after them. Exported for its test.
+ */
+export function wrapPieces(text: string): string[] {
+  const pieces: string[] = [];
+  let open = ""; // opening brackets waiting on the next piece
+  let word = ""; // the ASCII/digit run being read, spaces kept inside it
+  const flush = () => {
+    if (!word) return;
+    pieces.push(open + word);
+    open = "";
+    word = "";
+  };
+  for (const ch of text) {
+    if (OPEN_MARKS.includes(ch)) {
+      flush();
+      open += ch;
+    } else if (CLOSE_MARKS.includes(ch)) {
+      if (word) word += ch;
+      else if (open) open += ch;
+      else if (pieces.length > 0) pieces[pieces.length - 1] += ch;
+      else pieces.push(ch);
+    } else if (isWide(ch)) {
+      flush();
+      pieces.push(open + ch);
+      open = "";
+    } else if (ch === " ") {
+      if (word) flush();
+      if (pieces.length > 0) pieces[pieces.length - 1] += ch; // the space rides with the piece before it
+      else if (open) open += ch;
+      else pieces.push(ch);
+    } else {
+      word += ch;
+    }
+  }
+  flush();
+  if (open) pieces.push(open);
+  return pieces;
+}
+
 /**
  * True where a control around this text already announces it — set by the
  * `Labeled` wrapper below. A furigana row inside then stays out of the
@@ -80,6 +152,7 @@ export function TableText({
   accessibilityLiveRegion,
   style,
   testID,
+  numberOfLines,
 }: {
   segments: RubyText;
   className?: string;
@@ -91,6 +164,8 @@ export function TableText({
   testID?: string;
   /** For status lines: the polite/assertive live region the plain Text had. */
   accessibilityLiveRegion?: "none" | "polite" | "assertive";
+  /** Where the plain Text before this truncated, keep it to that many lines. */
+  numberOfLines?: number;
 }) {
   const labeled = useContext(LabeledContext);
   if (!segments.some((segment) => segment.ruby)) {
@@ -100,6 +175,7 @@ export function TableText({
         className={className}
         accessibilityRole={accessibilityRole}
         accessibilityLiveRegion={accessibilityLiveRegion}
+        numberOfLines={numberOfLines}
         style={style}
         testID={testID}
       >
@@ -115,7 +191,7 @@ export function TableText({
   // host, elements-hidden on iOS, no-hide-descendants on Android.)
   const announce = labeled
     ? {
-        accessibilityHidden: true,
+        "aria-hidden": true,
         accessibilityElementsHidden: true,
         importantForAccessibility: "no-hide-descendants" as const,
       }
@@ -155,12 +231,13 @@ export function TableText({
             </Text>
           </View>
         ) : (
-          // A plain run wraps like the reader's kana: one Text per character,
-          // so the row breaks the run wherever the sentence needs it, and a
+          // A plain run wraps like the reader's kana: one piece per break
+          // opportunity (see wrapPieces), so the row breaks wherever the
+          // sentence needs it while a Latin word or URL stays whole and a
           // reading column above its base never splits.
-          Array.from(segment.text).map((char, j) => (
-            <Text key={`${i}-${j}`} className={className} style={style}>
-              {char}
+          wrapPieces(segment.text).map((piece, j) => (
+            <Text key={`${i}-${j}`} className={className} numberOfLines={numberOfLines} style={style}>
+              {piece}
             </Text>
           ))
         ),

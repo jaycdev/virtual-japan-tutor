@@ -11,7 +11,7 @@ import { InterfaceLanguageProvider, type InterfaceLanguage, type StringKey } fro
 import type { ReactNode } from "react";
 import { Pressable } from "react-native";
 
-import { chromeFuriganaPx, Labeled, labelAria, T, useTp } from "./Text.tsx";
+import { chromeFuriganaPx, Labeled, labelAria, T, useTp, wrapPieces } from "./Text.tsx";
 
 function renderT(language: InterfaceLanguage, k: StringKey, params?: Record<string, string | number>, className?: string) {
   return render(
@@ -70,6 +70,32 @@ describe("T", () => {
     const { container } = renderT("ja-furigana", "settings.focusAria", undefined, "text-caption text-muted-foreground");
     const reading = container.querySelector("[style*='font-size']");
     expect(reading?.getAttribute("style")).toMatch(/font-size:\s*9px/);
+  });
+});
+
+describe("wrapPieces (where a plain run may break)", () => {
+  it("keeps a Latin word, a number and a URL in one whole piece", () => {
+    expect(wrapPieces("Virtual Japan Tutor")).toEqual(["Virtual ", "Japan ", "Tutor"]);
+    expect(wrapPieces("MaruMori")).toEqual(["MaruMori"]);
+    expect(wrapPieces("http://10.0.2.2:8080")).toEqual(["http://10.0.2.2:8080"]);
+    // Whole next to breakable: the word stands while the kana break around it.
+    expect(wrapPieces("MaruMoriに接続")).toEqual(["MaruMori", "に", "接", "続"]);
+  });
+
+  it("never starts a piece with sentence punctuation", () => {
+    const pieces = wrapPieces("設定が正しくありません。");
+    expect(pieces.every((p) => !p.startsWith("。"))).toBe(true);
+    expect(pieces[pieces.length - 1]).toBe("ん。");
+    // …and a closing mark after a whole word rides with that word, not the line after it.
+    expect(wrapPieces("MaruMori。")).toEqual(["MaruMori。"]);
+  });
+
+  it("never ends a piece with an opening bracket", () => {
+    const pieces = wrapPieces("「続ける」をタップ");
+    expect(pieces.every((p) => !p.endsWith("「"))).toBe(true);
+    expect(pieces[0]).toBe("「続");
+    // The fullwidth bracket glues to the whole URL that follows it.
+    expect(wrapPieces("（http://10.0.2.2:8080）")).toEqual(["（http://10.0.2.2:8080）"]);
   });
 });
 
