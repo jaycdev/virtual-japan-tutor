@@ -119,6 +119,31 @@
     --story-line-height: var(--text-story-xl--line-height);
   }
 
+  /* Ruby in interface chrome (issue #125 review V1 and V3) — every <ruby> the
+     <T> renderer and the Grammar Ruby helper draw. The reader's own ruby rules
+     live in reader.css and already do this for .story-text.
+
+     V1: Chromium's default placement spreads the base characters across the
+     width of a longer reading (物 語). ruby-align: center keeps the base
+      characters as one unbroken block and lets the wider reading overhang
+     its sides instead.
+
+     V3: the reading draws above the base inside the line box, and a ~10.5px
+     <rt> needs ~1.9em of room above the text; the UI steps' line heights
+     (body 24px on 16px type) give only about 4px of half-leading, so the
+     reading collided with button and pill edges. A ruby element therefore
+     carries its own tall inline box. Story paragraphs already sit at 2.0 to
+     2.2, so they are untouched, and nothing in the app clips with a fixed
+     height (controls use min-h-*), so a taller line simply grows the
+     control. rt never wraps: a reading stays one line. */
+  ruby {
+    ruby-align: center;
+    line-height: 1.9;
+  }
+  rt {
+    white-space: nowrap;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     *,
     *::before,
