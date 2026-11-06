@@ -92,6 +92,22 @@ function isPunctuationOnly(value) {
   return !LETTER_OR_DIGIT.test(value);
 }
 
+// Walk the node's raw text up to its first non-whitespace character.
+function firstVisibleLoc(node) {
+  let line = node.loc.start.line;
+  let column = node.loc.start.column;
+  for (const ch of node.value) {
+    if (!/\s/u.test(ch)) break;
+    if (ch === "\n") {
+      line += 1;
+      column = 0;
+    } else {
+      column += 1;
+    }
+  }
+  return { line, column };
+}
+
 const noRawJsxText = {
   meta: {
     type: "problem",
@@ -105,7 +121,11 @@ const noRawJsxText = {
     return {
       JSXText(node) {
         const value = node.value.trim();
-        if (value && !isPunctuationOnly(value)) context.report({ node, messageId: "noRawText" });
+        // JSXText starts right after the previous element/expression, on ITS line —
+        // report at the first visible character instead, so an eslint-disable-next-line
+        // above the copy covers it (and editors point at the copy, not the tag).
+        const at = firstVisibleLoc(node);
+        if (value && !isPunctuationOnly(value)) context.report({ node, loc: at, messageId: "noRawText" });
       },
       JSXExpressionContainer(node) {
         // Bare string literals in children are the sneaky twin of <span>Text</span>.

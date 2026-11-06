@@ -33,7 +33,7 @@ describe("T", () => {
     const { container } = renderT("ja-furigana", "settings.focusAria");
     const ruby = Array.from(container.querySelectorAll("ruby"));
     expect(ruby).toHaveLength(1);
-    expect(ruby[0].textContent).toBe("焦点しょうてん");
+    expect(ruby[0]?.textContent).toBe("焦点しょうてん");
     const rt = Array.from(container.querySelectorAll("rt"));
     expect(rt.map((e) => e.textContent)).toEqual(["しょうてん"]);
     // The furigana token classes (ui-plan typography), not an inline size.
