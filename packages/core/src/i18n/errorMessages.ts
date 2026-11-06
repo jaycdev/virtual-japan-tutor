@@ -17,9 +17,12 @@ import { translatePlain } from "./translate.ts";
 import type { StringKey } from "./strings.ts";
 
 /**
- * Every `code` the Go API can answer with (httpapi, story, practice,
- * itemlist, progress handlers). The i18n test walks this list against the
- * table, so a new server code has to show up here to pass CI.
+ * The server error codes this client translates, hand-maintained to mirror
+ * the codes the Go API answers with (`writeError(` calls under
+ * apps/server/internal/). Not generated: the i18n test walks this list
+ * against the table, so a new server code only fails CI once it is listed
+ * here. When the server gains a code, add it here and give it a table entry;
+ * until then an unknown code falls back to the server's own English.
  */
 export const ERROR_CODES = [
   "bad_request",

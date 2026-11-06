@@ -69,6 +69,38 @@ describe("the string table", () => {
       expect(ja.split("《").length, `${key} has an unbalanced 《`).toBe(ja.split("》").length);
     }
   });
+
+  it("puts every reading over a kanji base", () => {
+    // A reading sits on the kanji run before it, so the character right
+    // before 《 must be a kanji — unless an explicit ｜ base marker opened
+    // the base earlier in the same run (issue #125 review S15).
+    for (const key of KEYS) {
+      const ja = strings[key].ja;
+      const chars = Array.from(ja);
+      for (let i = 0; i < chars.length; i += 1) {
+        if (chars[i] !== "《") continue;
+        const prev = chars[i - 1] ?? "";
+        const runStart = ja.lastIndexOf("》", i - 1) + 1;
+        const baseRun = ja.slice(runStart, i);
+        expect(
+          isKanji(prev) || baseRun.includes("｜"),
+          `${key}: 《 sits after "${prev}" — the base before a reading must be kanji or open after ｜`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it("keeps readings flat: no 《 inside a reading", () => {
+    // A 《reading》 closed by a later 》 would otherwise swallow a nested
+    // bracket pair (issue #125 review S15).
+    for (const key of KEYS) {
+      const ja = strings[key].ja;
+      for (const m of ja.matchAll(/《([^》]*)》/g)) {
+        expect(m[1], `${key}: malformed reading ${m[0]}`).not.toContain("《");
+      }
+      expect(ja, `${key} has a doubled 《`).not.toContain("《《");
+    }
+  });
 });
 
 describe("the Interface Language type", () => {
@@ -103,18 +135,17 @@ describe("translate", () => {
   });
 
   it("reads plain Japanese with the furigana dropped", () => {
-    expect(translate("ja", "greeting.morning")).toEqual([{ text: "お早うございます" }]);
-    expect(translatePlain("ja", "greeting.morning")).toBe("お早うございます");
+    expect(translate("ja", "greeting.morning")).toEqual([{ text: "おはようございます" }]);
+    expect(translatePlain("ja", "greeting.morning")).toBe("おはようございます");
     expect(translatePlain("ja", "errors.not_found")).toBe("見つかりませんでした");
   });
 
   it("keeps the readings as segments for a furigana UI", () => {
-    // The furigana base is the kanji run before the reading: the kana お and
-    // うございます stand on their own, exactly as in printed Japanese.
-    expect(translate("ja-furigana", "greeting.morning")).toEqual([
-      { text: "お" },
-      { text: "早", ruby: "はや" },
-      { text: "うございます" },
+    // The furigana base is the kanji run before the reading: the okurigana
+    // つかりませんでした stands on its own, exactly as in printed Japanese.
+    expect(translate("ja-furigana", "errors.not_found")).toEqual([
+      { text: "見", ruby: "み" },
+      { text: "つかりませんでした" },
     ]);
     // The base sentence of every entry is the same in ja and ja-furigana.
     for (const key of KEYS) {
@@ -124,8 +155,8 @@ describe("translate", () => {
 
   it("fills {placeholders} in every language", () => {
     expect(translatePlain("en", "stage.writingAttempt", { attempt: 2, max: 3 })).toBe("Writing… attempt 2 of 3");
-    expect(translatePlain("ja", "stage.writingAttempt", { attempt: 2, max: 3 })).toBe("作成中… 2/3回目");
-    expect(translatePlain("ja-furigana", "stage.writingAttempt", { attempt: 2, max: 3 })).toBe("作成中… 2/3回目");
+    expect(translatePlain("ja", "stage.writingAttempt", { attempt: 2, max: 3 })).toBe("作成中… 2回目（全3回）");
+    expect(translatePlain("ja-furigana", "stage.writingAttempt", { attempt: 2, max: 3 })).toBe("作成中… 2回目（全3回）");
     expect(translatePlain("en", "errors.failedStatus", { status: 503 })).toBe("Request failed (503)");
     expect(translatePlain("ja", "errors.failedStatus", { status: 503 })).toBe("リクエストに失敗しました（503）");
   });
@@ -147,7 +178,7 @@ describe("the table's English column", () => {
     expect(strings["errors.unreachable"].en).toBe("Cannot reach the server");
     expect(strings["errors.failed"].en).toBe("Request failed");
     expect(strings["story.startFailed"].en).toBe("Couldn't start writing a Story.");
-    expect(strings["story.runFailed"].en).toBe("Couldn't write a Story for you.");
+    expect(strings["story.runFailed"].en).toBe("Couldn’t write a Story for you.");
     expect(strings["greeting.morning"].en).toBe("Good morning");
     expect(strings["section.levelBlurb"].en).toBe("N5–N1 known grammar baseline");
     expect(strings["story.originOnDemand"].en).toBe("On demand");

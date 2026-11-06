@@ -7,6 +7,11 @@
  * appears in both columns. `{name}` values are substituted as plain data:
  * they are never parsed for furigana.
  *
+ * The `exercise.*` and `errors.*` English text is only shown as a fallback
+ * (the server answers in English, and exercises ask in Japanese); the columns
+ * exist so the tests can pin the mapping and the client has something to
+ * show when the server's own line is missing.
+ *
  * Keys are dotted by area, but the object stays FLAT: `keyof typeof strings`
  * is the key union, and TS checks every call site against it.
  */
@@ -25,7 +30,7 @@ export const strings = {
   "errors.internal": { en: "Internal server error", ja: "サーバー側《がわ》で問題《もんだい》が起《お》きました" },
   "errors.unauthorized": {
     en: "Missing, invalid or expired session token",
-    ja: "ログインが必要《ひつよう》です",
+    ja: "セッションがないか、不正《ふせい》または期限《きげん》切《ぎ》れです",
   },
   "errors.invalid_credentials": {
     en: "Invalid username or password",
@@ -33,9 +38,9 @@ export const strings = {
   },
   "errors.too_many_attempts": {
     en: "Too many login attempts",
-    ja: "試《ため》し回数《かいすう》が過《す》ぎました。少《すこ》し後《あと》でお試《ため》しください",
+    ja: "試行回数《しこうかいすう》が多《おお》すぎます。もう一度《いちど》お試《ため》しください",
   },
-  "errors.payload_too_large": { en: "Request body too large", ja: "リクエストのデータが過大《かだい》です" },
+  "errors.payload_too_large": { en: "Request body too large", ja: "リクエストのデータが大《おお》きすぎます" },
   "errors.not_found": { en: "Not found", ja: "見《み》つかりませんでした" },
   "errors.invalid_settings": { en: "Invalid settings", ja: "設定《せってい》が正《ただ》しくありません" },
   "errors.invalid_rating": { en: "Invalid rating", ja: "評価《ひょうか》が正《ただ》しくありません" },
@@ -51,22 +56,22 @@ export const strings = {
   "errors.invalid_timezone": { en: "Invalid timezone", ja: "タイムゾーンが正《ただ》しくありません" },
   "errors.generation_running": {
     en: "A story is already being generated",
-    ja: "すでに物語《ものがたり》を作成《さくせい》中《ちゅう》です",
+    ja: "すでに物語《ものがたり》を作成中《さくせいちゅう》です",
   },
   "errors.no_story": { en: "No story", ja: "物語《ものがたり》がありません" },
   "errors.practice_no_items": { en: "No items to practice", ja: "練習《れんしゅう》できる項目《こうもく》がありません" },
   "errors.already_answered": { en: "Already answered", ja: "すでに回答《かいとう》しました" },
-  "errors.duplicate_name": { en: "Duplicate name", ja: "同《おな》じ名《な》前《まえ》がすでに使《つか》われています" },
-  "errors.reserved_list": { en: "Reserved list name", ja: "この名《な》前《まえ》は使《つか》えません" },
-  "errors.invalid_key": { en: "Invalid key", ja: "APIキーが無《な》効《こう》です" },
+  "errors.duplicate_name": { en: "Duplicate name", ja: "同《おな》じ名前《なまえ》がすでに使《つか》われています" },
+  "errors.reserved_list": { en: "Reserved list name", ja: "この名前《なまえ》は使《つか》えません" },
+  "errors.invalid_key": { en: "Invalid key", ja: "APIキーが無効《むこう》です" },
   "errors.no_key": { en: "No key", ja: "APIキーがありません" },
   "errors.sync_running": {
     en: "A sync is already running",
-    ja: "すでに同期《どうき》が実行《じっこう》中《ちゅう》です",
+    ja: "すでに同期《どうき》が実行中《じっこうちゅう》です",
   },
   "errors.invalid_level": { en: "Invalid level", ja: "レベルが正《ただ》しくありません" },
-  "errors.name_taken": { en: "Name taken", ja: "この名《な》前《まえ》はすでに使《つか》われています" },
-  "errors.invalid_provider": { en: "Invalid provider", ja: "AIプロバイダーが無《な》効《こう》です" },
+  "errors.name_taken": { en: "Name taken", ja: "この名前《なまえ》はすでに使《つか》われています" },
+  "errors.invalid_provider": { en: "Invalid provider", ja: "AIプロバイダーが無効《むこう》です" },
   "errors.provider_in_use": { en: "Provider is in use", ja: "このAIプロバイダーはまだ使《つか》われています" },
   "errors.no_ai_provider": { en: "No AI provider", ja: "AIプロバイダーがありません" },
   "errors.emptyResponse": { en: "Empty response", ja: "空《から》の応答《おうとう》でした" },
@@ -75,11 +80,11 @@ export const strings = {
   "auth.loginFailed": { en: "Login failed", ja: "ログインに失敗《しっぱい》しました" },
   "auth.tryAgainLater": {
     en: "Too many attempts. Try again later.",
-    ja: "試《ため》し回数《かいすう》が過《す》ぎました。後《あと》でもう一《いち》度《ど》お試《ため》しください",
+    ja: "試行回数《しこうかいすう》が多《おお》すぎます。もう一度《いちど》お試《ため》しください",
   },
   "auth.tryAgainIn": {
     en: "Too many attempts. Try again in {secs} seconds.",
-    ja: "試《ため》し回数《かいすう》が過《す》ぎました。{secs}秒《びょう》後《ご》にもう一《いち》度《ど》お試《ため》しください",
+    ja: "試行回数《しこうかいすう》が多《おお》すぎます。{secs}秒後《びょうご》にもう一度《いちど》お試《ため》しください",
   },
   "auth.sessionSaveFailed": {
     en: "Could not save the session on this device",
@@ -89,7 +94,7 @@ export const strings = {
 
   // — Story writing —
   "story.startFailed": { en: "Couldn't start writing a Story.", ja: "物語《ものがたり》の作成《さくせい》を開始《かいし》できませんでした。" },
-  "story.runFailed": { en: "Couldn't write a Story for you.", ja: "あなたのための物語《ものがたり》を書《か》けませんでした。" },
+  "story.runFailed": { en: "Couldn’t write a Story for you.", ja: "物語《ものがたり》を作成《さくせい》できませんでした。" },
   "story.originOnDemand": { en: "On demand", ja: "オンデマンド" },
   "story.originAutomatic": { en: "Automatic", ja: "自動生成《じどうせいせい》" },
   "story.noGenre": { en: "Story", ja: "物語《ものがたり》" },
@@ -107,34 +112,34 @@ export const strings = {
   "genre.nature": { en: "Nature", ja: "自然《しぜん》" },
 
   // — The generation run's stages —
-  "stage.preparing": { en: "Preparing…", ja: "準備《じゅんび》中《ちゅう》…" },
-  "stage.writing": { en: "Writing…", ja: "作成《さくせい》中《ちゅう》…" },
+  "stage.preparing": { en: "Preparing…", ja: "準備中《じゅんびちゅう》…" },
+  "stage.writing": { en: "Writing…", ja: "作成中《さくせいちゅう》…" },
   "stage.writingAttempt": {
     en: "Writing… attempt {attempt} of {max}",
-    ja: "作成《さくせい》中《ちゅう》… {attempt}/{max}回目《かいもく》",
+    ja: "作成中《さくせいちゅう》… {attempt}回目《かいめ》（全《ぜん》{max}回《かい》）",
   },
   "stage.checking": { en: "Checking it fits your vocabulary…", ja: "語彙《ごい》に合《あ》うかどうか確認《かくにん》しています…" },
-  "stage.saving": { en: "Saving…", ja: "保存《ほぞん》中《ちゅう》…" },
+  "stage.saving": { en: "Saving…", ja: "保存中《ほぞんちゅう》…" },
 
   // — Today's greeting —
   "greeting.hello": { en: "Hello", ja: "こんにちは" },
-  "greeting.morning": { en: "Good morning", ja: "お早《はや》うございます" },
+  "greeting.morning": { en: "Good morning", ja: "おはようございます" },
   "greeting.afternoon": { en: "Good afternoon", ja: "こんにちは" },
   "greeting.evening": { en: "Good evening", ja: "こんばんは" },
-  "greeting.lateNight": { en: "Still studying", ja: "まだ勉強《べんきょう》中《ちゅう》ですか" },
+  "greeting.lateNight": { en: "Still studying", ja: "遅《おそ》くまで勉強中《べんきょうちゅう》ですね" },
 
   // — Settings sections (titles and blurbs; ids stay route segments) —
   "section.appearanceTitle": { en: "Appearance", ja: "表示《ひょうじ》" },
   "section.appearanceBlurb": { en: "Colour theme and Story text size", ja: "テーマカラーと物語《ものがたり》の文字《もじ》大《おお》きさ" },
-  "section.readingTitle": { en: "Reading", ja: "読書《どくしょ》" },
-  "section.readingBlurb": { en: "Translation blur and Lookup hold", ja: "訳《やく》のぼかしと辞書《じしょ》長押《ながお》し" },
+  "section.readingTitle": { en: "Reading", ja: "読解《どっかい》" },
+  "section.readingBlurb": { en: "Translation blur and Lookup hold", ja: "文《ぶん》の訳《やく》のぼかしと辞書《じしょ》長押《ながお》し" },
   "section.storiesTitle": { en: "Stories", ja: "物語《ものがたり》" },
   "section.storiesBlurb": {
     en: "Furigana threshold and future story tastes",
     ja: "ふりがな表示《ひょうじ》レベルとこれからの物語《ものがたり》の趣向《しゅこう》",
   },
-  "section.listsTitle": { en: "Item Lists", ja: "アイテムリスト" },
-  "section.listsBlurb": { en: "Lists, boosting and saved items", ja: "リスト、優先《ゆうせん》と保存《ほぞん》アイテム" },
+  "section.listsTitle": { en: "Item Lists", ja: "リスト" },
+  "section.listsBlurb": { en: "Lists, boosting and saved items", ja: "リスト、優先《ゆうせん》と保存《ほぞん》項目《こうもく》" },
   "section.levelTitle": { en: "Starting Level", ja: "開始《かいし》レベル" },
   "section.levelBlurb": { en: "N5–N1 known grammar baseline", ja: "N5～N1 の既習《きしゅう》文法《ぶんぽう》基準《きじゅん》" },
   "section.marumoriTitle": { en: "MaruMori", ja: "MaruMori" },
@@ -151,16 +156,16 @@ export const strings = {
   },
   "serverHealth.noAnswer": {
     en: "That address did not answer. Check the host and port — the current address is still in use.",
-    ja: "そのアドレスは無《な》反応《のう》でした。ホストとポートを確認《かくにん》してください — 現在《げんざい》のアドレスが使《つか》われ続《つづ》けます",
+    ja: "そのアドレスは無反応《むのう》でした。ホストとポートを確認《かくにん》してください — 現在《げんざい》のアドレスが使《つか》われ続《つづ》けます",
   },
 
   // — Item kinds and the list rows —
   "item.kanji": { en: "Kanji", ja: "漢字《かんじ》" },
   "item.vocabulary": { en: "Word", ja: "単語《たんご》" },
   "item.grammar": { en: "Grammar", ja: "文法《ぶんぽう》" },
-  "itemList.defaultWord": { en: "default", ja: "標準《ひょうじゅん》" },
-  "itemList.oneItem": { en: "{count} item", ja: "{count}件《けん》" },
-  "itemList.manyItems": { en: "{count} items", ja: "{count}件《けん》" },
+  "itemList.defaultWord": { en: "default", ja: "既定《きてい》" },
+  "itemList.oneItem": { en: "{count} item", ja: "{count}項目《こうもく》" },
+  "itemList.manyItems": { en: "{count} items", ja: "{count}項目《こうもく》" },
   "itemList.boostingWord": { en: "boosting", ja: "優先《ゆうせん》" },
 
   // — AI Provider rows —
@@ -176,11 +181,11 @@ export const strings = {
 
   // — MaruMori Sync rows —
   "sync.failed": { en: "Sync failed: {error}", ja: "同期《どうき》に失敗《しっぱい》しました: {error}" },
-  "sync.unknownError": { en: "unknown error", ja: "原因《げんいん》不《ふ》明《めい》" },
-  "sync.complete": { en: "Sync complete", ja: "同期《どうき》完《かん》了《りょう》" },
+  "sync.unknownError": { en: "unknown error", ja: "原因《げんいん》不明《ふめい》" },
+  "sync.complete": { en: "Sync complete", ja: "同期《どうき》完了《かんりょう》" },
   "sync.counts": {
     en: "Sync complete — {new} new Known Items, {levelChanges} level changes, {disappeared} disappeared",
-    ja: "同期《どうき》完《かん》了《りょう》 — 新《あらた》な既習項目《きしゅうこうもく》 {new}件《けん》、レベル変《へん》化《か》 {levelChanges}件《けん》、消《き》えた項目《こうもく》 {disappeared}件《けん》",
+    ja: "同期《どうき》完了《かんりょう》 — 新《あらた》な既習項目《きしゅうこうもく》 {new}件《けん》、レベル変化《へんか》 {levelChanges}件《けん》、消《き》えた項目《こうもく》 {disappeared}件《けん》",
   },
   "sync.runCounts": {
     en: "{kanji} kanji, {vocabulary} vocabulary",
@@ -220,11 +225,11 @@ export const strings = {
   },
   "reader.menu.listsLoading": {
     en: "Your Item Lists are still loading",
-    ja: "アイテムリストの読《よ》込《こ》み中《ちゅう》です",
+    ja: "リストの読《よ》み込《こ》み中《ちゅう》です",
   },
   "reader.menu.saveToTarget": { en: "Save to {list}", ja: "{list}に保存《ほぞん》" },
-  "reader.menu.saveToDefault": { en: "Save to the default list", ja: "標準《ひょうじゅん》のアイテムリストに保存《ほぞん》" },
-  "reader.menu.saveToOther": { en: "Save into another Item List", ja: "他《ほか》のアイテムリストに保存《ほぞん》" },
+  "reader.menu.saveToDefault": { en: "Save to the default list", ja: "既定《きてい》のリストに保存《ほぞん》" },
+  "reader.menu.saveToOther": { en: "Save into another Item List", ja: "他《ほか》のリストに保存《ほぞん》" },
 
   // — Practice exercises (the server's English stays for en) —
   "exercise.recognition": { en: "What does this mean?", ja: "意味《いみ》はどれですか？" },

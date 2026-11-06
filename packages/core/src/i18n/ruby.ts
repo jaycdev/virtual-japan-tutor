@@ -21,20 +21,26 @@ const OPEN = "《";
 const CLOSE = "》";
 const BASE_MARK = "｜";
 
-/** Hanzi — the characters a reading may sit over. */
+/**
+ * Hanzi — the characters a reading may sit over. Includes the ideographic
+ * iteration and closing marks (々〆〇), which carry the reading of what they
+ * repeat (人々《ひとびと》), and the astral CJK planes (𠮟…).
+ */
 export function isKanji(ch: string): boolean {
-  return /[㐀-䶿一-鿿豈-﫿]/u.test(ch);
+  return /[㐀-䶿一-鿿豈-﫿\u3005-\u3007\u{20000}-\u{2FA1F}]/u.test(ch);
 }
 
 /**
  * Split a marked string into segments. The base of a 《reading》 is the run of
  * kanji just before it; after a ｜ marker the base is instead everything since
  * the marker. A 《 with no closing 》 is ordinary text, and a 《reading》 with
- * nothing markable before it is kept as literal text, brackets and all.
+ * nothing markable before it is kept as literal text, brackets and all. The
+ * walk is per code point, so astral kanji (𠮟) stay whole.
  */
 export function parseRuby(source: string): RubySegment[] {
   const segments: RubySegment[] = [];
-  let pending = "";
+  const chars = Array.from(source);
+  let pending: string[] = [];
   let baseFrom = -1; // set by ｜: the base must start here, kanji run or not
 
   const emit = (text: string, ruby?: string) => {
@@ -44,41 +50,41 @@ export function parseRuby(source: string): RubySegment[] {
     else segments.push(ruby === undefined ? { text } : { text, ruby });
   };
 
-  for (let i = 0; i < source.length; i += 1) {
-    const ch = source[i];
+  for (let i = 0; i < chars.length; i += 1) {
+    const ch = chars[i] ?? "";
     if (ch === BASE_MARK) {
       baseFrom = pending.length;
       continue;
     }
     if (ch === OPEN) {
-      const close = source.indexOf(CLOSE, i + 1);
+      const close = chars.indexOf(CLOSE, i + 1);
       if (close !== -1) {
-        const reading = source.slice(i + 1, close);
+        const reading = chars.slice(i + 1, close).join("");
         let baseStart = baseFrom;
         if (baseStart < 0) {
           // No explicit base: the kanji run ending at the brackets.
           let j = pending.length;
-          while (j > 0 && isKanji(pending.charAt(j - 1))) j -= 1;
+          while (j > 0 && isKanji(pending[j - 1] ?? "")) j -= 1;
           baseStart = j;
         }
-        const base = pending.slice(baseStart);
+        const base = pending.slice(baseStart).join("");
         if (base === "") {
           // Nothing markable before the brackets: ordinary text, kept as typed.
-          pending += source.slice(i, close + 1);
+          pending = pending.concat(chars.slice(i, close + 1));
           i = close;
           continue;
         }
-        emit(pending.slice(0, baseStart));
+        emit(pending.slice(0, baseStart).join(""));
         emit(base, reading);
-        pending = "";
+        pending = [];
         baseFrom = -1;
         i = close;
         continue;
       }
     }
-    pending += ch;
+    pending.push(ch);
   }
-  emit(pending);
+  emit(pending.join(""));
   return segments;
 }
 
