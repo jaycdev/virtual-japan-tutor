@@ -100,6 +100,9 @@ function isCopy(value) {
 
 const TEXT_ATTRIBUTES = new Set([
   "aria-label",
+  "aria-valuetext",
+  "aria-description",
+  "aria-placeholder",
   "placeholder",
   "title",
   "label",
