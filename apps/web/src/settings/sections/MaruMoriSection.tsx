@@ -2,7 +2,7 @@
 // API key, Sync now, and see the recent Syncs. The key is write-only: a saved key
 // shows as "set" with Replace, and is never put back into a field.
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { syncOutcomeText, syncRunText, useMarumori, useT, type StepSaveOutcome, type StepSaveRegistrar } from "@vjt/core";
+import { formatInstantRuby, syncOutcomeText, syncRunText, useMarumori, useT, type StepSaveOutcome, type StepSaveRegistrar } from "@vjt/core";
 
 import { Button } from "@/components/ui/button";
 import { T } from "@/components/Text";
@@ -108,7 +108,7 @@ export function MaruMoriSection({ registerSave }: { registerSave?: StepSaveRegis
         ) : null}
         {connected && status.counts?.lastSyncAt ? (
           <Note>
-            <T k="marumori.lastSync" params={{ when: new Date(status.counts.lastSyncAt).toLocaleString() }} />
+            <T k="marumori.lastSync" params={{ when: formatInstantRuby(status.counts.lastSyncAt, undefined, language) }} />
           </Note>
         ) : null}
         {connected && status.lastFailure ? (

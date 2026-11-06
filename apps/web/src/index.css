@@ -145,6 +145,11 @@
     ruby-align: center;
     line-height: 1.9;
     ruby-overhang: auto;
+    /* A2 (round-4): underline does not propagate past a box that computes
+       text-decoration: none, and a <ruby> sits between the link and its base
+       span. Inheriting here completes the chain a -> ruby -> span, so links
+       keep their underline through kanji. */
+    text-decoration: inherit;
   }
   ruby.ui-ruby rt {
     white-space: nowrap;

@@ -4,10 +4,11 @@
 // card offers, set by `variant`.
 import type { Story, StoryGenerationProgress } from "@vjt/api-client";
 import {
-  stillUnreadFrom,
+  stillUnreadFromRuby,
   storyCardMetaRuby,
   todayCardPhase,
   useT,
+  type RubyText,
   type StoryGenerationState,
   type TodaysStoryState,
 } from "@vjt/core";
@@ -81,7 +82,7 @@ export function TodayStoryCard({
       ) : phase.kind === "story" ? (
         <StoryBody
           story={phase.story}
-          unreadFrom={stillUnreadFrom(phase.story, now, timezone, language)}
+          unreadFrom={stillUnreadFromRuby(phase.story, now, timezone, language)}
           running={phase.running}
           justWritten={justWritten ? readyStoryId : null}
           onOpenReady={onOpenReady}
@@ -150,7 +151,7 @@ function StoryBody({
   onOpenReady,
 }: {
   story: Story;
-  unreadFrom: string | null;
+  unreadFrom: RubyText | null;
   /** A run in flight, which is for a newer Story than this one; null when idle. */
   running: StoryGenerationProgress | null;
   justWritten: string | null;

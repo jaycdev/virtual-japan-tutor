@@ -4,7 +4,7 @@
 // Settings section.
 import type { MaruMoriSyncRun } from "@vjt/api-client";
 import {
-  formatInstant,
+  formatInstantRuby,
   pluralEn,
   useT,
   type InterfaceLanguage,
@@ -125,7 +125,7 @@ function SyncLine({
     return (
       <div className="flex flex-col gap-2">
         <p className="text-body text-destructive">
-          <T k="today.syncFailedLine" params={{ time: formatInstant(failed.finishedAt ?? failed.startedAt, timezone, language) }} />
+          <T k="today.syncFailedLine" params={{ time: formatInstantRuby(failed.finishedAt ?? failed.startedAt, timezone, language) }} />
         </p>
         {failed.error ? <p className="text-small text-muted-foreground">{failed.error}</p> : null}
       </div>
@@ -143,7 +143,7 @@ function SyncLine({
       {/* Explicit about what the timestamp is (issue #47 review polish): a
           bare clock time does not read as "this sync worked". */}
       <p className="text-body text-foreground">
-        <T k="today.syncSucceededLine" params={{ time: formatInstant(lastSync.finishedAt ?? lastSync.startedAt, timezone, language) }} />
+        <T k="today.syncSucceededLine" params={{ time: formatInstantRuby(lastSync.finishedAt ?? lastSync.startedAt, timezone, language) }} />
       </p>
       <p className="text-small text-muted-foreground">
         {syncResultLine(lastSync, language)}

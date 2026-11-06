@@ -8,12 +8,11 @@
 //     (issue #125 round-2 review S1),
 //   - inside aria-hidden brand art (the 読 wordmark),
 //   - in screen-reader-only text, which is never drawn and is rendered as plain
-//     tp() text precisely so a reader does not say the reading (review V2),
-//   - in Intl dates and times ("2026年11月1日"), which have no table reading.
+//     text precisely so a reader does not say the reading (review V2 and A1).
+// Intl dates and times used to be exempt too ("2026年11月1日", no table
+// reading); round-4 review A3 gave them real readings through the date
+// formatter, so the exemption is gone and the test enforces that.
 const KANJI = /[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]/;
-// Intl dates and times: 11月5日木曜日, 2026年11月1日, 09:00. Requires a digit,
-// so a bare leaked word like 日 never passes as a date.
-const DATEISH = /^(?=.*\d)[\d\s:,年月日火水木金土曜時分]+$/;
 
 /** Every visible text node that shows kanji the furigana renderer did not touch. */
 export function unrubyfiedKanji(container: HTMLElement): string[] {
@@ -30,7 +29,6 @@ export function unrubyfiedKanji(container: HTMLElement): string[] {
     const root = parent.ownerDocument.documentElement;
     const hit = parent.closest('[lang="ja"]');
     if (hit && hit !== root) continue;
-    if (DATEISH.test(text.trim())) continue;
     offenders.push(text.trim());
   }
   return offenders;
