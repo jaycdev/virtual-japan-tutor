@@ -1,6 +1,9 @@
 import { Pressable, Text, View } from "react-native";
 import type { ReactNode } from "react";
 
+import { useT } from "@vjt/core";
+import { labelAria } from "../Text.tsx";
+
 /**
  * A pill for a single choice among a few values (theme, text size, Starting
  * Level, furigana threshold…), ported onto design tokens in #50. Selected
@@ -12,14 +15,17 @@ export function Chip({
   selected,
   onPress,
 }: {
-  label: string;
+  label: ReactNode;
   selected: boolean;
   onPress: () => void;
 }) {
+  const { tp } = useT();
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={label}
+      // A plain-string label names the chip, and so does a <T> — through the
+      // plain text of the entry it draws.
+      accessibilityLabel={labelAria(label, tp)}
       accessibilityState={{ selected }}
       // Toggle-button semantics on the web host (see chrome/TabBar.tsx for
       // the raw-ARIA pattern this app uses next to the RN accessibility props).
@@ -31,9 +37,14 @@ export function Chip({
     >
       {/* uniwind drops a colour class that precedes a text-size class on native,
           so the size comes first here as everywhere else. */}
-      <Text className={`text-body ${selected ? "font-semibold text-primary" : "text-foreground"}`}>
-        {label}
-      </Text>
+      {typeof label === "string" ? (
+        <Text className={`text-body ${selected ? "font-semibold text-primary" : "text-foreground"}`}>
+          {label}
+        </Text>
+      ) : (
+        // A <T> pill (issue #125) styles its own text, colour and weight included.
+        label
+      )}
     </Pressable>
   );
 }

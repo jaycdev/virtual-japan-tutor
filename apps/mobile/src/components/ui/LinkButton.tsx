@@ -1,9 +1,11 @@
+import type { ReactNode } from "react";
 import { Pressable, Text } from "react-native";
 
 /**
  * Quiet text button for secondary actions (Retry, Cancel, Keep, Remove key…),
  * on design tokens (#50). Always 44 px tall even though the glyph is a line
- * of text — the touch target rule has no exceptions.
+ * of text — the touch target rule has no exceptions. A string label gets the
+ * button's own Text; a `<T>` (issue #125) brings its own line, classes and all.
  */
 export function LinkButton({
   label,
@@ -11,7 +13,7 @@ export function LinkButton({
   disabled = false,
   danger = false,
 }: {
-  label: string;
+  label: ReactNode;
   onPress: () => void;
   disabled?: boolean;
   danger?: boolean;
@@ -19,7 +21,8 @@ export function LinkButton({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={label}
+      // A plain string names the button; a <T> is itself the accessible element.
+      accessibilityLabel={typeof label === "string" ? label : undefined}
       accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
@@ -30,7 +33,11 @@ export function LinkButton({
     >
       {/* uniwind drops a colour class that precedes a text-size class on native,
           so the size comes first here as everywhere else. */}
-      <Text className={`text-body ${danger ? "text-destructive" : "text-primary"}`}>{label}</Text>
+      {typeof label === "string" ? (
+        <Text className={`text-body ${danger ? "text-destructive" : "text-primary"}`}>{label}</Text>
+      ) : (
+        label
+      )}
     </Pressable>
   );
 }

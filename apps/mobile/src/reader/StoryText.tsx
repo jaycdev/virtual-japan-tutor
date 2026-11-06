@@ -4,6 +4,7 @@ import {
   sentenceSegments,
   showsFurigana,
   tokenMarks,
+  useT,
   type MeasurableNode,
   type TokenMarks,
   type TokenRef,
@@ -194,6 +195,7 @@ export const StoryParagraph = memo(function StoryParagraph({
   /** The line height matching that size (see the storysize store). */
   lineHeightPx: number;
 }) {
+  const { tp } = useT();
   // Centred line-by-line via the flex container itself (issue #45): each
   // wrapped line of token columns sits in the middle of the 40-character box.
   // `alignItems: "flex-end"` keeps bare punctuation spans on the word baseline
@@ -202,7 +204,7 @@ export const StoryParagraph = memo(function StoryParagraph({
     <View
       onStartShouldSetResponder={() => true}
       onResponderGrant={() => onSelect(sentenceIndex)}
-      accessibilityLabel={`Sentence ${sentenceIndex + 1}`}
+      accessibilityLabel={tp("reader.sentenceAria", { n: sentenceIndex + 1 })}
       style={styles.paragraph}
     >
       {sentenceSegments(sentence).map((segment) =>

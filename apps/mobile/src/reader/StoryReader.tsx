@@ -8,14 +8,19 @@ import {
   optionAt,
   reduceHold,
   saveableItem,
+  storyCardMetaRuby,
+  storyMetaEn,
   useEntryLookup,
   useItemLists,
   useReadingSettings,
+  useT,
   type MeasurableNode,
   type MenuOptionId,
   type Rect,
+  type StringKey,
   type StoryView,
   type TokenRef,
+  type TranslateParams,
 } from "@vjt/core";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import {
@@ -29,6 +34,7 @@ import {
 } from "react-native";
 
 import { useHardwareBack } from "../useHardwareBack.ts";
+import { T, TableText } from "../components/Text.tsx";
 import { Icon } from "../components/ui/icon";
 import { useJapaneseFont } from "../japaneseFont/index.tsx";
 import { useStoryTextSize } from "../storysize/index.tsx";
@@ -99,6 +105,7 @@ export function StoryReader({
   const lists = useItemLists(client);
   const lookup = useEntryLookup(client);
   const { fontSizePx, lineHeightPx, columnWidthPx } = useStoryTextSize();
+  const { language, tp } = useT();
 
   const [selected, setSelected] = useState<number | null>(null);
   // The token whose sentence background is lit (issue #45: the mark belongs to
@@ -124,7 +131,9 @@ export function StoryReader({
   const [saveBusy, setSaveBusy] = useState(false);
   const saveBusyRef = useRef(false);
   const [sheetError, setSheetError] = useState<string | null>(null);
-  const [saveNote, setSaveNote] = useState<string | null>(null);
+  // The save note is a table entry (+params), not a string: switching the
+  // Interface Language while it shows re-renders it in the new one (issue #125).
+  const [saveNote, setSaveNote] = useState<{ k: StringKey; params?: TranslateParams } | null>(null);
 
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelHold = () => {
@@ -220,8 +229,9 @@ export function StoryReader({
       listsState.status === "ready",
       defaultName,
       dictionaryFailed,
+      language,
     );
-  }, [gesture.phase, gesture.token, story, lists.state, dictionaryFailed]);
+  }, [gesture.phase, gesture.token, story, lists.state, dictionaryFailed, language]);
 
   // --- gesture handlers ------------------------------------------------------
 
@@ -332,7 +342,7 @@ export function StoryReader({
     nameHint?: string,
   ) => {
     if (!listId) {
-      setSaveNote("Could not save — Your Item Lists are still loading");
+      setSaveNote({ k: "reader.saveListsLoading" });
       return;
     }
     if (saveBusyRef.current) return; // one save at a time, menu path and sheet path alike
@@ -345,11 +355,12 @@ export function StoryReader({
         // A just-created list may not be in this callback's captured state yet —
         // the create hands back its name, so the note is honest either way.
         const found = lists.state.status === "ready" ? lists.state.lists.find((l) => l.id === listId)?.name : undefined;
-        setSaveNote(`Saved to ${found ?? nameHint ?? "your list"}.`);
+        const name = found ?? nameHint;
+        setSaveNote(name ? { k: "reader.savedToList", params: { list: name } } : { k: "reader.savedToListYours" });
         setSheetToken(null);
         setSheetError(null);
       } else {
-        setSaveNote(`Could not save — ${res.message}`);
+        setSaveNote({ k: "reader.saveFailed", params: { message: res.message } });
       }
     } finally {
       saveBusyRef.current = false;
@@ -502,14 +513,14 @@ export function StoryReader({
   return (
     <View
       style={styles.fill}
-      accessibilityLabel="Story reader"
+      accessibilityLabel={tp("mobile.readerScreenAria")}
     >
       <View style={styles.header} className="border-b border-border">
         <View style={styles.headerRow}>
           <Pressable
             testID="back-to-stories"
             accessibilityRole="button"
-            accessibilityLabel="Back to stories"
+            accessibilityLabel={tp("reader.backToStories")}
             onPress={onBack}
             style={styles.backButton}
           >
@@ -524,8 +535,10 @@ export function StoryReader({
             <Pressable
               testID="reader-title-translation"
               accessibilityRole="button"
-              accessibilityLabel="Title translation"
-              accessibilityHint={titleEnRevealed ? "Tap to hide the translation" : "Tap to show the translation"}
+              accessibilityLabel={tp("mobile.readerTitleAria")}
+              accessibilityHint={
+                titleEnRevealed ? tp("mobile.readerTapToHideTranslation") : tp("mobile.readerTapToShowTranslation")
+              }
               onPress={() => setTitleEnRevealed((v) => !v)}
               style={styles.titleTranslation}
             >
@@ -543,19 +556,23 @@ export function StoryReader({
                 {story.titleEn}
               </Text>
               {titleEnRevealed ? null : (
-                <Text className="text-caption text-muted-foreground">
-                  Title translation hidden — tap to show
-                </Text>
+                <T k="mobile.readerTitleHiddenNote" className="text-caption text-muted-foreground" />
               )}
             </Pressable>
           ) : null}
-          <Text className="text-caption text-muted-foreground" numberOfLines={1}>
-            {`${story.genre} · ${story.origin === "on_demand" ? "On demand" : "Automatic"} · ${new Date(story.createdAt).toDateString()}`}
-          </Text>
-          {saveNote ? (
-            <Text testID="save-note" className="text-small text-muted-foreground" numberOfLines={1}>
-              {saveNote}
+          {/* English keeps the pre-#125 meta line byte-for-byte; Japanese speaks
+              the same facts through the table (web reader parity). */}
+          {language === "en" ? (
+            <Text className="text-caption text-muted-foreground" numberOfLines={1}>
+              {storyMetaEn(story)}
             </Text>
+          ) : (
+            <TableText segments={storyCardMetaRuby(story, language)} className="text-caption text-muted-foreground" />
+          )}
+          {saveNote ? (
+            <View testID="save-note">
+              <T k={saveNote.k} params={saveNote.params} className="text-small text-muted-foreground" />
+            </View>
           ) : null}
         </View>
       </View>
@@ -576,7 +593,7 @@ export function StoryReader({
         testID="story-scroll"
         style={styles.fill}
         scrollEnabled={scrollEnabled}
-        accessibilityLabel="Story text"
+        accessibilityLabel={tp("mobile.readerStoryTextAria")}
       >
         {/* 40 characters of the saved Story text size, centred serif (plan 4.1). */}
         <View
@@ -599,9 +616,9 @@ export function StoryReader({
         </View>
         {view.questions.length > 0 ? (
           <View style={styles.questions}>
-            <Text className="text-small text-muted-foreground" style={styles.questionHeading}>
-              COMPREHENSION
-            </Text>
+            <View style={styles.questionHeading}>
+              <T k="reader.comprehension" className="text-small font-semibold uppercase text-muted-foreground" />
+            </View>
             {view.questions.map((q) => (
               <View key={q.position} style={styles.question}>
                 <Text className="text-body text-foreground">
@@ -612,7 +629,7 @@ export function StoryReader({
                     <Pressable
                       key={j}
                       accessibilityRole="button"
-                      accessibilityLabel={`Answer ${j + 1}: ${option}`}
+                      accessibilityLabel={tp("reader.answerOption", { n: j + 1, option })}
                       accessibilityState={{ disabled: q.result !== null }}
                       disabled={q.result !== null}
                       onPress={() => void view.answer(q.position, j)}
@@ -626,9 +643,10 @@ export function StoryReader({
                   ))}
                 </View>
                 {q.result ? (
-                  <Text className={q.result.correct ? "text-small text-primary" : "text-small text-destructive"}>
-                    {q.result.correct ? "Correct." : "Not quite — the answer is above your selection."}
-                  </Text>
+                  <T
+                    k={q.result.correct ? "reader.correct" : "reader.notQuite"}
+                    className={q.result.correct ? "text-small text-primary" : "text-small text-destructive"}
+                  />
                 ) : null}
               </View>
             ))}
@@ -646,7 +664,7 @@ export function StoryReader({
         <View style={styles.footerGroup}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Previous story"
+            accessibilityLabel={tp("reader.prevStoryAria")}
             accessibilityState={{ disabled: positionInLibrary <= 0 }}
             disabled={positionInLibrary <= 0}
             onPress={() => navTo(-1)}
@@ -656,7 +674,7 @@ export function StoryReader({
           </Pressable>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Next story"
+            accessibilityLabel={tp("reader.nextStoryAria")}
             accessibilityState={{ disabled: positionInLibrary < 0 || positionInLibrary >= libraryItems.length - 1 }}
             disabled={positionInLibrary < 0 || positionInLibrary >= libraryItems.length - 1}
             onPress={() => navTo(1)}
@@ -669,25 +687,26 @@ export function StoryReader({
         <View style={styles.footerGroup}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={story.readAt != null ? "Unmark read" : "Mark read"}
+            accessibilityLabel={tp(story.readAt != null ? "reader.unmarkReadAria" : "stories.markRead")}
             onPress={() => void (story.readAt != null ? view.clearRead(story.id) : view.setRead(story.id))}
             style={styles.footerButton}
           >
             {story.readAt != null ? <Icon name="check" size="sm" className="text-primary" /> : null}
-            <Text className={story.readAt != null ? "text-small text-primary" : "text-small text-muted-foreground"}>
-              Read
-            </Text>
+            <T
+              k="reader.read"
+              className={story.readAt != null ? "text-small text-primary" : "text-small text-muted-foreground"}
+            />
           </Pressable>
           <RatingButtons view={view} storyId={story.id} rating={story.rating} />
         </View>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Practice this Story"
+          accessibilityLabel={tp("reader.practiceThis")}
           onPress={() => onPractice?.(story.id)}
           style={styles.footerButton}
           className="bg-primary"
         >
-          <Text className="text-small text-primary-foreground">Practice</Text>
+          <T k="nav.practice" className="text-small text-primary-foreground" />
         </Pressable>
       </View>
 
@@ -744,7 +763,7 @@ export function StoryReader({
                   saveBusyRef.current = false;
                   return saveInto(created.list.id, item, created.list.name);
                 }
-                setSheetError(created.ok ? "the new list vanished" : created.message);
+                setSheetError(created.ok ? tp("mobile.readerListVanished") : created.message);
                 return undefined;
               })
               .finally(() => {

@@ -1,10 +1,21 @@
 import type { ApiClient } from "@vjt/api-client";
-import { displayPrompt, usePractice, type ExerciseView, type PracticeView } from "@vjt/core";
+import {
+  displayPrompt,
+  exerciseInstructionKey,
+  pluralEn,
+  translatePlain,
+  usePractice,
+  useT,
+  type ExerciseView,
+  type InterfaceLanguage,
+  type PracticeView,
+} from "@vjt/core";
 import { useCallback, useEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View, type ViewInstance } from "react-native";
 
 import { useJapaneseFont } from "./japaneseFont/index.tsx";
 import { Icon } from "./components/ui/icon.tsx";
+import { T } from "./components/Text.tsx";
 import { Card as UiCard } from "./components/ui/Card.tsx";
 import { EmptyState, InlineError, ProgressBar, Skeleton } from "./state/states.tsx";
 
@@ -36,6 +47,7 @@ export function Practice({
   onOpenWordLists?: () => void;
 }) {
   const practice = usePractice(client);
+  const { tp } = useT();
   // The exercise on screen. It stays up after answering so the Learner sees
   // what was right — even after the last answer flips the session to done;
   // Continue is what moves on to the results.
@@ -110,7 +122,7 @@ export function Practice({
   return (
     <ScrollView
       className="flex-1"
-      accessibilityLabel="Practice Session"
+      accessibilityLabel={tp("mobile.practiceSessionAria")}
       contentContainerStyle={styles.page}
     >
       <View className="w-full gap-4" style={styles.column}>
@@ -155,7 +167,7 @@ export function Practice({
               // a state with one clear next step (#46 review).
               <NothingToPractise onOpenWordLists={onOpenWordLists} />
             ) : (
-              <Text className="text-body text-muted-foreground">The next exercise is on its way…</Text>
+              <T k="practice.next" className="text-body text-muted-foreground" />
             );
           })()
         )}
@@ -171,16 +183,18 @@ function Card({ children }: { children: ReactNode }) {
 }
 
 function StartPractice({ practice, onStart }: { practice: PracticeView; onStart: (seed?: number) => void }) {
+  const { tp } = useT();
   return (
     <Card>
       {practice.error ? (
         <InlineError message={practice.error} onRetry={() => onStart()} />
       ) : null}
-      <Text className="text-body text-muted-foreground">
-        A session is about twenty exercises drawn from your Focus Set — recognition and grammar
-        cloze — and every answer feeds your mastery record.
-      </Text>
-      <PrimaryAction label="Start a practice session" onPress={() => onStart()} />
+      <T k="mobile.practiceIntro" className="text-body text-muted-foreground" />
+      <PrimaryAction
+        label={<T k="practice.start" className="text-body font-semibold text-primary-foreground" />}
+        accessibilityLabel={tp("practice.start")}
+        onPress={() => onStart()}
+      />
     </Card>
   );
 }
@@ -188,7 +202,7 @@ function StartPractice({ practice, onStart }: { practice: PracticeView; onStart:
 function StartingCard() {
   return (
     <Card>
-      <Text className="text-body text-muted-foreground">Building your session from the Focus Set…</Text>
+      <T k="practice.building" className="text-body text-muted-foreground" />
       <Skeleton lines={4} lineHeight={24} />
     </Card>
   );
@@ -196,11 +210,12 @@ function StartingCard() {
 
 /** The Focus Set has no practisable content: one line, one way forward. */
 function NothingToPractise({ onOpenWordLists }: { onOpenWordLists?: () => void }) {
+  const { tp } = useT();
   return (
     <Card>
       <EmptyState
-        message="Nothing in your Focus Set to practise yet"
-        actionLabel="Open your Item Lists"
+        message={<T k="practice.empty" />}
+        actionLabel={tp("practice.openLists")}
         onAction={onOpenWordLists}
       />
     </Card>
@@ -221,6 +236,7 @@ function ActivePractice({
   onAnswer: (exerciseId: string, optionId: string) => void;
 }) {
   const jp = useJapaneseFont();
+  const { language, tp } = useT();
   const answeredCount = practice.exercises.filter((ex) => ex.answered).length;
   const skipped = practice.session?.skipped ?? 0;
   const feedback = current.feedback;
@@ -229,6 +245,9 @@ function ActivePractice({
   // the count-based label read "Exercise 2 of 2" over Exercise 1's feedback
   // (#46 review B1).
   const position = practice.exercises.findIndex((ex) => ex.id === current.id) + 1;
+  // English keeps the server's own instruction sentence; a known kind gets its
+  // table entry in the other languages (issue #125).
+  const instructionKey = language === "en" ? null : exerciseInstructionKey(current.kind);
   // Settled once the answer landed; pending covers the request in flight, so
   // a double-click cannot post the same answer twice.
   const settled = feedback !== null;
@@ -248,13 +267,36 @@ function ActivePractice({
       <ProgressBar
         value={practice.target ? answeredCount / practice.target : 0}
         label={
-          `Exercise ${Math.max(1, position)} of ${practice.target}` +
-          (skipped > 0 ? ` (${skipped} Focus Set item${skipped === 1 ? "" : "s"} without content, skipped)` : "")
+          <View className="flex-row flex-wrap">
+            <T
+              k="practice.exerciseOf"
+              params={{ n: Math.max(1, position), total: practice.target }}
+              className="text-caption text-muted-foreground"
+            />
+            {skipped > 0 ? (
+              <T
+                k="practice.skipped"
+                params={{ count: skipped, plural: pluralEn(language, skipped) }}
+                className="ml-1 text-caption text-muted-foreground"
+              />
+            ) : null}
+          </View>
         }
       />
       <Card>
-        <Text className="text-small text-muted-foreground">{current.instruction}</Text>
-        <Text className={`text-display text-foreground ${jp.regular}`}>{displayPrompt(current.prompt)}</Text>
+        {instructionKey === null ? (
+          // English (and any kind the table has never seen) keeps the server's
+          // own sentence; Japanese renders the table entry through <T> so it
+          // carries furigana (web parity, issue #125).
+          <Text className="text-small text-muted-foreground">{current.instruction}</Text>
+        ) : (
+          <T k={instructionKey} className="text-small text-muted-foreground" />
+        )}
+        {/* The prompt is Learner content, never translated or annotated; the
+            testID marks it for the furigana coverage check, as web's lang="ja" does. */}
+        <Text testID="practice-prompt" className={`text-display text-foreground ${jp.regular}`}>
+          {displayPrompt(current.prompt)}
+        </Text>
         {feedback ? (
           <View
             // The verdict appears on its own: a polite live region announces
@@ -271,7 +313,7 @@ function ActivePractice({
               className={feedback.correct ? "text-success" : "text-destructive"}
             />
             <Text className={feedback.correct ? "text-body font-semibold text-success" : "text-body font-semibold text-destructive"}>
-              {feedbackLine(current, feedback)}
+              {feedbackLine(current, feedback, language)}
             </Text>
           </View>
         ) : null}
@@ -295,7 +337,13 @@ function ActivePractice({
             (#46 review B3). */}
         {practice.error ? <InlineError message={practice.error} onRetry={onRetry} /> : null}
         {settled ? (
-          <PrimaryAction label="Continue" icon="chevron-right" onPress={onContinue} innerRef={continueRef} />
+          <PrimaryAction
+            label={<T k="practice.continue" className="text-body font-semibold text-primary-foreground" />}
+            accessibilityLabel={tp("practice.continue")}
+            icon="chevron-right"
+            onPress={onContinue}
+            innerRef={continueRef}
+          />
         ) : null}
       </Card>
     </View>
@@ -304,12 +352,19 @@ function ActivePractice({
 
 /**
  * The feedback line. A miss names the right answer outright — a marker on the
- * option list alone was too easy to miss (#46 review S1).
+ * option list alone was too easy to miss (#46 review S1). Plain text, not <T>:
+ * the line sits in a live region, and the readings would be read out too.
  */
-function feedbackLine(current: ExerciseView, feedback: NonNullable<ExerciseView["feedback"]>): string {
-  if (feedback.correct) return "Correct";
+function feedbackLine(
+  current: ExerciseView,
+  feedback: NonNullable<ExerciseView["feedback"]>,
+  lang: InterfaceLanguage,
+): string {
+  if (feedback.correct) return translatePlain(lang, "practice.correct");
   const answer = current.options.find((opt) => opt.id === feedback.correctOptionId)?.text;
-  return answer ? `Not quite. Correct answer: ${answer}` : "Not quite";
+  return answer
+    ? translatePlain(lang, "practice.notQuiteAnswer", { answer })
+    : translatePlain(lang, "practice.notQuite");
 }
 
 function OptionButton({
@@ -351,19 +406,22 @@ function OptionButton({
   );
 }
 
-/** itemKind as Learner-facing copy, not the API's raw token. */
-function humanKind(kind: string): string {
-  const words: Record<string, string> = {
-    kanji: "Kanji",
-    kana: "Kana",
-    grammar: "Grammar point",
-    vocabulary: "Word",
-    phrase: "Phrase",
+/** itemKind as Learner-facing copy in the Interface Language, not the API's raw token. */
+function humanKind(kind: string, lang: InterfaceLanguage): string {
+  const keys: Record<string, "item.kanji" | "item.kana" | "focus.grammarPoint" | "item.vocabulary" | "item.phrase"> = {
+    kanji: "item.kanji",
+    kana: "item.kana",
+    grammar: "focus.grammarPoint",
+    vocabulary: "item.vocabulary",
+    phrase: "item.phrase",
   };
-  return words[kind] ?? kind.charAt(0).toUpperCase() + kind.slice(1);
+  const key = keys[kind];
+  if (key === undefined) return kind.charAt(0).toUpperCase() + kind.slice(1);
+  return translatePlain(lang, key);
 }
 
 function PracticeResults({ practice, onAgain }: { practice: PracticeView; onAgain: () => void }) {
+  const { language, tp } = useT();
   const exercises = practice.session?.exercises ?? [];
   const items = practice.results?.items ?? [];
   // Index the misses by position so the row can quote the exercise's own
@@ -372,14 +430,20 @@ function PracticeResults({ practice, onAgain }: { practice: PracticeView; onAgai
   const totalExercises = exercises.length;
   return (
     <Card>
-      <Text className="text-title font-semibold text-foreground">Session complete</Text>
-      <Text className="text-body text-muted-foreground">
-        {practice.results?.correct ?? 0} of {practice.results?.total ?? 0} correct -{" "}
-        {totalExercises} exercise{totalExercises === 1 ? "" : "s"} from your Focus Set.
-      </Text>
+      <T k="practice.sessionComplete" className="text-title font-semibold text-foreground" />
+      <T
+        k="practice.scoreLine"
+        params={{
+          correct: practice.results?.correct ?? 0,
+          total: practice.results?.total ?? 0,
+          count: totalExercises,
+          plural: pluralEn(language, totalExercises),
+        }}
+        className="text-body text-muted-foreground"
+      />
       {again.length > 0 ? (
         <View className="gap-3">
-          <Text className="text-small text-muted-foreground">Needs another look</Text>
+          <T k="practice.needsLook" className="text-small text-muted-foreground" />
           {again.map(({ item, index }) => {
             const exercise = practice.exercises[index];
             const answer = exercise?.options.find((opt) => opt.id === exercise.feedback?.correctOptionId)?.text;
@@ -395,18 +459,22 @@ function PracticeResults({ practice, onAgain }: { practice: PracticeView; onAgai
                     {exercise ? displayPrompt(exercise.prompt) : item.itemRef}
                   </Text>
                   {answer ? (
-                    <Text className="text-small text-foreground">Correct answer: {answer}</Text>
+                    <T k="practice.correctAnswer" params={{ answer }} className="text-small text-foreground" />
                   ) : null}
                 </View>
-                <Text className="text-caption text-muted-foreground">{humanKind(item.itemKind)}</Text>
+                <Text className="text-caption text-muted-foreground">{humanKind(item.itemKind, language)}</Text>
               </View>
             );
           })}
         </View>
       ) : (
-        <Text className="text-body text-muted-foreground">Nothing to revisit this time.</Text>
+        <T k="practice.nothingToRevisit" className="text-body text-muted-foreground" />
       )}
-      <PrimaryAction label="Practice again" onPress={onAgain} />
+      <PrimaryAction
+        label={<T k="practice.again" className="text-body font-semibold text-primary-foreground" />}
+        accessibilityLabel={tp("practice.again")}
+        onPress={onAgain}
+      />
     </Card>
   );
 }
@@ -414,11 +482,14 @@ function PracticeResults({ practice, onAgain }: { practice: PracticeView; onAgai
 /** The one filled action style on this screen (plan 2.5: 8 px radius, 44 px tall). */
 function PrimaryAction({
   label,
+  accessibilityLabel,
   icon,
   onPress,
   innerRef,
 }: {
-  label: string;
+  label: ReactNode;
+  /** Buttons label themselves from `label`; a table-backed label needs this one. */
+  accessibilityLabel?: string;
   icon?: "chevron-right";
   onPress: () => void;
   /** Lets a caller focus this control when it appears (S5). */
@@ -428,11 +499,15 @@ function PrimaryAction({
     <Pressable
       ref={innerRef}
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={accessibilityLabel ?? (typeof label === "string" ? label : undefined)}
       onPress={onPress}
       className="min-h-11 flex-row items-center justify-center gap-2 self-stretch rounded-md bg-primary px-4 active:opacity-80"
     >
-      <Text className="text-body font-semibold text-primary-foreground">{label}</Text>
+      {typeof label === "string" ? (
+        <Text className="text-body font-semibold text-primary-foreground">{label}</Text>
+      ) : (
+        label
+      )}
       {icon ? <Icon name={icon} size="sm" className="text-primary-foreground" /> : null}
     </Pressable>
   );

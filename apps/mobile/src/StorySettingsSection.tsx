@@ -6,14 +6,16 @@ import {
   TIMEZONE_OPTIONS,
   useStoryGeneration,
   useStorySettings,
+  useT,
 } from "@vjt/core";
-import { useState } from "react";
-import { Text, View } from "react-native";
+import { useState, type ReactNode } from "react";
+import { View } from "react-native";
 
 import { Card } from "./components/ui/Card.tsx";
 import { Chip, ChipRow } from "./components/ui/Chip.tsx";
 import { Field } from "./components/ui/Field.tsx";
 import { LinkButton } from "./components/ui/LinkButton.tsx";
+import { T } from "./components/Text.tsx";
 import { ActionButton } from "./stories-parts.tsx";
 import { InlineError, SkeletonBar } from "./state/states.tsx";
 
@@ -31,6 +33,7 @@ const LEVELS = FURIGANA_LEVELS;
 export function StorySettingsSection({ client }: { client: ApiClient }) {
   const stories = useStorySettings(client);
   const gen = useStoryGeneration(client);
+  const { tp } = useT();
   const [threshold, setThreshold] = useState<number | null>(null);
   const [genre, setGenre] = useState<string | null>(null);
   const [theme, setTheme] = useState<string | null>(null);
@@ -83,7 +86,7 @@ export function StorySettingsSection({ client }: { client: ApiClient }) {
   if (stories.settings.status === "error") {
     return (
       <InlineError
-        message={`Cannot load your story settings: ${stories.settings.message}`}
+        message={tp("mobile.storySettingsLoadFailed", { message: stories.settings.message })}
         onRetry={stories.reloadSettings}
       />
     );
@@ -91,12 +94,8 @@ export function StorySettingsSection({ client }: { client: ApiClient }) {
 
   return (
     <View className="gap-4">
-      <Text className="text-small font-semibold uppercase text-muted-foreground">
-        Furigana Threshold
-      </Text>
-      <Text className="text-body text-foreground">
-        Words you have practised below this SRS level show reading help.
-      </Text>
+      <T k="settings.furiganaLegend" className="text-small font-semibold uppercase text-muted-foreground" />
+      <T k="settings.furiganaNote" className="text-body text-foreground" />
       <Card>
         <ChipRow>
           {LEVELS.map((l) => (
@@ -104,46 +103,53 @@ export function StorySettingsSection({ client }: { client: ApiClient }) {
           ))}
         </ChipRow>
       </Card>
-      <Text className="text-small font-semibold uppercase text-muted-foreground">Future stories</Text>
+      <T k="mobile.futureStories" className="text-small font-semibold uppercase text-muted-foreground" />
       <AutocompleteField
-        label="Preferred genre"
+        label={<T k="settings.genreLabel" className="text-small text-muted-foreground" />}
         value={genreValue}
         onChangeText={setGenre}
         maxLength={60}
-        placeholder="travel, mystery… empty = surprise me"
+        placeholder={tp("settings.genrePlaceholder")}
         disabled={busy}
         options={gen.suggestions.genres}
       />
       <AutocompleteField
-        label="Preferred theme"
+        label={<T k="settings.themeLabel" className="text-small text-muted-foreground" />}
         value={themeValue}
         onChangeText={setTheme}
         maxLength={200}
-        placeholder="a robot running a ramen shop — empty = none"
+        placeholder={tp("settings.themePlaceholder")}
         disabled={busy}
         options={gen.suggestions.themes}
       />
-      <Text className="text-small font-semibold uppercase text-muted-foreground">Your timezone</Text>
-      <Text className="text-body text-foreground">
-        This decides which local day each Automatic Story belongs to.
-      </Text>
+      <T k="settings.timezoneLabel" className="text-small font-semibold uppercase text-muted-foreground" />
+      <T k="settings.timezoneNote" className="text-body text-foreground" />
       <AutocompleteField
-        label="Timezone"
+        label={<T k="mobile.timezoneFieldLabel" className="text-small text-muted-foreground" />}
         value={timezoneValue}
         onChangeText={setTimezone}
         maxLength={64}
-        placeholder="Asia/Tokyo — empty = the server’s day"
+        placeholder={tp("settings.timezonePlaceholder")}
         disabled={busy}
         options={TIMEZONE_OPTIONS}
       />
       {device ? (
-        <LinkButton label="Use my device’s timezone" disabled={busy} onPress={() => setTimezone(device)} />
+        <LinkButton
+          label={<T k="mobile.deviceTimezone" className="text-body text-primary" />}
+          disabled={busy}
+          onPress={() => setTimezone(device)}
+        />
       ) : null}
-      <ActionButton label="Save story settings" onPress={() => void save()} filled disabled={busy} />
+      <ActionButton
+        label={<T k="settings.saveStories" className="text-body font-semibold text-primary-foreground" />}
+        onPress={() => void save()}
+        filled
+        disabled={busy}
+      />
       {saved && (
-        <Text role="status" accessibilityLiveRegion="polite" className="text-body text-success">
-          Saved — the next story written for you uses this.
-        </Text>
+        <View accessibilityLiveRegion="polite">
+          <T k="mobile.storySavedNote" className="text-body text-success" />
+        </View>
       )}
       {error && <InlineError message={error} />}
     </View>
@@ -164,7 +170,7 @@ function AutocompleteField({
   maxLength,
   disabled = false,
 }: {
-  label: string;
+  label: ReactNode;
   value: string;
   onChangeText: (text: string) => void;
   options: string[];

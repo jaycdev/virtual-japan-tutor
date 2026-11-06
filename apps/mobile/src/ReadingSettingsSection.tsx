@@ -4,9 +4,10 @@ import { useState } from "react";
 import { Card } from "./components/ui/Card.tsx";
 import { Field } from "./components/ui/Field.tsx";
 import { SwitchRow } from "./components/ui/SwitchRow.tsx";
+import { T } from "./components/Text.tsx";
 import { ActionButton } from "./stories-parts.tsx";
 import { InlineError, SkeletonBar } from "./state/states.tsx";
-import { Text, View } from "react-native";
+import { View } from "react-native";
 
 /**
  * Reading preferences on mobile (#50, on the hub's tokens): the
@@ -59,7 +60,7 @@ export function ReadingSettingsSection({ client }: { client: ApiClient }) {
   if (reading.state.status === "error") {
     return (
       <InlineError
-        message={`Cannot load your reading settings: ${reading.state.message}`}
+        message={<T k="settings.readingLoadFailed" params={{ message: reading.state.message }} />}
         onRetry={reading.reload}
       />
     );
@@ -67,13 +68,11 @@ export function ReadingSettingsSection({ client }: { client: ApiClient }) {
 
   return (
     <View className="gap-4">
-      <Text className="text-body text-foreground">
-        How long you must hold a lookup before it counts as a Weak Signal (0 signals every lookup).
-      </Text>
+      <T k="mobile.readingHoldNote" className="text-body text-foreground" />
       <Card padded={false}>
         <SwitchRow
-          label="Blur the translation behind Weak Signals"
-          hint="A word you have not practised enough shows its meaning only after you ask"
+          label={<T k="settings.blurLabel" />}
+          hint={<T k="mobile.readingBlurHint" />}
           value={stored?.blurTranslation ?? true}
           disabled={busy}
           onToggle={(blurTranslation) => void reading.setBlurTranslation(blurTranslation)}
@@ -81,18 +80,20 @@ export function ReadingSettingsSection({ client }: { client: ApiClient }) {
         />
       </Card>
       <Field
-        label="Lookup hold before a Weak Signal (ms, 0–10000)"
+        label={<T k="settings.holdLabel" />}
         value={holdValue}
         onChangeText={setHoldMs}
         onSubmit={() => void saveHold()}
         keyboardType="number-pad"
         disabled={busy}
       />
-      <ActionButton label="Save reading settings" onPress={() => void saveHold()} filled disabled={busy} />
+      <ActionButton label={<T k="settings.saveReading" />} onPress={() => void saveHold()} filled disabled={busy} />
       {saved && (
-        <Text role="status" accessibilityLiveRegion="polite" className="text-body text-success">
-          Saved — the reader uses this from the next lookup on.
-        </Text>
+        // The live-region wrapper is a View so a furigana line (a row of
+        // columns) can sit inside it.
+        <View role="status" accessibilityLiveRegion="polite">
+          <T k="mobile.readingSavedNote" className="text-body text-success" />
+        </View>
       )}
       {error && <InlineError message={error} />}
     </View>

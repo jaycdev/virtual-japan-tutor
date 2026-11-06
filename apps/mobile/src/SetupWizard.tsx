@@ -11,16 +11,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AccessibilityInfo,
   ScrollView,
-  Text,
   View,
   type ViewInstance,
 } from "react-native";
+import type { StringKey } from "@vjt/core";
+import { useT } from "@vjt/core";
 
 import type { ApiClient } from "@vjt/api-client";
 
 import { useJapaneseFont } from "./japaneseFont/index.tsx";
 import { Card } from "./components/ui/Card.tsx";
 import { LinkButton } from "./components/ui/LinkButton.tsx";
+import { T } from "./components/Text.tsx";
 import { ActionButton } from "./stories-parts.tsx";
 import { InlineError, ProgressBar } from "./state/states.tsx";
 import type { StepSaveFn, StepSaveRegistrar } from "./settingsSections.tsx";
@@ -28,11 +30,13 @@ import { AiProvidersSettings } from "./AiProvidersSettings.tsx";
 import { MaruMoriSettings } from "./MaruMoriSettings.tsx";
 import { StartingLevelSettings } from "./StartingLevelSettings.tsx";
 
-const STEPS = [
-  { title: "Starting Level", body: "We will build your First Story around this." },
-  { title: "MaruMori", body: "Add your key to keep your kanji study in sync." },
-  { title: "AI Providers", body: "Tell us which model writes your Stories." },
-] as const;
+// Titles and blurbs are string-table keys: the wizard's steps are the Settings
+// sections themselves, so their names come from the same rows (issue #125).
+const STEPS: { titleKey: StringKey; bodyKey: StringKey }[] = [
+  { titleKey: "section.levelTitle", bodyKey: "setup.levelBody" },
+  { titleKey: "section.marumoriTitle", bodyKey: "setup.marumoriBody" },
+  { titleKey: "section.aiTitle", bodyKey: "setup.aiBody" },
+];
 
 export function SetupWizard({
   client,
@@ -42,6 +46,7 @@ export function SetupWizard({
   onFinish: () => void;
 }) {
   const jp = useJapaneseFont();
+  const { tp } = useT();
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
   const [blockedNote, setBlockedNote] = useState<string | undefined>();
@@ -90,7 +95,7 @@ export function SetupWizard({
         if (outcome === "blocked") {
           // The section already shows its own error; say why the wizard
           // refused to move, and offer the way out (S2).
-          setBlockedNote("The step could not be saved. Fix it and try again, or skip this step.");
+          setBlockedNote(tp("setup.blockedNote"));
           return;
         }
       } finally {
@@ -105,25 +110,34 @@ export function SetupWizard({
     <View className="flex-1">
       <ScrollView className="flex-1" contentContainerStyle={{ padding: 16 }}>
         <Card>
-          <Text className={`text-title ${jp.regular} text-foreground`}>Welcome to Virtual Japan Tutor</Text>
-          <Text className="text-body text-muted-foreground">
-            Three short steps to set you up — you can skip any of them and change
-            everything later under Settings.
-          </Text>
+          <T
+            k="mobile.setupWelcome"
+            className={`text-title ${jp.regular} text-foreground`}
+            accessibilityRole="header"
+          />
+          <T k="mobile.setupIntro" className="text-body text-muted-foreground" />
           <View className="w-full">
             <ProgressBar
               value={(step + 1) / STEPS.length}
-              label={`Step ${step + 1} of ${STEPS.length}: ${STEPS[step].title}`}
+              label={
+                <T
+                  k="mobile.setupStepOf"
+                  params={{ step: step + 1, total: STEPS.length, title: tp(STEPS[step].titleKey) }}
+                  className="text-caption text-muted-foreground"
+                />
+              }
             />
           </View>
           {/* S4: real heading semantics (header maps to role="heading" on
               the web host), and the node accessibility focus targets. */}
           <View ref={titleRef}>
-            <Text accessibilityRole="header" className="text-title-sm font-semibold text-foreground">
-              {STEPS[step].title}
-            </Text>
+            <T
+              k={STEPS[step].titleKey}
+              className="text-title-sm font-semibold text-foreground"
+              accessibilityRole="header"
+            />
           </View>
-          <Text className="text-small text-muted-foreground">{STEPS[step].body}</Text>
+          <T k={STEPS[step].bodyKey} className="text-small text-muted-foreground" />
 
           {step === 0 ? <StartingLevelSettings client={client} registerSave={registerSave} /> : null}
           {step === 1 ? <MaruMoriSettings client={client} registerSave={registerSave} /> : null}
@@ -136,14 +150,23 @@ export function SetupWizard({
       {/* P4: the step buttons live OUTSIDE the ScrollView — step 3's long
           form used to push Next/Finish below the fold. */}
       <View className="flex-row flex-wrap items-center justify-between gap-3 border-t border-border bg-background px-4 py-2">
-        <LinkButton label="Skip setup" onPress={onFinish} disabled={busy} />
+        <LinkButton label={<T k="setup.skipAll" className="text-body text-primary" />} onPress={onFinish} disabled={busy} />
         <View className="flex-row items-center gap-3">
           {!last ? (
-            <LinkButton label="Skip this step" onPress={() => goToStep(step + 1)} disabled={busy} />
+            <LinkButton
+              label={<T k="setup.skipStep" className="text-body text-primary" />}
+              onPress={() => goToStep(step + 1)}
+              disabled={busy}
+            />
           ) : null}
           <ActionButton
             filled
-            label={last ? "Finish" : "Next"}
+            label={
+              <T
+                k={last ? "setup.finish" : "setup.next"}
+                className="text-body font-semibold text-primary-foreground"
+              />
+            }
             onPress={() => void advance()}
             disabled={busy}
           />

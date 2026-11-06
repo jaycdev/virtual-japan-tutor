@@ -1,7 +1,13 @@
 import type { PitchPattern } from "@vjt/api-client";
-import { pitchDots } from "@vjt/core";
+import { pitchDots, useT } from "@vjt/core";
 import { StyleSheet, Text, View } from "react-native";
 import Svg, { Circle, Line } from "react-native-svg";
+
+import { TableText } from "../components/Text.tsx";
+
+// Compact notation for the graph, not interface copy: the heiban kana and the
+// downstep arrow read the same whatever the Learner's Interface Language is.
+const HEIBAN_GLYPH = "へ";
 
 /**
  * The mora pitch graph (issue #14), drawn from the Kanjium PitchPattern the
@@ -23,14 +29,16 @@ export function PitchGraph({
   withCaption?: boolean;
 }) {
   const height = 36;
+  const { t, tp } = useT();
   // The dot geometry is shared with the web graph (issue #77, @vjt/core).
   const dots = pitchDots(pitch, width, height);
+  const spelled = pitch.heiban ? t("reader.pitchHeiban") : t("reader.pitchDownstep", { n: pitch.downstepAfterMora });
   return (
     <View
       testID="pitch-graph"
       className="text-pitch"
       style={styles.wrap}
-      accessibilityLabel={`Pitch: ${pitch.heiban ? "heiban" : `accent ${pitch.accentPosition}`}`}
+      accessibilityLabel={pitch.heiban ? tp("reader.pitchAriaHeiban") : tp("reader.pitchAriaAccent", { n: pitch.accentPosition })}
     >
       <Svg width={width} height={height} aria-hidden className="text-pitch">
         {dots.map((d, i) => {
@@ -44,16 +52,17 @@ export function PitchGraph({
           <Circle key={`dot-${i}`} cx={d.x} cy={d.y} r={4} fill="currentColor" />
         ))}
       </Svg>
-      <Text className={withCaption ? "text-small text-muted-foreground" : "text-caption text-muted-foreground"}>
-        {withCaption
-          ? pitch.heiban
-            ? "heiban (flat)"
-            : `downstep after mora ${pitch.downstepAfterMora}`
-          : pitch.heiban
-            ? "へ"
-            : `↓${pitch.accentPosition}`}
-        {pitch.tag ? ` ${pitch.tag}` : ""}
-      </Text>
+      {withCaption ? (
+        <TableText
+          className="text-small text-muted-foreground"
+          segments={pitch.tag ? [...spelled, { text: ` ${pitch.tag}` }] : spelled}
+        />
+      ) : (
+        <Text className="text-caption text-muted-foreground">
+          {pitch.heiban ? HEIBAN_GLYPH : `↓${pitch.accentPosition}`}
+          {pitch.tag ? ` ${pitch.tag}` : ""}
+        </Text>
+      )}
     </View>
   );
 }

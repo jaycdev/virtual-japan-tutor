@@ -1,6 +1,15 @@
 import type { Story, StoryGenerationProgress, StorySuggestions } from "@vjt/api-client";
 import type { StoryGenerationState, StoryLibraryState } from "@vjt/core";
-import { genreLabel, originLabel, stageLabel, storyCardMeta, storyDate } from "@vjt/core";
+import {
+  genreLabel,
+  originLabel,
+  progressStageKey,
+  progressStageParams,
+  stageLabel,
+  storyCardMetaRuby,
+  storyDate,
+  useT,
+} from "@vjt/core";
 import * as DialogPrimitives from "@rn-primitives/dialog";
 import * as DropdownMenuPrimitive from "@rn-primitives/dropdown-menu";
 import { useState, type ReactNode } from "react";
@@ -10,6 +19,7 @@ import { Card } from "./components/ui/Card.tsx";
 import { Icon, type IconName } from "./components/ui/icon.tsx";
 import { useSheetBottomInset } from "./components/ui/sheet.ts";
 import { EmptyState, InlineError, ProgressBar, SkeletonBar } from "./state/states.tsx";
+import { T, TableText } from "./components/Text.tsx";
 
 /**
  * The pieces of the rebuilt Stories page (issue #48, plan §4.5).
@@ -40,7 +50,7 @@ export function ActionButton({
   accessibilityLabel,
   accessibilityHint,
 }: {
-  label: string;
+  label: ReactNode;
   onPress: () => void;
   filled?: boolean;
   disabled?: boolean;
@@ -56,7 +66,9 @@ export function ActionButton({
     <Pressable
       testID={testID}
       accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel ?? label}
+      // A plain string names the button; a <T> (issue #125) carries its own
+      // plain-Japanese label, so an explicit accessibilityLabel still wins.
+      accessibilityLabel={accessibilityLabel ?? (typeof label === "string" ? label : undefined)}
       accessibilityHint={accessibilityHint}
       accessibilityState={{ disabled }}
       disabled={disabled}
@@ -67,7 +79,11 @@ export function ActionButton({
     >
       {/* uniwind drops a colour class that precedes a text-size class on native,
           so the size comes first here as everywhere else. */}
-      <Text className={`text-body font-semibold ${text}`}>{label}</Text>
+      {typeof label === "string" ? (
+        <Text className={`text-body font-semibold ${text}`}>{label}</Text>
+      ) : (
+        label
+      )}
     </Pressable>
   );
 }
@@ -93,14 +109,15 @@ export function StoryCard({
   /** The StoryMenu, rendered by the caller so the menu owns its open state. */
   menu: ReactNode;
 }) {
+  const { language, tp } = useT();
   return (
     <Card testID={`story-card-${story.id}`}>
       <View className="flex-row items-center gap-1">
         <Pressable
           testID={`story-open-${story.id}`}
           accessibilityRole="button"
-          accessibilityLabel={`Open story: ${story.title}`}
-          accessibilityHint="Opens the Reader"
+          accessibilityLabel={tp("stories.ariaOpen", { title: story.title })}
+          accessibilityHint={tp("mobile.storyOpensReader")}
           onPress={onOpen}
           style={styles.titlePress}
         >
@@ -116,12 +133,12 @@ export function StoryCard({
             // it one, so the label is actually read out (issue #48, N3).
             accessibilityRole="text"
             accessible
-            accessibilityLabel={`Read on ${storyDate(story.readAt)}`}
+            accessibilityLabel={tp("mobile.storyReadOn", { date: storyDate(story.readAt, language) })}
           >
             {/* The check is the mark; the words spell it out for screen readers
                 and for anyone scanning the grid. */}
             <Icon name="check" size="xs" className="text-primary" />
-            <Text className="text-caption text-muted-foreground">Read</Text>
+            <T k="stories.readBadge" className="text-caption text-muted-foreground" />
           </View>
         ) : null}
         {menu}
@@ -134,7 +151,7 @@ export function StoryCard({
           // Hidden: the label names the action, because there is no content to
           // announce. Revealed: no override label — the English itself is what
           // a screen reader should read.
-          accessibilityLabel={revealed ? undefined : "Show title translation"}
+          accessibilityLabel={revealed ? undefined : tp("stories.ariaShowTranslation")}
           accessibilityState={{ expanded: revealed }}
           onPress={onToggleReveal}
           style={styles.translation}
@@ -146,14 +163,16 @@ export function StoryCard({
           {revealed ? (
             <Text className="text-small text-muted-foreground">{story.titleEn}</Text>
           ) : (
-            <Text className="text-caption text-muted-foreground">Title translation hidden — tap to show</Text>
+            <T k="mobile.storyTranslationHidden" className="text-caption text-muted-foreground" />
           )}
         </Pressable>
       ) : null}
 
-      <Text className="text-caption text-muted-foreground" testID={`story-meta-${story.id}`}>
-        {storyCardMeta(story)}
-      </Text>
+      {/* The meta line follows the Interface Language; the segments carry their
+          own styling, so the test slot is a View around the drawn line. */}
+      <View testID={`story-meta-${story.id}`}>
+        <TableText segments={storyCardMetaRuby(story, language)} className="text-caption text-muted-foreground" />
+      </View>
     </Card>
   );
 }
@@ -176,14 +195,15 @@ export function StoryMenu({
 }) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const inset = useSheetBottomInset();
-  const label = `Actions for ${story.title}`;
+  const { tp } = useT();
+  const label = tp("stories.ariaActions", { title: story.title });
 
   const trigger = (onPress?: () => void, expanded?: boolean) => (
     <Pressable
       testID={`story-menu-${story.id}`}
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityHint="Mark read, or delete this story"
+      accessibilityHint={tp("mobile.storyMenuHint")}
       accessibilityState={{ expanded: expanded ?? false }}
       onPress={onPress}
       hitSlop={8}
@@ -199,14 +219,21 @@ export function StoryMenu({
       <MenuRow
         variant="sheet"
         testID="menu-mark-read"
-        label={story.readAt ? "Mark unread" : "Mark read"}
+        label={
+          <T
+            k={story.readAt ? "stories.markUnread" : "stories.markRead"}
+            className="text-body text-foreground"
+          />
+        }
+        accessibilityLabel={tp(story.readAt ? "stories.markUnread" : "stories.markRead")}
         icon={story.readAt ? "close" : "check"}
         onPress={() => onPick(story.readAt ? onMarkUnread : onMarkRead)}
       />
       <MenuRow
         variant="sheet"
         testID="menu-delete"
-        label="Delete"
+        label={<T k="stories.delete" className="text-body text-destructive" />}
+        accessibilityLabel={tp("stories.delete")}
         icon="trash"
         destructive
         onPress={() => onPick(onAskDelete)}
@@ -249,6 +276,7 @@ function MenuRow({
   variant,
   testID,
   label,
+  accessibilityLabel,
   icon,
   selected = false,
   destructive = false,
@@ -256,7 +284,10 @@ function MenuRow({
 }: {
   variant: "menu" | "sheet";
   testID: string;
-  label: string;
+  /** A string is learning content or already translated; a <T> follows the Interface Language and brings its own text classes. */
+  label: ReactNode;
+  /** The row's name for assistive tech; needed when the visible label is a <T> drawing furigana. */
+  accessibilityLabel?: string;
   icon?: IconName;
   /** The option a Picker currently stands on. */
   selected?: boolean;
@@ -267,7 +298,11 @@ function MenuRow({
   const inner = (
     <>
       {icon ? <Icon name={icon} size="sm" className={tone} /> : null}
-      <Text className={`text-body ${selected ? "font-semibold text-primary" : tone}`}>{label}</Text>
+      {typeof label === "string" ? (
+        <Text className={`text-body ${selected ? "font-semibold text-primary" : tone}`}>{label}</Text>
+      ) : (
+        label
+      )}
       {selected ? <Icon name="check" size="sm" className="text-primary" /> : null}
     </>
   );
@@ -278,6 +313,7 @@ function MenuRow({
         // RN Primitives' Item names the row through role rather than RN's accessibility props.
         role="menuitem"
         accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel}
         onPress={onPress}
         style={styles.item}
         className="rounded-sm active:bg-accent"
@@ -290,6 +326,7 @@ function MenuRow({
     <Pressable
       testID={testID}
       accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
       onPress={onPress}
       style={styles.item}
       className="rounded-sm active:bg-accent"
@@ -318,6 +355,7 @@ export function ConfirmDelete({
   onConfirm: () => void;
 }) {
   const inset = useSheetBottomInset();
+  const { t, tp } = useT();
   return (
     <DialogPrimitives.Root open onOpenChange={(open) => !open && onKeep()}>
       <DialogPrimitives.Portal>
@@ -327,16 +365,27 @@ export function ConfirmDelete({
           style={{ ...styles.sheet, ...styles.dialogBody, paddingBottom: 20 + inset }}
           className="bg-card border-t border-border"
         >
-          <DialogPrimitives.Title asChild>
-            <Text className="text-title-sm font-semibold text-foreground">Delete this Story?</Text>
+          {/* The primitives want their title/description as their own Text; a
+              furigana line is a row of columns, not a string. So the a11y names
+              sit hidden (the StoryMenu's pattern) and the visible lines draw
+              below with their readings. */}
+          <DialogPrimitives.Title style={styles.srOnly}>
+            {tp("stories.deleteTitle")}
           </DialogPrimitives.Title>
-          <DialogPrimitives.Description asChild>
-            {/* The non-breaking tie keeps “Practice Records stay.” from orphaning
-                a single word on a narrow phone. */}
-            <Text className="text-small text-muted-foreground">
-              {`“${story.title}” goes away for good, along with its rating.\u00A0Your Practice Records stay.`}
-            </Text>
+          <TableText
+            segments={t("stories.deleteTitle")}
+            className="text-title-sm font-semibold text-foreground"
+            accessibilityRole="header"
+          />
+          <DialogPrimitives.Description style={styles.srOnly}>
+            {tp("mobile.storyDeleteBody", { title: story.title })}
           </DialogPrimitives.Description>
+          {/* The non-breaking tie in the table entry keeps “Practice Records
+              stay.” from orphaning a single word on a narrow phone. */}
+          <TableText
+            segments={t("mobile.storyDeleteBody", { title: story.title })}
+            className="text-small text-muted-foreground"
+          />
           {error ? (
             <Text accessibilityRole="alert" role="alert" testID="confirm-delete-error" className="text-small text-destructive">
               {error}
@@ -346,24 +395,24 @@ export function ConfirmDelete({
             <Pressable
               testID="confirm-delete-keep"
               accessibilityRole="button"
-              accessibilityLabel="Keep"
+              accessibilityLabel={tp("stories.deleteKeep")}
               onPress={onKeep}
               style={styles.dialogButton}
               className="border border-border bg-card active:opacity-80"
             >
-              <Text className="text-body font-semibold text-foreground">Keep</Text>
+              <T k="stories.deleteKeep" className="text-body font-semibold text-foreground" />
             </Pressable>
             <Pressable
               testID="confirm-delete-accept"
               accessibilityRole="button"
-              accessibilityLabel="Confirm delete"
+              accessibilityLabel={tp("common.confirmDelete")}
               accessibilityState={{ disabled: pending }}
               disabled={pending}
               onPress={onConfirm}
               style={styles.dialogButton}
               className={`bg-destructive active:opacity-80${pending ? " opacity-50" : ""}`}
             >
-              <Text className="text-body font-semibold text-destructive-foreground">Delete</Text>
+              <T k="stories.delete" className="text-body font-semibold text-destructive-foreground" />
             </Pressable>
           </View>
         </DialogPrimitives.Content>
@@ -404,11 +453,12 @@ export function GenerateDialog({
 }) {
   const running = generation.status === "running";
   const inset = useSheetBottomInset();
+  const { t, tp } = useT();
   // One error line, inside the dialog, and only for a run this dialog started:
   // an old server `failed` must not greet a dialog that has started nothing (S2).
   const failure =
     runHere && generation.status === "failed"
-      ? (generation.progress.message ?? "Couldn’t write a Story for you.")
+      ? (generation.progress.message ?? tp("story.runFailed"))
       : null;
   const alert = failure ?? (runHere ? error : null);
   return (
@@ -420,33 +470,37 @@ export function GenerateDialog({
           style={{ ...styles.sheet, ...styles.dialogBody, paddingBottom: 20 + inset }}
           className="bg-card border-t border-border"
         >
-          <DialogPrimitives.Title asChild>
-            <Text className="text-title-sm font-semibold text-foreground">Generate a Story</Text>
+          <DialogPrimitives.Title style={styles.srOnly}>
+            {tp("today.storyGenerate")}
           </DialogPrimitives.Title>
-          <DialogPrimitives.Description asChild>
-            <Text className="text-small text-muted-foreground text-balance">
-              One new Story now. Genre and Theme are optional — leave them on Any and the tutor chooses.
-            </Text>
+          <TableText
+            segments={t("today.storyGenerate")}
+            className="text-title-sm font-semibold text-foreground"
+            accessibilityRole="header"
+          />
+          <DialogPrimitives.Description style={styles.srOnly}>
+            {tp("stories.generateBody")}
           </DialogPrimitives.Description>
+          <TableText segments={t("stories.generateBody")} className="text-small text-muted-foreground" />
 
           <View style={styles.pickerRows}>
             <View className="flex-row items-center justify-between gap-3">
-              <Text className="text-small text-muted-foreground">Genre</Text>
+              <T k="stories.genre" className="text-small text-muted-foreground" />
               <Picker
                 testID="generate-genre-picker"
-                ariaLabel="Genre for this story"
-                placeholder="Any genre"
+                ariaLabel={tp("mobile.genreForStory")}
+                placeholder={tp("stories.anyGenre")}
                 value={genre}
                 options={suggestions.genres}
                 onChange={onGenreChange}
               />
             </View>
             <View className="flex-row items-center justify-between gap-3">
-              <Text className="text-small text-muted-foreground">Theme</Text>
+              <T k="stories.theme" className="text-small text-muted-foreground" />
               <Picker
                 testID="generate-theme-picker"
-                ariaLabel="Theme for this story"
-                placeholder="Any theme"
+                ariaLabel={tp("mobile.themeForStory")}
+                placeholder={tp("stories.anyTheme")}
                 value={theme}
                 options={suggestions.themes}
                 onChange={onThemeChange}
@@ -458,7 +512,15 @@ export function GenerateDialog({
             <View testID="generate-progress" style={styles.progress}>
               <ProgressBar
                 value={(generation.progress.percent ?? 0) / 100}
-                label={`${stageLabel(generation.progress)} ${Math.round(generation.progress.percent ?? 0)}%`}
+                label={
+                  <TableText
+                    segments={[
+                      ...t(progressStageKey(generation.progress), progressStageParams(generation.progress)),
+                      { text: ` ${Math.round(generation.progress.percent ?? 0)}%` },
+                    ]}
+                    className="text-caption text-muted-foreground"
+                  />
+                }
               />
             </View>
           ) : null}
@@ -472,25 +534,25 @@ export function GenerateDialog({
             <Pressable
               testID="generate-cancel"
               accessibilityRole="button"
-              accessibilityLabel="Cancel"
+              accessibilityLabel={tp("common.cancel")}
               onPress={onClose}
               style={styles.dialogButton}
               className="border border-border bg-card active:opacity-80"
             >
-              <Text className="text-body font-semibold text-foreground">Cancel</Text>
+              <T k="common.cancel" className="text-body font-semibold text-foreground" />
             </Pressable>
             <Pressable
               testID="generate-confirm"
               accessibilityRole="button"
-              accessibilityLabel="Generate"
-              accessibilityHint={running ? "A Story is already being written" : "Writes one new Story now"}
+              accessibilityLabel={tp("stories.generateConfirm")}
+              accessibilityHint={running ? tp("mobile.storyRunningHint") : tp("mobile.storyGenerateHint")}
               accessibilityState={{ disabled: running }}
               disabled={running}
               onPress={onGenerate}
               style={styles.dialogButton}
               className={`bg-primary active:opacity-80${running ? " opacity-50" : ""}`}
             >
-              <Text className="text-body font-semibold text-primary-foreground">Generate</Text>
+              <T k="stories.generateConfirm" className="text-body font-semibold text-primary-foreground" />
             </Pressable>
           </View>
         </DialogPrimitives.Content>
@@ -525,19 +587,20 @@ export function Picker({
   // mirroring that state lets the trigger tell assistive tech what the
   // chevron already tells the eye (issue #48 review, N1).
   const [open, setOpen] = useState(false);
+  const { language } = useT();
   return (
     <DropdownMenuPrimitive.Root onOpenChange={setOpen}>
       <DropdownMenuPrimitive.Trigger asChild>
         <Pressable
           testID={testID}
           accessibilityRole="button"
-          accessibilityLabel={`${ariaLabel}: ${value ? genreLabel(value) || value : placeholder}`}
+          accessibilityLabel={`${ariaLabel}: ${value ? genreLabel(value, language) || value : placeholder}`}
           accessibilityState={{ expanded: open }}
           style={styles.picker}
           className="rounded-md border border-border bg-card active:bg-accent"
         >
           <Text className="text-small text-foreground" numberOfLines={1}>
-            {value ? genreLabel(value) || value : placeholder}
+            {value ? genreLabel(value, language) || value : placeholder}
           </Text>
           <Icon name="chevron-down" size="xs" className="text-muted-foreground" />
         </Pressable>
@@ -560,7 +623,7 @@ export function Picker({
                   key={option}
                   variant="menu"
                   testID={`${testID}-option-${option}`}
-                  label={genreLabel(option) || option}
+                  label={genreLabel(option, language) || option}
                   selected={option === value}
                   onPress={() => onChange(option)}
                 />
@@ -637,7 +700,12 @@ export function LibraryStates({
   onGenerate: () => void;
 }) {
   if (library.status === "error") {
-    return <InlineError message={`Cannot load your library: ${library.message}`} onRetry={onRetry} />;
+    return (
+      <InlineError
+        message={<T k="mobile.storiesLoadFailed" params={{ message: library.message }} className="text-body text-destructive" />}
+        onRetry={onRetry}
+      />
+    );
   }
   if (library.status === "ready" && visibleCount === 0) {
     if (library.page.items.length > 0) {
@@ -645,8 +713,8 @@ export function LibraryStates({
         <Card testID="library-empty">
           <EmptyState
             compact
-            message="No Stories match these filters."
-            actionLabel="Clear filters"
+            message={<T k="stories.noneMatch" className="text-center text-body text-muted-foreground" />}
+            actionLabel={<T k="stories.clearFilters" className="text-body font-semibold text-primary" />}
             onAction={onClearFilters}
           />
         </Card>
@@ -657,11 +725,13 @@ export function LibraryStates({
         <EmptyState
           compact
           message={
-            filtered
-              ? "No Stories yet — and nothing to filter."
-              : "No Stories yet. The tutor writes one for you every day, or Generate writes one now."
+            filtered ? (
+              <T k="stories.noneFiltered" className="text-center text-body text-muted-foreground" />
+            ) : (
+              <T k="stories.noneAny" className="text-center text-body text-muted-foreground" />
+            )
           }
-          actionLabel="Generate a Story"
+          actionLabel={<T k="today.storyGenerate" className="text-body font-semibold text-primary" />}
           onAction={onGenerate}
         />
       </Card>
@@ -672,15 +742,22 @@ export function LibraryStates({
 
 /** The pinned Today card's progress block, shared by the page and the dialog. */
 export function GenerationProgress({ progress }: { progress: StoryGenerationProgress }) {
+  const { t } = useT();
   return (
     <View testID="generation-progress" style={styles.progress}>
       <ProgressBar
         value={(progress.percent ?? 0) / 100}
-        label={`${stageLabel(progress)} ${Math.round(progress.percent ?? 0)}%`}
+        label={
+          <TableText
+            segments={[
+              ...t(progressStageKey(progress), progressStageParams(progress)),
+              { text: ` ${Math.round(progress.percent ?? 0)}%` },
+            ]}
+            className="text-caption text-muted-foreground"
+          />
+        }
       />
-      <Text className="text-caption text-muted-foreground">
-        It keeps writing if you leave this page.
-      </Text>
+      <T k="mobile.storiesKeepWriting" className="text-caption text-muted-foreground" />
     </View>
   );
 }

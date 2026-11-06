@@ -2,11 +2,14 @@
 // Learner types Username / Password, presses "Log in", and Android can point
 // the app at a different server address. This component owns presentation only — the auth machine lives
 // in AuthGate, and a login attempt is handed up via onLogin.
+import { useT } from "@vjt/core";
 import { useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { T } from "./components/Text.tsx";
 import { useJapaneseFont } from "./japaneseFont/index.tsx";
+import { InterfaceLanguageChoice } from "./interfacelanguage/LanguageChoice.tsx";
 import { ServerField } from "./ServerField.tsx";
 
 export interface LoginProps {
@@ -19,6 +22,7 @@ export interface LoginProps {
 
 export function Login({ busy, error, serverUrl, onLogin, onSaveServerUrl }: LoginProps) {
   const jp = useJapaneseFont();
+  const { tp } = useT();
   const insets = useSafeAreaInsets();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -43,14 +47,15 @@ export function Login({ busy, error, serverUrl, onLogin, onSaveServerUrl }: Logi
       <View className="w-full max-w-[380px] gap-6 rounded-2xl bg-card p-6 shadow-md">
         <View className="items-center gap-1">
           <Text className={`text-display ${jp.regular} text-primary`} allowFontScaling={false}>
+            {/* eslint-disable-next-line vjt/no-raw-jsx-text -- the brand wordmark is the kanji 読 in every Interface Language */}
             読
           </Text>
-          <Text className="text-title-sm font-semibold text-foreground">Virtual Japan Tutor</Text>
+          <T k="brand.app" className="text-title-sm font-semibold text-foreground" />
         </View>
 
         <View className="gap-4">
           <View className="gap-1.5">
-            <Text className="text-small text-muted-foreground">Username</Text>
+            <T k="login.username" className="text-small text-muted-foreground" />
             <TextInput
               className="min-h-11 rounded-lg border border-input bg-background px-3 text-body text-foreground"
               value={username}
@@ -60,12 +65,12 @@ export function Login({ busy, error, serverUrl, onLogin, onSaveServerUrl }: Logi
               autoCorrect={false}
               autoComplete="username"
               textContentType="username"
-              accessibilityLabel="Username"
+              accessibilityLabel={tp("login.username")}
               editable={!busy}
             />
           </View>
           <View className="gap-1.5">
-            <Text className="text-small text-muted-foreground">Password</Text>
+            <T k="login.password" className="text-small text-muted-foreground" />
             <TextInput
               className="min-h-11 rounded-lg border border-input bg-background px-3 text-body text-foreground"
               value={password}
@@ -76,7 +81,7 @@ export function Login({ busy, error, serverUrl, onLogin, onSaveServerUrl }: Logi
               autoComplete="password"
               textContentType="password"
               secureTextEntry
-              accessibilityLabel="Password"
+              accessibilityLabel={tp("login.password")}
               editable={!busy}
             />
           </View>
@@ -91,14 +96,20 @@ export function Login({ busy, error, serverUrl, onLogin, onSaveServerUrl }: Logi
         <Pressable
           className="min-h-12 items-center justify-center rounded-lg bg-primary disabled:opacity-50"
           accessibilityRole="button"
-          accessibilityLabel="Log in"
+          accessibilityLabel={tp("login.logIn")}
           disabled={busy || !username || !password}
           onPress={submit}
         >
-          <Text className="text-body font-semibold text-primary-foreground">
-            {busy ? "Logging in…" : "Log in"}
-          </Text>
+          {busy ? (
+            <T k="login.loggingIn" className="text-body font-semibold text-primary-foreground" />
+          ) : (
+            <T k="login.logIn" className="text-body font-semibold text-primary-foreground" />
+          )}
         </Pressable>
+
+        {/* #125: the Interface Language switch sits at the card's foot, where
+            a Learner can set the chrome language before signing in at all. */}
+        <InterfaceLanguageChoice compact />
 
         <ServerField serverUrl={serverUrl} onSave={onSaveServerUrl} />
       </View>

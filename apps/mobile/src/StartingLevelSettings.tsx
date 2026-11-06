@@ -14,6 +14,7 @@ import { Text, View } from "react-native";
 
 import { Card } from "./components/ui/Card.tsx";
 import { Chip, ChipRow } from "./components/ui/Chip.tsx";
+import { T } from "./components/Text.tsx";
 import { ActionButton } from "./stories-parts.tsx";
 import { InlineError, SkeletonBar } from "./state/states.tsx";
 
@@ -90,7 +91,7 @@ export function StartingLevelSettings({
   if (level.state.status === "error") {
     return (
       <InlineError
-        message={`Cannot load your Starting Level: ${level.state.message}`}
+        message={<T k="settings.levelLoadFailed" params={{ message: level.state.message }} />}
         onRetry={level.reload}
       />
     );
@@ -98,11 +99,11 @@ export function StartingLevelSettings({
 
   return (
     <View className="gap-4">
-      <Text className="text-body text-foreground">
-        {level.state.level.configured
-          ? `Starting level: ${level.state.level.level}`
-          : "Not chosen yet. Pick one to mark everything at or below it as known."}
-      </Text>
+      {level.state.level.configured ? (
+        <T k="settings.levelCurrent" params={{ level: level.state.level.level ?? "" }} className="text-body text-foreground" />
+      ) : (
+        <T k="settings.levelUnset" className="text-body text-foreground" />
+      )}
       <Card>
         <ChipRow>
           {STARTING_LEVELS.map((l) => (
@@ -110,7 +111,7 @@ export function StartingLevelSettings({
           ))}
         </ChipRow>
       </Card>
-      <ActionButton label="Save level" onPress={() => void save()} filled disabled={busy} />
+      <ActionButton label={<T k="settings.levelSave" />} onPress={() => void save()} filled disabled={busy} />
       {result && (
         <Text role="status" accessibilityLiveRegion="polite" className="text-body text-success">
           {result}
@@ -131,22 +132,24 @@ function GrammarReviewList({ client }: { client: ApiClient }) {
   const review = useGrammarReview(client);
   return (
     <View className="gap-2">
-      <Text accessibilityRole="header" className="text-title-sm font-semibold text-foreground">
-        Review these grammar matches
-      </Text>
+      <T
+        k="settings.levelReviewHeading"
+        className="text-title-sm font-semibold text-foreground"
+        accessibilityRole="header"
+      />
       {review.state.status === "loading" ? <SkeletonBar width="60%" height={20} /> : null}
       {review.state.status === "error" ? (
-        <InlineError message={`Cannot load the review list: ${review.state.message}`} onRetry={review.reload} />
+        <InlineError
+          message={<T k="settings.reviewLoadFailed" params={{ message: review.state.message }} />}
+          onRetry={review.reload}
+        />
       ) : null}
       {review.state.status === "ready" && review.state.items.length === 0 ? (
-        <Text className="text-body text-muted-foreground">Nothing needs a second look.</Text>
+        <T k="settings.reviewEmpty" className="text-body text-muted-foreground" />
       ) : null}
       {review.state.status === "ready" && review.state.items.length > 0 ? (
         <>
-          <Text className="text-small text-muted-foreground">
-            These MaruMori grammar points did not match the Catalogue cleanly. They re-check
-            themselves on later Syncs.
-          </Text>
+          <T k="settings.reviewNote" className="text-small text-muted-foreground" />
           {review.state.items.map((item) => (
             <Text key={item.marumoriId} className="text-body text-foreground">
               {grammarReviewText(item)}

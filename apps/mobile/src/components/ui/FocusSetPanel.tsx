@@ -4,12 +4,14 @@ import {
   focusChipKey,
   focusChipLabel,
   useFocusChipLabels,
+  useT,
   type FocusLabelResolver,
   type FocusSetView,
 } from "@vjt/core";
 import { useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 
+import { T } from "../../components/Text.tsx";
 import { EmptyState, InlineError, SkeletonBar } from "../../state/states.tsx";
 
 /**
@@ -44,6 +46,7 @@ export function FocusSetPanel({
   max?: number;
 }) {
   const items = useMemo(() => focus.items ?? [], [focus.items]);
+  const { tp } = useT();
   // The Focus Set arrives before the Learner chooses to open it, and screen
   // readers announce every chip the moment it does - dozens at a time on the
   // ~100-item sets real Learners have (#46 review P8). Only the first `max` are
@@ -70,16 +73,12 @@ export function FocusSetPanel({
   const labels = useFocusChipLabels(client, shown, resolve);
   return (
     <View className="gap-3">
-      <Text
-        role="heading"
-        accessibilityRole="header"
+      <T
+        k="mobile.focusHeading"
         className="text-title font-semibold text-foreground"
-      >
-        Your Focus Set
-      </Text>
-      <Text className="text-small text-muted-foreground">
-        These are the items Practice builds a session from.
-      </Text>
+        accessibilityRole="header"
+      />
+      <T k="mobile.focusNote" className="text-small text-muted-foreground" />
       {focus.loading ? (
         // A row of chip-shaped bars, the shape the settled panel shows
         // (issue #47 review S7).
@@ -96,8 +95,8 @@ export function FocusSetPanel({
         // A one-line explanation and one action, not the old raw "No items."
         <EmptyState
           compact
-          message="No items in your Focus Set yet"
-          actionLabel="Open your Item Lists"
+          message={tp("mobile.focusEmpty")}
+          actionLabel={<T k="practice.openLists" className="text-body font-semibold text-primary" />}
           onAction={onOpenWordLists}
         />
       ) : (
@@ -127,13 +126,19 @@ export function FocusSetPanel({
                   // The chip text is Japanese - a kanji literal or a resolved
                   // headword/pattern - so the screen reader says it in Japanese.
                   // (RN 0.88 Text has no `lang` prop; accessibilityLanguage is
-                  // the one that exists on both hosts.)
-                  <Text accessibilityLanguage="ja" className="text-small text-foreground">
+                  // the one that exists on both hosts.) The testID marks it as
+                  // Learner content for the furigana coverage check, the way
+                  // web's lang="ja" does.
+                  <Text accessibilityLanguage="ja" testID="focus-chip-label" className="text-small text-foreground">
                     {label ?? focusChipLabel(item)}
                   </Text>
                 )}
                 {item.srsLevel !== null && item.srsLevel !== undefined ? (
-                  <Text className="text-caption text-muted-foreground">SRS {item.srsLevel}</Text>
+                  <T
+                    k="reader.srs"
+                    params={{ level: item.srsLevel }}
+                    className="text-caption text-muted-foreground"
+                  />
                 ) : null}
               </View>
             );
@@ -145,7 +150,9 @@ export function FocusSetPanel({
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={
-              expanded ? "Show fewer Focus Set items" : `Show all ${items.length} Focus Set items`
+              expanded
+                ? tp("mobile.focusShowFewerAria")
+                : tp("mobile.focusShowAllAria", { count: items.length })
             }
             // A plain Pressable stays in the tab order once it is disabled
             // (#46 review P5); accessibilityState keeps the screen reader honest
@@ -155,14 +162,29 @@ export function FocusSetPanel({
             onPress={() => setExpanded((value) => !value)}
             className="min-h-11 flex-row items-center justify-center rounded-md border border-border bg-card px-4 active:opacity-80"
           >
-            <Text className="text-body text-foreground">{expanded ? "Show fewer" : "See all"}</Text>
+            <T
+              k={expanded ? "mobile.focusShowFewer" : "today.seeAll"}
+              className="text-body text-foreground"
+            />
           </Pressable>
           {/* Not announced on load: this line only matters once the Learner
               presses the button, and a polite live region would also read it
               while the set is still arriving under the cap. */}
-          <Text accessibilityLiveRegion="polite" role="status" className="text-caption text-muted-foreground">
-            {hidden > 0 ? `${shown.length} of ${items.length} Focus Set items shown` : `All ${items.length} Focus Set items shown`}
-          </Text>
+          <View accessibilityLiveRegion="polite">
+            {hidden > 0 ? (
+              <T
+                k="mobile.focusShownCount"
+                params={{ shown: shown.length, total: items.length }}
+                className="text-caption text-muted-foreground"
+              />
+            ) : (
+              <T
+                k="mobile.focusShownAll"
+                params={{ total: items.length }}
+                className="text-caption text-muted-foreground"
+              />
+            )}
+          </View>
         </View>
       ) : null}
     </View>

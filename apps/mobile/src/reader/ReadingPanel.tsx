@@ -7,11 +7,13 @@ import {
   type EntryLookup,
   type GrammarCue,
   type ReadingSettingsView,
+  useT,
 } from "@vjt/core";
 import { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { useStoryTextSize } from "../storysize/index.tsx";
+import { T } from "../components/Text.tsx";
 import { JlptBadge, SrsLevelText } from "./parts.tsx";
 import { PitchGraph } from "./PitchGraph.tsx";
 import { TokenWords } from "./StoryText.tsx";
@@ -64,6 +66,7 @@ export function ReadingPanel({
   onUnblur: (sentenceIdx: number) => void;
 }) {
   const { fontSizePx, lineHeightPx, columnWidthPx } = useStoryTextSize();
+  const { tp } = useT();
   const blur = reading.state.status === "ready" ? reading.state.settings.blurTranslation : true;
   const sen = selected !== null ? story.sentences[selected] : null;
   const [blurError, setBlurError] = useState<string | null>(null);
@@ -86,7 +89,7 @@ export function ReadingPanel({
   return (
     <View
       testID="reading-panel"
-      accessibilityLabel="Reading Panel"
+      accessibilityLabel={tp("reader.panelAria")}
       className="bg-card border-border"
       // Both edges are the saved Story text size talking: as wide as the
       // 40-character column it sits above, and PANEL_LINES lines of that size
@@ -99,12 +102,14 @@ export function ReadingPanel({
           silence. */}
       <ScrollView testID="panel-scroll" style={styles.body}>
         {looked ? (
-          <View accessibilityLabel="Lookup row" style={styles.wordMode}>
+          <View accessibilityLabel={tp("mobile.readerLookupRowAria")} style={styles.wordMode}>
             {/* Fixed label, outside the conditional content: it keeps its slot
                 so the box never shifts as lookups come and go. */}
-            <Text className="text-caption text-muted-foreground" style={styles.lookupLabel}>
-              Word meaning
-            </Text>
+            <T
+              k="reader.wordMeaning"
+              className="text-caption text-muted-foreground"
+              style={styles.lookupLabel}
+            />
             <LookupRow story={story} looked={looked} lookup={lookup} />
           </View>
         ) : (
@@ -126,16 +131,21 @@ export function ReadingPanel({
                 ))}
               </Text>
             ) : (
-              <Text className="text-small text-muted-foreground" style={styles.hint}>
-                Tap a word or punctuation to select its sentence.
-              </Text>
+              <T
+                k="mobile.readerPanelHint"
+                className="text-small text-muted-foreground"
+                style={styles.hint}
+              />
             )}
           </View>
         )}
         {reading.state.status === "error" ? (
-          <Text className="text-small text-muted-foreground" style={styles.note}>
-            (reading settings unavailable — {reading.state.message})
-          </Text>
+          <T
+            k="mobile.readerSettingsUnavailable"
+            params={{ message: reading.state.message }}
+            className="text-small text-muted-foreground"
+            style={styles.note}
+          />
         ) : null}
 
         {/* The Sentence Translation row keeps its slot in BOTH modes: the panel
@@ -143,8 +153,8 @@ export function ReadingPanel({
         {sen ? (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Sentence Translation"
-            accessibilityHint={blur ? "Tap to show the translation" : "Tap to hide the translation"}
+            accessibilityLabel={tp("reader.sentenceTranslationAria")}
+            accessibilityHint={blur ? tp("mobile.readerTapToShowTranslation") : tp("mobile.readerTapToHideTranslation")}
             onPress={() => void toggleBlur()}
             // The blur is the row's own inline style: Android has no filter
             // support, so the hidden translation is made transparent.
@@ -156,9 +166,12 @@ export function ReadingPanel({
           </Pressable>
         ) : null}
         {sen && blur ? (
-          <Text testID="translation-hidden-note" className="text-caption text-muted-foreground" style={styles.blurNote}>
-            Translation hidden — tap to show
-          </Text>
+          <T
+            testID="translation-hidden-note"
+            k="mobile.readerHiddenTapToShow"
+            className="text-caption text-muted-foreground"
+            style={styles.blurNote}
+          />
         ) : null}
         {blurError ? (
           // The message says the reveal did not stick; the button beside it is
@@ -166,18 +179,22 @@ export function ReadingPanel({
           // does not have to work out that tapping the blurred row again is
           // what a retry means.
           <View style={styles.errorRow}>
-            <Text accessibilityRole="alert" className="text-small text-destructive" style={styles.errorText}>
-              Could not save that — {blurError}
-            </Text>
+            <T
+              k="reader.blurSaveFailed"
+              params={{ message: blurError }}
+              className="text-small text-destructive"
+              style={styles.errorText}
+              accessibilityRole="alert"
+            />
             <Pressable
               testID="blur-retry"
               accessibilityRole="button"
-              accessibilityLabel="Retry saving the translation setting"
+              accessibilityLabel={tp("mobile.readerBlurRetryAria")}
               onPress={() => void toggleBlur()}
               className="border-border"
               style={styles.retry}
             >
-              <Text className="text-small text-foreground">Retry</Text>
+              <T k="common.retry" className="text-small text-foreground" />
             </Pressable>
           </View>
         ) : null}

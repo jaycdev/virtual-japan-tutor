@@ -1,10 +1,10 @@
 import type { ApiClient, ItemList, ItemListMember } from "@vjt/api-client";
 import {
-  ITEM_KIND_LABELS,
   ITEM_KINDS,
   isSavedList,
   itemListHint,
   useItemLists,
+  useT,
   type ActionResult,
   type ItemKind,
 } from "@vjt/core";
@@ -19,10 +19,10 @@ import { Field } from "./components/ui/Field.tsx";
 import { LinkButton } from "./components/ui/LinkButton.tsx";
 import { Row } from "./components/ui/Row.tsx";
 import { SwitchRow } from "./components/ui/SwitchRow.tsx";
+import { T } from "./components/Text.tsx";
 import { ActionButton } from "./stories-parts.tsx";
 import { EmptyState, InlineError, Skeleton, SkeletonBar } from "./state/states.tsx";
 
-const KIND_LABELS = ITEM_KIND_LABELS;
 const KINDS = ITEM_KINDS;
 
 /** Members as read for one list; null rows mean still loading, error means the read failed. */
@@ -80,6 +80,7 @@ function ListsMaster({
   onOpen: (id: string) => void;
 }) {
   const { state } = lists;
+  const { language, tp } = useT();
   const [error, setError] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
   const [newName, setNewName] = useState("");
@@ -114,7 +115,7 @@ function ListsMaster({
   if (state.status === "error") {
     return (
       <InlineError
-        message={`Cannot load your Item Lists: ${state.message}`}
+        message={tp("mobile.listsLoadFailed", { message: state.message })}
         onRetry={lists.reload}
       />
     );
@@ -123,33 +124,30 @@ function ListsMaster({
   return (
     <View className="gap-4">
       {error ? <InlineError message={error} /> : null}
-      <Text className="text-body text-muted-foreground">
-        Saving a word from a story adds it to the Default List. A Boosting List also pulls its
-        not-yet-known items into your stories’ Focus Sets. Tap a list to manage its items.
-      </Text>
-      {state.lists.length === 0 && <EmptyState message="No lists yet." compact />}
+      <T k="mobile.listsIntro" className="text-body text-muted-foreground" />
+      {state.lists.length === 0 && <EmptyState message={tp("lists.empty")} compact />}
       {state.lists.map((l) => (
         <Card key={l.id} padded={false}>
           <Row
             label={l.name}
-            hint={itemListHint(l)}
+            hint={itemListHint(l, language)}
             onPress={() => onOpen(l.id)}
             last
           />
         </Card>
       ))}
-      <Text className="text-small font-semibold uppercase text-muted-foreground">Add a list</Text>
+      <T k="lists.addHeading" className="text-small font-semibold uppercase text-muted-foreground" />
       <Field
-        label="List name"
+        label={<T k="lists.nameLabel" className="text-small text-muted-foreground" />}
         value={newName}
         onChangeText={setNewName}
         onSubmit={() => void addList()}
         maxLength={60}
-        placeholder="food, travel…"
+        placeholder={tp("lists.namePlaceholder")}
         disabled={busy}
       />
       <ActionButton
-        label="Add list"
+        label={<T k="lists.addSubmit" className="text-body font-semibold text-primary-foreground" />}
         onPress={() => void addList()}
         filled
         disabled={busy || newName.trim() === ""}
@@ -170,6 +168,7 @@ function ItemListDetail({
   onBackToLists: () => void;
 }) {
   const { listItems } = lists;
+  const { tp } = useT();
   const jp = useJapaneseFont();
   const [members, setMembers] = useState<MembersState | null>(null);
   const [error, setError] = useState<string | undefined>();
@@ -251,13 +250,16 @@ function ItemListDetail({
       <Text accessibilityRole="header" className={`text-title-sm ${jp.regular} text-foreground`}>
         {list.name}
       </Text>
-      <LinkButton label="Close Item Lists" onPress={onBackToLists} />
+      <LinkButton
+        label={<T k="mobile.closeItemLists" className="text-body text-primary" />}
+        onPress={onBackToLists}
+      />
       {error ? <InlineError message={error} /> : null}
 
       {renaming ? (
         <View className="gap-4">
           <Field
-            label="New name"
+            label={<T k="lists.renameLabel" className="text-small text-muted-foreground" />}
             value={renameValue}
             onChangeText={setRenameValue}
             onSubmit={() => void rename()}
@@ -265,35 +267,41 @@ function ItemListDetail({
             disabled={busy}
           />
           <ActionButton
-            label="Save name"
+            label={<T k="lists.saveName" className="text-body font-semibold text-primary-foreground" />}
             onPress={() => void rename()}
             filled
             disabled={busy || renameValue.trim() === ""}
           />
-          <LinkButton label="Cancel" onPress={() => setRenaming(false)} />
+          <LinkButton
+            label={<T k="common.cancel" className="text-body text-primary" />}
+            onPress={() => setRenaming(false)}
+          />
         </View>
       ) : (
         <Card padded={false}>
           <SwitchRow
-            label="Boosting"
-            hint="Push not-yet-known items into Focus Sets"
+            label={<T k="lists.boostingLabel" className="text-body text-foreground" />}
+            hint={<T k="mobile.boostingHint" className="text-small text-muted-foreground" />}
             value={list.boosting}
             disabled={busy}
             onToggle={(boosting) => void run(() => lists.updateList(list.id, { boosting }))}
           />
           {isDefault ? (
-            <Row label="Default list" hint="A Save from a story goes here" />
+            <Row
+              label={<T k="mobile.defaultListLabel" className="text-body text-foreground" />}
+              hint={<T k="mobile.defaultListHint" className="text-small text-muted-foreground" />}
+            />
           ) : (
             <Row
-              label="Make default"
-              hint="Where a one-tap Save goes"
+              label={<T k="lists.makeDefault" className="text-body text-foreground" />}
+              hint={<T k="mobile.makeDefaultHint" className="text-small text-muted-foreground" />}
               onPress={() => void run(() => lists.setDefaultList(list.id))}
             />
           )}
           {!isSavedList(list) && (
             <>
               <Row
-                label="Rename"
+                label={<T k="common.rename" className="text-body text-foreground" />}
                 onPress={() => {
                   setRenaming(true);
                   setRenameValue(list.name);
@@ -302,20 +310,33 @@ function ItemListDetail({
               />
               {confirmingDelete ? (
                 <>
-                  <Row label="Confirm delete" onPress={() => void remove()} />
-                  <Row label="Keep" onPress={() => setConfirmingDelete(false)} last />
+                  <Row
+                    label={<T k="common.confirmDelete" className="text-body text-foreground" />}
+                    onPress={() => void remove()}
+                  />
+                  <Row
+                    label={<T k="stories.deleteKeep" className="text-body text-foreground" />}
+                    onPress={() => setConfirmingDelete(false)}
+                    last
+                  />
                 </>
               ) : (
-                <Row label="Delete list" onPress={() => setConfirmingDelete(true)} last />
+                <Row
+                  label={<T k="lists.deleteList" className="text-body text-foreground" />}
+                  onPress={() => setConfirmingDelete(true)}
+                  last
+                />
               )}
             </>
           )}
         </Card>
       )}
 
-      <Text className="text-small font-semibold uppercase text-muted-foreground">
-        Items ({list.itemCount})
-      </Text>
+      <T
+        k="lists.itemsHeading"
+        params={{ count: list.itemCount }}
+        className="text-small font-semibold uppercase text-muted-foreground"
+      />
       {shown?.error ? (
         <>
           <InlineError message={shown.error} onRetry={() => void reread()} />
@@ -332,7 +353,7 @@ function ItemListDetail({
               hint={item.gloss ?? undefined}
               right={
                 <LinkButton
-                  label={`Remove ${item.surface}`}
+                  label={tp("lists.removeAria", { surface: item.surface })}
                   onPress={() => void removeMember(item)}
                   disabled={busy}
                   danger
@@ -342,23 +363,36 @@ function ItemListDetail({
             />
           ))}
           {memberRows.length === 0 && (
-            <Text className="px-4 py-3 text-body text-muted-foreground">No items yet.</Text>
+            <T
+              k="lists.itemsEmpty"
+              className="px-4 py-3 text-body text-muted-foreground"
+            />
           )}
         </Card>
       ) : (
         <Skeleton lines={3} />
       )}
 
-      <Text className="text-small font-semibold uppercase text-muted-foreground">Add an item</Text>
+      <T k="lists.addItemHeading" className="text-small font-semibold uppercase text-muted-foreground" />
       <Card>
         <ChipRow>
           {KINDS.map((k) => (
-            <Chip key={k} label={KIND_LABELS[k]} selected={kind === k} onPress={() => setKind(k)} />
+            <Chip
+              key={k}
+              label={
+                <T
+                  k={k === "kanji" ? "item.kanji" : k === "vocabulary" ? "item.vocabulary" : "item.grammar"}
+                  className={`text-body ${kind === k ? "font-semibold text-primary" : "text-foreground"}`}
+                />
+              }
+              selected={kind === k}
+              onPress={() => setKind(k)}
+            />
           ))}
         </ChipRow>
       </Card>
       <Field
-        label="Reference (dictionary entry sequence or grammar point id)"
+        label={<T k="lists.refLabel" className="text-small text-muted-foreground" />}
         value={itemRef}
         onChangeText={setItemRef}
         onSubmit={() => void addMember()}
@@ -367,15 +401,15 @@ function ItemListDetail({
         disabled={busy}
       />
       <ActionButton
-        label="Add to list"
+        label={<T k="lists.addToSubmit" className="text-body font-semibold text-primary-foreground" />}
         onPress={() => void addMember()}
         filled
         disabled={busy || itemRef.trim() === ""}
       />
       {added && (
-        <Text role="status" accessibilityLiveRegion="polite" className="text-body text-success">
-          Added.
-        </Text>
+        <View accessibilityLiveRegion="polite">
+          <T k="lists.added" className="text-body text-success" />
+        </View>
       )}
     </View>
   );

@@ -1,6 +1,5 @@
 import type { AiProvider, AiProviderTestResult, ApiClient } from "@vjt/api-client";
 import {
-  AI_TASK_LABELS,
   EMPTY_PROVIDER_FORM,
   canSubmitProviderForm,
   isProviderFormTouched,
@@ -9,13 +8,14 @@ import {
   providerSummary,
   providerUpdateInput,
   useAiSettings,
+  useT,
   type ActionResult,
   type ProviderForm,
   type StepSaveOutcome,
   type StepSaveRegistrar,
 } from "@vjt/core";
 import { useEffect, useState } from "react";
-import { Text, View } from "react-native";
+import { View } from "react-native";
 
 import { Card } from "./components/ui/Card.tsx";
 import { Chip, ChipRow } from "./components/ui/Chip.tsx";
@@ -23,10 +23,10 @@ import { Field } from "./components/ui/Field.tsx";
 import { LinkButton } from "./components/ui/LinkButton.tsx";
 import { Row } from "./components/ui/Row.tsx";
 import { SwitchRow } from "./components/ui/SwitchRow.tsx";
+import { T } from "./components/Text.tsx";
 import { ActionButton } from "./stories-parts.tsx";
 import { InlineError, Skeleton, SkeletonBar } from "./state/states.tsx";
 
-const TASK_LABELS = AI_TASK_LABELS;
 const EMPTY: ProviderForm = EMPTY_PROVIDER_FORM;
 
 /**
@@ -49,6 +49,7 @@ export function AiProvidersSettings({
 }) {
   const settings = useAiSettings(client);
   const { state } = settings;
+  const { language, tp } = useT();
   const [error, setError] = useState<string | undefined>();
   const [editing, setEditing] = useState<AiProvider | null>(null);
   const [form, setForm] = useState<ProviderForm>(EMPTY);
@@ -131,22 +132,25 @@ export function AiProvidersSettings({
     );
   }
   if (state.status === "error") {
-    return <InlineError message={`Cannot load settings: ${state.message}`} onRetry={settings.reload} />;
+    return (
+      <InlineError
+        message={tp("ai.loadFailed", { message: state.message })}
+        onRetry={settings.reload}
+      />
+    );
   }
 
   return (
     <View className="gap-4">
       {error ? <InlineError message={error} /> : null}
       {state.providers.length === 0 ? (
-        <Text className="text-body text-muted-foreground">
-          No providers yet. Add an OpenAI-compatible endpoint below.
-        </Text>
+        <T k="ai.empty" className="text-body text-muted-foreground" />
       ) : (
         state.providers.map((p) => (
           <Card key={p.id} padded={false}>
             <Row
               label={p.name}
-              hint={providerSummary(p, assignedTo(p.id))}
+              hint={providerSummary(p, assignedTo(p.id), language)}
               last
             />
             <ProviderActions
@@ -159,60 +163,66 @@ export function AiProvidersSettings({
               onDeleteKeep={() => setConfirmingDelete(null)}
             />
             {testing === p.id && (
-              <Text className="px-4 pb-3 text-body text-foreground">Testing…</Text>
+              <T k="ai.testing" className="px-4 pb-3 text-body text-foreground" />
             )}
             {results[p.id] && (
-              <Text
-                role="status"
-                accessibilityLiveRegion="polite"
-                className={`px-4 pb-3 text-body ${results[p.id].ok ? "text-success" : "text-destructive"}`}
-              >
-                {`${results[p.id].message} (${results[p.id].latencyMs} ms)`}
-              </Text>
+              <View accessibilityLiveRegion="polite" className="px-4 pb-3">
+                <T
+                  k="ai.testResult"
+                  params={{ message: results[p.id].message, latency: results[p.id].latencyMs }}
+                  className={`text-body ${results[p.id].ok ? "text-success" : "text-destructive"}`}
+                />
+              </View>
             )}
           </Card>
         ))
       )}
 
-      <Text className="text-small font-semibold uppercase text-muted-foreground">
-        {editing ? `Edit ${editing.name}` : "Add a provider"}
-      </Text>
+      {editing ? (
+        <T
+          k="ai.editHeading"
+          params={{ name: editing.name }}
+          className="text-small font-semibold uppercase text-muted-foreground"
+        />
+      ) : (
+        <T k="ai.addHeading" className="text-small font-semibold uppercase text-muted-foreground" />
+      )}
       <Field
-        label="Name"
+        label={<T k="ai.nameLabel" className="text-small text-muted-foreground" />}
         value={form.name}
         onChangeText={(name) => setForm({ ...form, name })}
         disabled={busy}
       />
       <Field
-        label="Base URL"
+        label={<T k="ai.baseUrlLabel" className="text-small text-muted-foreground" />}
         value={form.baseUrl}
         onChangeText={(baseUrl) => setForm({ ...form, baseUrl })}
         keyboardType="url"
-        placeholder="https://api.openai.com/v1 or http://localhost:11434"
+        placeholder={tp("ai.baseUrlPlaceholder")}
         disabled={busy}
       />
       <Field
-        label="Model"
+        label={<T k="ai.modelLabel" className="text-small text-muted-foreground" />}
         value={form.model}
         onChangeText={(model) => setForm({ ...form, model })}
         disabled={busy}
       />
       <Field
-        label="API key"
+        label={<T k="marumori.apiKeyHeading" className="text-small text-muted-foreground" />}
         value={form.apiKey}
         onChangeText={(apiKey) => setForm({ ...form, apiKey })}
         secure
         placeholder={
           editing?.hasApiKey
-            ? "Key saved — leave empty to keep it"
-            : "Leave empty if the endpoint needs none"
+            ? tp("mobile.aiKeySavedPlaceholder")
+            : tp("mobile.aiKeyNonePlaceholder")
         }
         disabled={busy || form.removeKey}
       />
       {editing?.hasApiKey && (
         <Card padded={false}>
           <SwitchRow
-            label="Remove the saved key"
+            label={<T k="ai.removeKeyLabel" className="text-body text-foreground" />}
             value={form.removeKey}
             onToggle={(removeKey) => setForm({ ...form, removeKey, apiKey: "" })}
             disabled={busy}
@@ -221,22 +231,39 @@ export function AiProvidersSettings({
         </Card>
       )}
       <ActionButton
-        label={editing ? "Save changes" : "Add provider"}
+        label={
+          editing ? (
+            <T k="ai.saveChanges" className="text-body font-semibold text-primary-foreground" />
+          ) : (
+            <T k="ai.addSubmit" className="text-body font-semibold text-primary-foreground" />
+          )
+        }
         onPress={() => void submit()}
         filled
         disabled={busy || !canSubmitProviderForm(form)}
       />
-      {editing ? <LinkButton label="Cancel" onPress={stopEdit} /> : null}
+      {editing ? (
+        <LinkButton
+          label={<T k="common.cancel" className="text-body text-primary" />}
+          onPress={stopEdit}
+        />
+      ) : null}
 
-      <Text className="text-small font-semibold uppercase text-muted-foreground">
-        Which provider to use
-      </Text>
+      <T k="ai.assignmentHeading" className="text-small font-semibold uppercase text-muted-foreground" />
       {state.tasks.map((t) => (
         <Card key={t.task}>
-          <Text className="text-body text-foreground">{TASK_LABELS[t.task]}</Text>
+          <T
+            k={t.task === "story" ? "aiTask.story" : "aiTask.grammarContent"}
+            className="text-body text-foreground"
+          />
           <ChipRow>
             <Chip
-              label="None"
+              label={
+                <T
+                  k="common.none"
+                  className={`text-body ${t.providerId === null ? "font-semibold text-primary" : "text-foreground"}`}
+                />
+              }
               selected={t.providerId === null}
               onPress={() => void run(() => settings.assign(t.task, null))}
             />
@@ -275,15 +302,37 @@ function ProviderActions({
 }) {
   return (
     <>
-      <Row label="Edit" onPress={onEdit} last={false} />
-      <Row label={testing ? "Testing…" : "Test connection"} onPress={onTest} last={false} />
+      <Row label={<T k="mobile.aiEdit" className="text-body text-foreground" />} onPress={onEdit} last={false} />
+      <Row
+        label={
+          testing ? (
+            <T k="ai.testing" className="text-body text-foreground" />
+          ) : (
+            <T k="mobile.aiTestConnection" className="text-body text-foreground" />
+          )
+        }
+        onPress={onTest}
+        last={false}
+      />
       {confirming ? (
         <>
-          <Row label="Confirm delete" onPress={onDeleteConfirm} last={false} />
-          <Row label="Keep" onPress={onDeleteKeep} last />
+          <Row
+            label={<T k="common.confirmDelete" className="text-body text-foreground" />}
+            onPress={onDeleteConfirm}
+            last={false}
+          />
+          <Row
+            label={<T k="stories.deleteKeep" className="text-body text-foreground" />}
+            onPress={onDeleteKeep}
+            last
+          />
         </>
       ) : (
-        <Row label="Delete" onPress={onDeleteAsk} last />
+        <Row
+          label={<T k="stories.delete" className="text-body text-foreground" />}
+          onPress={onDeleteAsk}
+          last
+        />
       )}
     </>
   );
