@@ -1,7 +1,7 @@
 import type { Story } from "@vjt/api-client";
 import { describe, expect, it } from "vitest";
 
-import { formatInstant, greetingFor, greetingRubyFor, learnerClock, learnerClockRuby, learnerGreetingRuby, localDayKey, normalizeTimezone, stillUnreadFrom } from "./learnerTime.ts";
+import { formatInstant, formatInstantRuby, greetingFor, greetingRubyFor, learnerClock, learnerClockRuby, learnerGreetingRuby, localDayKey, normalizeTimezone, stillUnreadFrom, stillUnreadFromRuby } from "./learnerTime.ts";
 
 function story(overrides: Partial<Story> = {}): Story {
   return {
@@ -60,6 +60,23 @@ describe("formatInstant", () => {
   });
 });
 
+// #125 round-4 review A3: the sync line's {time} param is interface text too.
+describe("formatInstantRuby", () => {
+  it("reads the date kanji in furigana and keeps the visible base equal to formatInstant", () => {
+    const iso = "2026-11-04T05:02:00Z"; // Wed 4 Nov 14:02 in Tokyo
+    const furigana = formatInstantRuby(iso, "Asia/Tokyo", "ja-furigana");
+    expect(furigana.map((s) => s.text).join("")).toBe(formatInstant(iso, "Asia/Tokyo", "ja"));
+    expect(furigana.some((s) => s.text === "月" && s.ruby === "がつ")).toBe(true);
+    expect(furigana.some((s) => s.text === "4日" && s.ruby === "よっか")).toBe(true);
+  });
+
+  it("en and ja are the one plain segment formatInstant speaks", () => {
+    const iso = "2026-11-04T05:02:00Z";
+    expect(formatInstantRuby(iso, "Asia/Tokyo", "en")).toEqual([{ text: "November 4, 14:02" }]);
+    expect(formatInstantRuby(iso, "Asia/Tokyo", "ja")).toEqual([{ text: "11月4日 14:02" }]);
+  });
+});
+
 describe("localDayKey", () => {
   it("gives the calendar day in the zone", () => {
     const instant = new Date("2026-11-03T20:00:00Z");
@@ -84,6 +101,16 @@ describe("stillUnreadFrom", () => {
 
   it("names the unread weekday in Japanese too", () => {
     expect(stillUnreadFrom(story(), now, "Asia/Tokyo", "ja")).toBe("月曜日");
+  });
+
+  // #125 round-4 review A3: the storyStillUnread {date} param carries ruby.
+  it("reads the weekday in furigana, and stays the plain string otherwise", () => {
+    expect(stillUnreadFromRuby(story(), now, "Asia/Tokyo")).toEqual([{ text: "Monday" }]);
+    expect(stillUnreadFromRuby(story(), now, "Asia/Tokyo", "ja")).toEqual([{ text: "月曜日" }]);
+    expect(stillUnreadFromRuby(story(), now, "Asia/Tokyo", "ja-furigana")).toEqual([
+      { text: "月曜日", ruby: "げつようび" },
+    ]);
+    expect(stillUnreadFromRuby(story({ readAt: "2026-11-03T10:00:00Z" }), now, "Asia/Tokyo", "ja-furigana")).toBeNull();
   });
 });
 

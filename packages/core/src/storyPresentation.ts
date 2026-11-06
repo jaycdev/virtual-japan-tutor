@@ -94,11 +94,10 @@ export function storyDateRuby(
   iso: string,
   lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
 ): RubyText {
-  return formatDateRuby(
-    iso,
-    lang === "en" ? { year: "numeric", month: "short", day: "numeric" } : { year: "numeric", month: "long", day: "numeric" },
-    lang,
-  );
+  // en and ja are storyDate's own string, through its already-cached
+  // formatters (round-4 review A4); only furigana builds parts.
+  if (lang !== "ja-furigana") return [{ text: storyDate(iso, lang) }];
+  return formatDateRuby(iso, { year: "numeric", month: "long", day: "numeric" }, lang);
 }
 
 /**

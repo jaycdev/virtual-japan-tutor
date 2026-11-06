@@ -200,6 +200,31 @@ export function formatInstant(
   return `${parts.month} ${parts.day}, ${parts.hour}:${parts.minute}`;
 }
 
+/**
+ * The same instant as base/reading segments (round-4 review A3): en and ja are
+ * the one string formatInstant speaks; ja-furigana puts readings over the
+ * kanji ja-JP writes — 月《がつ》 and a day like 4日《よっか》.
+ */
+export function formatInstantRuby(
+  iso: string,
+  timezone: string | undefined | null,
+  lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
+): RubyText {
+  if (lang !== "ja-furigana") return [{ text: formatInstant(iso, timezone, lang) }];
+  try {
+    return jaDateRuby(new Date(iso), {
+      timeZone: normalizeTimezone(timezone),
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  } catch {
+    return [{ text: new Date(iso).toLocaleString() }];
+  }
+}
+
 /** The local calendar day of an instant in the zone, as YYYY-MM-DD (sortable as text). */
 export function localDayKey(instant: Date, timezone: string | undefined | null): string {
   const zone = normalizeTimezone(timezone);
@@ -218,6 +243,18 @@ export function localDayKey(instant: Date, timezone: string | undefined | null):
 }
 
 /**
+ * The day an unread older Automatic Story belongs to, or null when the hint
+ * does not apply. Shared by both stillUnreadFrom forms.
+ */
+function unreadEarlierStoryDay(story: Story, now: Date, timezone: string | undefined | null): Date | null {
+  if (story.readAt || story.origin === "on_demand") return null;
+  const created = new Date(story.createdAt);
+  if (Number.isNaN(created.getTime())) return null;
+  if (!(localDayKey(created, timezone) < localDayKey(now, timezone))) return null;
+  return created;
+}
+
+/**
  * The "Still unread from Monday." hint (issue #62): when Today's Story is an
  * Automatic Story the Learner has not read and it belongs to an earlier local
  * day, the weekday it belongs to. Null otherwise. Japanese UIs get the
@@ -229,10 +266,28 @@ export function stillUnreadFrom(
   timezone: string | undefined | null,
   lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
 ): string | null {
-  if (story.readAt || story.origin === "on_demand") return null;
-  const created = new Date(story.createdAt);
-  if (Number.isNaN(created.getTime())) return null;
-  if (!(localDayKey(created, timezone) < localDayKey(now, timezone))) return null;
+  const created = unreadEarlierStoryDay(story, now, timezone);
+  if (!created) return null;
+  return readParts(created, normalizeTimezone(timezone), displayLocale(lang), ["weekday"]).weekday ?? null;
+}
+
+/**
+ * The same hint as base/reading segments (round-4 review A3): the weekday in
+ * en and ja is the one string stillUnreadFrom speaks; ja-furigana reads it
+ * (月曜日《げつようび》), so the {date} param carries no bare kanji.
+ */
+export function stillUnreadFromRuby(
+  story: Story,
+  now: Date,
+  timezone: string | undefined | null,
+  lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
+): RubyText | null {
+  const created = unreadEarlierStoryDay(story, now, timezone);
+  if (!created) return null;
   const zone = normalizeTimezone(timezone);
-  return readParts(created, zone, displayLocale(lang), ["weekday"]).weekday ?? null;
+  if (lang !== "ja-furigana") {
+    const day = readParts(created, zone, displayLocale(lang), ["weekday"]).weekday;
+    return day === undefined ? null : [{ text: day }];
+  }
+  return jaDateRuby(created, { timeZone: zone, weekday: "long" });
 }

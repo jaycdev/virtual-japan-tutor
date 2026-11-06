@@ -168,6 +168,31 @@ describe("translate", () => {
     expect(segments.some((s) => s.ruby === "ご")).toBe(false);
   });
 
+  it("splices a RubyText parameter in, readings kept only in furigana", () => {
+    // Round-4 review A3: the {date} of the still-unread line is the
+    // stillUnreadFromRuby segments, not bare text.
+    expect(translatePlain("en", "today.storyStillUnread", { date: [{ text: "Monday" }] })).toBe(
+      "Still unread from Monday.",
+    );
+    expect(translatePlain("ja", "today.storyStillUnread", { date: [{ text: "月曜日", ruby: "げつようび" }] })).toBe(
+      "月曜日の読んでいない物語があります。",
+    );
+    const furiganaSegments = translate("ja-furigana", "today.storyStillUnread", {
+      date: [{ text: "月曜日", ruby: "げつようび" }],
+    });
+    // The spliced weekday sits first, reading and all, and the base sentence
+    // around it is the plain ja one.
+    expect(furiganaSegments[0]).toEqual({ text: "月曜日", ruby: "げつようび" });
+    expect(furiganaSegments.map((s) => s.text).join("")).toBe("月曜日の読んでいない物語があります。");
+    // A multi-segment param (a whole date) joins into the surrounding text.
+    const date = [{ text: "11" }, { text: "月", ruby: "がつ" }, { text: "4日", ruby: "よっか" }];
+    expect(translatePlain("ja", "today.syncSucceededLine", { time: date })).toBe("最終同期は11月4日に完了しました。");
+    const furigana = translate("ja-furigana", "today.syncSucceededLine", { time: date });
+    expect(furigana.some((s) => s.text === "4日" && s.ruby === "よっか")).toBe(true);
+    // The param array itself is never mutated by the splice.
+    expect(date[0]).toEqual({ text: "11" });
+  });
+
   it("leaves a placeholder visible when its value is missing", () => {
     expect(translatePlain("en", "errors.failedStatus", {})).toBe("Request failed ({status})");
   });

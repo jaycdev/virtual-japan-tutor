@@ -9,6 +9,8 @@
 import { DEFAULT_INTERFACE_LANGUAGE, type InterfaceLanguage } from "./language.ts";
 import type { RubyText } from "./ruby.ts";
 
+// long weekdays only: a short-form 日曜 never appears in these screens'
+// options, and if one did it would pass through without a reading.
 const WEEKDAY_READINGS: Record<string, string> = {
   日曜日: "にちようび",
   月曜日: "げつようび",
@@ -71,14 +73,17 @@ export function rubyFromParts(parts: Intl.DateTimeFormatPart[]): RubyText {
         else if (kanji === "月") out.push({ text: kanji, ruby: "がつ" });
         else if (kanji === "時") out.push({ text: kanji, ruby: "じ" });
         else if (kanji === "分") out.push({ text: kanji, ruby: minuteReading(minute) });
-        else if (kanji === "日" && dayText !== null) {
+        else if (kanji.startsWith("日") && dayText !== null) {
+          // ja-JP glues the space after the day into this literal ("日 "), so
+          // only the leading 日 belongs to the day and the rest stays plain.
           const reading = IRREGULAR_DAY_READINGS[Number.parseInt(dayText, 10)];
           if (reading) {
             // One word: replace the bare number with number+日 under the full reading.
             out[out.length - 1] = { text: `${dayText}日`, ruby: reading };
           } else {
-            out.push({ text: kanji, ruby: "にち" });
+            out.push({ text: kanji.slice(0, 1), ruby: "にち" });
           }
+          if (kanji.length > 1) out.push({ text: kanji.slice(1) });
           dayText = null;
         } else out.push({ text: kanji }); // separators: spaces, commas, colons
         break;
@@ -88,6 +93,19 @@ export function rubyFromParts(parts: Intl.DateTimeFormatPart[]): RubyText {
     }
   }
   return out;
+}
+
+// One Intl.DateTimeFormat per language + options: Today re-reads its clock
+// every minute, and building the formatter costs more than reading it.
+const FORMATTERS = new Map<string, Intl.DateTimeFormat>();
+function formatter(locale: "en-US" | "ja-JP", options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = `${locale}|${JSON.stringify(options)}`;
+  let fmt = FORMATTERS.get(key);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat(locale, options);
+    FORMATTERS.set(key, fmt);
+  }
+  return fmt;
 }
 
 /**
@@ -102,12 +120,12 @@ export function formatDateRuby(
   lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
 ): RubyText {
   const when = typeof date === "string" ? new Date(date) : date;
-  const fmt = new Intl.DateTimeFormat(lang === "en" ? "en-US" : "ja-JP", options);
+  const fmt = formatter(lang === "en" ? "en-US" : "ja-JP", options);
   if (lang !== "ja-furigana") return [{ text: fmt.format(when) }];
   return rubyFromParts(fmt.formatToParts(when));
 }
 
 /** The parts behind a ja-JP date, for callers that assemble their own format. */
 export function jaDateRuby(date: Date, options: Intl.DateTimeFormatOptions): RubyText {
-  return rubyFromParts(new Intl.DateTimeFormat("ja-JP", options).formatToParts(date));
+  return rubyFromParts(formatter("ja-JP", options).formatToParts(date));
 }

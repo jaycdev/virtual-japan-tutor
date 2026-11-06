@@ -135,6 +135,7 @@ export { useEntryLookup } from "./reader/useEntryLookup.ts";
 export type { EntryLookup } from "./reader/useEntryLookup.ts";
 export {
   formatInstant,
+  formatInstantRuby,
   greetingFor,
   greetingRubyFor,
   learnerClock,
@@ -143,6 +144,7 @@ export {
   localDayKey,
   normalizeTimezone,
   stillUnreadFrom,
+  stillUnreadFromRuby,
 } from "./learnerTime.ts";
 export { FAILED_RUN_FALLBACK, todayCardPhase } from "./todayCard.ts";
 export type { TodayCardPhase } from "./todayCard.ts";
