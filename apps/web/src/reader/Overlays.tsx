@@ -1,7 +1,9 @@
 import type { DictionaryEntry, ItemList, StoryGrammarSpan } from "@vjt/api-client";
+import { useT } from "@vjt/core";
 import { useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
+import { T } from "@/components/Text.tsx";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -67,6 +69,7 @@ export function ReaderDialog({
 
 /** A Dictionary Entry: headword, reading, JLPT level, pitch and every sense. */
 export function DictionaryBody({ entry }: { entry: DictionaryEntry }) {
+  const { language } = useT();
   const reading = entry.reading !== entry.headword ? entry.reading : null;
   return (
     <div className="flex flex-col gap-4">
@@ -78,7 +81,7 @@ export function DictionaryBody({ entry }: { entry: DictionaryEntry }) {
       {entry.pitch ? (
         <div className="flex items-center gap-3 text-pitch">
           <PitchGraph pitch={entry.pitch} />
-          <p className="text-caption text-muted-foreground">{pitchCaption(entry.pitch)}</p>
+          <p className="text-caption text-muted-foreground">{pitchCaption(entry.pitch, language)}</p>
         </div>
       ) : null}
       {entry.senses.map((sense, i) => (
@@ -132,6 +135,7 @@ export function SaveBody({
   onSaveToList: (listId: string) => void;
   onCreateAndSave: (name: string) => void;
 }) {
+  const { tp } = useT();
   const [name, setName] = useState("");
   const trimmed = name.trim();
 
@@ -139,7 +143,7 @@ export function SaveBody({
     <div className="flex flex-col gap-4">
       {error ? (
         <p role="alert" className="text-small text-destructive">
-          Could not save — {error}
+          {tp("reader.saveFailed", { message: error })}
         </p>
       ) : null}
       <ul className="flex max-h-64 flex-col overflow-y-auto">
@@ -153,7 +157,11 @@ export function SaveBody({
               className="flex min-h-11 w-full items-center justify-between gap-3 border-b border-border px-2 text-left text-body text-foreground hover:bg-accent disabled:opacity-50"
             >
               <span>{list.name}</span>
-              {list.id === defaultListId ? <span className="text-caption text-muted-foreground">default</span> : null}
+              {list.id === defaultListId ? (
+                <span className="text-caption text-muted-foreground">
+                  <T k="itemList.defaultWord" />
+                </span>
+              ) : null}
             </button>
           </li>
         ))}
@@ -168,13 +176,13 @@ export function SaveBody({
         }}
       >
         <Input
-          aria-label="New list name"
-          placeholder="New list name"
+          aria-label={tp("reader.newListName")}
+          placeholder={tp("reader.newListName")}
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
-        <Button type="submit" aria-label="Create a new list and save" disabled={busy || !trimmed}>
-          Create
+        <Button type="submit" aria-label={tp("reader.createAndSaveAria")} disabled={busy || !trimmed}>
+          <T k="reader.create" />
         </Button>
       </form>
     </div>

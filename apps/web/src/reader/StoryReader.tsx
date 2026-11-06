@@ -5,9 +5,11 @@ import {
   holdSignal,
   menuOptions,
   saveableItem,
+  storyCardMeta,
   useEntryLookup,
   useItemLists,
   useReadingSettings,
+  useT,
   type MenuOptionId,
   type StoryView,
   type TokenRef,
@@ -18,6 +20,7 @@ import { Link, useNavigate } from "react-router";
 
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
+import { T } from "@/components/Text.tsx";
 import { ErrorState, SkeletonLines } from "@/components/states";
 import { cn } from "@/lib/utils";
 import { useStoryTextSize } from "../storysize/index.ts";
@@ -61,6 +64,7 @@ const TOGGLE_MARK_MS = 1000;
 
 export function StoryReader({ client, view, story }: { client: ApiClient; view: StoryView; story: Story }) {
   const navigate = useNavigate();
+  const { language, tp } = useT();
   const { size } = useStoryTextSize();
   const reading = useReadingSettings(client);
   const lists = useItemLists(client);
@@ -257,7 +261,7 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
         ? listsState.lists.find((l) => l.id === listsState.defaultListId)?.name
         : undefined;
     const failed = tok.entSeq !== undefined && lookup.failed(tok.entSeq, tok.surface, tok.reading);
-    return menuOptions(tok, spanAt(menu.ref), listsState.status === "ready", defaultName, failed);
+    return menuOptions(tok, spanAt(menu.ref), listsState.status === "ready", defaultName, failed, language);
   })();
 
   const closeMenu = () => setMenu(null);
@@ -298,7 +302,7 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
     nameHint?: string,
   ) => {
     if (!listId) {
-      setSaveNote("Could not save — Your Item Lists are still loading");
+      setSaveNote(tp("reader.saveListsLoading"));
       return;
     }
     if (saveBusyRef.current) return; // one save at a time
@@ -310,11 +314,11 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
       if (res.ok) {
         const found =
           lists.state.status === "ready" ? lists.state.lists.find((l) => l.id === listId)?.name : undefined;
-        setSaveNote(`Saved to ${found ?? nameHint ?? "your list"}.`);
+        setSaveNote(tp("reader.savedToList", { list: found ?? nameHint ?? tp("reader.yourList") }));
         setDialog(null);
         setSaveError(null);
       } else {
-        setSaveNote(`Could not save — ${res.message}`);
+        setSaveNote(tp("reader.saveFailed", { message: res.message }));
       }
     } finally {
       saveBusyRef.current = false;
@@ -371,7 +375,7 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
           await saveInto(created.list.id, item, created.list.name);
           return;
         }
-        setSaveError(created.ok ? "the new list vanished" : created.message);
+        setSaveError(created.ok ? tp("reader.listVanished") : created.message);
       })
       .finally(() => {
         saveBusyRef.current = false;
@@ -445,7 +449,7 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
       <header className="flex flex-col gap-2">
         <Link to="/stories" className="inline-flex w-fit items-center gap-1 text-small text-muted-foreground hover:text-foreground">
           <ChevronLeft className="size-4" aria-hidden="true" />
-          Back to stories
+          <T k="reader.backToStories" />
         </Link>
         <h1 className="text-display font-semibold text-foreground">{story.title}</h1>
         {story.titleEn ? (
@@ -456,12 +460,12 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
             className="w-fit rounded-sm text-left text-small text-muted-foreground hover:text-foreground"
           >
             <span className={cn(!titleEnRevealed && "blur-xs select-none")}>{story.titleEn}</span>
-            <span className="ml-2 text-caption">{titleEnRevealed ? "Hide translation" : "Show translation"}</span>
+            <span className="ml-2 text-caption">
+              {titleEnRevealed ? <T k="reader.hideTranslation" /> : <T k="reader.showTranslation" />}
+            </span>
           </button>
         ) : null}
-        <p className="text-caption text-muted-foreground">
-          {`${story.genre} · ${story.origin === "on_demand" ? "On demand" : "Automatic"} · ${new Date(story.createdAt).toDateString()}`}
-        </p>
+        <p className="text-caption text-muted-foreground">{storyCardMeta(story, language)}</p>
         {saveNote ? (
           <p role="status" className="text-small text-muted-foreground">
             {saveNote}
@@ -504,7 +508,7 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
           </PopoverAnchor>
         </StoryText>
         <PopoverContent
-          aria-label="Word menu"
+          aria-label={tp("reader.wordMenuAria")}
           align="start"
           sideOffset={6}
           className="w-72"
@@ -548,8 +552,8 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
       <ReaderDialog
         open={dialog?.kind === "dictionary"}
         onOpenChange={(open) => !open && closeDialog()}
-        title={dialogEntry?.headword ?? dialogTok?.surface ?? "Dictionary Entry"}
-        description="Dictionary Entry"
+        title={dialogEntry?.headword ?? dialogTok?.surface ?? tp("reader.dictionaryEntry")}
+        description={tp("reader.dictionaryEntry")}
         testId="dictionary-window"
         onCloseAutoFocus={returnFocus}
       >
@@ -557,7 +561,9 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
           <DictionaryBody entry={dialogEntry} />
         ) : dialogFailed && dialogTok?.entSeq !== undefined ? (
           <div className="flex flex-col items-start gap-3">
-            <p className="text-body text-destructive">The dictionary did not answer.</p>
+            <p className="text-body text-destructive">
+              <T k="reader.dictNoAnswer" />
+            </p>
             <Button
               variant="outline"
               onClick={() => {
@@ -566,7 +572,7 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
                 lookup.load(dialogTok.entSeq, dialogTok.surface, dialogTok.reading);
               }}
             >
-              Retry
+              <T k="common.retry" />
             </Button>
           </div>
         ) : (
@@ -577,8 +583,8 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
       <ReaderDialog
         open={dialog?.kind === "grammar" && dialogSpan !== null}
         onOpenChange={(open) => !open && closeDialog()}
-        title={dialogSpan?.pattern ?? "Grammar Point"}
-        description="Grammar Point"
+        title={dialogSpan?.pattern ?? tp("reader.grammarPoint")}
+        description={tp("reader.grammarPoint")}
         testId="grammar-window"
         onCloseAutoFocus={returnFocus}
       >
@@ -588,8 +594,8 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
       <ReaderDialog
         open={dialog?.kind === "save"}
         onOpenChange={(open) => !open && closeDialog()}
-        title="Save to…"
-        description="Save the word or pattern to one of your lists."
+        title={tp("reader.menu.saveTo")}
+        description={tp("reader.saveToDescription")}
         testId="save-sheet"
         onCloseAutoFocus={returnFocus}
       >
@@ -615,7 +621,7 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
       {view.questions.length > 0 ? (
         <section aria-labelledby="comprehension-heading" className="flex flex-col gap-4 border-t border-border pt-6">
           <h2 id="comprehension-heading" className="text-small font-semibold tracking-wide text-muted-foreground uppercase">
-            Comprehension
+            <T k="reader.comprehension" />
           </h2>
           {view.questions.map((q) => (
             <div key={q.position} className="flex flex-col gap-3">
@@ -625,7 +631,7 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
                   <Button
                     key={j}
                     variant="outline"
-                    aria-label={`Answer ${j + 1}: ${option}`}
+                    aria-label={tp("reader.answerOption", { n: j + 1, option })}
                     disabled={q.result !== null}
                     onClick={() => run(() => view.answer(q.position, j))}
                     className="font-serif"
@@ -636,7 +642,7 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
               </div>
               {q.result ? (
                 <p className={q.result.correct ? "text-small text-success" : "text-small text-destructive"}>
-                  {q.result.correct ? "Correct." : "Not quite — the answer is above your selection."}
+                  {q.result.correct ? <T k="reader.correct" /> : <T k="reader.notQuite" />}
                 </p>
               ) : null}
             </div>
@@ -652,7 +658,7 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
         <Button
           variant="ghost"
           size="icon"
-          aria-label="Previous story"
+          aria-label={tp("reader.prevStoryAria")}
           disabled={!newer}
           onClick={() => newer && navigate(`/stories/${newer.id}`)}
         >
@@ -661,7 +667,7 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
         <Button
           variant="ghost"
           size="icon"
-          aria-label="Next story"
+          aria-label={tp("reader.nextStoryAria")}
           disabled={!older}
           onClick={() => older && navigate(`/stories/${older.id}`)}
         >
@@ -669,19 +675,19 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
         </Button>
         <Button
           variant="ghost"
-          aria-label={story.readAt != null ? "Unmark read" : "Mark read"}
+          aria-label={story.readAt != null ? tp("reader.unmarkReadAria") : tp("stories.markRead")}
           aria-pressed={story.readAt != null}
           disabled={view.pending}
           onClick={() => run(() => (story.readAt != null ? view.clearRead(story.id) : view.setRead(story.id)))}
         >
           {story.readAt != null ? <Check aria-hidden="true" className="text-primary" /> : null}
-          Read
+          <T k="reader.read" />
         </Button>
         <div className="flex items-center gap-1">
           <Button
             variant="ghost"
             size="icon"
-            aria-label="Rate up"
+            aria-label={tp("reader.rateUpAria")}
             aria-pressed={story.rating === "up"}
             disabled={view.pending}
             onClick={() => run(() => view.rate(story.id, "up"))}
@@ -692,7 +698,7 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
           <Button
             variant="ghost"
             size="icon"
-            aria-label="Rate down"
+            aria-label={tp("reader.rateDownAria")}
             aria-pressed={story.rating === "down"}
             disabled={view.pending}
             onClick={() => run(() => view.rate(story.id, "down"))}
@@ -702,7 +708,9 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
           </Button>
         </div>
         <Button asChild className="ml-auto">
-          <Link to={`/practice?storyId=${encodeURIComponent(story.id)}`}>Practice this Story</Link>
+          <Link to={`/practice?storyId=${encodeURIComponent(story.id)}`}>
+            <T k="reader.practiceThis" />
+          </Link>
         </Button>
       </footer>
     </div>

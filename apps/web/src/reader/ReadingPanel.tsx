@@ -1,7 +1,8 @@
 import type { Story } from "@vjt/api-client";
-import { countGlosses, coveringSpan, firstGlosses, grammarCue, type EntryLookup } from "@vjt/core";
+import { countGlosses, coveringSpan, firstGlosses, grammarCue, useT, type EntryLookup } from "@vjt/core";
 
 import { Button } from "@/components/ui/button";
+import { T } from "@/components/Text.tsx";
 import { cn } from "@/lib/utils";
 import type { StoryTextSize } from "../storysize/store.ts";
 import { JlptBadge, SrsLevelText } from "./parts.tsx";
@@ -54,11 +55,12 @@ export function ReadingPanel({
   onToggleBlur: () => void;
   onRetryBlur: () => void;
 }) {
+  const { tp } = useT();
   const sentence = selected !== null ? story.sentences[selected] : undefined;
 
   return (
     <section
-      aria-label="Reading Panel"
+      aria-label={tp("reader.panelAria")}
       data-testid="reading-panel"
       // A fixed height in the story text size, whatever the content: the text below never moves.
       // One bottom border, not a frame (ui-plan 4.1).
@@ -71,7 +73,9 @@ export function ReadingPanel({
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-4">
         {target ? (
           <>
-            <p className="text-caption font-semibold tracking-wide text-muted-foreground uppercase">Word meaning</p>
+            <p className="text-caption font-semibold tracking-wide text-muted-foreground uppercase">
+              <T k="reader.wordMeaning" />
+            </p>
             <LookupBody story={story} target={target} lookup={lookup} />
           </>
         ) : sentence ? (
@@ -84,7 +88,7 @@ export function ReadingPanel({
           </p>
         ) : (
           <p className="text-small text-muted-foreground">
-            Select a sentence to read its translation. Hover or focus a word to see its meaning.
+            <T k="reader.panelHint" />
           </p>
         )}
 
@@ -93,7 +97,7 @@ export function ReadingPanel({
             <button
               type="button"
               onClick={onToggleBlur}
-              aria-label="Sentence Translation"
+              aria-label={tp("reader.sentenceTranslationAria")}
               aria-describedby={blur ? "translation-hidden-note" : undefined}
               className="block w-full rounded-sm text-left text-small text-muted-foreground italic hover:text-foreground"
             >
@@ -101,7 +105,7 @@ export function ReadingPanel({
             </button>
             {blur ? (
               <p id="translation-hidden-note" data-testid="translation-hidden-note" className="text-caption text-muted-foreground">
-                Translation hidden — click or press Enter to show
+                <T k="reader.translationHiddenNote" />
               </p>
             ) : null}
           </div>
@@ -110,9 +114,9 @@ export function ReadingPanel({
         {blurError ? (
           // The message says the reveal did not stick; Retry sends the same save again.
           <div role="alert" className="flex flex-wrap items-center gap-3 text-small text-destructive">
-            <span className="flex-1">Could not save that — {blurError}</span>
+            <span className="flex-1">{tp("reader.blurSaveFailed", { message: blurError })}</span>
             <Button variant="outline" onClick={onRetryBlur}>
-              Retry
+              <T k="common.retry" />
             </Button>
           </div>
         ) : null}
