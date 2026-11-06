@@ -1442,7 +1442,7 @@ export interface components {
             /** @description Whether to render the reading above the surface. True only when the surface actually contains kanji AND the token is unknown, or a Known Item below the Learner's Furigana Threshold; kana-only surfaces never show ruby (their reading is the surface). */
             showFurigana: boolean;
         };
-        /** @description Set on an unlinked token whose surface is exactly a Grammar Point's pattern, such as は or の (a particle; issue #98). It names the catalogue point the word expresses, at its lowest JLPT Level, so the reader's Lookup can show it. It is not a dictionary link: the token has no entSeq, so it is never underlined, never a Weak Signal and never saveable. */
+        /** @description Set on an unlinked particle, such as は, の or へ (issue #98), when the Grammar Catalogue has a point for it. A point matches when its pattern is exactly the surface (は, の), or when its pattern is a bare slash-separated list that names the surface (へ matches the row に/へ). An exact match wins. It names the catalogue point the word expresses, at its lowest JLPT Level, so the reader's Lookup can show it. It is not a dictionary link: the token has no entSeq, so it is never underlined, never a Weak Signal and never saveable. */
         StoryTokenGrammarHint: {
             /** @description The grammar_points catalogue id. */
             grammarPointId: string;

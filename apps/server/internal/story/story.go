@@ -289,12 +289,13 @@ type Span struct {
 	SRSLevel *int
 }
 
-// GrammarHint names the Grammar Point an unlinked token expresses when its
-// surface is exactly that point's pattern (issue #98): the particles は, が,
-// を, に, の, で, と, も, か, ね and よ. It is computed when a Story loads, from
-// the Grammar Catalogue as it stands, so it needs no relink and an edited
-// catalogue shows up at once. A pattern with rows at several levels resolves to
-// the lowest level (N5 first), then catalogue order.
+// GrammarHint names the Grammar Point an unlinked token expresses (issue #98):
+// the particles in hintParticles. A point matches when its pattern is exactly
+// the surface, or when its pattern is a bare slash-separated list that names
+// the surface (へ matches the row に/へ). An exact match wins, then the lowest
+// level (N5 first), then catalogue order. It is computed when a Story loads,
+// from the Grammar Catalogue as it stands, so it needs no relink and an edited
+// catalogue shows up at once.
 type GrammarHint struct {
 	GrammarPointID int64
 	Pattern        string

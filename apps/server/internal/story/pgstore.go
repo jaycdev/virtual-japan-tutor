@@ -213,8 +213,11 @@ func (st *PostgresStore) loadChildren(ctx context.Context, s *Story) error {
 	}
 
 	// The Grammar hint (issue #98) is read from the catalogue on every load,
-	// never stored: only an unlinked token whose surface is exactly a point's
-	// pattern gets one, at the lowest level that has it.
+	// never stored: an unlinked token gets the point whose pattern is exactly
+	// its surface, or else a point whose pattern is a bare list of alternatives
+	// (such as に/へ) that names its surface. An exact row always wins over an
+	// alternative, then the lowest level. Composite patterns such as
+	// が/も〜なら、〜も〜だ are not split: they contain 〜 or 、.
 	trows, err := st.pool.Query(ctx, `
 		SELECT t.sentence_id, t.position, t.surface, t.start, t."end", t.reading, t.dictionary,
 		       t.ent_seq, t.tag, t.srs_level,
@@ -224,8 +227,12 @@ func (st *PostgresStore) loadChildren(ctx context.Context, s *Story) error {
 		LEFT JOIN LATERAL (
 		    SELECT g.id, g.pattern, g.meaning, g.jlpt_level
 		    FROM grammar_points g
-		    WHERE t.ent_seq IS NULL AND g.pattern = t.surface
-		    ORDER BY array_position(ARRAY['N5', 'N4', 'N3', 'N2', 'N1'], g.jlpt_level),
+		    WHERE t.ent_seq IS NULL
+		      AND (g.pattern = t.surface
+		           OR (g.pattern ~ '^[^/〜、]+(/[^/〜、]+)+$'
+		               AND t.surface = ANY(string_to_array(g.pattern, '/'))))
+		    ORDER BY (g.pattern <> t.surface),
+		             array_position(ARRAY['N5', 'N4', 'N3', 'N2', 'N1'], g.jlpt_level),
 		             g.catalogue_number, g.ordinal
 		    LIMIT 1
 		) h ON true

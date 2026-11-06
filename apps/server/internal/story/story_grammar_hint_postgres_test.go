@@ -22,7 +22,7 @@ func TestPostgresStoryLoadsGrammarHintForParticles(t *testing.T) {
 		t.Fatalf("seed user: %v", err)
 	}
 
-	// は at N5 and N4 (the N5 row must win), の at N5 only, へ with no row.
+	// は at N5 and N4 (the N5 row must win), の at N5 only.
 	// Catalogue numbers are high so they cannot clash with a seeded catalogue.
 	insertPoint := func(level string, number int, pattern, meaning string) int64 {
 		t.Helper()
@@ -43,6 +43,18 @@ func TestPostgresStoryLoadsGrammarHintForParticles(t *testing.T) {
 	noID := insertPoint("N5", 990103, noPat, "possessive particle")
 	// な has a catalogue row, but as an auxiliary it must never get a hint.
 	insertPoint("N4", 990104, "な", "don't ~")
+	// へ has no row of its own; it is an alternative of the shared N5 row に/へ.
+	// That row's number is lower than the exact に row's, so the test shows an
+	// exact match beats an alternative before catalogue order is considered.
+	sharedNiE := insertPoint("N5", 990100, "に/へ", "to (direction)")
+	niN5 := insertPoint("N5", 990105, "に", "destination particle")
+	// も appears only in a composite pattern, which must never be split into
+	// alternatives: も gets no hint.
+	insertPoint("N1", 990106, "も〜なら、〜も〜だ", "composite")
+	// ね has an exact N1 row and an N5 alternative row. The exact row wins even
+	// though it is the higher level.
+	neN1 := insertPoint("N1", 990107, "ね", "exact ne at N1")
+	insertPoint("N5", 990108, "か/ね", "alternative at N5")
 
 	var ent int64 = 990199
 	if _, err := pool.Exec(ctx, `INSERT INTO jmdict_entries (ent_seq, is_common) VALUES ($1, true)`, ent); err != nil {
@@ -68,6 +80,9 @@ func TestPostgresStoryLoadsGrammarHintForParticles(t *testing.T) {
 	insert(102, "へ", nil)
 	insert(103, wa, &ent) // linked: a dictionary link wins, so no hint
 	insert(104, "な", nil) // a catalogue row, but not a particle: no hint
+	insert(105, "に", nil)
+	insert(106, "も", nil)
+	insert(107, "ね", nil)
 
 	got, err := st.Get(ctx, saved.ID, user)
 	if err != nil {
@@ -90,8 +105,17 @@ func TestPostgresStoryLoadsGrammarHintForParticles(t *testing.T) {
 	if h := byPos[101].Hint; h == nil || h.GrammarPointID != noID {
 		t.Errorf("の hint = %+v, want point %d", h, noID)
 	}
-	if h := byPos[102].Hint; h != nil {
-		t.Errorf("へ (no catalogue row) hint = %+v, want none", *h)
+	if h := byPos[102].Hint; h == nil || h.GrammarPointID != sharedNiE || h.Pattern != "に/へ" {
+		t.Errorf("へ hint = %+v, want the shared point %d (に/へ)", h, sharedNiE)
+	}
+	if h := byPos[105].Hint; h == nil || h.GrammarPointID != niN5 || h.Meaning != "destination particle" {
+		t.Errorf("に hint = %+v, want its own exact point %d, not the shared row", h, niN5)
+	}
+	if h := byPos[106].Hint; h != nil {
+		t.Errorf("も (only a composite row) hint = %+v, want none: composite patterns are not split", *h)
+	}
+	if h := byPos[107].Hint; h == nil || h.GrammarPointID != neN1 {
+		t.Errorf("ね hint = %+v, want the exact N1 point %d over the N5 alternative", h, neN1)
 	}
 	if h := byPos[103].Hint; h != nil {
 		t.Errorf("linked は hint = %+v, want none: a dictionary link is never replaced by a hint", *h)
