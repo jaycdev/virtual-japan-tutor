@@ -1,7 +1,9 @@
+import { InterfaceLanguageProvider } from "@vjt/core";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
 import { Login } from "./Login.tsx";
+import { unrubyfiedKanji } from "./test/kanjiCoverage.ts";
 
 // The signed-out screen in its new shell: wordmark + title, the fields and
 // button the auth logic already exposes (Username / Password / "Log in"), and
@@ -48,5 +50,26 @@ describe("Login", () => {
   test("disables the button while a login is in flight", () => {
     login({ busy: true });
     expect(screen.getByRole("button", { name: "Log in" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  test("in Japanese (furigana) every chrome kanji stands in a reading column", () => {
+    render(
+      <InterfaceLanguageProvider language="ja-furigana" setLanguage={() => undefined}>
+        <Login
+          busy={false}
+          error={undefined}
+          serverUrl="http://192.168.1.10:8080"
+          onLogin={vi.fn()}
+          onSaveServerUrl={vi.fn(async () => {})}
+        />
+      </InterfaceLanguageProvider>,
+    );
+
+    // Reading columns are being drawn — the chrome switched to Japanese.
+    expect(document.querySelectorAll("[style*='font-size']").length).toBeGreaterThan(0);
+    // The 読 wordmark is brand art (the web twin marks it aria-hidden) and the
+    // language chips name themselves in their own language (the web twin marks
+    // them lang="ja"); both are exempt, by testID, exactly there.
+    expect(unrubyfiedKanji(document.body, ["brand-wordmark", "language-choice"])).toEqual([]);
   });
 });

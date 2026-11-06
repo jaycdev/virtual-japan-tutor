@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { InterfaceLanguageProvider } from '@vjt/core';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { StartingLevelSettings } from './StartingLevelSettings.tsx';
 import { createApiClient } from '@vjt/api-client';
+import { unrubyfiedKanji } from './test/kanjiCoverage.ts';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -160,5 +162,30 @@ describe('mobile StartingLevelSettings', () => {
     renderApp();
     await screen.findByRole('heading', { name: 'Review these grammar matches' });
     expect(await screen.findByText('Nothing needs a second look.')).toBeTruthy();
+  });
+
+  it('in Japanese (furigana) every chrome kanji stands in a reading column', async () => {
+    // Prose, headings, chip row and buttons come from the table, and the
+    // review rows' connective words now ride the twins — so the only bare
+    // kanji left are the Patterns themselves, Learner-catalogue content
+    // exempt by the row's testID.
+    reviewItems = [{ marumoriId: 'Grammar/6578', pattern: '〜未知', jlptLevel: 'N4', matchedPointId: 12, flagged: true }];
+    const client = createApiClient({ baseUrl: 'http://localhost', fetch: fetchMock as unknown as typeof fetch });
+    render(
+      <InterfaceLanguageProvider language="ja-furigana" setLanguage={() => undefined}>
+        <StartingLevelSettings client={client} />
+      </InterfaceLanguageProvider>,
+    );
+    await screen.findByTestId('grammar-review-row');
+    expect(document.querySelectorAll("[style*='font-size']").length).toBeGreaterThan(0);
+    expect(unrubyfiedKanji(document.body, ['grammar-review-row'])).toEqual([]);
+
+    // The result line after a save is drawn from the server's counts, not a
+    // frozen sentence: it carries readings in this language too.
+    fireEvent.click(screen.getByRole('button', { name: 'レベルを保存' }));
+    await waitFor(() =>
+      expect(document.body.textContent).toContain('追加'),
+    );
+    expect(unrubyfiedKanji(document.body, ['grammar-review-row'])).toEqual([]);
   });
 });

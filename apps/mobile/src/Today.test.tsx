@@ -677,7 +677,9 @@ describe('Today', () => {
 
     // Chrome kanji — headings, the sync line, the date — carries reading slots.
     expect(document.querySelectorAll("[style*='font-size']").length).toBeGreaterThan(0);
-    expect(unrubyfiedKanji(document.body, ['today-story-card', 'focus-chip-label'])).toEqual([]);
+    // Only the Learner's own text is exempt: the Story Title and the Focus Set
+    // chips — not the card around them, whose chrome must be annotated.
+    expect(unrubyfiedKanji(document.body, ['today-story-title', 'focus-chip-label'])).toEqual([]);
   });
 });
 
