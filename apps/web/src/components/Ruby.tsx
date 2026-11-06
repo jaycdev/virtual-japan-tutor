@@ -3,6 +3,9 @@
 // a plain text node. Both pieces are React children, never markup from the data.
 // This is the one ruby markup in the app: the Grammar screens and the string
 // table's <T> renderer (Text.tsx) both draw through it (issue #125 review nit).
+// The Story reader draws its own ruby (StoryText.tsx, ADR-0010) and does not
+// come through here, so the ui-ruby class on this element — the hook all
+// interface-furigana CSS is scoped to — never touches Story text (review V1b).
 
 export interface RubyRun {
   /** The base text, as the data gave it. */
@@ -16,8 +19,14 @@ export function Ruby({ runs }: { runs: RubyRun[] }) {
     <>
       {runs.map((run, i) =>
         run.reading ? (
-          <ruby key={i}>
-            {run.text}
+          // V1: the base is wrapped in an inline-block span. Chromium still
+          // justifies the base run under a longer reading even with
+          // ruby-align: center (measured: 配色 widened to 26.3px per kanji);
+          // an inline-block is an atomic inline, so it cannot be pulled apart
+          // and the whole base sits centred instead. index.css pairs this with
+          // ruby-overhang: auto. The text content is unchanged.
+          <ruby key={i} className="ui-ruby">
+            <span className="inline-block">{run.text}</span>
             <rt className="text-furigana-m text-furigana">{run.reading}</rt>
           </ruby>
         ) : (

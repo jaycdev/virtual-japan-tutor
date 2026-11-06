@@ -119,14 +119,19 @@
     --story-line-height: var(--text-story-xl--line-height);
   }
 
-  /* Ruby in interface chrome (issue #125 review V1 and V3) — every <ruby> the
-     <T> renderer and the Grammar Ruby helper draw. The reader's own ruby rules
-     live in reader.css and already do this for .story-text.
+  /* Ruby in interface chrome (issue #125 reviews V1, V1b and V3) — only the
+     <ruby> the <T> renderer and the Grammar Ruby helper draw, which carry the
+     ui-ruby class. The Story reader's own ruby lives in reader.css under
+     .story-text and must keep the exact layout it had before #125, so none of
+     these rules is global (V1b).
 
-     V1: Chromium's default placement spreads the base characters across the
-     width of a longer reading (物 語). ruby-align: center keeps the base
-      characters as one unbroken block and lets the wider reading overhang
-     its sides instead.
+     V1: Chromium still justifies the base run under a longer reading even
+     with ruby-align: center computed (measured in 152: each 配色 box widened
+     to 26.3px under はいしょく). The Ruby component wraps the base in an
+     inline-block span — an atomic inline cannot be justified internally, so
+     the whole base sits centred at its natural advance — and
+     ruby-overhang: auto lets a wider reading borrow space from the edges and
+     the neighbouring kana (Chrome 152).
 
      V3: the reading draws above the base inside the line box, and a ~10.5px
      <rt> needs ~1.9em of room above the text; the UI steps' line heights
@@ -136,11 +141,12 @@
      2.2, so they are untouched, and nothing in the app clips with a fixed
      height (controls use min-h-*), so a taller line simply grows the
      control. rt never wraps: a reading stays one line. */
-  ruby {
+  ruby.ui-ruby {
     ruby-align: center;
     line-height: 1.9;
+    ruby-overhang: auto;
   }
-  rt {
+  ruby.ui-ruby rt {
     white-space: nowrap;
   }
 
