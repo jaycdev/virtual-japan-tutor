@@ -92,8 +92,8 @@ const noInlineFontSize = {
 // escape hatch for the handful of slots that only accept a string (aria-label,
 // placeholder, document.title). The few deliberate exceptions (the 読 logotype,
 // the 吾輩は猫である sample line) carry targeted eslint-disable comments with a
-// reason. apps/mobile is covered by the same rule (#125 PR 3), with the React
-// Native text attributes added to TEXT_ATTRIBUTES below.
+// reason. apps/mobile is covered by the same rule (#125), with the React Native
+// text attributes added to TEXT_ATTRIBUTES below.
 const LETTER = /\p{L}/u;
 function isCopy(value) {
   return LETTER.test(value);
@@ -113,7 +113,7 @@ const TEXT_ATTRIBUTES = new Set([
   "legend",
   "alt",
   "description",
-  // React Native props that carry copy on mobile (#125 PR 3): announced by
+  // React Native props that carry copy on mobile (#125): announced by
   // TalkBack (accessibilityLabel/Hint/Value) or read by our own components
   // (label on form fields). accessibilityRole is an enum, not copy.
   "accessibilityLabel",

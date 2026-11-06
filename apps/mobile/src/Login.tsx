@@ -46,7 +46,17 @@ export function Login({ busy, error, serverUrl, onLogin, onSaveServerUrl }: Logi
     >
       <View className="w-full max-w-[380px] gap-6 rounded-2xl bg-card p-6 shadow-md">
         <View className="items-center gap-1">
-          <Text className={`text-display ${jp.regular} text-primary`} allowFontScaling={false}>
+          {/* The brand wordmark is the kanji 読 in every Interface Language —
+              brand art, not chrome: hidden from assistive tech (the app name
+              below names the brand) and exempted from the coverage check by
+              this testID, exactly as the web twin's aria-hidden marks it. */}
+          <Text
+            testID="brand-wordmark"
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+            className={`text-display ${jp.regular} text-primary`}
+            allowFontScaling={false}
+          >
             {/* eslint-disable-next-line vjt/no-raw-jsx-text -- the brand wordmark is the kanji 読 in every Interface Language */}
             読
           </Text>

@@ -9,8 +9,9 @@ import { describe, expect, it } from "vitest";
 import { render } from "@testing-library/react";
 import { InterfaceLanguageProvider, type InterfaceLanguage, type StringKey } from "@vjt/core";
 import type { ReactNode } from "react";
+import { Pressable } from "react-native";
 
-import { chromeFuriganaPx, labelAria, T, useTp } from "./Text.tsx";
+import { chromeFuriganaPx, Labeled, labelAria, T, useTp } from "./Text.tsx";
 
 function renderT(language: InterfaceLanguage, k: StringKey, params?: Record<string, string | number>, className?: string) {
   return render(
@@ -107,5 +108,49 @@ describe("labelAria", () => {
     );
     // The plain Japanese, not the drawn furigana.
     expect(getByTestId("name").textContent).toBe("重点項目");
+  });
+});
+
+describe("Labeled (furigana inside a labelled control)", () => {
+  // The ui primitives (Chip, Row, TabBar…) name themselves from labelAria/tp
+  // and wrap the drawn label in <Labeled>; a <T> inside then adds nothing to
+  // the accessibility tree.
+  function NamedButton() {
+    const tp = useTp();
+    return (
+      <Pressable accessibilityRole="button" accessibilityLabel={tp("settings.focusAria")}>
+        <Labeled>
+          <T k="settings.focusAria" className="text-body" />
+        </Labeled>
+      </Pressable>
+    );
+  }
+
+  it("exposes exactly one accessible element, named with the plain Japanese", () => {
+    const { container } = render(
+      <InterfaceLanguageProvider language="ja-furigana" setLanguage={() => undefined}>
+        <NamedButton />
+      </InterfaceLanguageProvider>,
+    );
+    const named = Array.from(container.querySelectorAll("[aria-label]"));
+    expect(named).toHaveLength(1);
+    expect(named[0]?.getAttribute("aria-label")).toBe("重点項目");
+    expect(named[0]?.getAttribute("role")).toBe("button");
+    // …while the drawing is unchanged and hides itself from assistive tech:
+    // base and reading both show, and the row carries aria-hidden.
+    expect(container.querySelectorAll('[aria-hidden="true"]')).toHaveLength(1);
+    expect(container.querySelector("[data-testid='furigana-reading']")?.textContent).toBe("じゅうてんこうもく");
+    expect(container.querySelector("[data-testid='furigana-base']")?.textContent).toBe("じゅうてんこうもく重点項目");
+  });
+
+  it("leaves a lone <T> to name its own row", () => {
+    const { container } = render(
+      <InterfaceLanguageProvider language="ja-furigana" setLanguage={() => undefined}>
+        <T k="settings.focusAria" className="text-body" />
+      </InterfaceLanguageProvider>,
+    );
+    const named = Array.from(container.querySelectorAll("[aria-label]"));
+    expect(named).toHaveLength(1);
+    expect(named[0]?.getAttribute("aria-label")).toBe("重点項目");
   });
 });

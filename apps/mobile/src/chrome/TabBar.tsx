@@ -5,7 +5,7 @@ import { useT } from "@vjt/core";
 
 import { MIN_TOUCH } from "../touch.ts";
 import { DESTINATIONS, type Destination } from "./destinations.ts";
-import { T } from "../components/Text.tsx";
+import { Labeled, T } from "../components/Text.tsx";
 
 /**
  * Bottom tab bar: five destinations as labelled icons. Rendered as
@@ -49,14 +49,17 @@ export function TabBar({
             style={{ minHeight: MIN_TOUCH }}
           >
             <Icon size={22} color={selected ? accent : subtle} />
-            <T
-              k={labelKey}
-              className={
-                selected
-                  ? "text-caption font-semibold text-primary"
-                  : "text-caption text-muted-foreground"
-              }
-            />
+            {/* The tab already names itself; the drawn caption stays hidden. */}
+            <Labeled>
+              <T
+                k={labelKey}
+                className={
+                  selected
+                    ? "text-caption font-semibold text-primary"
+                    : "text-caption text-muted-foreground"
+                }
+              />
+            </Labeled>
           </Pressable>
         );
       })}

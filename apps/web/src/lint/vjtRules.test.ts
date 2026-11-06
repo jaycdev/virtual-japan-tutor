@@ -98,7 +98,7 @@ describe("vjt/no-raw-jsx-text (#125)", () => {
     ["a string-expression accessibilityLabel", 'const a = <Pressable accessibilityLabel={"Close"} />;'],
     ["a raw accessibilityHint", 'const a = <Pressable accessibilityHint="Opens the reader" />;'],
     ["a string-expression accessibilityValue", 'const a = <Slider accessibilityValue={"3 of 5"} />;'],
-  ])("flags %s in apps/mobile (#125 PR 3)", async (_label, code) => {
+  ])("flags %s in apps/mobile (#125)", async (_label, code) => {
     expect(await ruleIds("apps/mobile/src/probe.tsx", code)).toContain("vjt/no-raw-jsx-text");
   });
 

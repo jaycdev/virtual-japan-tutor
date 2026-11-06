@@ -95,7 +95,7 @@ export function FocusSetPanel({
         // A one-line explanation and one action, not the old raw "No items."
         <EmptyState
           compact
-          message={tp("mobile.focusEmpty")}
+          message={<T k="mobile.focusEmpty" className="text-center text-body text-muted-foreground" />}
           actionLabel={<T k="practice.openLists" className="text-body font-semibold text-primary" />}
           onAction={onOpenWordLists}
         />

@@ -4,21 +4,26 @@
 // reuses the Story reader's token-column layout (src/reader/StoryText.tsx):
 // each annotated unit is its own column — a reading slot above its base — in a
 // wrapping row, exactly how the reader lays a sentence out. Only the units the
-// string table annotates become columns; the rest of the sentence stays plain
-// text, and `en`/`ja` carry no readings at all and render as one plain Text —
-// the sentence as it always rendered.
+// string table annotates become columns; plain runs split per character (any
+// two Japanese characters are a break opportunity) so a long run wraps with
+// the sentence instead of jumping whole, and `en`/`ja` carry no readings at
+// all and render as one plain Text — the sentence as it always rendered.
 //
 // The reading sits at half the base's size (9 px floor, the reader's own
 // ratio in `furiganaPxFor`) in the `--furigana` colour, and a button or pill
 // that holds an annotated string simply measures the two lines it needs —
-// `min-h-11` rows never clip the reading.
+// `min-h-11` rows never clip the reading. The column markers `furigana-base`
+// and `furigana-reading` are the renderer's own vocabulary: the coverage
+// check (src/test/kanjiCoverage.ts) counts a kanji as annotated only inside a
+// base cell that holds a reading slot.
 //
-// Screen readers get the sentence plain: the drawn columns are hidden whole
-// (the reader's own no-hide-descendants trick) and the container carries one
-// clean label — the Japanese without any readings.
+// Screen readers get the sentence plain: on its own the row is one accessible
+// element carrying the sentence with the readings left out; inside a control
+// that already names itself (the `Labeled` wrapper below) the row hides from
+// assistive tech instead, so the control stays one element with one name.
 
 import { useT, type RubyText, type StringKey, type TranslateParams } from "@vjt/core";
-import { isValidElement, type ReactNode } from "react";
+import { createContext, isValidElement, useContext, type ReactNode } from "react";
 import { Text, View, type StyleProp, type TextStyle } from "react-native";
 
 /** The interface type scale (packages/design tokens.ts), keyed by its class name. */
@@ -46,6 +51,23 @@ function basePxFor(className: string | undefined): number {
 }
 
 /**
+ * True where a control around this text already announces it — set by the
+ * `Labeled` wrapper below. A furigana row inside then stays out of the
+ * accessibility tree rather than standing as a second element naming the
+ * same sentence.
+ */
+const LabeledContext = createContext(false);
+
+/**
+ * Wrap the drawn label of a control whose `accessibilityLabel` says the same
+ * thing (Chip, Row, the tab buttons…): the `<T>` inside hides itself from
+ * assistive tech instead of exposing the sentence a second time.
+ */
+export function Labeled({ children }: { children: ReactNode }) {
+  return <LabeledContext.Provider value={true}>{children}</LabeledContext.Provider>;
+}
+
+/**
  * The segments of one table entry, drawn in the current Interface Language.
  * `className` is the line's text styling (size + colour classes): it rides on
  * every piece of base text — a native Text takes no colour from a View around
@@ -70,6 +92,7 @@ export function TableText({
   /** For status lines: the polite/assertive live region the plain Text had. */
   accessibilityLiveRegion?: "none" | "polite" | "assertive";
 }) {
+  const labeled = useContext(LabeledContext);
   if (!segments.some((segment) => segment.ruby)) {
     // Nothing annotated (en, ja, kanji-free entries): the plain sentence.
     return (
@@ -85,28 +108,43 @@ export function TableText({
     );
   }
   const readingPx = chromeFuriganaPx(basePxFor(className));
-  // One wrapped row of columns and plain runs, the reader's paragraph; the
-  // container is one accessible element naming the sentence plain.
+  // On its own the row is one accessible element labelled with the plain
+  // sentence; inside a labelled control it takes no name at all — the
+  // control's own label already says it, and a second element repeating the
+  // sentence is exactly what a Listener hears twice. (aria-hidden on the web
+  // host, elements-hidden on iOS, no-hide-descendants on Android.)
+  const announce = labeled
+    ? {
+        accessibilityHidden: true,
+        accessibilityElementsHidden: true,
+        importantForAccessibility: "no-hide-descendants" as const,
+      }
+    : {
+        accessibilityRole: accessibilityRole ?? "text",
+        accessible: true,
+        accessibilityLabel: segments.map((segment) => segment.text).join(""),
+      };
   return (
     <View
-      accessibilityRole={accessibilityRole ?? "text"}
       accessibilityLiveRegion={accessibilityLiveRegion}
-      accessible
-      accessibilityLabel={segments.map((segment) => segment.text).join("")}
       testID={testID}
       className="flex-row flex-wrap items-end"
+      {...announce}
     >
       {segments.map((segment, i) =>
         segment.ruby ? (
           // The token column: reading slot over base, hidden from assistive
-          // tech whole so the label above is the only thing read out.
+          // tech whole so the label above is the only thing read out. The
+          // markers tell the coverage check this base really holds a reading.
           <View
             key={i}
+            testID="furigana-base"
             accessibilityElementsHidden
             importantForAccessibility="no-hide-descendants"
             className="items-center"
           >
             <Text
+              testID="furigana-reading"
               className="text-furigana text-center leading-none"
               style={{ fontSize: readingPx, lineHeight: readingPx }}
             >
@@ -117,9 +155,14 @@ export function TableText({
             </Text>
           </View>
         ) : (
-          <Text key={i} className={className} style={style}>
-            {segment.text}
-          </Text>
+          // A plain run wraps like the reader's kana: one Text per character,
+          // so the row breaks the run wherever the sentence needs it, and a
+          // reading column above its base never splits.
+          Array.from(segment.text).map((char, j) => (
+            <Text key={`${i}-${j}`} className={className} style={style}>
+              {char}
+            </Text>
+          ))
         ),
       )}
     </View>

@@ -12,7 +12,7 @@ import { useT } from "@vjt/core";
 import type { ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 
-import { T } from "../components/Text.tsx";
+import { Labeled, T } from "../components/Text.tsx";
 
 /**
  * One shimmering placeholder bar. Exported so a screen can lay its skeleton
@@ -100,11 +100,11 @@ export function EmptyState({
           onPress={onAction}
           className="min-h-11 justify-center rounded-lg border border-primary px-4 active:bg-accent"
         >
-        {typeof actionLabel === "string" ? (
-          <Text className="text-body font-semibold text-primary">{actionLabel}</Text>
-        ) : (
-          actionLabel
-        )}
+          {typeof actionLabel === "string" ? (
+            <Text className="text-body font-semibold text-primary">{actionLabel}</Text>
+          ) : (
+            actionLabel
+          )}
         </Pressable>
       ) : null}
     </View>
@@ -142,7 +142,10 @@ export function InlineError({
           onPress={onRetry}
           className="min-h-11 justify-center rounded-md bg-destructive px-4 active:opacity-80"
         >
-          <T k="common.retry" className="text-body font-semibold text-destructive-foreground" />
+          {/* The button names itself; the drawn line stays hidden. */}
+          <Labeled>
+            <T k="common.retry" className="text-body font-semibold text-destructive-foreground" />
+          </Labeled>
         </Pressable>
       ) : null}
     </View>

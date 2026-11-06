@@ -2,7 +2,7 @@ import { Pressable, Text, View } from "react-native";
 import type { ReactNode } from "react";
 
 import { useT } from "@vjt/core";
-import { labelAria } from "../Text.tsx";
+import { Labeled, labelAria } from "../Text.tsx";
 
 /**
  * One line inside a Card (issue #50): label, optional hint underneath,
@@ -50,7 +50,9 @@ export function Row({
       onPress={onPress}
       className="active:bg-accent"
     >
-      {inner}
+      {/* The row's name is the label + hint; the drawn lines stay out of the
+          accessibility tree so a Listener hears the row once. */}
+      <Labeled>{inner}</Labeled>
     </Pressable>
   );
 }

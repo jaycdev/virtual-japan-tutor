@@ -2,7 +2,7 @@ import { Pressable, Text, View } from "react-native";
 import type { ReactNode } from "react";
 
 import { useT } from "@vjt/core";
-import { labelAria } from "../Text.tsx";
+import { Labeled, labelAria } from "../Text.tsx";
 
 /**
  * A pill for a single choice among a few values (theme, text size, Starting
@@ -42,14 +42,29 @@ export function Chip({
           {label}
         </Text>
       ) : (
-        // A <T> pill (issue #125) styles its own text, colour and weight included.
-        label
+        // A <T> pill (issue #125) styles its own text, colour and weight
+        // included. The chip already speaks this sentence as its name, so the
+        // drawn line stays out of the accessibility tree.
+        <Labeled>{label}</Labeled>
       )}
     </Pressable>
   );
 }
 
-/** Wrapping row of Chips. */
-export function ChipRow({ children }: { children: ReactNode }) {
-  return <View className="flex-row flex-wrap gap-2">{children}</View>;
+/** Wrapping row of Chips. The optional label names the row for assistive tech
+ *  where a visible legend would be redundant (the Interface Language chips). */
+export function ChipRow({
+  children,
+  testID,
+  accessibilityLabel,
+}: {
+  children: ReactNode;
+  testID?: string;
+  accessibilityLabel?: string;
+}) {
+  return (
+    <View testID={testID} accessibilityLabel={accessibilityLabel} className="flex-row flex-wrap gap-2">
+      {children}
+    </View>
+  );
 }
