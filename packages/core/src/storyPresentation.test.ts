@@ -21,14 +21,22 @@ function story(overrides: Partial<Story> = {}): Story {
 }
 
 describe("genreLabel", () => {
-  it("maps only diary, travel and mystery in English and shows the rest as typed", () => {
+  it("maps the English-mapped genres in English and shows the rest as typed", () => {
     expect(genreLabel("diary")).toBe("Diary");
     expect(genreLabel("travel")).toBe("Travel");
     expect(genreLabel("mystery")).toBe("Mystery");
-    expect(genreLabel("slice of life")).toBe("slice of life");
     expect(genreLabel("Anything a Learner typed")).toBe("Anything a Learner typed");
     expect(genreLabel(null)).toBe("");
     expect(genreLabel(undefined)).toBe("");
+  });
+
+  it("reads both languages off one table, with the same case handling", () => {
+    // The preset table is shared: English now covers the server presets too,
+    // and both languages match case-insensitively (issue #125 review S16).
+    expect(genreLabel("slice of life")).toBe("Slice of life");
+    expect(genreLabel("Slice of Life")).toBe("Slice of life");
+    expect(genreLabel("slice of life", "ja")).toBe("日常");
+    expect(genreLabel("Slice of Life", "ja")).toBe("日常"); // same match, either language
   });
 
   it("names every server preset genre in Japanese", () => {
@@ -43,9 +51,11 @@ describe("genreLabel", () => {
     expect(genreLabel("mystery", "ja")).toBe("ミステリー");
   });
 
-  it("shows an unknown genre as typed in Japanese too", () => {
+  it("shows an unknown genre as stored, in either language", () => {
+    expect(genreLabel("cyberpunk")).toBe("cyberpunk");
     expect(genreLabel("cyberpunk", "ja")).toBe("cyberpunk");
-    expect(genreLabel("Slice of Life", "ja")).toBe("日常"); // presets are matched case-insensitively
+    expect(genreLabel("Cyberpunk")).toBe("Cyberpunk");
+    expect(genreLabel("Cyberpunk", "ja")).toBe("Cyberpunk");
   });
 });
 

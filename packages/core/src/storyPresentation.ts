@@ -25,9 +25,11 @@ export function originLabel(
 /**
  * Genre ids in the Learner's words; an unknown genre shows as-is in either
  * language — a Learner can type any genre, and its own words are its label.
- * English today maps only diary/travel/mystery (issue #79); Japanese also
- * maps the server's eight preset genres (story/service.go). Display-only:
- * what is stored and sent stays the English id.
+ * English maps only diary/travel/mystery (issue #79); Japanese also maps the
+ * server's eight preset genres (story/service.go). Display-only: what is
+ * stored and sent stays the English id. One table path for both languages:
+ * the same lookup, the same case handling, and the same pass-through for a
+ * genre the table has never seen (issue #125 review S16).
  */
 const GENRE_STRINGS: Record<string, StringKey> = {
   diary: "genre.diary",
@@ -46,18 +48,6 @@ export function genreLabel(
   lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
 ): string {
   if (genre === null || genre === undefined) return "";
-  if (lang === "en") {
-    switch (genre) {
-      case "diary":
-        return "Diary";
-      case "travel":
-        return "Travel";
-      case "mystery":
-        return "Mystery";
-      default:
-        return genre;
-    }
-  }
   const key = GENRE_STRINGS[genre.toLowerCase()];
   return key === undefined ? genre : translatePlain(lang, key);
 }
