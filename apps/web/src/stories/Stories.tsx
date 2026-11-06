@@ -11,10 +11,14 @@
 import type { ApiClient, GenerateStoryRequest, Story } from "@vjt/api-client";
 import {
   genreLabel,
-  stageLabel,
+  progressLabel,
   storyCardMeta,
+  translatePlain,
   useStory,
   useStoryGeneration,
+  useT,
+  type InterfaceLanguage,
+  type StringKey,
 } from "@vjt/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
@@ -38,6 +42,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState, ErrorState, ProgressStatus, SkeletonLines } from "@/components/states";
+import { T } from "@/components/Text.tsx";
 import { cn } from "@/lib/utils";
 import { useMinuteClock } from "@/lib/useMinuteClock";
 import { TodayStoryCard } from "./TodayStoryCard.tsx";
@@ -55,6 +60,7 @@ export interface StoriesProps {
 }
 
 export function Stories({ client, generationPollMs }: StoriesProps) {
+  const { tp, language } = useT();
   const view = useStory(client, LIBRARY_PAGE_SIZE);
   const gen = useStoryGeneration(client, generationPollMs ?? 1500);
   // The shared minute clock (the same hook Today uses): the pinned card's
@@ -186,7 +192,9 @@ export function Stories({ client, generationPollMs }: StoriesProps) {
 
   return (
     <div className="flex flex-col gap-6" data-testid="stories">
-      <h1 className="text-display font-semibold text-foreground">Stories</h1>
+      <h1 className="text-display font-semibold text-foreground">
+        <T k="nav.stories" />
+      </h1>
 
       {/* ── Today's Story, pinned, with Generate beside it ─────────────── */}
       <div className="flex flex-col gap-3" data-testid="today-section">
@@ -209,7 +217,7 @@ export function Stories({ client, generationPollMs }: StoriesProps) {
           disabled={status === "running"}
           data-testid="today-generate"
         >
-          {status === "running" ? "Writing…" : "Generate a Story"}
+          {status === "running" ? <T k="stories.writing" /> : <T k="today.storyGenerate" />}
         </Button>
       </div>
 
@@ -217,14 +225,14 @@ export function Stories({ client, generationPollMs }: StoriesProps) {
       <section className="flex flex-col gap-3" aria-labelledby="library-heading" data-testid="library-section">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 id="library-heading" className="text-title-sm font-semibold text-foreground">
-            Story Library
+            <T k="stories.libraryHeading" />
           </h2>
-          <div className="flex items-center gap-1" role="group" aria-label="Library layout">
+          <div className="flex items-center gap-1" role="group" aria-label={tp("stories.ariaLayout")}>
             <Button
               variant={layout === "grid" ? "secondary" : "ghost"}
               size="icon"
               aria-pressed={layout === "grid"}
-              aria-label="Grid layout"
+              aria-label={tp("stories.gridLayout")}
               onClick={() => chooseLayout("grid")}
               data-testid="layout-grid"
             >
@@ -234,7 +242,7 @@ export function Stories({ client, generationPollMs }: StoriesProps) {
               variant={layout === "list" ? "secondary" : "ghost"}
               size="icon"
               aria-pressed={layout === "list"}
-              aria-label="List layout"
+              aria-label={tp("stories.listLayout")}
               onClick={() => chooseLayout("list")}
               data-testid="layout-list"
             >
@@ -244,20 +252,22 @@ export function Stories({ client, generationPollMs }: StoriesProps) {
         </div>
 
         <div className="flex flex-wrap items-center gap-2" data-testid="library-filters">
-          <FilterChip label="Unread" active={unreadOnly} onPress={() => setFilter("filter", "unread")} />
-          <FilterChip label="All" active={!unreadOnly} onPress={() => setFilter("filter", null)} />
+          <FilterChip k="stories.filterUnread" active={unreadOnly} onPress={() => setFilter("filter", "unread")} />
+          <FilterChip k="stories.filterAll" active={!unreadOnly} onPress={() => setFilter("filter", null)} />
           <label className="ml-2 flex items-center gap-2 text-small text-muted-foreground">
-            Genre
+            <T k="stories.genre" />
             <select
               value={genre ?? ""}
               onChange={(event) => setFilter("genre", event.target.value === "" ? null : event.target.value)}
               className="h-9 rounded-md border border-input bg-background px-2 text-small text-foreground"
               data-testid="genre-filter"
             >
-              <option value="">All genres</option>
+              <option value="">
+                <T k="stories.allGenres" />
+              </option>
               {genreChoices.map((option) => (
                 <option key={option} value={option}>
-                  {genreLabel(option) || option}
+                  {genreLabel(option, language) || option}
                 </option>
               ))}
             </select>
@@ -315,13 +325,13 @@ export function Stories({ client, generationPollMs }: StoriesProps) {
             {visible.length === 0 && items.length > 0 ? (
               <EmptyState
                 compact
-                message="No Stories match these filters."
+                message={tp("stories.noneMatch")}
                 action={
                   <Button
                     variant="outline"
                     onClick={clearFilters}
                   >
-                    Clear filters
+                    <T k="stories.clearFilters" />
                   </Button>
                 }
               />
@@ -330,12 +340,12 @@ export function Stories({ client, generationPollMs }: StoriesProps) {
                 compact
                 message={
                   filtered
-                    ? "No Stories yet — and nothing to filter."
-                    : "No Stories yet. The tutor writes one for you every day, or Generate writes one now."
+                    ? tp("stories.noneFiltered")
+                    : tp("stories.noneAny")
                 }
                 action={
                   <Button variant="outline" onClick={openGenerate}>
-                    Generate a Story
+                    <T k="today.storyGenerate" />
                   </Button>
                 }
               />
@@ -345,7 +355,10 @@ export function Stories({ client, generationPollMs }: StoriesProps) {
 
         {view.library.status === "ready" && hiddenByFilter > 0 ? (
           <p className="text-caption text-muted-foreground" data-testid="library-filter-note">
-            {`${hiddenByFilter} of the ${items.length} Stories on this page are hidden by your filters.`}
+            <T
+              k="stories.hiddenByFilter"
+              params={{ hidden: hiddenByFilter, total: items.length }}
+            />
           </p>
         ) : null}
 
@@ -357,10 +370,10 @@ export function Stories({ client, generationPollMs }: StoriesProps) {
               onClick={() => void view.loadPage(Math.max(0, page.offset - page.limit))}
               data-testid="pager-newer"
             >
-              Newer stories
+              <T k="stories.newer" />
             </Button>
             <p className="text-caption text-muted-foreground" data-testid="library-page-summary">
-              {pageSummary(page)}
+              {pageSummary(page, language)}
             </p>
             <Button
               variant="outline"
@@ -368,7 +381,7 @@ export function Stories({ client, generationPollMs }: StoriesProps) {
               onClick={() => void view.loadPage(page.offset + page.items.length)}
               data-testid="pager-older"
             >
-              Older stories
+              <T k="stories.older" />
             </Button>
           </div>
         ) : null}
@@ -382,11 +395,13 @@ export function Stories({ client, generationPollMs }: StoriesProps) {
         onGenreChange={setPickGenre}
         onThemeChange={setPickTheme}
         running={status === "running"}
-        progressLabel={status === "running" ? `${stageLabel(gen.generation.progress)} ${Math.round(gen.generation.progress.percent ?? 0)}%` : ""}
+        progressLabel={
+          status === "running" ? progressLabel(gen.generation.progress, language) : ""
+        }
         progressValue={status === "running" ? (gen.generation.progress.percent ?? 0) / 100 : 0}
         error={
           runHere && status === "failed"
-            ? (gen.generation.progress.message ?? "Couldn’t write a Story for you.")
+            ? (gen.generation.progress.message ?? tp("story.runFailed"))
             : runHere
               ? gen.error
               : null
@@ -398,24 +413,24 @@ export function Stories({ client, generationPollMs }: StoriesProps) {
       <Dialog open={confirmTarget !== null} onOpenChange={(open) => !open && setPendingDelete(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete this Story?</DialogTitle>
-            <DialogDescription>
-              {`“${confirmTarget?.title ?? ""}” goes away for good, along with its rating. Your Practice Records stay.`}
-            </DialogDescription>
+            <DialogTitle>
+              <T k="stories.deleteTitle" />
+            </DialogTitle>
+            <DialogDescription>{tp("stories.deleteBody", { title: confirmTarget?.title ?? "" })}</DialogDescription>
           </DialogHeader>
           {confirmTarget && view.error ? (
             <p role="alert" className="text-small text-destructive">{view.error}</p>
           ) : null}
           <DialogFooter>
             <Button variant="outline" onClick={() => setPendingDelete(null)}>
-              Keep
+              <T k="stories.deleteKeep" />
             </Button>
             <Button
               variant="destructive"
               disabled={view.pending}
               onClick={() => confirmTarget && void view.removeStory(confirmTarget.id)}
             >
-              Delete
+              <T k="stories.delete" />
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -425,8 +440,15 @@ export function Stories({ client, generationPollMs }: StoriesProps) {
 }
 
 /** The Library page's place in the whole: "1-20 of 57". */
-function pageSummary(page: { items: unknown[]; total: number; limit: number; offset: number }): string {
-  return `${page.offset + 1}-${Math.min(page.offset + page.items.length, page.total)} of ${page.total}`;
+function pageSummary(
+  page: { items: unknown[]; total: number; limit: number; offset: number },
+  language: InterfaceLanguage,
+): string {
+  return translatePlain(language, "stories.pageRange", {
+    from: page.offset + 1,
+    to: Math.min(page.offset + page.items.length, page.total),
+    total: page.total,
+  });
 }
 
 function readLayout(): "grid" | "list" {
@@ -438,14 +460,14 @@ function readLayout(): "grid" | "list" {
 }
 
 /** A filter chip (Unread | All): the pressed state is the selected state. */
-function FilterChip({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+function FilterChip({ k, active, onPress }: { k: StringKey; active: boolean; onPress: () => void }) {
   return (
     <Button
       variant={active ? "secondary" : "outline"}
       aria-pressed={active}
       onClick={onPress}
     >
-      {label}
+      <T k={k} />
     </Button>
   );
 }
@@ -473,6 +495,7 @@ function StoryCard({
   onMarkUnread: () => void;
   onAskDelete: () => void;
 }) {
+  const { tp, language } = useT();
   return (
     <Card
       className="relative gap-2 px-6 transition-shadow hover:shadow-md focus-within:shadow-md"
@@ -481,7 +504,7 @@ function StoryCard({
       <div className="flex items-center gap-2">
         <Link
           to={`/stories/${story.id}`}
-          aria-label={`Open story: ${story.title}`}
+          aria-label={tp("stories.ariaOpen", { title: story.title })}
           className="min-w-0 flex-1 text-body font-semibold text-foreground hover:underline after:absolute after:inset-0 after:content-['']"
           data-testid={`story-open-${story.id}`}
         >
@@ -490,7 +513,7 @@ function StoryCard({
         {story.readAt ? (
           <Badge variant="secondary" className="gap-1" data-testid={`story-read-${story.id}`}>
             <Check className="h-3.5 w-3.5" />
-            Read
+            <T k="stories.readBadge" />
           </Badge>
         ) : null}
         <DropdownMenu>
@@ -498,7 +521,7 @@ function StoryCard({
             <Button
               variant="ghost"
               size="icon"
-              aria-label={`Actions for ${story.title}`}
+              aria-label={tp("stories.ariaActions", { title: story.title })}
               className="relative z-10"
               data-testid={`story-menu-${story.id}`}
             >
@@ -508,11 +531,11 @@ function StoryCard({
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={story.readAt ? onMarkUnread : onMarkRead} data-testid="menu-mark-read">
               {story.readAt ? <X /> : <Check />}
-              {story.readAt ? "Mark unread" : "Mark read"}
+              <T k={story.readAt ? "stories.markUnread" : "stories.markRead"} />
             </DropdownMenuItem>
             <DropdownMenuItem variant="destructive" onClick={onAskDelete} data-testid="menu-delete">
               <Trash2 />
-              Delete
+              <T k="stories.delete" />
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -523,16 +546,16 @@ function StoryCard({
           type="button"
           onClick={onToggleReveal}
           aria-expanded={revealed}
-          aria-label={revealed ? undefined : "Show title translation"}
+          aria-label={revealed ? undefined : tp("stories.ariaShowTranslation")}
           className="relative z-10 self-start text-left text-small text-muted-foreground hover:underline"
           data-testid={`title-translation-${story.id}`}
         >
-          {revealed ? story.titleEn : "Title translation hidden — click to show"}
+          {revealed ? story.titleEn : <T k="stories.translationHidden" />}
         </button>
       ) : null}
 
       <p className="text-caption text-muted-foreground" data-testid={`story-meta-${story.id}`}>
-        {storyCardMeta(story)}
+        {storyCardMeta(story, language)}
       </p>
     </Card>
   );
@@ -571,42 +594,49 @@ function GenerateDialog({
   onGenerate: () => void;
   onClose: () => void;
 }) {
+  const { language } = useT();
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Generate a Story</DialogTitle>
+          <DialogTitle>
+            <T k="today.storyGenerate" />
+          </DialogTitle>
           <DialogDescription>
-            One new Story now. Genre and Theme are optional — leave them on Any and the tutor chooses.
+            <T k="stories.generateBody" />
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-3">
           <label className="flex items-center justify-between gap-3 text-small text-muted-foreground">
-            Genre
+            <T k="stories.genre" />
             <select
               value={genre ?? ""}
               onChange={(event) => onGenreChange(event.target.value === "" ? null : event.target.value)}
               className="h-9 max-w-56 rounded-md border border-input bg-background px-2 text-small text-foreground"
               data-testid="generate-genre-picker"
             >
-              <option value="">Any genre</option>
+              <option value="">
+                <T k="stories.anyGenre" />
+              </option>
               {suggestions.genres.map((option) => (
                 <option key={option} value={option}>
-                  {genreLabel(option) || option}
+                  {genreLabel(option, language) || option}
                 </option>
               ))}
             </select>
           </label>
           <label className="flex items-center justify-between gap-3 text-small text-muted-foreground">
-            Theme
+            <T k="stories.theme" />
             <select
               value={theme ?? ""}
               onChange={(event) => onThemeChange(event.target.value === "" ? null : event.target.value)}
               className="h-9 max-w-56 rounded-md border border-input bg-background px-2 text-small text-foreground"
               data-testid="generate-theme-picker"
             >
-              <option value="">Any theme</option>
+              <option value="">
+                <T k="stories.anyTheme" />
+              </option>
               {suggestions.themes.map((option) => (
                 <option key={option} value={option}>
                   {option}
@@ -619,7 +649,9 @@ function GenerateDialog({
         {running ? (
           <div className="flex flex-col gap-2" data-testid="generate-progress">
             <ProgressStatus value={progressValue} label={progressLabel} />
-            <p className="text-caption text-muted-foreground">It keeps writing if you close this dialog.</p>
+            <p className="text-caption text-muted-foreground">
+              <T k="stories.keepWriting" />
+            </p>
           </div>
         ) : null}
 
@@ -631,10 +663,10 @@ function GenerateDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
-            Cancel
+            <T k="common.cancel" />
           </Button>
           <Button onClick={onGenerate} disabled={running} data-testid="generate-confirm">
-            Generate
+            <T k="stories.generateConfirm" />
           </Button>
         </DialogFooter>
       </DialogContent>
