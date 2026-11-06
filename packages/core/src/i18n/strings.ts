@@ -743,7 +743,7 @@ export const strings = {
   },
   "practice.intro": {
     en: "A session is about twenty exercises drawn from your Focus Set, recognition and grammar cloze. Every answer feeds your mastery record.",
-    ja: "1回《かい》の練習《れんしゅう》は重点項目《じゅうてんこうもく》から作《つく》る約《やく》20問《もん》。意味《いみ》を問《と》う問題《もんだい》と文法《ぶんぽう》の穴埋《うず》め問題《もんだい》です。答《こた》えはすべて習熟《しゅうじゅく》記録《きろく》に反映《はんえい》します。",
+    ja: "1回《かい》の練習《れんしゅう》は重点項目《じゅうてんこうもく》から作《つく》る約《やく》20問《もん》。意味《いみ》を問《と》う問題《もんだい》と文法《ぶんぽう》の穴埋《あなう》め問題《もんだい》です。答《こた》えはすべて習熟《しゅうじゅく》記録《きろく》に反映《はんえい》します。",
   },
   "practice.start": { en: "Start a practice session", ja: "練習《れんしゅう》を始《はじ》める" },
   "practice.empty": {
@@ -961,8 +961,10 @@ export const strings = {
     ja: "他《ほか》には{variants}とも書《か》かれます",
   },
 
-  // — Mobile-only chrome (issue #125 Part 3) — the phone's own copy where it
-  // differs from the web's, kept byte-identical to what the app renders today.
+  // — Mobile-only chrome — the phone's own copy where it differs from the
+  // web's, kept byte-identical to what the app renders today. Where the phone's
+  // English is the web's word for word, the web key is used instead and no
+  // entry lives here.
   "mobile.themeLegend": { en: "Colour theme", ja: "配色《はいしょく》" },
   "mobile.themeNote": {
     en: "System follows the device. The choice is saved on this device only.",
@@ -974,17 +976,17 @@ export const strings = {
   },
   "mobile.readingBlurHint": {
     en: "A word you have not practised enough shows its meaning only after you ask",
-    ja: "十分《じゅうぶん》に練習《れんしゅう》していない語《ご》は、求《もと》めた後《あと》でだけ意味《いみ》を表示《ひょうじ》します",
+    ja: "十分《じゅうぶん》に練習《れんしゅう》していない語《ご》は、あなたが求《もと》めたときだけ意味《いみ》を表示《ひょうじ》します。",
   },
   "mobile.readingSavedNote": {
     en: "Saved — the reader uses this from the next lookup on.",
-    ja: "保存《ほぞん》しました — 次《つぎ》の検索《けんさく》から読解《どっかい》パネルに使《つか》われます。",
+    ja: "保存《ほぞん》しました。次《つぎ》の検索《けんさく》から読解《どっかい》パネルに使《つか》われます。",
   },
-  "mobile.serverLine": { en: "Server: {url}", ja: "サーバー: {url}" },
+  "mobile.serverLine": { en: "Server: {url}", ja: "サーバー：{url}" },
   "mobile.changeServer": { en: "Change server", ja: "サーバーを変《か》える" },
   "mobile.serverUrlShape": {
     en: "Enter the full address, like http://192.168.1.10:8080",
-    ja: "完全《かんぜん》なアドレスを入力《にゅうりょく》してください（例《れい》: http://192.168.1.10:8080）",
+    ja: "完全《かんぜん》なアドレスを入力《にゅうりょく》してください（例《れい》：http://192.168.1.10:8080）",
   },
   "mobile.serverSaveFailed": { en: "Could not save the address", ja: "アドレスを保存《ほぞん》できませんでした" },
   "mobile.saveServer": { en: "Save server", ja: "サーバーを保存《ほぞん》" },
@@ -998,7 +1000,7 @@ export const strings = {
     en: "The app talks to your Virtual Japan Tutor server at this address.",
     ja: "このアプリは Virtual Japan Tutor のサーバーとこのアドレスで通信《つうしん》します。",
   },
-  "mobile.serverCurrent": { en: "Currently: {url}", ja: "現在《げんざい》: {url}" },
+  "mobile.serverCurrent": { en: "Currently: {url}", ja: "現在《げんざい》：{url}" },
   "mobile.serverUrlPlaceholder": { en: "http://192.168.1.10:8080", ja: "http://192.168.1.10:8080" },
   "mobile.serverSignOutNote": {
     en: "Saving signs you out and reconnects the app to that server.",
@@ -1008,12 +1010,8 @@ export const strings = {
     en: "Use the emulator default (http://10.0.2.2:8080)",
     ja: "エミュレーターの既定《きてい》を使《つか》う（http://10.0.2.2:8080）",
   },
-  "mobile.serverReachFailed": {
-    en: "Cannot reach the server: {message}",
-    ja: "サーバーに接続《せつぞく》できません: {message}",
-  },
-  "mobile.appVersion": { en: "App version: {version}", ja: "アプリのバージョン: {version}" },
-  "mobile.serverVersion": { en: "Server version: {version}", ja: "サーバーのバージョン: {version}" },
+  "mobile.appVersion": { en: "App version: {version}", ja: "アプリのバージョン：{version}" },
+  "mobile.serverVersion": { en: "Server version: {version}", ja: "サーバーのバージョン：{version}" },
   "mobile.versionMismatch": {
     en: "This app is {app} and the server is {server}. They may not work together: update the app or the server to the same release.",
     ja: "このアプリは {app}、サーバーは {server}です。正《ただ》しく動《うご》かないかもしれません。アプリかサーバーを同《おな》じリリースに更新《こうしん》してください。",
@@ -1023,7 +1021,7 @@ export const strings = {
     en: "Three short steps to set you up — you can skip any of them and change everything later under Settings.",
     ja: "短《みじか》い3つのステップで設定《せってい》します。どのステップもスキップでき、全《すべ》ての設定《せってい》は後《あと》で変《か》えられます。",
   },
-  "mobile.setupStepOf": { en: "Step {step} of {total}: {title}", ja: "ステップ{step}/{total}: {title}" },
+  "mobile.setupStepOf": { en: "Step {step} of {total}: {title}", ja: "ステップ{step}/{total}：{title}" },
 
   // The MaruMori screen: the phone's copy trails the web's where punctuation
   // and wording drift (the web has "Connected to MaruMori." with the full stop).
@@ -1037,30 +1035,15 @@ export const strings = {
     ja: "キーは保存《ほぞん》済《ず》み — 新《あら》たなキーを貼《は》ると置《お》き換《か》わります",
   },
   "mobile.marumoriKeyPlaceholder": { en: "Your MaruMori API key", ja: "MaruMoriのAPIキー" },
-  "mobile.marumoriLastSyncAt": { en: "Last Sync {when}", ja: "最終《さいしゅう》同期《どうき》 {when}" },
+  // The phone's counts line is terser than the web twin's, and names the items
+  // 単語 where the web says 語彙.
   "mobile.marumoriCounts": {
     en: "Known kanji: {kanji} · Known vocabulary: {vocabulary} · Vocabulary linked: {linkRate}%",
-    ja: "既知《ち》の漢字《かんじ》: {kanji} · 既知《ち》の単語《たんご》: {vocabulary} · 単語《たんご》リンク: {linkRate}%",
-  },
-  "mobile.marumoriLoadFailed": {
-    en: "Cannot load MaruMori status: {message}",
-    ja: "MaruMoriの状態《じょうたい》を読《よ》み込《こ》めません: {message}",
-  },
-  "mobile.marumoriRunsLoadFailed": {
-    en: "Cannot load Sync history: {message}",
-    ja: "同期《どうき》の履歴《りれき》を読《よ》み込《こ》めません: {message}",
-  },
-  "mobile.marumoriSyncFailed": {
-    en: "Last Sync failed: {detail}",
-    ja: "前《まえ》の同期《どうき》に失敗《しっぱい》: {detail}",
+    ja: "既習《きしゅう》の漢字《かんじ》: {kanji} · 既習《きしゅう》の単語《たんご》: {vocabulary} · 単語《たんご》リンク: {linkRate}%",
   },
 
   // Item Lists on the phone: the hub blurb and row hints trail the web's
   // where the phone's wording differs ("Tap" where web says "Choose").
-  "mobile.listsLoadFailed": {
-    en: "Cannot load your Item Lists: {message}",
-    ja: "リストを読《よ》み込《こ》めません: {message}",
-  },
   "mobile.listsIntro": {
     en: "Saving a word from a story adds it to the Default List. A Boosting List also pulls its not-yet-known items into your stories’ Focus Sets. Tap a list to manage its items.",
     ja: "物語《ものがたり》から単語《たんご》を保存《ほぞん》すると、既定《きてい》のリストに追加《ついか》されます。優先《ゆうせん》リストは、まだ知《し》らない項目《こうもく》を物語《ものがたり》の重点項目《じゅうてんこうもく》にも追加《ついか》します。リストをタップして項目《こうもく》を管理《かんり》してください。",
@@ -1077,7 +1060,7 @@ export const strings = {
   },
   "mobile.boostingHint": {
     en: "Push not-yet-known items into Focus Sets",
-    ja: "まだ知《し》らない項目《こうもく》を重点項目《じゅうてんこうもく》に追加《ついか》します",
+    ja: "まだ知《し》らない項目《こうもく》を重点項目《じゅうてんこうもく》に追加《ついか》します。",
   },
 
   // AI Providers on the phone: the row actions and key-field placeholders
@@ -1090,14 +1073,10 @@ export const strings = {
   },
   "mobile.aiKeyNonePlaceholder": {
     en: "Leave empty if the endpoint needs none",
-    ja: "エンドポイントにキーが不要《ふよう》なら空《から》にしてください",
+    ja: "エンドポイントにキーが不要《ふよう》なら空《から》にしてください。",
   },
 
   // Story preferences on the phone.
-  "mobile.storySettingsLoadFailed": {
-    en: "Cannot load your story settings: {message}",
-    ja: "物語《ものがたり》の設定《せってい》を読《よ》み込《こ》めません: {message}",
-  },
   "mobile.timezoneFieldLabel": { en: "Timezone", ja: "タイムゾーン" },
   "mobile.futureStories": { en: "Future stories", ja: "これからの物語《ものがたり》" },
   "mobile.storySavedNote": {
@@ -1114,17 +1093,17 @@ export const strings = {
   },
   "mobile.focusEmpty": {
     en: "No items in your Focus Set yet",
-    ja: "重点項目《じゅうてんこうもく》はまだ項目《こうもく》なし",
+    ja: "重点項目《じゅうてんこうもく》にはまだ項目《こうもく》がありません",
   },
   "mobile.focusShowFewerAria": {
     en: "Show fewer Focus Set items",
-    ja: "重点項目《じゅうてんこうもく》を少《すく》ない件数《けんすう》で表示《ひょうじ》",
+    ja: "重点項目《じゅうてんこうもく》の表示《ひょうじ》を減《へ》らす",
   },
   "mobile.focusShowAllAria": {
     en: "Show all {count} Focus Set items",
     ja: "重点項目《じゅうてんこうもく》{count}件《けん》をすべて表示《ひょうじ》",
   },
-  "mobile.focusShowFewer": { en: "Show fewer", ja: "少《すく》ない件数《けんすう》で表示《ひょうじ》" },
+  "mobile.focusShowFewer": { en: "Show fewer", ja: "表示《ひょうじ》を減《へ》らす" },
   "mobile.focusShownCount": {
     en: "{shown} of {total} Focus Set items shown",
     ja: "重点項目《じゅうてんこうもく》 {shown}/{total}件《けん》を表示《ひょうじ》中《ちゅう》",
@@ -1135,21 +1114,17 @@ export const strings = {
   },
 
   // The Stories library as the phone shows it.
-  "mobile.storyOpensReader": { en: "Opens the Reader", ja: "リーダーを開《ひら》きます" },
-  "mobile.storyReadOn": { en: "Read on {date}", ja: "{date}に読《よ》んだ" },
-  "mobile.storyTranslationHidden": {
-    en: "Title translation hidden — tap to show",
-    ja: "タイトル訳《やく》は隠《かく》れています — タップで表示《ひょうじ》",
-  },
+  "mobile.storyOpensReader": { en: "Opens the Reader", ja: "読解《どっかい》画面《がめん》を開《ひら》きます" },
+  "mobile.storyReadOn": { en: "Read on {date}", ja: "{date}に読《よ》みました" },
   "mobile.storyMenuHint": {
     en: "Mark read, or delete this story",
     ja: "読《よ》んだことにするか、この物語《ものがたり》を削除《さくじょ》します",
   },
-  // The phone keeps the non-breaking tie that stops “Your Practice Records
+  // The English keeps the non-breaking tie that stops “Your Practice Records
   // stay.” orphaning a word on a narrow card.
   "mobile.storyDeleteBody": {
     en: "“{title}” goes away for good, along with its rating.\u00A0Your Practice Records stay.",
-    ja: "「{title}」は評価《ひょうか》とともに削除《さくじょ》されます。\u00A0練習《れんしゅう》記録《きろく》は残《のこ》ります。",
+    ja: "「{title}」は評価《ひょうか》とともに削除《さくじょ》されます。練習《れんしゅう》記録《きろく》は残《のこ》ります。",
   },
   "mobile.storyRunningHint": {
     en: "A Story is already being written",
@@ -1163,7 +1138,7 @@ export const strings = {
   "mobile.themeForStory": { en: "Theme for this story", ja: "この物語《ものがたり》のテーマ" },
   "mobile.storiesLoadFailed": {
     en: "Cannot load your library: {message}",
-    ja: "ライブラリを読《こ》み込《こ》めません: {message}",
+    ja: "ライブラリを読《よ》み込《こ》めません: {message}",
   },
   "mobile.storiesKeepWriting": {
     en: "It keeps writing if you leave this page.",
@@ -1192,7 +1167,7 @@ export const strings = {
     en: "Asks the tutor whether today's Story has been written",
     ja: "チューターが今日《きょう》の物語《ものがたり》を書《か》いたかどうかを確認《かくにん》します",
   },
-  "mobile.genreFilterAria": { en: "Genre filter", ja: "ジャンルフィルタ" },
+  "mobile.genreFilterAria": { en: "Genre filter", ja: "ジャンルのフィルター" },
   // The phone's page summary joins its numbers with an en dash, where the web
   // key uses a hyphen.
   "mobile.pageRange": {
@@ -1221,40 +1196,33 @@ export const strings = {
   // tap-to-reveal line, and the reader is the whole screen — the web's
   // reader never needed these as strings.
   "mobile.readerScreenAria": { en: "Story reader", ja: "読解《どっかい》画面《がめん》" },
-  "mobile.readerStoryTextAria": { en: "Story text", ja: "物語《ものがたり》の本《ほん》文《ぶん》" },
+  "mobile.readerStoryTextAria": { en: "Story text", ja: "物語《ものがたり》の本文《ほんぶん》" },
   "mobile.readerTitleAria": { en: "Title translation", ja: "タイトル訳《やく》" },
   "mobile.readerTitleHiddenNote": {
     en: "Title translation hidden — tap to show",
     ja: "タイトル訳《やく》は隠《かく》れています — タップで表示《ひょうじ》",
   },
+  // Sentence Translation is 文の訳 (GLOSSARY), not 翻訳.
   "mobile.readerTapToShowTranslation": {
     en: "Tap to show the translation",
-    ja: "タップで翻訳《ほんやく》を表示《ひょうじ》",
+    ja: "タップで文《ぶん》の訳《やく》を表示《ひょうじ》",
   },
   "mobile.readerTapToHideTranslation": {
     en: "Tap to hide the translation",
-    ja: "タップで翻訳《ほんやく》を隠《かく》す",
-  },
-  "mobile.readerListVanished": {
-    en: "the new list vanished",
-    ja: "新《あたら》しいリストが消《き》えました",
+    ja: "タップで文《ぶん》の訳《やく》を隠《かく》す",
   },
   "mobile.practiceSessionAria": { en: "Practice Session", ja: "練習《れんしゅう》セッション" },
-  // The phone's Save-to sheet tags its Default List with a quiet lowercase
-  // word under the list name (issue #125).
-  "mobile.saveDefaultTag": { en: "default", ja: "既定《きてい》" },
   // The phone opens lookups as bottom-sheet windows, which the web never had
-  // to name (issue #125).
+  // to name.
   "mobile.readerDictWindowAria": { en: "Dictionary Entry window", ja: "辞書《じしょ》のウィンドウ" },
   "mobile.readerGrammarWindowAria": { en: "Grammar Point window", ja: "文法《ぶんぽう》ポイントのウィンドウ" },
-  // The phone names its hold-popup the Lookup menu; the web's menu is a Word
-  // menu (issue #125).
+  // The phone names its hold-popup the Lookup menu; the web's menu is a Word menu.
   "mobile.readerMenuAria": { en: "Lookup menu", ja: "検索《けんさく》メニュー" },
-  // The phone's Grammar list says a point's knowledge state was never
-  // recorded; the web page says the same state is "not known" (issue #125).
+  // The phone's Grammar list says a point's knowledge state was never recorded;
+  // the web page says the same state is "not known".
   "mobile.grammarStatusNotRecorded": { en: "Not recorded", ja: "記録《きろく》なし" },
   // The Reading Panel as the phone shows it: its hints talk about tapping,
-  // where the web's keys talk about hovering, clicking and Enter (issue #125).
+  // where the web's keys talk about hovering, clicking and Enter.
   "mobile.readerLookupRowAria": { en: "Lookup row", ja: "検索《けんさく》行《ぎょう》" },
   "mobile.readerPanelHint": {
     en: "Tap a word or punctuation to select its sentence.",
@@ -1266,16 +1234,16 @@ export const strings = {
   },
   "mobile.readerHiddenTapToShow": {
     en: "Translation hidden — tap to show",
-    ja: "翻訳《ほんやく》は隠《かく》れています — タップで表示《ひょうじ》",
+    ja: "文《ぶん》の訳《やく》は隠《かく》れています — タップで表示《ひょうじ》",
   },
   "mobile.readerBlurRetryAria": {
     en: "Retry saving the translation setting",
-    ja: "翻訳《ほんやく》設定《せってい》の保存《ほぞん》を再試行《さいしこう》する",
+    ja: "文《ぶん》の訳《やく》設定《せってい》の保存《ほぞん》を再試行《さいしこう》する",
   },
   // The phone's blurb keeps its em-dash phrasing; the web's own intro trails.
   "mobile.practiceIntro": {
     en: "A session is about twenty exercises drawn from your Focus Set — recognition and grammar cloze — and every answer feeds your mastery record.",
-    ja: "1回《かい》の練習《れんしゅう》は重点項目《じゅうてんこうもく》から作《つく》る約《やく》20問《もん》。意味《いみ》を問《と》う問題《もんだい》と文法《ぶんぽう》の穴埋《うず》め問題《もんだい》です。答《こた》えはすべて習熟《しゅうじゅく》記録《きろく》に反映《はんえい》します。",
+    ja: "1回《かい》の練習《れんしゅう》は重点項目《じゅうてんこうもく》から作《つく》る約《やく》20問《もん》。意味《いみ》を問《と》う問題《もんだい》と文法《ぶんぽう》の穴埋《あなう》め問題《もんだい》です。答《こた》えはすべて習熟《しゅうじゅく》記録《きろく》に反映《はんえい》します。",
   },
 } as const satisfies Record<string, { en: string; ja: string }>;
 
