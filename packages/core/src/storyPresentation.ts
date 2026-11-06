@@ -6,6 +6,7 @@ import {
 import type { StringKey } from "./i18n/strings.ts";
 import { translate, translatePlain, type TranslateParams } from "./i18n/translate.ts";
 import type { RubyText } from "./i18n/ruby.ts";
+import { formatDateRuby } from "./i18n/dates.ts";
 
 /**
  * Story words in the Learner's language, shared by the Stories screens (issue
@@ -85,6 +86,22 @@ export function storyDate(
 }
 
 /**
+ * The same date as base/reading segments: en and ja are the one plain string
+ * storyDate speaks; ja-furigana reads 年月日 (#125 round-3 review S3). The
+ * English options stay month-short exactly as EN_DATE has them.
+ */
+export function storyDateRuby(
+  iso: string,
+  lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
+): RubyText {
+  return formatDateRuby(
+    iso,
+    lang === "en" ? { year: "numeric", month: "short", day: "numeric" } : { year: "numeric", month: "long", day: "numeric" },
+    lang,
+  );
+}
+
+/**
  * The Reader's meta line exactly as English showed it before the string table
  * (#125 review S1): the raw Genre (empty when there is none, not "Story"),
  * the two Origin words, and the toDateString() date. English stays byte-identical
@@ -131,7 +148,7 @@ export function storyCardMetaRuby(story: Story, lang: InterfaceLanguage = DEFAUL
     { text: " · " },
     ...originRuby(story, lang),
     { text: " · " },
-    { text: storyDate(story.createdAt, lang) },
+    ...storyDateRuby(story.createdAt, lang),
   ];
 }
 

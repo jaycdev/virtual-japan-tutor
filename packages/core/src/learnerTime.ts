@@ -3,6 +3,7 @@ import {
   DEFAULT_INTERFACE_LANGUAGE,
   type InterfaceLanguage,
 } from "./i18n/language.ts";
+import { jaDateRuby } from "./i18n/dates.ts";
 import type { StringKey } from "./i18n/strings.ts";
 import { translate, translatePlain } from "./i18n/translate.ts";
 import type { RubyText } from "./i18n/ruby.ts";
@@ -110,6 +111,28 @@ export function learnerGreetingRuby(
   // Same en-US hour read as learnerClock: the greeting only needs the number.
   const parts = readParts(now, zone, "en-US", ["hour"]);
   return greetingRubyFor(parts.hour ?? String(now.getHours()), lang);
+}
+
+/**
+ * The Learner's clock as base/reading segments (#125 round-3 review S3): in
+ * ja-furigana the date's kanji — 年月日 and the weekday — carry readings; in
+ * en and plain ja the segments are the one string learnerClock speaks, so
+ * nothing about today's output changes.
+ */
+export function learnerClockRuby(
+  now: Date,
+  timezone: string | undefined | null,
+  lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
+): { greeting: RubyText; date: RubyText } {
+  if (lang !== "ja-furigana") {
+    const clock = learnerClock(now, timezone, lang);
+    return { greeting: [{ text: clock.greeting }], date: [{ text: clock.date }] };
+  }
+  const zone = normalizeTimezone(timezone);
+  const parts = readParts(now, zone, "en-US", ["hour"]);
+  const greeting = greetingRubyFor(parts.hour ?? String(now.getHours()), lang);
+  const date = jaDateRuby(now, { timeZone: zone, year: "numeric", month: "long", day: "numeric", weekday: "long" });
+  return { greeting, date };
 }
 
 /**

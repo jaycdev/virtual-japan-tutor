@@ -59,6 +59,7 @@ export { strings } from "./i18n/strings.ts";
 export type { StringKey } from "./i18n/strings.ts";
 export { parseRuby, stripRuby } from "./i18n/ruby.ts";
 export type { RubySegment, RubyText } from "./i18n/ruby.ts";
+export { formatDateRuby } from "./i18n/dates.ts";
 export { translate, translatePlain, pluralEn } from "./i18n/translate.ts";
 export type { TranslateParams } from "./i18n/translate.ts";
 export {
@@ -137,6 +138,7 @@ export {
   greetingFor,
   greetingRubyFor,
   learnerClock,
+  learnerClockRuby,
   learnerGreetingRuby,
   localDayKey,
   normalizeTimezone,
@@ -156,6 +158,7 @@ export {
   storyCardMeta,
   storyCardMetaRuby,
   storyDate,
+  storyDateRuby,
   storyMetaEn,
 } from "./storyPresentation.ts";
 export {
