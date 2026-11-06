@@ -91,14 +91,14 @@ describe("stillUnreadFrom", () => {
 // while the internal YYYY-MM-DD keys stay en-CA whatever the UI shows.
 describe("the clock in Japanese", () => {
   it("greets in Japanese, furigana included", () => {
-    expect(greetingFor("09", "ja")).toBe("お早うございます");
-    expect(greetingFor("23", "ja-furigana")).toBe("まだ勉強中ですか");
+    expect(greetingFor("09", "ja")).toBe("おはようございます");
+    expect(greetingFor("23", "ja-furigana")).toBe("遅くまで勉強中ですね");
   });
 
   it("orders the Today greeting and date as ja-JP", () => {
     const now = new Date("2026-11-03T22:30:00Z"); // Wed 4 Nov, 07:30 in Tokyo
     expect(learnerClock(now, "Asia/Tokyo", "ja")).toEqual({
-      greeting: "お早うございます",
+      greeting: "おはようございます",
       date: "2026年11月4日水曜日",
     });
   });

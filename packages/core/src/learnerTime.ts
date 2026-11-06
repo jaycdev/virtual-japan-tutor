@@ -18,7 +18,7 @@ import { translatePlain } from "./i18n/translate.ts";
  * with en-CA whatever the UI speaks, so comparisons stay plain string sorts.
  */
 
-/** The display locale for an Interface Language ("en-GB" keeps en-CA for keys). */
+/** The display locale for an Interface Language (the internal YYYY-MM-DD day keys always use en-CA). */
 export function displayLocale(lang: InterfaceLanguage): string {
   return lang === "en" ? "en-US" : "ja-JP";
 }
@@ -99,7 +99,10 @@ export function learnerClock(
 ): { greeting: string; date: string } {
   const zone = normalizeTimezone(timezone);
   const locale = displayLocale(lang);
-  const parts = readParts(now, zone, locale, ["hour", "weekday", "year", "month", "day"]);
+  // The hour is read through en-US whatever the UI language is: the greeting
+  // only needs the number, and a ja-JP hour part brings its own formatting
+  // (and the "24 at midnight" quirk) along with it.
+  const parts = readParts(now, zone, "en-US", ["hour", "weekday", "year", "month", "day"]);
   const greeting = greetingFor(parts.hour ?? String(now.getHours()), lang);
   if (lang !== "en") {
     const fmt = new Intl.DateTimeFormat(locale, {
