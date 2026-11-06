@@ -68,14 +68,19 @@ export function AppShell() {
 
   return (
     <div className="flex min-h-dvh bg-background text-foreground">
-      {/* Plain tp(), not <T>: sr-only text is never drawn, and a <ruby> inside
-          it would have a screen reader say the reading too (本文ほんぶん).
-          #125 review V2. */}
+      {/* Two forms of the same words: the visible one carries furigana in
+          ja-furigana but is hidden from assistive tech outright; the plain
+          tp() span gives the link its accessible name, so a screen reader
+          never says the reading too. The inner sr-only span stays hidden when
+          the link is focused (focus:not-sr-only applies to the link), and the
+          ruby form is only drawn then, clipped by the link's own sr-only
+          otherwise. #125 round-3 review S2 (was V2). */}
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[60] focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-body focus:text-primary-foreground focus:outline-none focus:ring-2 focus:ring-ring"
       >
-        {tp("shell.skipToContent")}
+        <span aria-hidden="true"><T k="shell.skipToContent" /></span>
+        <span className="sr-only">{tp("shell.skipToContent")}</span>
       </a>
 
       <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col justify-between overflow-y-auto border-r border-border bg-card lg:flex">
@@ -95,9 +100,12 @@ export function AppShell() {
               </Button>
             </SheetTrigger>
             <SheetContent side="left" className="gap-0 p-0">
+              {/* Plain tp(), not <T>: this header is sr-only, never drawn, and a
+                  <ruby> inside it would have a screen reader say the reading too
+                  (#125 round-3 review S1). */}
               <SheetHeader className="sr-only">
-                <SheetTitle><T k="shell.navTitle" /></SheetTitle>
-                <SheetDescription><T k="shell.navDescription" /></SheetDescription>
+                <SheetTitle>{tp("shell.navTitle")}</SheetTitle>
+                <SheetDescription>{tp("shell.navDescription")}</SheetDescription>
               </SheetHeader>
               <div className="flex h-full flex-col justify-between overflow-y-auto">
                 <SideNavContent onNavigate={() => setMenuOpen(false)} />
