@@ -6,12 +6,14 @@
 // router tree only mounts once signed in; the signed-out, loading, and
 // unreachable states replace the whole tree (Login / splash / error), exactly
 // as the pre-router shell did.
+import { useT } from "@vjt/core";
 import { useEffect, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useFonts } from "expo-font";
 import { StatusBar } from "expo-status-bar";
 
+import { T } from "./src/components/Text.tsx";
 import { Login } from "./src/Login.tsx";
 import { ServerField } from "./src/ServerField.tsx";
 import { AuthProvider, useSession } from "./src/session.tsx";
@@ -19,6 +21,7 @@ import { resolveApiBaseUrl } from "./src/config.ts";
 import { appFonts } from "./src/fonts.ts";
 import { appSecureStore } from "./src/secureStore.ts";
 import { JapaneseFontProvider, useJapaneseFont } from "./src/japaneseFont/index.tsx";
+import { InterfaceLanguageGate } from "./src/interfacelanguage/index.tsx";
 import { StoryTextSizeProvider } from "./src/storysize/index.tsx";
 import { secureStoreServerUrl, type ServerUrlStorage } from "./src/serverUrlStorage.ts";
 import { ThemeProvider } from "./src/theme/index.tsx";
@@ -32,15 +35,21 @@ const urlStorage = secureStoreServerUrl(appSecureStore);
 export default function App({ children }: { children: React.ReactNode }) {
   return (
     <ThemeProvider>
-      {/* The Story text size (#45) hydrates from device storage; it never
-          gates the first frame — it only relayouts the reader. */}
-      <StoryTextSizeProvider>
-        <JapaneseFontProvider>
-          <AppBootstrapped tokenStorage={tokenStorage} urlStorage={urlStorage}>
-            {children}
-          </AppBootstrapped>
-        </JapaneseFontProvider>
-      </StoryTextSizeProvider>
+      {/* The Interface Language (#125) hydrates from the secure store and
+          publishes core's provider above everything with words on it - the
+          login card, the server-address screen and the setup wizard
+          included. Switching is state, never a reload. */}
+      <InterfaceLanguageGate>
+        {/* The Story text size (#45) hydrates from device storage; it never
+            gates the first frame - it only relayouts the reader. */}
+        <StoryTextSizeProvider>
+          <JapaneseFontProvider>
+            <AppBootstrapped tokenStorage={tokenStorage} urlStorage={urlStorage}>
+              {children}
+            </AppBootstrapped>
+          </JapaneseFontProvider>
+        </StoryTextSizeProvider>
+      </InterfaceLanguageGate>
     </ThemeProvider>
   );
 }
@@ -133,13 +142,18 @@ function AuthGate({
         <View className="w-full max-w-[380px] gap-3 rounded-2xl bg-card p-6 shadow-md">
           <View className="items-center gap-1">
             <Text className={`text-display ${jp.regular} text-primary`} allowFontScaling={false}>
+              {/* eslint-disable-next-line vjt/no-raw-jsx-text -- the brand wordmark is the kanji 読 in every Interface Language */}
               読
             </Text>
-            <Text className="text-title-sm font-semibold text-foreground">Virtual Japan Tutor</Text>
+            <T k="brand.app" className="text-title-sm font-semibold text-foreground" />
           </View>
-          <Text className="text-small text-destructive" accessibilityRole="alert">
-            Cannot reach the server: {auth.state.message}
-          </Text>
+          <View accessibilityRole="alert" role="alert">
+            <T
+              k="server.unreachable"
+              params={{ message: auth.state.message }}
+              className="text-small text-destructive"
+            />
+          </View>
           {/* #51 review B1: an unreachable address must not be a dead end, so
               whoever reaches this card gets a way to change the address. */}
           <ServerField serverUrl={serverUrl} onSave={onChangeServerUrl} />
@@ -163,14 +177,15 @@ function AuthGate({
 }
 
 function RetryButton({ onPress }: { onPress: () => void }) {
+  const { tp } = useT();
   return (
     <Pressable
       className="min-h-12 items-center justify-center rounded-lg bg-primary"
       accessibilityRole="button"
-      accessibilityLabel="Retry"
+      accessibilityLabel={tp("common.retry")}
       onPress={onPress}
     >
-      <Text className="text-body font-semibold text-primary-foreground">Retry</Text>
+      <T k="common.retry" className="text-body font-semibold text-primary-foreground" />
     </Pressable>
   );
 }
