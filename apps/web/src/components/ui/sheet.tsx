@@ -2,9 +2,12 @@ import * as React from "react";
 import * as SheetPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 
+import { useT } from "@vjt/core";
+
 import { cn } from "@/lib/utils";
 
-import { T } from "../Text.tsx";
+// The sr-only close label is plain tp() text, not <T>: a screen reader would
+// otherwise read the <rt> too (issue #125 review V2).
 
 // shadcn/ui Sheet (new-york) on Radix Dialog: focus is trapped, Escape closes it
 // and focus returns to the trigger. Motion is left out on purpose (ui-plan 2.7:
@@ -30,6 +33,7 @@ function SheetContent({
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: "top" | "right" | "bottom" | "left";
 }) {
+  const { tp } = useT();
   return (
     <SheetPrimitive.Portal>
       <SheetPrimitive.Overlay className="fixed inset-0 z-50 bg-backdrop" />
@@ -48,9 +52,7 @@ function SheetContent({
         {children}
         <SheetPrimitive.Close className="absolute right-3 top-3 inline-flex size-11 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring">
           <X className="size-5" aria-hidden="true" />
-          <span className="sr-only">
-            <T k="common.close" />
-          </span>
+          <span className="sr-only">{tp("common.close")}</span>
         </SheetPrimitive.Close>
       </SheetPrimitive.Content>
     </SheetPrimitive.Portal>

@@ -68,11 +68,14 @@ export function AppShell() {
 
   return (
     <div className="flex min-h-dvh bg-background text-foreground">
+      {/* Plain tp(), not <T>: sr-only text is never drawn, and a <ruby> inside
+          it would have a screen reader say the reading too (本文ほんぶん).
+          #125 review V2. */}
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[60] focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-body focus:text-primary-foreground focus:outline-none focus:ring-2 focus:ring-ring"
       >
-        <T k="shell.skipToContent" />
+        {tp("shell.skipToContent")}
       </a>
 
       <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col justify-between overflow-y-auto border-r border-border bg-card lg:flex">

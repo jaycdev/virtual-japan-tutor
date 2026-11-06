@@ -248,8 +248,9 @@ function SearchField({
   const { tp } = useT();
   return (
     <div className="relative">
+      {/* sr-only label: plain text, never ruby (issue #125 review V2). */}
       <Label htmlFor="grammar-search" className="sr-only">
-        <T k="grammar.searchLabel" />
+        {tp("grammar.searchLabel")}
       </Label>
       <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
       <Input
