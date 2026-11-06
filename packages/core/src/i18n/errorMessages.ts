@@ -107,7 +107,10 @@ export function errorMessage(
   fallbackMessage: string,
 ): string {
   if (lang === "en" || code === undefined || code === null) return fallbackMessage;
-  const key = (ERROR_STRINGS as Record<string, StringKey | undefined>)[code];
+  const table = ERROR_STRINGS as Record<string, StringKey | undefined>;
+  // Only own properties are table rows: a code like "constructor" names an
+  // Object.prototype member, not an entry (issue #125 review N1).
+  const key = Object.hasOwn(table, code) ? table[code] : undefined;
   return key === undefined ? fallbackMessage : translatePlain(lang, key);
 }
 
@@ -156,6 +159,9 @@ export function exerciseInstruction(
   fallbackMessage: string,
 ): string {
   if (lang === "en") return fallbackMessage;
-  const key = (EXERCISE_STRINGS as Record<string, StringKey | undefined>)[kind];
+  const table = EXERCISE_STRINGS as Record<string, StringKey | undefined>;
+  // Only own properties are table rows, never Object.prototype members
+  // (issue #125 review N1).
+  const key = Object.hasOwn(table, kind) ? table[kind] : undefined;
   return key === undefined ? fallbackMessage : translatePlain(lang, key);
 }

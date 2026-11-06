@@ -49,6 +49,12 @@ describe("error codes", () => {
     }
   });
 
+  it("a code that shadows Object.prototype falls back too", () => {
+    // ERROR_STRINGS is a plain object: only own properties are translations
+    // (issue #125 review N1).
+    expect(errorMessage("ja", "constructor", "The server explained it")).toBe("The server explained it");
+  });
+
   it("a missing code falls back too", () => {
     expect(errorMessage("ja", undefined, "No code on this one")).toBe("No code on this one");
     expect(errorMessage("ja", null, "No code on this one")).toBe("No code on this one");
@@ -101,5 +107,11 @@ describe("exercise instructions", () => {
 
   it("a kind from a newer server keeps the server's sentence", () => {
     expect(exerciseInstruction("ja", "listening", "Listen and choose")).toBe("Listen and choose");
+  });
+
+  it("a kind that shadows Object.prototype keeps the server's sentence", () => {
+    // EXERCISE_STRINGS is a plain object: only own properties are
+    // translations (issue #125 review N1).
+    expect(exerciseInstruction("ja", "constructor", "Read and choose")).toBe("Read and choose");
   });
 });

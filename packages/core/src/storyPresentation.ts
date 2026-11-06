@@ -25,13 +25,16 @@ export function originLabel(
 /**
  * Genre ids in the Learner's words; an unknown genre shows as-is in either
  * language — a Learner can type any genre, and its own words are its label.
- * English maps only diary/travel/mystery, exactly the labels that shipped
- * before the Interface Language work (issue #79); every other genre shows
- * exactly as stored. Japanese also maps the server's preset genres
- * (story/service.go). Display-only: what is stored and sent stays the
- * English id. One table path for both languages: the same lookup, the same
- * case handling, and the same pass-through for a genre the table has never
- * seen (issue #125 review S16 and R4).
+ * English maps only diary/travel/mystery, matched exactly as stored — the
+ * case-sensitive matching of the switch that shipped before the Interface
+ * Language work (issue #79), so "DIARY" shows as typed; every other genre
+ * shows exactly as stored. Japanese also maps the server's preset genres
+ * (story/service.go), case-insensitively. Display-only: what is stored and
+ * sent stays the English id. One table path for both languages: the same
+ * lookup and the same pass-through for a genre the table has never seen
+ * (issue #125 review S16 and R4). A typed genre like "constructor" names an
+ * Object.prototype member, not a table row, so the lookup only trusts own
+ * properties (issue #125 review N1).
  */
 const GENRE_STRINGS_JA: Record<string, StringKey> = {
   diary: "genre.diary",
@@ -61,7 +64,9 @@ export function genreLabel(
   lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
 ): string {
   if (genre === null || genre === undefined) return "";
-  const key = GENRE_STRINGS[lang][genre.toLowerCase()];
+  const table = GENRE_STRINGS[lang];
+  const id = lang === "en" ? genre : genre.toLowerCase();
+  const key = Object.hasOwn(table, id) ? table[id] : undefined;
   return key === undefined ? genre : translatePlain(lang, key);
 }
 

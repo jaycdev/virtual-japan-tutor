@@ -31,6 +31,21 @@ describe("genreLabel", () => {
     expect(genreLabel(undefined)).toBe("");
   });
 
+  it("matches the English genre ids exactly as stored, like the old switch", () => {
+    expect(genreLabel("DIARY")).toBe("DIARY");
+    expect(genreLabel("Diary")).toBe("Diary"); // as typed, not through the table
+    expect(genreLabel("Travel")).toBe("Travel");
+  });
+
+  it("shows a genre that shadows Object.prototype exactly as typed", () => {
+    // A plain object lookup would answer with the prototype member itself;
+    // the table must only trust its own rows (issue #125 review N1).
+    for (const lang of ["en", "ja"] as const) {
+      expect(genreLabel("constructor", lang)).toBe("constructor");
+      expect(genreLabel("toString", lang)).toBe("toString");
+    }
+  });
+
   it("shows the other presets exactly as stored in English", () => {
     // English byte-identity with the copy before the Interface Language work
     // (issue #125 review R4): only the en table above maps, and it holds just
