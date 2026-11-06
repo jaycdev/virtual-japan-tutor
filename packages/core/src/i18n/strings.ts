@@ -262,6 +262,68 @@ export const strings = {
   "common.retry": { en: "Retry", ja: "もう一度《いちど》" },
   "notFound.message": { en: "There is nothing at this address.", ja: "このアドレスにページはありません。" },
   "notFound.goToToday": { en: "Go to Today", ja: "今日《きょう》へ" },
+
+  // — Login, first-run setup, and placeholder pages (issue #125 Part 2) —
+  "login.username": { en: "Username", ja: "ユーザー名《めい》" },
+  "login.password": { en: "Password", ja: "パスワード" },
+  "login.logIn": { en: "Log in", ja: "ログイン" },
+  "login.loggingIn": { en: "Logging in…", ja: "ログイン中《ちゅう》…" },
+  "comingSoon.soon": { en: "Coming soon in #{issue}.", ja: "#{issue} で公開《こうかい》予定《よてい》です。" },
+  "comingSoon.backToToday": { en: "Back to Today", ja: "今日《きょう》に戻《もど》る" },
+  "setup.intro": {
+    en: "Three short steps to set you up. You can skip any of them and change everything later under Settings.",
+    ja: "短《みじか》い3つのステップで設定《せってい》します。どのステップもスキップでき、全《すべ》ての設定《せってい》は後《あと》で変《か》えられます。",
+  },
+  "setup.stepsLabel": { en: "Setup steps", ja: "設定《せってい》のステップ" },
+  "setup.stepOf": { en: "Step {step} of {total}", ja: "ステップ{step}/{total}" },
+  "setup.levelBody": {
+    en: "We will build your First Story around this.",
+    ja: "初《はじ》めの物語《ものがたり》はこのレベルをもとに作《つく》ります。",
+  },
+  "setup.marumoriBody": {
+    en: "Add your key to keep your kanji study in sync.",
+    ja: "漢字《かんじ》の学習《がくしゅう》を同期《どうき》するには、キーを追加《ついか》してください。",
+  },
+  "setup.aiBody": {
+    en: "Tell us which model writes your Stories.",
+    ja: "物語《ものがたり》を書《か》くモデルを選《えら》んでください。",
+  },
+  "setup.blockedNote": {
+    en: "The step could not be saved. Fix it and try again, or skip this step.",
+    ja: "ステップを保存《ほぞん》できませんでした。修正《しゅうせい》してもう一《いち》度《ど》試《ため》すか、このステップをスキップしてください。",
+  },
+  "setup.back": { en: "Back", ja: "前《まえ》へ" },
+  "setup.skipAll": { en: "Skip setup", ja: "設定《せってい》をスキップ" },
+  "setup.skipStep": { en: "Skip this step", ja: "このステップをスキップ" },
+  "setup.next": { en: "Next", ja: "次《つぎ》へ" },
+  "setup.finish": { en: "Finish", ja: "完《かん》了《りょう》" },
+  "language.legend": { en: "Interface language", ja: "表示《ひょうじ》言語《げんご》" },
+  "language.hint": {
+    en: "Saved on this device. Stories, exercises and dictionary lookups stay Japanese whatever you choose.",
+    ja: "この端末《たんまつ》に保存《ほぞん》されます。物語《ものがたり》・練習《れんしゅう》・辞書《じしょ》の引《ひ》き出《だ》しは常《つね》に日本語《にほんご》です。",
+  },
+  "settings.themeLegend": { en: "Theme", ja: "テーマ" },
+  "settings.themeLight": { en: "Light", ja: "ライト" },
+  "settings.themeDark": { en: "Dark", ja: "ダーク" },
+  "settings.themeSystem": { en: "System", ja: "システム" },
+  "settings.savedTheme": {
+    en: "Saved on this device. System follows your computer.",
+    ja: "この端末《たんまつ》に保存《ほぞん》されます。システムはコンピュータの設定《せってい》に従《したが》います。",
+  },
+  "settings.japaneseFontLegend": { en: "Japanese font", ja: "日本語《にほんご》フォント" },
+  "settings.fontSerif": { en: "Serif", ja: "明朝《みんちょう》" },
+  "settings.fontSans": { en: "Sans", ja: "ゴシック" },
+  "settings.savedFont": {
+    en: "Saved on this device. Sans is plainer, with simpler strokes; it applies to all Japanese text.",
+    ja: "この端末《たんまつ》に保存《ほぞん》されます。ゴシックは線《せん》が簡《かん》単《たん》で少《すく》ない書《しょ》体《たい》です。日本語《にほんご》のテキスト全《まった》く同《おな》じ設定《せってい》になります。",
+  },
+  "settings.storySizeLegend": { en: "Story text size", ja: "物語《ものがたり》の文字《もじ》の大《おお》きさ" },
+  "settings.saving": { en: "Saving…", ja: "保存中《ほぞんちゅう》…" },
+  "settings.saved": { en: "Saved.", ja: "保存《ほぞん》しました。" },
+  "settings.savedSize": {
+    en: "Saved on this device. The size applies to Story text and the Reading Panel.",
+    ja: "この端末《たんまつ》に保存《ほぞん》されます。大《おお》きさは物語《ものがたり》の本文《ほんぶん》と読《よ》み解《と》きパネルに適用《てきよう》されます。",
+  },
 } as const satisfies Record<string, { en: string; ja: string }>;
 
 /** Every table entry key — the type-checked union `keyof typeof strings`. */

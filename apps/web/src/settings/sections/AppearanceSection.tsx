@@ -1,6 +1,10 @@
-// Appearance (ui-plan 2.3, 2.4, 4.7): the theme, the Story text size and the
-// Japanese font, all saved per device. The sample changes at once, through the
-// same CSS variables the reader uses.
+// Appearance (ui-plan 2.3, 2.4, 4.7): the theme, the Story text size, the
+// Japanese font and the Interface Language, all saved per device. The sample
+// changes at once, through the same CSS variables the reader uses.
+import { useT } from "@vjt/core";
+
+import { T } from "../../components/Text.tsx";
+import { InterfaceLanguageChoice } from "../../interfacelanguage/LanguageChoice.tsx";
 import { useJapaneseFont } from "../../japaneseFont/index.ts";
 import type { JapaneseFont } from "../../japaneseFont/store.ts";
 import { useStoryTextSize } from "../../storysize/index.ts";
@@ -8,55 +12,59 @@ import { STORY_TEXT_SIZES } from "../../storysize/store.ts";
 import { useThemePreference } from "../../theme/index.ts";
 import { ChoiceGroup, Note, SectionBody } from "../parts.tsx";
 
-const THEME_OPTIONS = [
-  { value: "light", label: "Light" },
-  { value: "dark", label: "Dark" },
-  { value: "system", label: "System" },
-] as const;
-
-const JAPANESE_FONT_OPTIONS: { value: JapaneseFont; label: string }[] = [
-  { value: "serif", label: "Serif" },
-  { value: "sans", label: "Sans" },
-];
-
 export function AppearanceSection() {
   const { preference, setPreference } = useThemePreference();
   const { size, setSize } = useStoryTextSize();
   const { font, setFont } = useJapaneseFont();
+  const { tp } = useT();
+
+  const themeOptions = [
+    { value: "light", label: tp("settings.themeLight") },
+    { value: "dark", label: tp("settings.themeDark") },
+    { value: "system", label: tp("settings.themeSystem") },
+  ] as const;
+
+  const fontOptions = [
+    { value: "serif", label: tp("settings.fontSerif") },
+    { value: "sans", label: tp("settings.fontSans") },
+  ] as const satisfies { value: JapaneseFont; label: string }[];
 
   return (
     <SectionBody>
       <div className="flex flex-col gap-2">
-        <ChoiceGroup legend="Theme" options={THEME_OPTIONS} value={preference} onChange={setPreference} />
-        <Note>Saved on this device. System follows your computer.</Note>
+        <ChoiceGroup legend={<T k="settings.themeLegend" />} options={themeOptions} value={preference} onChange={setPreference} />
+        <Note><T k="settings.savedTheme" /></Note>
       </div>
 
       <div className="flex flex-col gap-2">
         <ChoiceGroup
-          legend="Japanese font"
-          options={JAPANESE_FONT_OPTIONS}
+          legend={<T k="settings.japaneseFontLegend" />}
+          options={fontOptions}
           value={font}
           onChange={(value: JapaneseFont) => setFont(value)}
         />
-        <Note>Saved on this device. Sans is plainer, with simpler strokes; it applies to all Japanese text.</Note>
+        <Note><T k="settings.savedFont" /></Note>
       </div>
 
       <div className="flex flex-col gap-2">
         <ChoiceGroup
-          legend="Story text size"
+          legend={<T k="settings.storySizeLegend" />}
           options={STORY_TEXT_SIZES.map((option) => ({ value: option, label: option }))}
           value={size}
           onChange={setSize}
         />
-        <Note>Saved on this device. The size applies to Story text and the Reading Panel.</Note>
+        <Note><T k="settings.savedSize" /></Note>
         <p
           lang="ja"
           className="mt-2 font-serif text-foreground"
           style={{ fontSize: "var(--story-text-size)", lineHeight: "var(--story-line-height)" }}
         >
+          {/* eslint-disable-next-line vjt/no-raw-jsx-text -- Japanese sample sentence for the size preview, not chrome text (issue #125) */}
           吾輩は猫である。名前はまだ無い。
         </p>
       </div>
+
+      <InterfaceLanguageChoice withHint />
     </SectionBody>
   );
 }

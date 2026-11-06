@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { T } from "../components/Text.tsx";
 
 /**
  * A section's own heading below the page title. Focusable (tabIndex -1) so a
@@ -75,7 +76,7 @@ export function ChoiceGroup<T extends string | number>({
   onChange,
   disabled = false,
 }: {
-  legend: string;
+  legend: ReactNode;
   options: readonly { value: T; label: string }[];
   value: T | null;
   onChange: (value: T) => void;
@@ -154,14 +155,14 @@ export function SaveStatus({ state }: { state: SaveState }) {
   if (state.kind === "saving") {
     return (
       <p role="status" className="text-small text-muted-foreground">
-        Saving…
+        <T k="settings.saving" />
       </p>
     );
   }
   if (state.kind === "saved") {
     return (
       <p role="status" className="text-small text-success">
-        {state.message ?? "Saved."}
+        {state.message ?? <T k="settings.saved" />}
       </p>
     );
   }

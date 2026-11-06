@@ -5,7 +5,7 @@
 // whole tree: loading, and "cannot reach the server" with Retry.
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import type { ApiClient } from "@vjt/api-client";
-import { useAuth, type Auth, type TokenStorage } from "@vjt/core";
+import { useAuth, useT, type Auth, type TokenStorage } from "@vjt/core";
 
 import { ErrorState, SkeletonLines } from "../components/states";
 
@@ -78,6 +78,7 @@ export function useSession(): Session {
  */
 export function SessionBoundary({ children }: { children: ReactNode }) {
   const { state, retry } = useSession();
+  const { tp } = useT();
   if (state.status === "loading") {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-background p-6" aria-busy="true">
@@ -91,7 +92,7 @@ export function SessionBoundary({ children }: { children: ReactNode }) {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-background p-6">
         <div className="w-full max-w-sm">
-          <ErrorState message={`Cannot reach the server: ${state.message}`} onRetry={retry} />
+          <ErrorState message={`${tp("errors.unreachable")}: ${state.message}`} onRetry={retry} />
         </div>
       </div>
     );
