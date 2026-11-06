@@ -2,7 +2,15 @@
 // Furigana Threshold, the genre and theme future Stories aim for, and the
 // Learner's Timezone, which decides which local day each Automatic Story belongs to.
 import { useState, type FormEvent } from "react";
-import { deviceTimezone, FURIGANA_LEVELS, suggestionsFor, TIMEZONE_OPTIONS, useStoryGeneration, useStorySettings } from "@vjt/core";
+import {
+  deviceTimezone,
+  FURIGANA_LEVELS,
+  suggestionsFor,
+  TIMEZONE_OPTIONS,
+  useStoryGeneration,
+  useStorySettings,
+  useT,
+} from "@vjt/core";
 
 import { Button } from "@/components/ui/button";
 import { ErrorState, SkeletonLines } from "../../components/states.tsx";
@@ -19,6 +27,7 @@ interface Draft {
 }
 
 export function StoriesSection() {
+  const { tp } = useT();
   const { client } = useSession();
   const stories = useStorySettings(client);
   const generation = useStoryGeneration(client);
@@ -28,7 +37,10 @@ export function StoriesSection() {
   if (stories.settings.status === "loading") return <SkeletonLines lines={4} />;
   if (stories.settings.status === "error") {
     return (
-      <ErrorState message={`Cannot load your story settings: ${stories.settings.message}`} onRetry={stories.reloadSettings} />
+      <ErrorState
+        message={tp("settings.loadFailed", { what: tp("settings.storyWhat"), message: stories.settings.message })}
+        onRetry={stories.reloadSettings}
+      />
     );
   }
 
@@ -51,7 +63,7 @@ export function StoriesSection() {
     });
     if (res.ok) {
       setDraft({});
-      setSave({ kind: "saved", message: "Saved. The next Story written for you uses this." });
+      setSave({ kind: "saved", message: tp("settings.storySaved") });
     } else setSave({ kind: "error", message: res.message });
   };
 
@@ -59,18 +71,18 @@ export function StoriesSection() {
     <form className="flex flex-col gap-6" onSubmit={(event) => void submit(event)}>
       <SectionBody>
         <ChoiceGroup
-          legend="Furigana Threshold"
+          legend={tp("settings.furiganaLegend")}
           options={THRESHOLD_OPTIONS}
           value={threshold}
           onChange={(value) => setDraft({ ...draft, threshold: value })}
           disabled={busy}
         />
-        <Note>Words you have practised below this SRS level show reading help.</Note>
+        <Note>{tp("settings.furiganaNote")}</Note>
 
         <Suggested
           id="stories-genre"
-          label="Preferred genre"
-          placeholder="travel, mystery… empty = surprise me"
+          label={tp("settings.genreLabel")}
+          placeholder={tp("settings.genrePlaceholder")}
           value={genre}
           options={generation.suggestions.genres}
           maxLength={60}
@@ -79,8 +91,8 @@ export function StoriesSection() {
         />
         <Suggested
           id="stories-theme"
-          label="Preferred theme"
-          placeholder="a robot running a ramen shop — empty = none"
+          label={tp("settings.themeLabel")}
+          placeholder={tp("settings.themePlaceholder")}
           value={theme}
           options={generation.suggestions.themes}
           maxLength={200}
@@ -88,11 +100,11 @@ export function StoriesSection() {
           onChange={(value) => setDraft({ ...draft, theme: value })}
         />
 
-        <Note>This decides which local day each Automatic Story belongs to.</Note>
+        <Note>{tp("settings.timezoneNote")}</Note>
         <Suggested
           id="stories-timezone"
-          label="Your timezone"
-          placeholder="Asia/Tokyo — empty = the server’s day"
+          label={tp("settings.timezoneLabel")}
+          placeholder={tp("settings.timezonePlaceholder")}
           value={timezone}
           options={TIMEZONE_OPTIONS}
           maxLength={64}
@@ -102,14 +114,14 @@ export function StoriesSection() {
         {device ? (
           <div>
             <Button type="button" variant="link" className="px-0" disabled={busy} onClick={() => setDraft({ ...draft, timezone: device })}>
-              Use my device’s timezone ({device})
+              {tp("settings.timezoneDevice", { tz: device })}
             </Button>
           </div>
         ) : null}
 
         <div className="flex flex-wrap items-center gap-4">
           <Button type="submit" disabled={busy}>
-            Save story settings
+            {tp("settings.saveStories")}
           </Button>
           <SaveStatus state={save} />
         </div>
@@ -142,6 +154,7 @@ function Suggested({
   onChange: (value: string) => void;
 }) {
   const [focused, setFocused] = useState(false);
+  const { tp } = useT();
   const { show, visible } = suggestionsFor(options, value, focused);
   return (
     <div className="flex flex-col gap-2">
@@ -158,7 +171,7 @@ function Suggested({
         onFocus={() => setFocused(true)}
       />
       {!disabled && show ? (
-        <ul className="flex flex-wrap gap-2" aria-label={`${label} suggestions`}>
+        <ul className="flex flex-wrap gap-2" aria-label={tp("settings.suggestionsAria", { label })}>
           {visible.map((option) => {
             const selected = option.toLowerCase() === value.trim().toLowerCase();
             return (

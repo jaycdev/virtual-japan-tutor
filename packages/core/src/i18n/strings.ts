@@ -312,6 +312,30 @@ export const strings = {
     ja: "まだ何《なに》も選《えら》ばれていません — 同期《どうき》、物語《ものがたり》、練習《れんしゅう》セッションが埋《う》めます。",
   },
   "settings.focusAria": { en: "Focus Set", ja: "焦点《しょうてん》セット" },
+
+  // The Starting Level section (issue #6): the N5–N1 baseline and the read-only
+  // grammar-match review list. The level codes themselves are data.
+  "settings.levelLoadFailed": {
+    en: "Cannot load your Starting Level: {message}",
+    ja: "Starting Levelを読《よ》み込《こ》せません: {message}",
+  },
+  "settings.levelCurrent": { en: "Starting level: {level}", ja: "Starting Level: {level}" },
+  "settings.levelUnset": {
+    en: "Not chosen yet. Pick one to mark everything at or below it as known.",
+    ja: "まだ決《き》められていません。レベルを選《えら》ぶと、それ以下《いかに》の文法《ぶんぽう》はすべて知《し》っている扱《あつか》いになります。",
+  },
+  "settings.levelLegend": { en: "Choose your level", ja: "レベルを選《えら》ぶ" },
+  "settings.levelSave": { en: "Save level", ja: "レベルを保存《ほぞん》" },
+  "settings.levelReviewHeading": { en: "Review these grammar matches", ja: "文法《ぶんぽう》マッチ合《あ》せの見直《なお》し" },
+  "settings.reviewLoadFailed": {
+    en: "Cannot load the review list: {message}",
+    ja: "見直《なお》しリストを読《よ》み込《こ》せません: {message}",
+  },
+  "settings.reviewEmpty": { en: "Nothing needs a second look.", ja: "見《み》直《なお》しは不要《ふよう》です。" },
+  "settings.reviewNote": {
+    en: "These MaruMori grammar points did not match the Catalogue cleanly. They re-check themselves on later Syncs.",
+    ja: "MaruMoriのこれらの文法《ぶんぽう》ポイントはカタログとは明確《めいかく》に一致《いっち》しませんでした。以降《いこう》の同期《どうき》で自動《じどう》再《ふたた》びチェックされます。",
+  },
   "nav.main": { en: "Main", ja: "メイン" },
   "title.logIn": { en: "Log in", ja: "ログイン" },
   "title.setUp": { en: "Set up", ja: "セットアップ" },
@@ -552,6 +576,74 @@ export const strings = {
   "settings.themeLight": { en: "Light", ja: "ライト" },
   "settings.themeDark": { en: "Dark", ja: "ダーク" },
   "settings.themeSystem": { en: "System", ja: "システム" },
+  "settings.storyWhat": { en: "story settings", ja: "物語《ものがたり》設定《せってい》" },
+  "settings.storySaved": {
+    en: "Saved. The next Story written for you uses this.",
+    ja: "保存《ほぞん》しました。次《つぎ》にあなた用《よう》に書《か》かれる物語《ものがたり》に使《つか》われます。",
+  },
+  "settings.furiganaLegend": { en: "Furigana Threshold", ja: "ふりがな基準《きじゅん》" },
+  "settings.furiganaNote": {
+    en: "Words you have practised below this SRS level show reading help.",
+    ja: "このSRSレベル未満《みまん》で練習《れんしゅう》した語《ことば》は読《よ》み助《だす》けを表示《ひょうじ》します。",
+  },
+  "settings.genreLabel": { en: "Preferred genre", ja: "好《すき》なジャンル" },
+  "settings.genrePlaceholder": { en: "travel, mystery… empty = surprise me", ja: "旅行《りょこう》、ミステリー… 空《から》ならお任《まか》せ" },  "settings.themeLabel": { en: "Preferred theme", ja: "好《すき》なテーマ" },
+  "settings.themePlaceholder": {
+    en: "a robot running a ramen shop — empty = none",
+    ja: "ラーメン店《てん》を営《いとな》むロボット — 空《から》ならなし",
+  },
+  "settings.timezoneNote": {
+    en: "This decides which local day each Automatic Story belongs to.",
+    ja: "自動《じどう》物語《ものがたり》がどの当地《とうち》の日《ひ》に属《ぞく》するかを決《き》めます。",
+  },
+  "settings.timezoneLabel": { en: "Your timezone", ja: "あなたのタイムゾーン" },
+  "settings.timezonePlaceholder": {
+    en: "Asia/Tokyo — empty = the server’s day",
+    ja: "Asia/Tokyo — 空《から》ならサーバーの日《ひ》",
+  },
+  "settings.timezoneDevice": {
+    en: "Use my device’s timezone ({tz})",
+    ja: "端末《たんまつ》のタイムゾーンを使《つか》う（{tz}）",
+  },
+  "settings.suggestionsAria": { en: "{label} suggestions", ja: "{label}の候補《こうほ》" },
+  "settings.saveStories": { en: "Save story settings", ja: "物語《ものがたり》設定《せってい》を保存《ほぞん》" },
+
+  // The MaruMori section: connect with an API key, Sync now, recent Syncs.
+  "marumori.loadFailed": {
+    en: "Cannot load MaruMori status: {message}",
+    ja: "MaruMoriの状態《じょうたい》を読《よ》み込《こ》せません: {message}",
+  },
+  "marumori.connected": { en: "Connected to MaruMori.", ja: "MaruMoriと接続《せつぞく》しました。" },
+  "marumori.keyRemoved": { en: "The MaruMori key was removed.", ja: "MaruMoriのキーを削除《さくじょ》しました。" },
+  "marumori.notConnected": { en: "Not connected.", ja: "接続《せつぞく》していません。" },
+  "marumori.counts": {
+    en: "Known kanji: {kanji} · Known vocabulary: {vocabulary} · Vocabulary linked: {rate}%",
+    ja: "既知《きち》の漢字《かんじ》: {kanji} · 既知《きち》の語彙《ごい》: {vocabulary} · 語彙《ごい》リンク: {rate}%",
+  },
+  "marumori.lastSync": { en: "Last Sync {when}", ja: "前《まえ》の同期《どうき》 {when}" },
+  "marumori.syncFailed": { en: "Last Sync failed: {error}", ja: "前《まえ》の同期《どうき》は失敗《しっぱい》: {error}" },
+  "marumori.apiKeyHeading": { en: "API key", ja: "APIキー" },
+  "marumori.savedKey": { en: "Saved key", ja: "保存《ほぞん》済《ず》みのキー" },
+  "marumori.keySet": { en: "set", ja: "設定《せってい》済《ず》み" },
+  "marumori.replace": { en: "Replace", ja: "置《お》き換《か》える" },
+  "marumori.keyLabel": { en: "MaruMori API key", ja: "MaruMoriのAPIキー" },
+  "marumori.keyHint": {
+    en: "Paste a new key to replace the saved one. The saved key is never shown.",
+    "ja": "新《あたら》しいキーを貼《は》ると保存《ほぞん》済《ず》みのキーを置《お》き換《か》えます。保存《ほぞん》済《ず》みのキーは表示《ひょうじ》されません。",
+  },
+  "marumori.saveKey": { en: "Save key", ja: "キーを保存《ほぞん》" },
+  "marumori.keepKey": { en: "Keep the saved key", ja: "保存《ほぞん》済《ず》みのキーを残《のこ》す" },
+  "marumori.confirmRemove": { en: "Confirm remove", ja: "削除《さくじょ》を確定《かくてい》" },
+  "marumori.removeKey": { en: "Remove key", ja: "キーを削除《さくじょ》" },
+  "marumori.syncHeading": { en: "Sync", ja: "同期《どうき》" },
+  "marumori.syncNow": { en: "Sync now", ja: "今《いま》同期《どうき》" },
+  "marumori.hideRuns": { en: "Hide recent Syncs", ja: "最近《さいきん》の同期《どうき》を隠《かく》す" },
+  "marumori.showRuns": { en: "Show recent Syncs", ja: "最近《さいきん》の同期《どうき》を表示《ひょうじ》" },
+  "marumori.runsLoadFailed": {
+    en: "Cannot load Sync history: {message}",
+    ja: "同期《どうき》履歴《りれき》を読《よ》み込《こ》せません: {message}",
+  },
+  "marumori.noRuns": { en: "No Syncs yet.", ja: "まだ同期《どうき》はありません。" },
   "settings.savedTheme": {
     en: "Saved on this device. System follows your computer.",
     ja: "この端末《たんまつ》に保存《ほぞん》されます。システムはコンピュータの設定《せってい》に従《したが》います。",
