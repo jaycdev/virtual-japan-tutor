@@ -35,8 +35,8 @@ jobs:
     steps:
       - name: Releases come from main only
         run: |
-          if [ "$GITHUB_REF_NAME" != "main" ]; then
-            echo "::error::Releases are cut from main, not from $GITHUB_REF_NAME"
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Releases are cut from main, not from $GITHUB_REF"
             exit 1
           fi
 
@@ -53,8 +53,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # The newest CI run for this commit decides. A run still in progress does not pass.
-          state=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&per_page=100" \
+          # The newest push-to-main CI run for this commit decides. A run still in progress does not pass.
+          state=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&event=push&branch=main&per_page=100" \
             --jq 'if (.workflow_runs | length) == 0 then "none" else (.workflow_runs | sort_by(.created_at) | last | "\(.status):\(.conclusion // "")") end')
           if [ "$state" != "completed:success" ]; then
             echo "::error::The latest CI run for $GITHUB_SHA is '$state', not 'completed:success'. Let CI pass, then run this workflow again."
@@ -96,7 +96,8 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$TAG" -F "$RUNNER_TEMP/notes.md" "$SHA"
+          # verbatim keeps the "###" headings; git's default cleanup would strip them as comments.
+          git tag -a "$TAG" --cleanup=verbatim -F "$RUNNER_TEMP/notes.md" "$SHA"
           git push origin "refs/tags/$TAG"
 
       - name: Start publish.yml for the tag

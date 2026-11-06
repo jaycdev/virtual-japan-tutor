@@ -119,6 +119,11 @@ describe("planRelease", () => {
     assert.equal(plan.problem, null);
   });
 
+  it("starts at 0.1.0 when the first history holds only fixes", () => {
+    const plan = planRelease(input({ commits: [commit("fix: a"), commit("perf: b")] }));
+    assert.equal(plan.tag, "v0.1.0");
+  });
+
   it("takes a patch bump from the baseline", () => {
     const plan = planRelease(input({ baseline: "v0.1.0", commits: [commit("fix: x")] }));
     assert.equal(plan.tag, "v0.1.1");

@@ -237,7 +237,9 @@ export function planRelease(input: PlanInput): Plan {
     }
     version = input.releaseAs;
   } else {
-    const bump = highestBump(analysed.flatMap((a) => (a.bump === null ? [] : [a.bump])));
+    const highest = highestBump(analysed.flatMap((a) => (a.bump === null ? [] : [a.bump])));
+    // The first release is 0.1.0 even when the history holds only fixes (ADR-0014).
+    const bump = input.baseline === null && highest === "patch" ? "minor" : highest;
     plan.bump = bump;
     if (bump === null) {
       return {
