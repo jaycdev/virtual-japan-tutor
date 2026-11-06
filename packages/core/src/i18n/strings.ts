@@ -671,8 +671,8 @@ export const strings = {
 
   // — The web Story reader chrome (issue #125 Part 2) —
   "reader.backToStories": { en: "Back to stories", ja: "物語《ものがたり》へ戻《もど》る" },
-  "reader.hideTranslation": { en: "Hide translation", ja: "翻訳《ほんやく》を隠《かく》す" },
-  "reader.showTranslation": { en: "Show translation", ja: "翻訳《ほんやく》を表示《ひょうじ》" },
+  "reader.hideTranslation": { en: "Hide translation", ja: "文《ぶん》の訳《やく》を隠《かく》す" },
+  "reader.showTranslation": { en: "Show translation", ja: "文《ぶん》の訳《やく》を表示《ひょうじ》" },
   "reader.panelAria": { en: "Reading Panel", ja: "読解《どっかい》パネル" },
   "reader.wordMeaning": { en: "Word meaning", ja: "単語《たんご》の意味《いみ》" },
   "reader.panelHint": {
@@ -683,7 +683,7 @@ export const strings = {
   "reader.sentenceTranslationAria": { en: "Sentence Translation", ja: "文《ぶん》の訳《やく》" },
   "reader.translationHiddenNote": {
     en: "Translation hidden — click or press Enter to show",
-    ja: "翻訳《ほんやく》は隠《かく》れています — クリックまたは Enter で表示《ひょうじ》",
+    ja: "文《ぶん》の訳《やく》は隠《かく》れています — クリックまたは Enter で表示《ひょうじ》",
   },
   "reader.blurSaveFailed": { en: "Could not save that — {message}", ja: "保存《ほぞん》できませんでした — {message}" },
   "reader.saveFailed": { en: "Could not save — {message}", ja: "保存《ほぞん》できません — {message}" },
@@ -1039,7 +1039,7 @@ export const strings = {
   // 単語 where the web says 語彙.
   "mobile.marumoriCounts": {
     en: "Known kanji: {kanji} · Known vocabulary: {vocabulary} · Vocabulary linked: {linkRate}%",
-    ja: "既習《きしゅう》の漢字《かんじ》: {kanji} · 既習《きしゅう》の単語《たんご》: {vocabulary} · 単語《たんご》リンク: {linkRate}%",
+    ja: "既習《きしゅう》の漢字《かんじ》：{kanji} · 既習《きしゅう》の単語《たんご》：{vocabulary} · 単語《たんご》リンク：{linkRate}%",
   },
 
   // Item Lists on the phone: the hub blurb and row hints trail the web's
@@ -1238,7 +1238,7 @@ export const strings = {
   },
   "mobile.readerBlurRetryAria": {
     en: "Retry saving the translation setting",
-    ja: "文《ぶん》の訳《やく》設定《せってい》の保存《ほぞん》を再試行《さいしこう》する",
+    ja: "文《ぶん》の訳《やく》の設定《せってい》の保存《ほぞん》を再試行《さいしこう》する",
   },
   // The phone's blurb keeps its em-dash phrasing; the web's own intro trails.
   "mobile.practiceIntro": {
