@@ -8,6 +8,7 @@ import { LinkButton } from "./components/ui/LinkButton.tsx";
 import { ActionButton } from "./stories-parts.tsx";
 import { InlineError, SkeletonBar } from "./state/states.tsx";
 import { normalizeServerUrl } from "./config.ts";
+import { VersionLines } from "./VersionLines.tsx";
 
 /**
  * The server connection (#50). The app has no same-origin default, so the API
@@ -120,6 +121,9 @@ function HealthLine({ client, onRecheck }: { client: ApiClient; onRecheck: () =>
         <Text role="status" accessibilityLiveRegion="polite" className="text-body text-destructive">
           The server answered, but {health.health.database === "unreachable" ? "cannot reach its database" : "reports a degraded part"}.
         </Text>
+      )}
+      {(health.state === "ok" || health.state === "degraded") && (
+        <VersionLines serverVersion={health.health.version} />
       )}
       {health.state === "error" && (
         <InlineError message={`Cannot reach the server: ${health.message}`} onRetry={onRecheck} />

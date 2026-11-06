@@ -945,6 +945,11 @@ export interface components {
             status: "ok" | "degraded";
             /** @enum {string} */
             database: "connected" | "unreachable";
+            /**
+             * @description Build version of the server: a release such as 1.2.3 (or 1.2.3-rc.1), dev+<short commit> for builds of main, and unknown for local builds. Optional so older servers still validate.
+             * @example 1.2.3
+             */
+            version?: string;
         };
         MaruMoriKeyRequest: {
             /**

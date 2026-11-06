@@ -65,7 +65,15 @@ export default defineConfig({
     environment: "jsdom",
     globals: true, // lets @testing-library/react register its automatic cleanup
     setupFiles: ["./vitest.setup.ts"],
-    include: ["src/**/*.test.{ts,tsx}", "showcase/**/*.test.{ts,tsx}", "App.test.tsx"],
+    include: [
+      "src/**/*.test.{ts,tsx}",
+      "showcase/**/*.test.{ts,tsx}",
+      "App.test.tsx",
+      // Build config (ADR-0012): version mapping, variant config and the signing plugin.
+      "scripts/**/*.test.ts",
+      "plugins/**/*.test.ts",
+      "app.config.test.ts",
+    ],
     retry: process.env.CI ? 1 : 0,
     reporters: process.env.CI
       ? [

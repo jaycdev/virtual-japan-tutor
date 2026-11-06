@@ -77,10 +77,22 @@ Open `http://localhost:8080` (or your server's address and `SERVER_PORT`) in a b
 account from step 1. The web app is built into the server image and served by the server itself, so there is
 nothing else to deploy and no CORS or proxy setup. `http://localhost:8080/health` is the API health check.
 
-**Android**: there is no prebuilt APK yet. Build and install it from source
-(`pnpm --filter @vjt/mobile android` with a device or emulator attached; see [Development](#development)).
-The app asks for your server address on first launch and can change it in Settings. Release builds block plain
-`http://` addresses, so put the server behind HTTPS if you use the app away from a debug build.
+**Android app**: download the APK from the [latest release](https://github.com/jaycdev/virtual-japan-tutor/releases/latest),
+open it on the phone and allow installing from that source. Optional: follow new releases with
+[Obtainium](https://obtainium.imranr.dev) by adding this repository.
+
+- **Release** (`virtual-japan-tutor-X.Y.Z.apk`): the app for each tagged version. Pair it with `VJT_VERSION=latest` (or a
+  version number) on the server.
+- **Dev** (`virtual-japan-tutor-dev.apk`, on the rolling `dev` pre-release): a separate app, "VJT Dev", built from
+  `main` on every push. It installs next to the release app and has its own data. Pair it with `VJT_VERSION=dev`.
+
+The app asks for your server address on first launch and can change it in Settings. The app connects over HTTPS only.
+Use a certificate from a public CA, or a self-signed or private CA of your own: install that CA's certificate on the
+phone (Settings › Security & privacy › More security settings › Encryption & credentials › Install a certificate › CA
+certificate), and the app will trust it, as browsers do. Anyone who can install a CA on your phone can read the app's
+traffic, so only install CAs you control. See [ADR-0013](docs/adr/0013-trust-user-installed-certificates.md). To build the app from source instead, see
+[Development](#development) and [ADR-0012](docs/adr/0012-android-apk-built-in-github-actions.md).
+
 ### 5. Set up your account
 
 Once signed in, open **Settings** to add your MaruMori key (and run **Sync now**),
@@ -153,7 +165,7 @@ Compose refuses to start without `SECRETS_KEY`. Set `VJT_BOOTSTRAP_USERNAME` / `
 to get a first account on first boot (see [Authentication](#authentication)). Ports are published on the
 machine running the Docker daemon. Optional overrides (credentials, `SERVER_PORT`) go in `.env`.
 
-### Publishing images
+### Publishing
 
 `.github/workflows/publish.yml` builds the `server` and `import` targets of `apps/server/Dockerfile` for
 `linux/amd64` and `linux/arm64` and pushes them to GitHub Container Registry
@@ -164,6 +176,12 @@ machine running the Docker daemon. Optional overrides (credentials, `SERVER_PORT
 | push to `main`             | `dev`, `sha-<commit>`                                |
 | push of tag `vX.Y.Z`       | `X.Y.Z`, `X.Y`, `latest`                             |
 | push of tag `vX.Y.Z-rc.1`  | `X.Y.Z-rc.1` only (a pre-release never moves `latest`) |
+
+The same workflow builds the Android APK (ADR-0012), signed with one release keystore kept in repository secrets
+(`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_PASSWORD`) and the `ANDROID_KEY_ALIAS` variable.
+A tag creates a GitHub Release with `virtual-japan-tutor-X.Y.Z.apk` attached (`-rc` tags are marked as pre-releases).
+A push to `main` replaces the APK on the rolling `dev` pre-release. The job refuses to publish if any signing setting is
+missing. **Losing the keystore means existing installs cannot be updated**, so keep an offline backup.
 
 Cut a release with `git tag v0.1.0 && git push origin v0.1.0`. The workflow does not wait for CI, so tag a
 commit whose CI run is green. New GHCR packages start **private**: after the first publish, open each package's

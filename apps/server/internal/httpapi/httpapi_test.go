@@ -18,6 +18,7 @@ import (
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/api"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/auth"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/auth/authtest"
+	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/buildinfo"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/httpapi"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/llm"
 	"github.com/jaycdev/virtual-japan-tutor/apps/server/internal/secrets"
@@ -148,6 +149,35 @@ func TestHealthReportsDatabaseUnreachable(t *testing.T) {
 	}
 	if body["status"] != "degraded" || body["database"] != "unreachable" {
 		t.Fatalf("body = %v, want status=degraded database=unreachable", body)
+	}
+}
+
+func setBuildVersion(t *testing.T, v string) {
+	t.Helper()
+	old := buildinfo.Version
+	buildinfo.Version = v
+	t.Cleanup(func() { buildinfo.Version = old })
+}
+
+func TestHealthReportsServerVersion(t *testing.T) {
+	setBuildVersion(t, "1.2.3")
+	code, body := getHealth(t, fakeDB{}, "")
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", code)
+	}
+	if body["version"] != "1.2.3" {
+		t.Fatalf("version = %q, want 1.2.3 (body %v)", body["version"], body)
+	}
+}
+
+func TestHealthReportsServerVersionWhenDatabaseUnreachable(t *testing.T) {
+	setBuildVersion(t, "1.2.3-rc.1")
+	code, body := getHealth(t, fakeDB{err: errors.New("connection refused")}, "")
+	if code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", code)
+	}
+	if body["version"] != "1.2.3-rc.1" {
+		t.Fatalf("version = %q, want 1.2.3-rc.1 (body %v)", body["version"], body)
 	}
 }
 
