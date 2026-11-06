@@ -13,7 +13,7 @@ import { ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { Card } from "./components/ui/Card.tsx";
 import { T, TableText } from "./components/Text.tsx";
-import { pageSummary } from "./reader/parts.tsx";
+import { PageRange } from "./reader/parts.tsx";
 import { SkeletonBar } from "./state/states.tsx";
 import {
   ActionButton,
@@ -153,7 +153,7 @@ export function Stories({ client, onOpenStory, generationPollMs }: StoriesProps)
   }
 
   const page = view.library.status === "ready" ? view.library.page : null;
-  const { language, tp } = useT();
+  const { tp } = useT();
 
   return (
     <ScrollView className="flex-1" accessibilityLabel={tp("nav.stories")} contentContainerStyle={styles.page}>
@@ -201,13 +201,23 @@ export function Stories({ client, onOpenStory, generationPollMs }: StoriesProps)
           <View testID="library-filters" style={styles.filterRow}>
             <View style={styles.chipRow}>
               <FilterChip
-                label={tp("stories.filterUnread")}
+                label={
+                  <T
+                    k="stories.filterUnread"
+                    className={`text-small ${unreadOnly ? "font-semibold text-foreground" : "text-muted-foreground"}`}
+                  />
+                }
                 active={unreadOnly}
                 onPress={() => setUnreadOnly(true)}
                 testID="filter-unread"
               />
               <FilterChip
-                label={tp("stories.filterAll")}
+                label={
+                  <T
+                    k="stories.filterAll"
+                    className={`text-small ${!unreadOnly ? "font-semibold text-foreground" : "text-muted-foreground"}`}
+                  />
+                }
                 active={!unreadOnly}
                 onPress={() => setUnreadOnly(false)}
                 testID="filter-all"
@@ -217,6 +227,7 @@ export function Stories({ client, onOpenStory, generationPollMs }: StoriesProps)
               testID="genre-filter"
               ariaLabel={tp("mobile.genreFilterAria")}
               placeholder={tp("stories.allGenres")}
+              placeholderKey="stories.allGenres"
               value={genre}
               options={genreChoices}
               onChange={setGenre}
@@ -285,9 +296,7 @@ export function Stories({ client, onOpenStory, generationPollMs }: StoriesProps)
                 onPress={() => void view.loadPage(Math.max(0, page.offset - page.limit))}
                 testID="pager-newer"
               />
-              <Text className="text-caption text-muted-foreground" testID="library-page-summary">
-                {pageSummary(page, language)}
-              </Text>
+              <PageRange page={page} testID="library-page-summary" />
               <ActionButton
                 label={<T k="stories.older" className="text-body font-semibold text-foreground" />}
                 accessibilityLabel={tp("stories.older")}

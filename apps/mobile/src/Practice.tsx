@@ -3,19 +3,19 @@ import {
   displayPrompt,
   exerciseInstructionKey,
   pluralEn,
-  translatePlain,
   usePractice,
   useT,
   type ExerciseView,
-  type InterfaceLanguage,
   type PracticeView,
+  type StringKey,
+  type TranslateParams,
 } from "@vjt/core";
 import { useCallback, useEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View, type ViewInstance } from "react-native";
 
 import { useJapaneseFont } from "./japaneseFont/index.tsx";
 import { Icon } from "./components/ui/icon.tsx";
-import { T } from "./components/Text.tsx";
+import { Labeled, T } from "./components/Text.tsx";
 import { Card as UiCard } from "./components/ui/Card.tsx";
 import { EmptyState, InlineError, ProgressBar, Skeleton } from "./state/states.tsx";
 
@@ -210,12 +210,11 @@ function StartingCard() {
 
 /** The Focus Set has no practisable content: one line, one way forward. */
 function NothingToPractise({ onOpenWordLists }: { onOpenWordLists?: () => void }) {
-  const { tp } = useT();
   return (
     <Card>
       <EmptyState
         message={<T k="practice.empty" />}
-        actionLabel={tp("practice.openLists")}
+        actionLabel={<T k="practice.openLists" className="text-body font-semibold text-primary" />}
         onAction={onOpenWordLists}
       />
     </Card>
@@ -312,9 +311,10 @@ function ActivePractice({
               size="sm"
               className={feedback.correct ? "text-success" : "text-destructive"}
             />
-            <Text className={feedback.correct ? "text-body font-semibold text-success" : "text-body font-semibold text-destructive"}>
-              {feedbackLine(current, feedback, language)}
-            </Text>
+            <T
+              {...feedbackEntry(current, feedback)}
+              className={`text-body font-semibold ${feedback.correct ? "text-success" : "text-destructive"}`}
+            />
           </View>
         ) : null}
         <View className="gap-2">
@@ -351,20 +351,21 @@ function ActivePractice({
 }
 
 /**
- * The feedback line. A miss names the right answer outright — a marker on the
- * option list alone was too easy to miss (#46 review S1). Plain text, not <T>:
- * the line sits in a live region, and the readings would be read out too.
+ * The feedback line's table entry. A miss names the right answer outright — a
+ * marker on the option list alone was too easy to miss (#46 review S1). The
+ * entry draws through <T>, furigana and all: T hides its reading columns from
+ * assistive tech, so the surrounding live region still announces the plain
+ * sentence.
  */
-function feedbackLine(
+function feedbackEntry(
   current: ExerciseView,
   feedback: NonNullable<ExerciseView["feedback"]>,
-  lang: InterfaceLanguage,
-): string {
-  if (feedback.correct) return translatePlain(lang, "practice.correct");
+): { k: StringKey; params?: TranslateParams } {
+  if (feedback.correct) return { k: "practice.correct" };
   const answer = current.options.find((opt) => opt.id === feedback.correctOptionId)?.text;
   return answer
-    ? translatePlain(lang, "practice.notQuiteAnswer", { answer })
-    : translatePlain(lang, "practice.notQuite");
+    ? { k: "practice.notQuiteAnswer", params: { answer } }
+    : { k: "practice.notQuite" };
 }
 
 function OptionButton({
@@ -407,17 +408,22 @@ function OptionButton({
 }
 
 /** itemKind as Learner-facing copy in the Interface Language, not the API's raw token. */
-function humanKind(kind: string, lang: InterfaceLanguage): string {
-  const keys: Record<string, "item.kanji" | "item.kana" | "focus.grammarPoint" | "item.vocabulary" | "item.phrase"> = {
+function HumanKind({ kind }: { kind: string }) {
+  const keys = {
     kanji: "item.kanji",
     kana: "item.kana",
     grammar: "focus.grammarPoint",
     vocabulary: "item.vocabulary",
     phrase: "item.phrase",
-  };
-  const key = keys[kind];
-  if (key === undefined) return kind.charAt(0).toUpperCase() + kind.slice(1);
-  return translatePlain(lang, key);
+  } as const;
+  const key = keys[kind as keyof typeof keys];
+  if (key === undefined)
+    return (
+      <Text className="text-caption text-muted-foreground">
+        {kind.charAt(0).toUpperCase() + kind.slice(1)}
+      </Text>
+    );
+  return <T k={key} className="text-caption text-muted-foreground" />;
 }
 
 function PracticeResults({ practice, onAgain }: { practice: PracticeView; onAgain: () => void }) {
@@ -462,7 +468,7 @@ function PracticeResults({ practice, onAgain }: { practice: PracticeView; onAgai
                     <T k="practice.correctAnswer" params={{ answer }} className="text-small text-foreground" />
                   ) : null}
                 </View>
-                <Text className="text-caption text-muted-foreground">{humanKind(item.itemKind, language)}</Text>
+                <HumanKind kind={item.itemKind} />
               </View>
             );
           })}
@@ -506,7 +512,9 @@ function PrimaryAction({
       {typeof label === "string" ? (
         <Text className="text-body font-semibold text-primary-foreground">{label}</Text>
       ) : (
-        label
+        // The button's name is the explicit accessibilityLabel; the drawn
+        // line hides so the sentence is not announced twice.
+        accessibilityLabel !== undefined ? <Labeled>{label}</Labeled> : label
       )}
       {icon ? <Icon name={icon} size="sm" className="text-primary-foreground" /> : null}
     </Pressable>

@@ -25,7 +25,7 @@ import {
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
-import { T, TableText } from "./components/Text.tsx";
+import { Labeled, T, TableText } from "./components/Text.tsx";
 import { Card } from "./components/ui/Card.tsx";
 import { FocusSetPanel, FOCUS_CHIPS_MAX } from "./components/ui/FocusSetPanel.tsx";
 import { EmptyState, InlineError, ProgressBar, SkeletonBar } from "./state/states.tsx";
@@ -230,7 +230,11 @@ function TodayStoryCard({
         </View>
       ) : phase.kind === "story" ? (
         <View className="gap-3">
-          <Text className="text-title font-semibold text-foreground">{phase.story.title}</Text>
+          {/* The Story Title is Learner content: never translated, never
+              annotated — the coverage check exempts it by this testID. */}
+          <Text testID="today-story-title" className="text-title font-semibold text-foreground">
+            {phase.story.title}
+          </Text>
           <TableText
             segments={storyMetaSegments(t, phase.story, language)}
             className="text-small text-muted-foreground"
@@ -596,7 +600,9 @@ function ActionButton({
       {typeof label === "string" ? (
         <Text className={`text-body font-semibold ${text}`}>{label}</Text>
       ) : (
-        label
+        // The button's name is the explicit accessibilityLabel; the drawn
+        // line hides so the sentence is not announced twice.
+        accessibilityLabel !== undefined ? <Labeled>{label}</Labeled> : label
       )}
     </Pressable>
   );

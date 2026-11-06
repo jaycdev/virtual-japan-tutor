@@ -1,19 +1,19 @@
 import type { ApiClient } from "@vjt/api-client";
 import {
-  syncOutcomeText,
-  syncRunText,
+  formatInstantRuby,
+  syncOutcomeRuby,
+  syncRunRuby,
   useMarumori,
   useT,
 } from "@vjt/core";
 import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 
-import { T } from "./components/Text.tsx";
+import { T, TableText } from "./components/Text.tsx";
 import { Card } from "./components/ui/Card.tsx";
 import { Field } from "./components/ui/Field.tsx";
 import { LinkButton } from "./components/ui/LinkButton.tsx";
 import { ActionButton } from "./stories-parts.tsx";
-import { formatInstant } from "./Today.tsx";
 import { InlineError, Skeleton, SkeletonBar } from "./state/states.tsx";
 import type { StepSaveOutcome, StepSaveRegistrar } from "./settingsSections.tsx";
 
@@ -127,7 +127,7 @@ export function MaruMoriSettings({
   if (state.status === "error") {
     return (
       <InlineError
-        message={tp("mobile.marumoriLoadFailed", { message: state.message })}
+        message={<T k="marumori.loadFailed" params={{ message: state.message }} />}
         onRetry={maru.reload}
       />
     );
@@ -153,20 +153,24 @@ export function MaruMoriSettings({
         />
       )}
       {/* P5: the raw ISO stamp read like a debug dump. Same humanising and
-          device-timezone fallback Today's sync lines use (formatInstant
+          device-timezone fallback Today's sync lines use (formatInstantRuby
           with no Learner Timezone falls back to the device's). */}
       {state.marumori.connected && state.marumori.counts?.lastSyncAt && (
         <T
-          k="mobile.marumoriLastSyncAt"
-          params={{ when: formatInstant(state.marumori.counts.lastSyncAt, undefined, language) }}
+          k="marumori.lastSync"
+          params={{ when: formatInstantRuby(state.marumori.counts.lastSyncAt, undefined, language) }}
           className="text-small text-muted-foreground"
         />
       )}
       {state.marumori.connected && state.marumori.lastFailure && (
         <InlineError
-          message={tp("mobile.marumoriSyncFailed", {
-            detail: state.marumori.lastFailure.error ?? tp("sync.unknownError"),
-          })}
+          message={
+            state.marumori.lastFailure.error ? (
+              <T k="marumori.syncFailed" params={{ error: state.marumori.lastFailure.error }} />
+            ) : (
+              <T k="marumori.syncFailedUnknown" />
+            )
+          }
         />
       )}
 
@@ -234,20 +238,24 @@ export function MaruMoriSettings({
         </>
       )}
       {syncResult && (
-        <Text
-          role="status"
-          accessibilityLiveRegion="polite"
-          className={`text-body ${syncResult.status === "ok" ? "text-success" : "text-destructive"}`}
-        >
-          {syncResult.status === "error"
-            ? syncResult.message
-            : syncOutcomeText(syncResult, language)}
-        </Text>
+        // The live status line. TableText's own roles do not include
+        // "status", so the wrapper carries it, as ServerSettings does. The
+        // server's own error words stay plain — they are not ours to annotate.
+        <View role="status" accessibilityLiveRegion="polite">
+          {syncResult.status === "error" ? (
+            <Text className="text-body text-destructive">{syncResult.message}</Text>
+          ) : (
+            <TableText
+              segments={syncOutcomeRuby(syncResult, language)}
+              className={`text-body ${syncResult.status === "ok" ? "text-success" : "text-destructive"}`}
+            />
+          )}
+        </View>
       )}
       {showRuns && maru.runs.status === "loading" && <Skeleton lines={3} />}
       {showRuns && maru.runs.status === "error" && (
         <InlineError
-          message={tp("mobile.marumoriRunsLoadFailed", { message: maru.runs.message })}
+          message={<T k="marumori.runsLoadFailed" params={{ message: maru.runs.message }} />}
         />
       )}
       {showRuns && maru.runs.status === "ready" && (
@@ -256,9 +264,13 @@ export function MaruMoriSettings({
             <T k="marumori.noRuns" className="text-body text-muted-foreground" />
           ) : (
             maru.runs.runs.map((r) => (
-              <Text key={r.id} className="text-small text-muted-foreground">
-                {syncRunText(r, language)}
-              </Text>
+              // startedAt and status are the server's own words; ours come
+              // from the table, readings and all.
+              <TableText
+                key={r.id}
+                segments={syncRunRuby(r, language)}
+                className="text-small text-muted-foreground"
+              />
             ))
           )}
         </Card>

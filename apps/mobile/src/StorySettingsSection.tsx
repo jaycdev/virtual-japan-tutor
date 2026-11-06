@@ -86,7 +86,7 @@ export function StorySettingsSection({ client }: { client: ApiClient }) {
   if (stories.settings.status === "error") {
     return (
       <InlineError
-        message={tp("mobile.storySettingsLoadFailed", { message: stories.settings.message })}
+        message={<T k="settings.storyLoadFailed" params={{ message: stories.settings.message }} />}
         onRetry={stories.reloadSettings}
       />
     );

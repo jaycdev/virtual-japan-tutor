@@ -1,5 +1,5 @@
 import type { ApiClient } from "@vjt/api-client";
-import { probeServerHealth, useHealth, useT } from "@vjt/core";
+import { probeServerHealth, useHealth, useT, type EntryRef } from "@vjt/core";
 import { useState } from "react";
 import { View } from "react-native";
 
@@ -34,17 +34,20 @@ export function ServerSettings({
   currentUrl: string;
   onSave: (url: string) => Promise<void>;
 }) {
-  const { language, tp: plain } = useT();
+  const { tp: plain } = useT();
   const [url, setUrl] = useState(currentUrl);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | undefined>();
+  // A table-backed failure stays a string-table entry ({ k, params }) so the
+  // text follows the Interface Language however long the note sits here; only
+  // the server's own message arrives pre-resolved.
+  const [error, setError] = useState<EntryRef | string | undefined>();
   // Bumped by "Check again"; keys the health child so it refetches (see above).
   const [attempt, setAttempt] = useState(0);
 
   const save = async () => {
     const next = normalizeServerUrl(url);
     if (!next) {
-      setError(plain("mobile.serverUrlShape"));
+      setError({ k: "mobile.serverUrlShape" });
       return;
     }
     setBusy(true);
@@ -53,7 +56,7 @@ export function ServerSettings({
     // session against the new address — a typo silently signed the Learner
     // out and bounced them to Login with no explanation. A failed probe
     // keeps the old address in place.
-    const probeFailure = await probeServerHealth(next, undefined, undefined, language);
+    const probeFailure = await probeServerHealth(next);
     if (probeFailure) {
       setError(probeFailure);
       setBusy(false);
@@ -63,7 +66,7 @@ export function ServerSettings({
       await onSave(next);
       setUrl(next);
     } catch (err) {
-      setError(err instanceof Error ? err.message : plain("mobile.serverSaveFailed"));
+      setError(err instanceof Error ? err.message : { k: "mobile.serverSaveFailed" });
     } finally {
       setBusy(false);
     }
@@ -98,7 +101,11 @@ export function ServerSettings({
             filled
             disabled={busy}
           />
-          {error && <InlineError message={error} />}
+          {error ? (
+            <InlineError
+              message={typeof error === "string" ? error : <T k={error.k} params={error.params} />}
+            />
+          ) : null}
           <LinkButton
             label={<T k="mobile.emulatorDefault" className="text-body text-primary" />}
             onPress={() => setUrl("http://10.0.2.2:8080")}
@@ -133,7 +140,7 @@ function HealthLine({ client, onRecheck }: { client: ApiClient; onRecheck: () =>
       )}
       {health.state === "error" && (
         <InlineError
-          message={<T k="mobile.serverReachFailed" params={{ message: health.message }} />}
+          message={<T k="server.unreachable" params={{ message: health.message }} />}
           onRetry={onRecheck}
         />
       )}

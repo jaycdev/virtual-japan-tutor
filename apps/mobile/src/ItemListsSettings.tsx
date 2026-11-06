@@ -115,7 +115,7 @@ function ListsMaster({
   if (state.status === "error") {
     return (
       <InlineError
-        message={tp("mobile.listsLoadFailed", { message: state.message })}
+        message={<T k="settings.listsLoadFailed" params={{ message: state.message }} />}
         onRetry={lists.reload}
       />
     );
@@ -125,7 +125,12 @@ function ListsMaster({
     <View className="gap-4">
       {error ? <InlineError message={error} /> : null}
       <T k="mobile.listsIntro" className="text-body text-muted-foreground" />
-      {state.lists.length === 0 && <EmptyState message={tp("lists.empty")} compact />}
+      {state.lists.length === 0 && (
+        <EmptyState
+          message={<T k="lists.empty" className="text-center text-body text-muted-foreground" />}
+          compact
+        />
+      )}
       {state.lists.map((l) => (
         <Card key={l.id} padded={false}>
           <Row

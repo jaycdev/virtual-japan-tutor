@@ -1,20 +1,21 @@
 import type { ApiClient } from "@vjt/api-client";
 import {
   STARTING_LEVELS,
-  grammarReviewText,
-  grammarUpdatedText,
+  grammarReviewRuby,
+  grammarUpdatedRuby,
   useGrammarReview,
   useStartingLevel,
+  useT,
   type StartingLevel,
   type StepSaveOutcome,
   type StepSaveRegistrar,
 } from "@vjt/core";
 import { useEffect, useState } from "react";
-import { Text, View } from "react-native";
+import { View } from "react-native";
 
 import { Card } from "./components/ui/Card.tsx";
 import { Chip, ChipRow } from "./components/ui/Chip.tsx";
-import { T } from "./components/Text.tsx";
+import { T, TableText } from "./components/Text.tsx";
 import { ActionButton } from "./stories-parts.tsx";
 import { InlineError, SkeletonBar } from "./state/states.tsx";
 
@@ -40,10 +41,11 @@ export function StartingLevelSettings({
   const [choice, setChoice] = useState<StartingLevel | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
-  const [result, setResult] = useState<string | undefined>();
+  const [result, setResult] = useState<{ added?: number; removed?: number } | undefined>();
 
   const stored = level.state.status === "ready" ? level.state.level.level : null;
   const selected = choice ?? stored ?? "N5";
+  const { language } = useT();
 
   const save = async () => {
     setBusy(true);
@@ -52,7 +54,9 @@ export function StartingLevelSettings({
     try {
       const res = await level.setLevel(selected);
       if ("status" in res) setError(res.message);
-      else setResult(grammarUpdatedText(res));
+      // Server data, not a resolved sentence: the line is drawn in whatever
+      // Interface Language is current when it renders (issue #125, B3).
+      else setResult({ added: res.added, removed: res.removed });
     } finally {
       setBusy(false);
     }
@@ -72,7 +76,7 @@ export function StartingLevelSettings({
         setError(res.message);
         return "blocked";
       }
-      setResult(grammarUpdatedText(res));
+      setResult({ added: res.added, removed: res.removed });
       setChoice(null);
       return "saved";
     });
@@ -113,9 +117,12 @@ export function StartingLevelSettings({
       </Card>
       <ActionButton label={<T k="settings.levelSave" />} onPress={() => void save()} filled disabled={busy} />
       {result && (
-        <Text role="status" accessibilityLiveRegion="polite" className="text-body text-success">
-          {result}
-        </Text>
+        // The live status line, drawn in the Interface Language: TableText's
+        // own roles do not include "status", so the wrapper carries it, as
+        // ServerSettings and ReadingSettingsSection do.
+        <View role="status" accessibilityLiveRegion="polite">
+          <TableText segments={grammarUpdatedRuby(result, language)} className="text-body text-success" />
+        </View>
       )}
       {error && <InlineError message={error} />}
 
@@ -130,6 +137,7 @@ export function StartingLevelSettings({
 
 function GrammarReviewList({ client }: { client: ApiClient }) {
   const review = useGrammarReview(client);
+  const { language } = useT();
   return (
     <View className="gap-2">
       <T
@@ -151,9 +159,14 @@ function GrammarReviewList({ client }: { client: ApiClient }) {
         <>
           <T k="settings.reviewNote" className="text-small text-muted-foreground" />
           {review.state.items.map((item) => (
-            <Text key={item.marumoriId} className="text-body text-foreground">
-              {grammarReviewText(item)}
-            </Text>
+            // The Pattern is Learner-catalogue content and rides unannotated;
+            // the coverage check exempts the row by this testID.
+            <TableText
+              key={item.marumoriId}
+              testID="grammar-review-row"
+              segments={grammarReviewRuby(item, language)}
+              className="text-body text-foreground"
+            />
           ))}
         </>
       ) : null}

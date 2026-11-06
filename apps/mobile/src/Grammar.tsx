@@ -7,7 +7,7 @@ import { useCSSVariable } from "uniwind";
 import { useJapaneseFont } from "./japaneseFont/index.tsx";
 import { Card } from "./components/ui/Card.tsx";
 import { Icon } from "./components/ui/icon.tsx";
-import { T } from "./components/Text.tsx";
+import { T, Labeled } from "./components/Text.tsx";
 import { EmptyState, InlineError, SkeletonBar } from "./state/states.tsx";
 
 /**
@@ -298,17 +298,26 @@ function PointRow({
       }`}
     >
       <View className="flex-1 gap-1">
-        <Text className={`text-body ${jp.regular} text-foreground`}>{point.pattern}</Text>
-        <Text className="text-small text-muted-foreground">{point.meaning}</Text>
+        {/* Pattern and Meaning are Learner-catalogue content: the app never
+            translates or annotates them — the coverage check exempts them by
+            these testIDs. */}
+        <Text testID="grammar-pattern" className={`text-body ${jp.regular} text-foreground`}>{point.pattern}</Text>
+        <Text testID="grammar-meaning" className="text-small text-muted-foreground">{point.meaning}</Text>
       </View>
       <View className="items-end gap-1">
-        <SourceBadge knowledge={knowledge} />
+        {/* The row names itself with everything it shows; the drawn badge and
+            count stay out of the tree so the caption is not announced twice. */}
+        <Labeled>
+          <SourceBadge knowledge={knowledge} />
+        </Labeled>
         {/* One interpolated string, so the whole caption is one text node. */}
-        <T
-          k="grammar.exampleCount"
-          params={{ count: point.exampleCount, plural: pluralEn(language, point.exampleCount) }}
-          className="text-caption text-muted-foreground"
-        />
+        <Labeled>
+          <T
+            k="grammar.exampleCount"
+            params={{ count: point.exampleCount, plural: pluralEn(language, point.exampleCount) }}
+            className="text-caption text-muted-foreground"
+          />
+        </Labeled>
       </View>
       <Icon name="chevron-right" size="sm" className="text-muted-foreground" />
     </Pressable>

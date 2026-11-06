@@ -1,5 +1,5 @@
 import type { StoryRating } from "@vjt/api-client";
-import { translatePlain, useT, type InterfaceLanguage, type StoryView } from "@vjt/core";
+import { useT, type StoryView } from "@vjt/core";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { Icon } from "../components/ui/icon";
@@ -70,15 +70,25 @@ export function RatingButtons({
 }
 
 /** `1–10 of 23` — the library page's position line, in the Learner's language. */
-export function pageSummary(
-  page: { items: unknown[]; total: number; limit: number; offset: number },
-  lang: InterfaceLanguage,
-) {
-  return translatePlain(lang, "mobile.pageRange", {
-    from: page.offset + 1,
-    to: Math.min(page.offset + page.items.length, page.total),
-    total: page.total,
-  });
+export function PageRange({
+  page,
+  testID,
+}: {
+  page: { items: unknown[]; total: number; limit: number; offset: number };
+  testID?: string;
+}) {
+  return (
+    <T
+      k="mobile.pageRange"
+      params={{
+        from: page.offset + 1,
+        to: Math.min(page.offset + page.items.length, page.total),
+        total: page.total,
+      }}
+      className="text-caption text-muted-foreground"
+      testID={testID}
+    />
+  );
 }
 
 const styles = StyleSheet.create({

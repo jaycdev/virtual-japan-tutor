@@ -1,5 +1,5 @@
 import type { ItemList } from "@vjt/api-client";
-import { useT } from "@vjt/core";
+import { useT, type EntryRef } from "@vjt/core";
 import { Icon } from "../components/ui/icon";
 import { T, TableText } from "../components/Text.tsx";
 import { useSheetBottomInset } from "../components/ui/sheet.ts";
@@ -38,7 +38,8 @@ export function SaveToSheet({
   lists: ItemList[];
   defaultListId: string | null;
   busy: boolean;
-  error: string | null;
+  /** A table entry (+params), so the note follows the Interface Language. */
+  error: EntryRef | null;
   onSaveToList: (listId: string) => void;
   onCreateAndSave: (name: string) => void;
   onClose: () => void;
@@ -105,8 +106,8 @@ export function SaveToSheet({
             />
             {error ? (
               <T
-                k="reader.saveFailed"
-                params={{ message: error }}
+                k={error.k}
+                params={error.params}
                 accessibilityRole="alert"
                 className="text-small text-destructive"
                 style={styles.error}
@@ -126,7 +127,7 @@ export function SaveToSheet({
                   <Text className="text-body text-foreground">
                     {list.name}
                   </Text>
-                  {list.id === defaultListId ? <T k="mobile.saveDefaultTag" className="text-caption text-muted-foreground" /> : null}
+                  {list.id === defaultListId ? <T k="itemList.defaultWord" className="text-caption text-muted-foreground" /> : null}
                 </Pressable>
               ))}
             </ScrollView>

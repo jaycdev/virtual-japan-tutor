@@ -8,7 +8,7 @@
 // The strings are the screen's own (#125): the shape error is kept as a key
 // so its furigana survives, and only the thrown Error's message arrives as a
 // pre-localized plain string.
-import { useT } from "@vjt/core";
+import { useT, type EntryRef } from "@vjt/core";
 import { useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 
@@ -26,12 +26,15 @@ export function ServerField({
   const [editing, setEditing] = useState(false);
   const [url, setUrl] = useState(serverUrl);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | undefined>();
+  // A table-backed failure stays a string-table entry ({ k, params }) so the
+  // text follows the Interface Language however long the note sits here; only
+  // the server's own message arrives pre-resolved.
+  const [error, setError] = useState<EntryRef | string | undefined>();
 
   const save = async () => {
     const next = normalizeServerUrl(url);
     if (!next) {
-      setError(tp("mobile.serverUrlShape"));
+      setError({ k: "mobile.serverUrlShape" });
       return;
     }
     setBusy(true);
@@ -40,7 +43,7 @@ export function ServerField({
       await onSave(next);
       setEditing(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : tp("mobile.serverSaveFailed"));
+      setError(err instanceof Error ? err.message : { k: "mobile.serverSaveFailed" });
     } finally {
       setBusy(false);
     }
@@ -81,7 +84,13 @@ export function ServerField({
           editable={!busy}
         />
       </View>
-      {error ? <Text className="text-small text-destructive">{error}</Text> : null}
+      {error ? (
+        typeof error === "string" ? (
+          <Text className="text-small text-destructive">{error}</Text>
+        ) : (
+          <T k={error.k} params={error.params} className="text-small text-destructive" />
+        )
+      ) : null}
       <View className="flex-row gap-3">
         <Pressable
           className="min-h-11 flex-1 items-center justify-center rounded-lg bg-primary disabled:opacity-50"

@@ -134,7 +134,7 @@ export function AiProvidersSettings({
   if (state.status === "error") {
     return (
       <InlineError
-        message={tp("ai.loadFailed", { message: state.message })}
+        message={<T k="ai.loadFailed" params={{ message: state.message }} />}
         onRetry={settings.reload}
       />
     );

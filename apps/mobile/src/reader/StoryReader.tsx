@@ -14,13 +14,12 @@ import {
   useItemLists,
   useReadingSettings,
   useT,
+  type EntryRef,
   type MeasurableNode,
   type MenuOptionId,
   type Rect,
-  type StringKey,
   type StoryView,
   type TokenRef,
-  type TranslateParams,
 } from "@vjt/core";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import {
@@ -130,10 +129,11 @@ export function StoryReader({
   const [sheetToken, setSheetToken] = useState<TokenRef | null>(null);
   const [saveBusy, setSaveBusy] = useState(false);
   const saveBusyRef = useRef(false);
-  const [sheetError, setSheetError] = useState<string | null>(null);
-  // The save note is a table entry (+params), not a string: switching the
-  // Interface Language while it shows re-renders it in the new one (issue #125).
-  const [saveNote, setSaveNote] = useState<{ k: StringKey; params?: TranslateParams } | null>(null);
+  // The sheet's failure and the save note are table entries (+params), not
+  // resolved strings: switching the Interface Language while one shows
+  // re-renders it in the new one (issue #125).
+  const [sheetError, setSheetError] = useState<EntryRef | null>(null);
+  const [saveNote, setSaveNote] = useState<EntryRef | null>(null);
 
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelHold = () => {
@@ -763,7 +763,11 @@ export function StoryReader({
                   saveBusyRef.current = false;
                   return saveInto(created.list.id, item, created.list.name);
                 }
-                setSheetError(created.ok ? tp("mobile.readerListVanished") : created.message);
+                setSheetError(
+                  created.ok
+                    ? { k: "reader.saveFailedListVanished" }
+                    : { k: "reader.saveFailed", params: { message: created.message } },
+                );
                 return undefined;
               })
               .finally(() => {

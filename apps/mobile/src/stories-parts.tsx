@@ -2,6 +2,7 @@ import type { Story, StoryGenerationProgress, StorySuggestions } from "@vjt/api-
 import type { StoryGenerationState, StoryLibraryState } from "@vjt/core";
 import {
   genreLabel,
+  genreRuby,
   originLabel,
   progressStageKey,
   progressStageParams,
@@ -9,6 +10,8 @@ import {
   storyCardMetaRuby,
   storyDate,
   useT,
+  type RubyText,
+  type StringKey,
 } from "@vjt/core";
 import * as DialogPrimitives from "@rn-primitives/dialog";
 import * as DropdownMenuPrimitive from "@rn-primitives/dropdown-menu";
@@ -19,7 +22,7 @@ import { Card } from "./components/ui/Card.tsx";
 import { Icon, type IconName } from "./components/ui/icon.tsx";
 import { useSheetBottomInset } from "./components/ui/sheet.ts";
 import { EmptyState, InlineError, ProgressBar, SkeletonBar } from "./state/states.tsx";
-import { T, TableText } from "./components/Text.tsx";
+import { Labeled, T, TableText, labelAria } from "./components/Text.tsx";
 
 /**
  * The pieces of the rebuilt Stories page (issue #48, plan §4.5).
@@ -82,7 +85,9 @@ export function ActionButton({
       {typeof label === "string" ? (
         <Text className={`text-body font-semibold ${text}`}>{label}</Text>
       ) : (
-        label
+        // The button's name is the explicit accessibilityLabel; the drawn
+        // line hides so the sentence is not announced twice.
+        accessibilityLabel !== undefined ? <Labeled>{label}</Labeled> : label
       )}
     </Pressable>
   );
@@ -121,7 +126,9 @@ export function StoryCard({
           onPress={onOpen}
           style={styles.titlePress}
         >
-          <Text className="text-body font-semibold text-foreground" numberOfLines={2}>
+          {/* The Story Title is Learner content: never translated, never
+              annotated — the coverage check exempts it by this testID. */}
+          <Text testID="story-card-title" className="text-body font-semibold text-foreground" numberOfLines={2}>
             {story.title}
           </Text>
         </Pressable>
@@ -136,9 +143,12 @@ export function StoryCard({
             accessibilityLabel={tp("mobile.storyReadOn", { date: storyDate(story.readAt, language) })}
           >
             {/* The check is the mark; the words spell it out for screen readers
-                and for anyone scanning the grid. */}
+                and for anyone scanning the grid. The View already names itself;
+                the drawn badge stays out of the tree. */}
             <Icon name="check" size="xs" className="text-primary" />
-            <T k="stories.readBadge" className="text-caption text-muted-foreground" />
+            <Labeled>
+              <T k="stories.readBadge" className="text-caption text-muted-foreground" />
+            </Labeled>
           </View>
         ) : null}
         {menu}
@@ -163,7 +173,11 @@ export function StoryCard({
           {revealed ? (
             <Text className="text-small text-muted-foreground">{story.titleEn}</Text>
           ) : (
-            <T k="mobile.storyTranslationHidden" className="text-caption text-muted-foreground" />
+            // Hidden: the button names itself with the action; the drawn hint
+            // stays out of the tree.
+            <Labeled>
+              <T k="mobile.readerTitleHiddenNote" className="text-caption text-muted-foreground" />
+            </Labeled>
           )}
         </Pressable>
       ) : null}
@@ -301,7 +315,9 @@ function MenuRow({
       {typeof label === "string" ? (
         <Text className={`text-body ${selected ? "font-semibold text-primary" : tone}`}>{label}</Text>
       ) : (
-        label
+        // The row's name is the explicit accessibilityLabel; a drawn <T> hides
+        // so the sentence is not announced twice (S4).
+        accessibilityLabel !== undefined ? <Labeled>{label}</Labeled> : label
       )}
       {selected ? <Icon name="check" size="sm" className="text-primary" /> : null}
     </>
@@ -456,11 +472,13 @@ export function GenerateDialog({
   const { t, tp } = useT();
   // One error line, inside the dialog, and only for a run this dialog started:
   // an old server `failed` must not greet a dialog that has started nothing (S2).
+  // The table fallback stays a <T> so it carries furigana; the server's own
+  // message is a plain string.
   const failure =
     runHere && generation.status === "failed"
-      ? (generation.progress.message ?? tp("story.runFailed"))
+      ? (generation.progress.message ?? <T k="story.runFailed" className="text-small text-destructive" />)
       : null;
-  const alert = failure ?? (runHere ? error : null);
+  const alert: string | ReactNode | null = failure ?? (runHere ? error : null);
   return (
     <DialogPrimitives.Root open onOpenChange={(open) => !open && onClose()}>
       <DialogPrimitives.Portal>
@@ -490,6 +508,7 @@ export function GenerateDialog({
                 testID="generate-genre-picker"
                 ariaLabel={tp("mobile.genreForStory")}
                 placeholder={tp("stories.anyGenre")}
+                placeholderKey="stories.anyGenre"
                 value={genre}
                 options={suggestions.genres}
                 onChange={onGenreChange}
@@ -501,6 +520,7 @@ export function GenerateDialog({
                 testID="generate-theme-picker"
                 ariaLabel={tp("mobile.themeForStory")}
                 placeholder={tp("stories.anyTheme")}
+                placeholderKey="stories.anyTheme"
                 value={theme}
                 options={suggestions.themes}
                 onChange={onThemeChange}
@@ -525,9 +545,15 @@ export function GenerateDialog({
             </View>
           ) : null}
           {alert ? (
-            <Text accessibilityRole="alert" role="alert" testID="generate-error" className="text-small text-destructive">
-              {alert}
-            </Text>
+            typeof alert === "string" ? (
+              <Text accessibilityRole="alert" role="alert" testID="generate-error" className="text-small text-destructive">
+                {alert}
+              </Text>
+            ) : (
+              <View accessibilityRole="alert" role="alert" testID="generate-error">
+                {alert}
+              </View>
+            )
           ) : null}
 
           <View style={styles.dialogActions}>
@@ -539,7 +565,9 @@ export function GenerateDialog({
               style={styles.dialogButton}
               className="border border-border bg-card active:opacity-80"
             >
-              <T k="common.cancel" className="text-body font-semibold text-foreground" />
+              <Labeled>
+                <T k="common.cancel" className="text-body font-semibold text-foreground" />
+              </Labeled>
             </Pressable>
             <Pressable
               testID="generate-confirm"
@@ -552,7 +580,9 @@ export function GenerateDialog({
               style={styles.dialogButton}
               className={`bg-primary active:opacity-80${running ? " opacity-50" : ""}`}
             >
-              <T k="stories.generateConfirm" className="text-body font-semibold text-primary-foreground" />
+              <Labeled>
+                <T k="stories.generateConfirm" className="text-body font-semibold text-primary-foreground" />
+              </Labeled>
             </Pressable>
           </View>
         </DialogPrimitives.Content>
@@ -572,13 +602,18 @@ export function Picker({
   testID,
   ariaLabel,
   placeholder,
+  placeholderKey,
   value,
   options,
   onChange,
 }: {
   testID: string;
   ariaLabel: string;
+  /** The "Any" choice in plain words — the name for assistive tech, and the
+   *  drawing when the caller passes no table key. */
   placeholder: string;
+  /** Draw the placeholder from the string table, furigana included (issue #125). */
+  placeholderKey?: StringKey;
   value: string | null;
   options: string[];
   onChange: (value: string | null) => void;
@@ -587,7 +622,19 @@ export function Picker({
   // mirroring that state lets the trigger tell assistive tech what the
   // chevron already tells the eye (issue #48 review, N1).
   const [open, setOpen] = useState(false);
-  const { language } = useT();
+  const { language, t } = useT();
+  // The chosen word in the Learner's language, annotated: a Genre the table
+  // has never seen (a typed genre, any Theme) passes through plain, exactly as
+  // genreLabel always showed it.
+  const shown = value !== null ? genreRuby(value, language) : [];
+  const shownSegments: RubyText =
+    value === null
+      ? placeholderKey
+        ? t(placeholderKey)
+        : [{ text: placeholder }]
+      : shown.length > 0
+        ? shown
+        : [{ text: value }];
   return (
     <DropdownMenuPrimitive.Root onOpenChange={setOpen}>
       <DropdownMenuPrimitive.Trigger asChild>
@@ -599,9 +646,7 @@ export function Picker({
           style={styles.picker}
           className="rounded-md border border-border bg-card active:bg-accent"
         >
-          <Text className="text-small text-foreground" numberOfLines={1}>
-            {value ? genreLabel(value, language) || value : placeholder}
-          </Text>
+          <TableText segments={shownSegments} className="text-small text-foreground" />
           <Icon name="chevron-down" size="xs" className="text-muted-foreground" />
         </Pressable>
       </DropdownMenuPrimitive.Trigger>
@@ -617,13 +662,35 @@ export function Picker({
             sideOffset={4}
           >
             <ScrollView style={styles.pickerList}>
-              <MenuRow variant="menu" testID={`${testID}-any`} label={placeholder} selected={value === null} onPress={() => onChange(null)} />
+              <MenuRow
+                variant="menu"
+                testID={`${testID}-any`}
+                label={
+                  placeholderKey ? (
+                    <TableText
+                      segments={t(placeholderKey)}
+                      className={`text-body ${value === null ? "font-semibold text-primary" : "text-foreground"}`}
+                    />
+                  ) : (
+                    placeholder
+                  )
+                }
+                accessibilityLabel={placeholder}
+                selected={value === null}
+                onPress={() => onChange(null)}
+              />
               {options.map((option) => (
                 <MenuRow
                   key={option}
                   variant="menu"
                   testID={`${testID}-option-${option}`}
-                  label={genreLabel(option, language) || option}
+                  label={
+                    <TableText
+                      segments={genreRuby(option, language)}
+                      className={`text-body ${option === value ? "font-semibold text-primary" : "text-foreground"}`}
+                    />
+                  }
+                  accessibilityLabel={genreLabel(option, language) || option}
                   selected={option === value}
                   onPress={() => onChange(option)}
                 />
@@ -643,15 +710,19 @@ export function FilterChip({
   onPress,
   testID,
 }: {
-  label: string;
+  /** A plain string draws itself; a <T> follows the Interface Language (issue #125)
+   *  and brings its own text classes, like the other labelled controls. */
+  label: ReactNode;
   active: boolean;
   onPress: () => void;
   testID: string;
 }) {
+  const { tp } = useT();
   return (
     <Pressable
       testID={testID}
       accessibilityRole="button"
+      accessibilityLabel={labelAria(label, tp)}
       accessibilityState={{ selected: active }}
       onPress={onPress}
       style={styles.chip}
@@ -659,7 +730,13 @@ export function FilterChip({
       // would change the chip's size the moment it is pressed (issue #48, N2).
       className={`rounded-md px-4 border border-border active:bg-accent ${active ? "bg-accent" : "bg-card"}`}
     >
-      <Text className={`text-small ${active ? "font-semibold text-foreground" : "text-muted-foreground"}`}>{label}</Text>
+      {typeof label === "string" ? (
+        <Text className={`text-small ${active ? "font-semibold text-foreground" : "text-muted-foreground"}`}>{label}</Text>
+      ) : (
+        // The chip already speaks this sentence as its name; the drawn line
+        // stays out of the accessibility tree.
+        <Labeled>{label}</Labeled>
+      )}
     </Pressable>
   );
 }

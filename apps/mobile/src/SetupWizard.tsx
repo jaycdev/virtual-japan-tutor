@@ -46,10 +46,10 @@ export function SetupWizard({
   onFinish: () => void;
 }) {
   const jp = useJapaneseFont();
-  const { tp } = useT();
+  const { t } = useT();
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
-  const [blockedNote, setBlockedNote] = useState<string | undefined>();
+  const [blockedNote, setBlockedNote] = useState(false);
   // The step's own save, registered by the embedded section (review S2):
   // Next/Finish run it instead of discarding what the Learner entered. The
   // ref stays the wizard's — the section only calls the registrar, because
@@ -81,12 +81,12 @@ export function SetupWizard({
   // the Learner skips past that step would accuse the new step of a save it
   // never attempted (seen on device).
   const goToStep = (next: number) => {
-    setBlockedNote(undefined);
+    setBlockedNote(false);
     setStep(next);
   };
 
   const advance = async () => {
-    setBlockedNote(undefined);
+    setBlockedNote(false);
     const save = stepSave.current;
     if (save) {
       setBusy(true);
@@ -94,8 +94,10 @@ export function SetupWizard({
         const outcome = await save();
         if (outcome === "blocked") {
           // The section already shows its own error; say why the wizard
-          // refused to move, and offer the way out (S2).
-          setBlockedNote(tp("setup.blockedNote"));
+          // refused to move, and offer the way out (S2). The note stays a
+          // flag and draws through <T>: a resolved string would freeze the
+          // language it was resolved in.
+          setBlockedNote(true);
           return;
         }
       } finally {
@@ -122,7 +124,7 @@ export function SetupWizard({
               label={
                 <T
                   k="mobile.setupStepOf"
-                  params={{ step: step + 1, total: STEPS.length, title: tp(STEPS[step].titleKey) }}
+                  params={{ step: step + 1, total: STEPS.length, title: t(STEPS[step].titleKey) }}
                   className="text-caption text-muted-foreground"
                 />
               }
@@ -143,7 +145,7 @@ export function SetupWizard({
           {step === 1 ? <MaruMoriSettings client={client} registerSave={registerSave} /> : null}
           {step === 2 ? <AiProvidersSettings client={client} registerSave={registerSave} /> : null}
 
-          {blockedNote ? <InlineError message={blockedNote} /> : null}
+          {blockedNote ? <InlineError message={<T k="setup.blockedNote" />} /> : null}
         </Card>
       </ScrollView>
 
