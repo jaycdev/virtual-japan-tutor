@@ -94,6 +94,7 @@ export { probeServerHealth, PROBE_TIMEOUT_MS } from "./serverHealth.ts";
 export type { FetchLike } from "./serverHealth.ts";
 export {
   AI_TASK_LABELS,
+  aiTaskLabel,
   EMPTY_PROVIDER_FORM,
   canSubmitProviderForm,
   isProviderFormTouched,
@@ -103,7 +104,7 @@ export {
   providerUpdateInput,
 } from "./aiProviderForm.ts";
 export type { ProviderForm } from "./aiProviderForm.ts";
-export { ITEM_KIND_LABELS, ITEM_KINDS, isSavedList, itemListHint } from "./itemLists.ts";
+export { ITEM_KIND_LABELS, ITEM_KINDS, isSavedList, itemKindLabel, itemListHint } from "./itemLists.ts";
 export type { ItemKind } from "./itemLists.ts";
 export {
   FURIGANA_LEVELS,
