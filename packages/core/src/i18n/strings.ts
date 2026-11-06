@@ -246,6 +246,72 @@ export const strings = {
   "nav.practice": { en: "Practice", ja: "練習《れんしゅう》" },
   "nav.grammar": { en: "Grammar", ja: "文法《ぶんぽう》" },
   "nav.settings": { en: "Settings", ja: "設定《せってい》" },
+  "settings.notFound": { en: "That settings section doesn’t exist.", ja: "その設定《せってい》セクションはありません。" },
+  "settings.back": { en: "Back to Settings", ja: "設定《せってい》へ戻《もど》る" },
+  "settings.backShort": { en: "← Settings", ja: "← 設定《せってい》" },
+  "settings.sectionsAria": { en: "Settings sections", ja: "設定《せってい》セクション" },
+  "settings.focusTitle": { en: "Today’s Focus Set", ja: "本日《ほんじつ》の焦点《しょうてん》セット" },
+  "settings.loadFailed": {
+    en: "Cannot load your {what}: {message}",
+    ja: "あなたの{what}を読《よ》み込《こ》せません: {message}",
+  },
+  "settings.readingWhat": { en: "reading settings", ja: "読《よ》み設定《せってい》" },
+  "settings.readingSaved": {
+    en: "Saved. The reader uses this from the next lookup on.",
+    ja: "保存《ほぞん》しました。次《つぎ》の検索《けんさく》から読《よ》み画面《がめん》に使《つか》われます。",
+  },
+  "settings.blurLabel": {
+    en: "Blur the translation behind Weak Signals",
+    ja: "Weak Signalの裏《うら》の訳《やく》をぼかす",
+  },
+  "settings.blurHint": {
+    en: "A word you have not practised enough shows its meaning only after you ask.",
+    ja: "十分《じゅうぶん》練習《れんしゅう》していない語《ことば》は、頼《たの》んでからの意味《いみ》を表示《ひょうじ》します。",
+  },
+  "settings.holdNote": {
+    en: "How long you must hold a lookup before it counts as a Weak Signal. 0 signals every lookup.",
+    ja: "検索《けんさく》を長《なが》く押《お》し続《つづ》けるとWeak Signalにカウントされます。0ならすべての検索《けんさく》が対象《たいしょう》です。",
+  },
+  "settings.holdLabel": {
+    en: "Lookup hold before a Weak Signal (ms, 0–10000)",
+    ja: "Weak Signalまでの検索《けんさく》長《なが》押《お》し（ms、0〜10000）",
+  },
+  "settings.saveReading": { en: "Save reading settings", ja: "読《よ》み設定《せってい》を保存《ほぞん》" },
+
+  // The Server section: a health read only (ui-plan 4.7).
+  "server.addressLabel": { en: "Server address", ja: "サーバーアドレス" },
+  "server.addressNote": {
+    en: "The app talks to the server it was loaded from, so there is no address to change here.",
+    ja: "このアプリは読《よ》み込《こ》んだサーバーと通信《つうしん》するので、ここで変《か》えられるアドレスはありません。",
+  },
+  "server.unreachable": { en: "Cannot reach the server: {message}", ja: "サーバーに接続《せつぞく》できません: {message}" },
+  "server.healthy": {
+    en: "The server is reachable and its database is connected.",
+    ja: "サーバーは接続《せつぞく》可能《かのう》で、データベースもつながっています。",
+  },
+  "server.answeredBut": { en: "The server answered, but {what}", ja: "サーバーは応答《おうとう》しましたが、{what}" },
+  "server.dbUnreachable": { en: "cannot reach its database.", ja: "データベースに接続《せつぞく》できません。" },
+  "server.degradedPart": { en: "reports a degraded part.", ja: "一部《いちぶ》の機能《きのう》が劣化《れっか》しています。" },
+  "server.checkAgain": { en: "Check again", ja: "再《ふたた》び確認《かくにん》" },
+
+  // The full Focus Set behind Today's "See all".
+  "settings.focusLoadFailed": {
+    en: "Cannot load your Focus Set: {message}",
+    ja: "焦点《しょうてん》セットを読《よ》み込《こ》せません: {message}",
+  },
+  "settings.focusNote": {
+    en: "These are the items your Stories and Practice are built around.",
+    ja: "これらは物語《ものがたり》と練習《れんしゅう》が作《つく》られる基《もと》の項目《こうもく》です。",
+  },
+  "settings.focusNoteLimit": {
+    en: "These are the items your Stories and Practice are built around, up to {size} at a time.",
+    ja: "これらは物語《ものがたり》と練習《れんしゅう》が作《つく》られる基《もと》の項目《こうもく》で、同時《どうじ》に最大《さいだい》{size}件《けん》です。",
+  },
+  "settings.focusEmpty": {
+    en: "Nothing chosen yet — a Sync, a Story or a Practice session fills it in.",
+    ja: "まだ何《なに》も選《えら》ばれていません — 同期《どうき》、物語《ものがたり》、練習《れんしゅう》セッションが埋《う》めます。",
+  },
+  "settings.focusAria": { en: "Focus Set", ja: "焦点《しょうてん》セット" },
   "nav.main": { en: "Main", ja: "メイン" },
   "title.logIn": { en: "Log in", ja: "ログイン" },
   "title.setUp": { en: "Set up", ja: "セットアップ" },
