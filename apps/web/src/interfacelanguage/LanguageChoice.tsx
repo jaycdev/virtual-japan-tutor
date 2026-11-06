@@ -18,6 +18,11 @@ export function InterfaceLanguageChoice({
 }) {
   const { language, setLanguage, options } = useInterfaceLanguage();
   const { tp } = useT();
+  // A Japanese option's label is Japanese text shown in every language: marked
+  // lang="ja", like the other language names, so it is pronounced right and is
+  // not chrome the furigana renderer is expected to annotate (#125 round-2 S5).
+  const labelFor = (option: (typeof options)[number]) =>
+    option.value === "en" ? option.label : <span lang="ja">{option.label}</span>;
   if (compact) {
     // One row at the card's foot. The legend becomes the group's accessible
     // name, so the row itself stays nothing but the three choices.
@@ -37,11 +42,11 @@ export function InterfaceLanguageChoice({
               onClick={() => setLanguage(option.value)}
               className={
                 selected
-                  ? "min-h-9 rounded-md bg-primary px-2.5 text-small font-medium text-primary-foreground"
-                  : "min-h-9 rounded-md border border-input px-2.5 text-small font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+                  ? "min-h-11 rounded-md bg-primary px-2.5 text-small font-medium text-primary-foreground"
+                  : "min-h-11 rounded-md border border-input px-2.5 text-small font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
               }
             >
-              {option.label}
+              {labelFor(option)}
             </button>
           );
         })}
@@ -52,7 +57,7 @@ export function InterfaceLanguageChoice({
     <div className="flex flex-col gap-2">
       <ChoiceGroup
         legend={<T k="language.legend" />}
-        options={options.map((option) => ({ value: option.value, label: option.label }))}
+        options={options.map((option) => ({ value: option.value, label: labelFor(option) }))}
         value={language}
         onChange={setLanguage}
       />
