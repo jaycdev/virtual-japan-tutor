@@ -2,11 +2,18 @@
 
 A tutor that takes what a learner already knows on MaruMori and turns it into practice and short AI-written stories, focusing on what they know least well.
 
+Terms marked _Japanese_ have one fixed name that the interface uses when the Interface Language is Japanese.
+
 ## App
 
 **Today**:
 The Learner's starting page. It brings together Today's Story, the Focus Set at a glance, a way into a Practice Session and the state of the last Sync.
+_Japanese_: 今日
 _Avoid_: Home, dashboard
+
+**Interface Language**:
+The language of the app's own interface text: titles, navigation, buttons, messages and Exercise instructions. It is English, Japanese, or Japanese with furigana, chosen per device. It never changes learning content such as meanings, Sentence Translations or a Story Title's translation.
+_Avoid_: Locale, app language, display language
 
 ## Learner and knowledge
 
@@ -24,6 +31,7 @@ _Avoid_: Grammar rule, grammar item
 
 **Known Item**:
 An Item the Learner is considered to have learned, whether synced from MaruMori, seeded from their Starting Level, or observed in their grammar reviews.
+_Japanese_: 既習項目
 _Avoid_: Learned item, studied item
 
 **Grammar Catalogue**:
@@ -66,14 +74,17 @@ _Avoid_: Fresh grammar, recent grammar
 
 **Focus Set**:
 The group of low-Mastery Known Items that Practice Sessions and Stories currently target.
+_Japanese_: 重点項目
 _Avoid_: Review plan, weak list
 
 **Practice Session**:
 One sitting of Exercises drawn mainly from the Focus Set.
+_Japanese_: 練習
 _Avoid_: Review (that's MaruMori's term), quiz, lesson
 
 **Exercise**:
 A single prompt the Learner answers, such as a recognition prompt, a grammar cloze, or a comprehension question about a Story.
+_Japanese_: 問題
 _Avoid_: Question (unqualified), drill
 
 **Practice Record**:
@@ -84,6 +95,7 @@ _Avoid_: Review history, stats
 
 **Story**:
 A short, AI-written Japanese text built mostly from Known Items, with Focus Set items deliberately included.
+_Japanese_: 物語
 _Avoid_: Passage, text, reading
 
 **Story Title**:
@@ -92,10 +104,12 @@ _Avoid_: Name, heading
 
 **Genre**:
 The kind of Story, such as mystery, travel or slice of life. Every Story has one.
+_Japanese_: ジャンル
 _Avoid_: Category, type
 
 **Theme**:
 What a Story is about, in free text, such as "a robot running a ramen shop". Every new Story has one.
+_Japanese_: テーマ
 _Avoid_: Topic, prompt, subject
 
 **Preferred Genre** / **Preferred Theme**:
@@ -112,6 +126,7 @@ _Avoid_: Daily story, generated story, background story
 
 **Today's Story**:
 The Learner's newest Automatic Story, which the Stories page opens on. It can be from an earlier day if that one is still unread. An On-demand Story is never Today's Story.
+_Japanese_: 今日の物語
 _Avoid_: Ready story, current story, daily story
 
 **Learner's Timezone**:
@@ -128,6 +143,7 @@ _Avoid_: Opened, seen, completed, practiced
 
 **Story Library**:
 All of the Learner's Stories, which they can browse, mark Read or delete.
+_Japanese_: ライブラリ
 _Avoid_: Story list, history, archive
 
 **Furigana Threshold**:
@@ -135,10 +151,11 @@ The SRS Level, set by the Learner (default 3), at or above which vocabulary in a
 
 **Reading Panel**:
 The area fixed above a Story while reading. It shows the Sentence Translation of the selected sentence and the details of the word being looked up.
+_Japanese_: 読解パネル
 _Avoid_: Info box, sidebar, tooltip, gloss
 
 **Lookup**:
-Briefly showing a word or Grammar Span's details in the Reading Panel, by hovering over it on web or pressing and holding it on mobile. A word shows its meaning, forms and JLPT Level, and a Grammar Span shows its Grammar Point and what it does. Both also show the Item's current SRS Level when it has one. A particle (は, の, に, …) with a Grammar Catalogue point shows that point, with no menu (see [ADR 0011](docs/adr/0011-particles-look-up-the-grammar-catalogue.md)).
+Briefly showing a word or Grammar Span's details in the Reading Panel, by hovering over it on web or pressing and holding it on mobile. A word shows its meaning, forms and JLPT Level, and a Grammar Span shows its Grammar Point and what it does. Both also show the Item's current SRS Level when it has one. A particle (は, の, に, …) with a Grammar Catalogue point shows that point, with no menu (see [ADR 0011](docs/adr/0011-particles-look-up-the-grammar-catalogue.md)). Only Story text can be looked up, never interface text.
 _Avoid_: Gloss tap, hover
 
 **Grammar Span**:
@@ -147,18 +164,22 @@ _Avoid_: Grammar highlight, grammar token
 
 **Sentence Translation**:
 The English translation of one sentence in a Story, shown in the Reading Panel when that sentence is selected. It can be blurred or unblurred.
+_Japanese_: 文の訳
 _Avoid_: Translation toggle
 
 **Dictionary Entry**:
 The full dictionary view of a word, opened from a word's context menu. It shows the word's current SRS Level when it has one.
+_Japanese_: 辞書
 _Avoid_: Definition popup
 
 **Item List**:
 A named collection of words and Grammar Points the Learner has saved while reading Stories. The Learner can create as many as they like.
+_Japanese_: リスト
 _Avoid_: Word list, saved words, favourites, study list (that's MaruMori's term)
 
 **Boosting List**:
 An Item List marked so that saving something to it raises its priority for the Focus Set, or makes it appear more often as a stretch item if it isn't a Known Item yet.
+_Japanese_: 優先リスト
 _Avoid_: Priority list
 
 **Weak Signal**:
@@ -169,8 +190,10 @@ _Avoid_: Penalty, miss
 
 **Sync**:
 Pulling the Learner's Known Items and SRS Levels from MaruMori into the app.
+_Japanese_: 同期
 _Avoid_: Import, refresh
 
 **AI Provider**:
 A saved OpenAI-compatible endpoint (base URL, key and model) the app can use to generate Stories.
+_Japanese_: AIプロバイダー
 _Avoid_: LLM, model, backend
