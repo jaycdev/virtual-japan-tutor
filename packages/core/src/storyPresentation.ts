@@ -113,7 +113,9 @@ export function originRuby(story: Pick<Story, "origin">, lang: InterfaceLanguage
 
 /** The Genre in the same segment form; a genre the table has never seen passes through plain. */
 export function genreRuby(genre: string | null | undefined, lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE): RubyText {
-  if (genre === null || genre === undefined) return [];
+  // An empty genre is "no genre" like null, not a word to show: storyCardMetaRuby
+  // falls back to the label only when this returns no segments (#125 review S3).
+  if (!genre) return [];
   const table = GENRE_STRINGS[lang];
   const id = lang === "en" ? genre : genre.toLowerCase();
   const key = Object.hasOwn(table, id) ? table[id] : undefined;

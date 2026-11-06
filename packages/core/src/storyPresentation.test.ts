@@ -3,7 +3,7 @@
 
 import type { Story } from "@vjt/api-client";
 import { describe, expect, it } from "vitest";
-import { genreLabel, originLabel, storyCardMeta, storyDate } from "./storyPresentation.ts";
+import { genreLabel, genreRuby, originLabel, storyCardMeta, storyCardMetaRuby, storyDate } from "./storyPresentation.ts";
 
 function story(overrides: Partial<Story> = {}): Story {
   return {
@@ -74,6 +74,21 @@ describe("genreLabel", () => {
   it("shows an unknown genre as typed in Japanese too", () => {
     expect(genreLabel("cyberpunk", "ja")).toBe("cyberpunk");
     expect(genreLabel("Slice of Life", "ja")).toBe("日常"); // presets are matched case-insensitively
+  });
+
+  // review S3
+  it("has no segments at all for an empty Genre, like a missing one", () => {
+    expect(genreRuby(null, "ja")).toEqual([]);
+    expect(genreRuby(undefined, "ja-furigana")).toEqual([]);
+    expect(genreRuby("", "ja-furigana")).toEqual([]);
+  });
+});
+
+describe("the Library card line as segments", () => {
+  it("falls back to the word for Story for an empty Genre, not a blank before the separator", () => {
+    const segments = storyCardMetaRuby(story({ genre: "" }), "ja-furigana");
+    expect(segments.map((s) => s.text).join("")).toBe("物語 · 自動生成 · 2026年11月1日");
+    expect(segments.some((s) => s.ruby === "ものがたり")).toBe(true);
   });
 });
 
