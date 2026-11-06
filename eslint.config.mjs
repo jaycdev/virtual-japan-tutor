@@ -77,6 +77,46 @@ const noInlineFontSize = {
   },
 };
 
+// #125 interface-language rule: raw string literals in JSX children can never follow
+// the Learner's Interface Language setting, so apps/web renders interface text from
+// the @vjt/core table via <T k="…"/> / <TableText> instead. The rule flags JSXText
+// and bare string-expression children; punctuation-only text and learning content
+// (meanings, example sentences, exercise options) pass. Learning content arrives as
+// props, never as JSX text, so it needs no exemptions; the few deliberate exceptions
+// (the 読 logotype, the 吾輩は猫である sample line) carry targeted eslint-disable
+// comments with a reason. apps/mobile keeps its own conventions and is not covered.
+// Punctuation and symbols (（ ） – — ' ' … · ×), not letters or digits: anything
+// written in a language is copy, and copy belongs in the table.
+const LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
+function isPunctuationOnly(value) {
+  return !LETTER_OR_DIGIT.test(value);
+}
+
+const noRawJsxText = {
+  meta: {
+    type: "problem",
+    schema: [],
+    messages: {
+      noRawText:
+        "Raw text in JSX. Interface copy comes from the @vjt/core string table so it follows the Learner's language setting; use <T k=\"…\"/> / <TableText>. Learning content (props, not JSX text) and punctuation are exempt.",
+    },
+  },
+  create(context) {
+    return {
+      JSXText(node) {
+        const value = node.value.trim();
+        if (value && !isPunctuationOnly(value)) context.report({ node, messageId: "noRawText" });
+      },
+      JSXExpressionContainer(node) {
+        // Bare string literals in children are the sneaky twin of <span>Text</span>.
+        if (node.expression.type !== "Literal" || typeof node.expression.value !== "string") return;
+        const value = node.expression.value.trim();
+        if (value && !isPunctuationOnly(value)) context.report({ node: node.expression, messageId: "noRawText" });
+      },
+    };
+  },
+};
+
 export default tseslint.config(
   {
     ignores: [
@@ -96,7 +136,13 @@ export default tseslint.config(
     languageOptions: { globals: { ...globals.browser, ...globals.node } },
     plugins: {
       "react-hooks": reactHooks,
-      vjt: { rules: { "no-hardcoded-color": noHardcodedColor, "no-inline-font-size": noInlineFontSize } },
+      vjt: {
+        rules: {
+          "no-hardcoded-color": noHardcodedColor,
+          "no-inline-font-size": noInlineFontSize,
+          "no-raw-jsx-text": noRawJsxText,
+        },
+      },
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
@@ -118,6 +164,13 @@ export default tseslint.config(
     // the DOM: a text-* class, or var(--story-text-size), never "16px".
     files: ["apps/mobile/src/**/*.tsx", "apps/web/src/**/*.{ts,tsx}"],
     rules: { "vjt/no-inline-font-size": "error" },
+  },
+  {
+    // The interface-language gate (#125): apps/web only, source files only -
+    // tests may quote raw copy, and apps/mobile has its own conventions.
+    files: ["apps/web/src/**/*.tsx"],
+    ignores: ["apps/web/src/**/*.test.tsx"],
+    rules: { "vjt/no-raw-jsx-text": "error" },
   },
   {
     // `_`-prefixed arguments/variables document a signature while staying

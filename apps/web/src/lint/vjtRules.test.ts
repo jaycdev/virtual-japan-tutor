@@ -60,3 +60,29 @@ describe("vjt/no-inline-font-size", () => {
     expect(await ruleIds("apps/web/src/probe.tsx", code)).toContain("vjt/no-inline-font-size");
   });
 });
+
+describe("vjt/no-raw-jsx-text (#125)", () => {
+  it.each([
+    ["plain text in a JSX child", 'const a = <p>Interface text</p>;'],
+    ["text in a component child", 'const a = <SheetTitle>Reading settings</SheetTitle>;'],
+    ["a bare string expression child", 'const a = <p>{"Interface text"}</p>;'],
+    ["multi-line JSX text", "const a = (\n  <p>\n    Interface text\n  </p>\n);"],
+  ])("flags %s in apps/web", async (_label, code) => {
+    expect(await ruleIds("apps/web/src/probe.tsx", code)).toContain("vjt/no-raw-jsx-text");
+  });
+
+  it.each([
+    ["punctuation only", 'const a = <span>(</span>;'],
+    ["a middle dot separator", 'const a = <span>·</span>;'],
+    ["an interpolated learning-content prop", "const a = <p>{item.meaningEn}</p>;"],
+    ["a table-backed translation", 'const a = <T k="nav.practice" />;'],
+  ])("passes %s", async (_label, code) => {
+    expect(await ruleIds("apps/web/src/probe.tsx", code)).not.toContain("vjt/no-raw-jsx-text");
+  });
+
+  it("does not apply to apps/mobile", async () => {
+    expect(await ruleIds("apps/mobile/src/probe.tsx", "const a = <p>Interface text</p>;")).not.toContain(
+      "vjt/no-raw-jsx-text",
+    );
+  });
+});
