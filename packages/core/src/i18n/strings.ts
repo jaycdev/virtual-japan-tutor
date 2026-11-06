@@ -237,6 +237,31 @@ export const strings = {
     en: "Which pattern completes the sentence?",
     ja: "文《ぶん》を完成《かんせい》させるのはどのパターンですか？",
   },
+
+  // — Nav, page titles, and shell chrome (issue #125 Part 2) —
+  // The brand is the product name: same text in both columns on purpose.
+  "brand.app": { en: "Virtual Japan Tutor", ja: "Virtual Japan Tutor" },
+  "nav.today": { en: "Today", ja: "今日《きょう》" },
+  "nav.stories": { en: "Stories", ja: "物語《ものがたり》" },
+  "nav.practice": { en: "Practice", ja: "練習《れんしゅう》" },
+  "nav.grammar": { en: "Grammar", ja: "文法《ぶんぽう》" },
+  "nav.settings": { en: "Settings", ja: "設定《せってい》" },
+  "nav.main": { en: "Main", ja: "メイン" },
+  "title.logIn": { en: "Log in", ja: "ログイン" },
+  "title.setUp": { en: "Set up", ja: "セットアップ" },
+  "title.notFound": { en: "Not found", ja: "ページが見《み》つかりません" },
+  "shell.skipToContent": { en: "Skip to content", ja: "本文《ほんぶん》へ" },
+  "shell.openNavigation": { en: "Open navigation", ja: "ナビゲーションを開《ひら》く" },
+  "shell.navTitle": { en: "Navigation", ja: "ナビゲーション" },
+  "shell.navDescription": {
+    en: "Move between Today, Stories, Practice, Grammar and Settings.",
+    ja: "今日《きょう》、物語《ものがたり》、練習《れんしゅう》、文法《ぶんぽう》、設定《せってい》を移動《いどう》します。",
+  },
+  "shell.signedInAs": { en: "Signed in as", ja: "ログイン中《ちゅう》" },
+  "shell.logOut": { en: "Log out", ja: "ログアウト" },
+  "common.retry": { en: "Retry", ja: "もう一度《いちど》" },
+  "notFound.message": { en: "There is nothing at this address.", ja: "このアドレスにページはありません。" },
+  "notFound.goToToday": { en: "Go to Today", ja: "今日《きょう》へ" },
 } as const satisfies Record<string, { en: string; ja: string }>;
 
 /** Every table entry key — the type-checked union `keyof typeof strings`. */

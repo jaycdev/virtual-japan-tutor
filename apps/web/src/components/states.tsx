@@ -8,6 +8,7 @@ import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { T } from "./Text.tsx";
 
 /** Placeholder bars while content loads. The last line is shorter, like a paragraph. */
 export function SkeletonLines({ lines = 3, className }: { lines?: number; className?: string }) {
@@ -55,7 +56,7 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
       <p className="flex-1 text-body text-destructive">{message}</p>
       {onRetry ? (
         <Button variant="destructive" onClick={onRetry}>
-          Retry
+          <T k="common.retry" />
         </Button>
       ) : null}
     </div>
