@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 
 import { renderAppAt } from "../../test/renderApp.tsx";
+import { unrubyfiedKanji } from "../../test/kanjiCoverage.ts";
 import { INTERFACE_LANGUAGE_STORAGE_KEY } from "../../interfacelanguage/store.ts";
 import { interfaceLanguageStore } from "../../interfacelanguage/index.tsx";
 
@@ -52,6 +53,9 @@ describe("Appearance › Interface Language", () => {
     const readings = Array.from(document.querySelectorAll("rt"));
     expect(readings.length).toBeGreaterThan(0);
     expect(document.documentElement.lang).toBe("ja");
+    // Review S5: no chrome kanji sits outside ruby. The 吾輩は猫である sample is
+    // learning content (lang="ja") and the 読 mark is brand art (aria-hidden).
+    expect(unrubyfiedKanji(document.body)).toEqual([]);
 
     fireEvent.click(screen.getByRole("button", { name: "日本語" }));
     await waitFor(() => expect(window.localStorage.getItem(INTERFACE_LANGUAGE_STORAGE_KEY)).toBe("ja"));

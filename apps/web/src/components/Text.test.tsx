@@ -25,7 +25,7 @@ describe("T", () => {
 
   it("renders the Japanese entry without any furigana markup", () => {
     const { container } = renderT("ja", "settings.focusAria");
-    expect(container.textContent).toBe("焦点セット");
+    expect(container.textContent).toBe("重点項目");
     expect(container.querySelectorAll("ruby")).toHaveLength(0);
   });
 
@@ -33,9 +33,9 @@ describe("T", () => {
     const { container } = renderT("ja-furigana", "settings.focusAria");
     const ruby = Array.from(container.querySelectorAll("ruby"));
     expect(ruby).toHaveLength(1);
-    expect(ruby[0]?.textContent).toBe("焦点しょうてん");
+    expect(ruby[0]?.textContent).toBe("重点項目じゅうてんこうもく");
     const rt = Array.from(container.querySelectorAll("rt"));
-    expect(rt.map((e) => e.textContent)).toEqual(["しょうてん"]);
+    expect(rt.map((e) => e.textContent)).toEqual(["じゅうてんこうもく"]);
     // The furigana token classes (ui-plan typography), not an inline size.
     for (const e of rt) expect(e.className).toContain("text-furigana");
   });

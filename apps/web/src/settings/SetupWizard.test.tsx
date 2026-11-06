@@ -3,15 +3,21 @@
 // a blocked save keeps the Learner on the step with a way out, and every skip
 // button moves on without writing.
 import { fireEvent, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
+import { unrubyfiedKanji } from "../test/kanjiCoverage.ts";
 import { currentLocation, renderAppAt } from "../test/renderApp.tsx";
 import { fakeSettingsApi, freshState, type FakeState } from "../test/fakeSettingsApi.ts";
+import { interfaceLanguageStore } from "../interfacelanguage/index.tsx";
+
+afterEach(() => {
+  interfaceLanguageStore.setLanguage("en");
+});
 
 function renderSetup(overrides: Partial<FakeState> = {}) {
   const state = freshState(overrides);
-  const { router } = renderAppAt("/setup", { api: fakeSettingsApi(state) });
-  return { state, router };
+  const view = renderAppAt("/setup", { api: fakeSettingsApi(state) });
+  return { state, ...view };
 }
 
 async function stepOne() {
@@ -168,5 +174,15 @@ describe("Setup wizard", () => {
     expect(currentLocation(router)).toBe("/setup");
     // The first step has no Back of its own.
     expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
+  });
+
+  it("in ja-furigana the wizard keeps its chrome inside ruby (review S5)", async () => {
+    interfaceLanguageStore.setLanguage("ja-furigana");
+    const { container } = renderSetup();
+    // The step line and the section settle; ruby proves the furigana mode is live.
+    await screen.findByText("レベル: N4");
+    await waitFor(() => expect(container.querySelectorAll("ruby").length).toBeGreaterThan(0));
+
+    expect(unrubyfiedKanji(container)).toEqual([]);
   });
 });

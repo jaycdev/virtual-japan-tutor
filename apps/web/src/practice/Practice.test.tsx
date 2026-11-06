@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router";
 import { createApiClient } from "@vjt/api-client";
 import { displayPrompt, InterfaceLanguageProvider, practiceSeedForStory } from "@vjt/core";
 
+import { unrubyfiedKanji } from "../test/kanjiCoverage.ts";
 import { Practice, destinationForItem } from "./Practice.tsx";
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -664,6 +665,26 @@ describe("Practice (web)", () => {
     expect(screen.getByText("学")).toBeTruthy();
     expect(screen.getByRole("button", { name: "learn" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "tree" })).toBeTruthy();
+  });
+
+  it("in ja-furigana the screen keeps its chrome inside ruby (review S5)", async () => {
+    const { container } = render(
+      <MemoryRouter>
+        <InterfaceLanguageProvider language="ja-furigana" setLanguage={() => undefined}>
+          <Practice client={makeClient()} seed={undefined} />
+        </InterfaceLanguageProvider>
+      </MemoryRouter>,
+    );
+
+    // The Start button's accessible name interleaves the <rt> readings with
+    // spaces ("練習 れんしゅう を 始 はじ める"), hence the kana regex.
+    fireEvent.click(screen.getByRole("button", { name: /れんしゅう/ }));
+    await screen.findByText(/どれですか/);
+    expect(container.querySelectorAll("ruby").length).toBeGreaterThan(0);
+
+    // The prompt and options are learning content (lang="ja"); everything the
+    // app itself says sits inside a <ruby>.
+    expect(unrubyfiedKanji(container)).toEqual([]);
   });
 
   describe("keyboard", () => {

@@ -10,7 +10,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { fakeApi, makeStory } from "@/test/fakeApi";
 import type { FakeApi } from "@/test/fakeApi";
+import { unrubyfiedKanji } from "@/test/kanjiCoverage.ts";
 import { currentLocation, renderAppAt } from "@/test/renderApp";
+import { InterfaceLanguageGate, interfaceLanguageStore } from "@/interfacelanguage";
 import { Today } from "./Today.tsx";
 
 const syncedCounts = {
@@ -84,7 +86,11 @@ describe("Today page", () => {
     renderToday(api);
     const bar = await screen.findByRole("progressbar");
     expect(bar.getAttribute("aria-valuenow")).toBe("60");
-    expect(await screen.findByText("Writing… attempt 2 of 3 60%")).toBeTruthy();
+    // The visible line is <T> plus the percent as siblings (#125 review B3),
+    // so it is matched by textContent, not as one text node.
+    expect(bar.parentElement?.querySelector("p[aria-live]")?.textContent).toBe(
+      "Writing… attempt 2 of 3 60%",
+    );
     // A run in flight is not an empty state: no "Generate a Story" invitation.
     expect(screen.queryByRole("link", { name: "Generate a Story" })).toBeNull();
   });
@@ -98,7 +104,8 @@ describe("Today page", () => {
       generation: { status: "running", stage: "writing", percent: 40, startedAt: "2026-11-04T02:00:00Z" },
     });
     renderToday(api);
-    expect(await screen.findByText("Writing… 40%")).toBeTruthy();
+    const bar = await screen.findByRole("progressbar");
+    expect(bar.parentElement?.querySelector("p[aria-live]")?.textContent).toBe("Writing… 40%");
 
     api.setGeneration({ status: "ready", percent: 100, storyId: "t9" });
     await waitFor(
@@ -224,5 +231,27 @@ describe("Today page", () => {
     const link = await within(card).findByRole("link", { name: "Start practice" });
     await userEvent.click(link);
     await waitFor(() => expect(currentLocation(router)).toBe("/practice"));
+  });
+
+  it("in ja-furigana every kanji of the page sits inside a <ruby> (review S5)", async () => {
+    interfaceLanguageStore.setLanguage("ja-furigana");
+    try {
+      const api = fakeApi();
+      const { container } = render(
+        <InterfaceLanguageGate>
+          <MemoryRouter>
+            <Today client={api.client} />
+          </MemoryRouter>
+        </InterfaceLanguageGate>,
+      );
+      await screen.findByTestId("today-story-card");
+      // Every card settles: skeletons and loading phases carry aria-busy.
+      await waitFor(() => expect(container.querySelectorAll("[aria-busy]").length).toBe(0));
+
+      expect(container.querySelectorAll("ruby").length).toBeGreaterThan(0);
+      expect(unrubyfiedKanji(container)).toEqual([]);
+    } finally {
+      interfaceLanguageStore.setLanguage("en");
+    }
   });
 });
