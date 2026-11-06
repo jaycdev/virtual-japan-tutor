@@ -18,11 +18,14 @@ import type { StringKey } from "./strings.ts";
 
 /**
  * The server error codes this client translates, hand-maintained to mirror
- * the codes the Go API answers with (`writeError(` calls under
- * apps/server/internal/). Not generated: the i18n test walks this list
- * against the table, so a new server code only fails CI once it is listed
- * here. When the server gains a code, add it here and give it a table entry;
- * until then an unknown code falls back to the server's own English.
+ * the codes the Go API answers with. Not generated: the i18n test walks this
+ * list against the table, so a new server code only fails CI once it is
+ * listed here. When the server gains a code, add it here and give it a table
+ * entry; until then an unknown code falls back to the server's own English.
+ * The codes live in three literal shapes under apps/server/internal/ — grep
+ * for `writeError(` (the HTTP error responses), `apiErr` (the error structs
+ * they carry) and `Code:` (where each code string is written) to see every
+ * code the server can answer with.
  */
 export const ERROR_CODES = [
   "bad_request",

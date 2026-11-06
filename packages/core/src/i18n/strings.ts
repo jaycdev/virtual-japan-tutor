@@ -130,9 +130,9 @@ export const strings = {
 
   // — Settings sections (titles and blurbs; ids stay route segments) —
   "section.appearanceTitle": { en: "Appearance", ja: "表示《ひょうじ》" },
-  "section.appearanceBlurb": { en: "Colour theme and Story text size", ja: "テーマカラーと物語《ものがたり》の文字《もじ》大《おお》きさ" },
+  "section.appearanceBlurb": { en: "Colour theme and Story text size", ja: "テーマカラーと物語《ものがたり》の文字《もじ》の大《おお》きさ" },
   "section.readingTitle": { en: "Reading", ja: "読解《どっかい》" },
-  "section.readingBlurb": { en: "Translation blur and Lookup hold", ja: "文《ぶん》の訳《やく》のぼかしと辞書《じしょ》長押《ながお》し" },
+  "section.readingBlurb": { en: "Translation blur and Lookup hold", ja: "文《ぶん》の訳《やく》のぼかしと長押《ながお》しの時間《じかん》" },
   "section.storiesTitle": { en: "Stories", ja: "物語《ものがたり》" },
   "section.storiesBlurb": {
     en: "Furigana threshold and future story tastes",
@@ -143,7 +143,7 @@ export const strings = {
   "section.levelTitle": { en: "Starting Level", ja: "開始《かいし》レベル" },
   "section.levelBlurb": { en: "N5–N1 known grammar baseline", ja: "N5～N1 の既習《きしゅう》文法《ぶんぽう》基準《きじゅん》" },
   "section.marumoriTitle": { en: "MaruMori", ja: "MaruMori" },
-  "section.marumoriBlurb": { en: "Connect your Junji profile and Sync", ja: "Junji アカウント接続《せつぞく》と同期《どうき》" },
+  "section.marumoriBlurb": { en: "Connect your Junji profile and Sync", ja: "Junji プロフィールの接続《せつぞく》と同期《どうき》" },
   "section.aiTitle": { en: "AI Providers", ja: "AIプロバイダー" },
   "section.aiBlurb": { en: "Endpoints, keys and task assignments", ja: "エンドポイント、キー、タスク割当《わりあて》" },
   "section.serverTitle": { en: "Server", ja: "サーバー" },
@@ -156,7 +156,7 @@ export const strings = {
   },
   "serverHealth.noAnswer": {
     en: "That address did not answer. Check the host and port — the current address is still in use.",
-    ja: "そのアドレスは無反応《むのう》でした。ホストとポートを確認《かくにん》してください — 現在《げんざい》のアドレスが使《つか》われ続《つづ》けます",
+    ja: "そのアドレスから応答《おうとう》がありませんでした。ホストとポートを確認《かくにん》してください — 現在《げんざい》のアドレスが使《つか》われ続《つづ》けます",
   },
 
   // — Item kinds and the list rows —
@@ -172,7 +172,7 @@ export const strings = {
   "aiTask.story": { en: "Story generation", ja: "物語《ものがたり》生成《せいせい》" },
   "aiTask.grammarContent": { en: "Grammar content", ja: "文法《ぶんぽう》コンテンツ" },
   "settings.ai.usedFor": { en: "used for {tasks}", ja: "{tasks}に使用《しよう》" },
-  "settings.ai.keySaved": { en: "Key saved", ja: "キー保存《ほぞん》済《ずみ》" },
+  "settings.ai.keySaved": { en: "Key saved", ja: "キー保存《ほぞん》済《ず》み" },
   "settings.ai.noKey": { en: "No key", ja: "キーなし" },
 
   // — Focus Set chips —
