@@ -8,7 +8,9 @@ import type {
   ApiClient,
 } from "@vjt/api-client";
 import { useCallback, useEffect, useState } from "react";
-import { FAILED, UNREACHABLE } from "./errors.ts";
+import { errorMessage, errorCode, failureText, httpFailureText } from "./errors.ts";
+import { useInterfaceLanguage } from "./i18n/context.ts";
+import type { InterfaceLanguage } from "./i18n/language.ts";
 
 export type AiSettingsState =
   | { status: "loading" }
@@ -37,14 +39,18 @@ export interface AiSettings {
 
 /** Runs a request; maps a thrown network error and an API error body to an ActionResult. */
 async function act(
-  run: () => Promise<{ error?: { message?: string } | undefined; response: Response }>,
+  run: () => Promise<{ error?: { code?: string; message?: string } | undefined; response: Response }>,
+  lang: InterfaceLanguage,
 ): Promise<ActionResult> {
   try {
     const { error, response } = await run();
     if (response.ok) return { ok: true };
-    return { ok: false, message: error?.message ?? `${FAILED} (${response.status})` };
+    return {
+      ok: false,
+      message: errorMessage(lang, errorCode(error), error?.message ?? httpFailureText(lang, response.status)),
+    };
   } catch {
-    return { ok: false, message: UNREACHABLE };
+    return { ok: false, message: failureText(lang) };
   }
 }
 
@@ -53,6 +59,7 @@ async function act(
  * `client` must be a stable reference and must already authenticate (see `useAuth`).
  */
 export function useAiSettings(client: ApiClient): AiSettings {
+  const { language } = useInterfaceLanguage();
   const [state, setState] = useState<AiSettingsState>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
 
@@ -63,11 +70,14 @@ export function useAiSettings(client: ApiClient): AiSettings {
         return { status: "ready", providers: providers.data, tasks: tasks.data };
       }
       const failed = providers.error ?? tasks.error;
-      return { status: "error", message: failed?.message ?? `${FAILED} (${providers.response.status})` };
+      return {
+        status: "error",
+        message: errorMessage(language, errorCode(failed), failed?.message ?? httpFailureText(language, providers.response.status)),
+      };
     } catch {
-      return { status: "error", message: UNREACHABLE };
+      return { status: "error", message: failureText(language) };
     }
-  }, [client]);
+  }, [client, language]);
 
   useEffect(() => {
     let cancelled = false;
@@ -94,19 +104,22 @@ export function useAiSettings(client: ApiClient): AiSettings {
   );
 
   const create = useCallback(
-    (input: AiProviderCreate) => act(() => client.POST("/ai-providers", { body: input })).then(refreshAfter),
-    [client, refreshAfter],
+    (input: AiProviderCreate) => act(() => client.POST("/ai-providers", { body: input }), language).then(refreshAfter),
+    [client, language, refreshAfter],
   );
 
   const update = useCallback(
     (id: string, patch: AiProviderUpdate) =>
-      act(() => client.PATCH("/ai-providers/{id}", { params: { path: { id } }, body: patch })).then(refreshAfter),
-    [client, refreshAfter],
+      act(() => client.PATCH("/ai-providers/{id}", { params: { path: { id } }, body: patch }), language).then(
+        refreshAfter,
+      ),
+    [client, language, refreshAfter],
   );
 
   const remove = useCallback(
-    (id: string) => act(() => client.DELETE("/ai-providers/{id}", { params: { path: { id } } })).then(refreshAfter),
-    [client, refreshAfter],
+    (id: string) =>
+      act(() => client.DELETE("/ai-providers/{id}", { params: { path: { id } } }), language).then(refreshAfter),
+    [client, language, refreshAfter],
   );
 
   const test = useCallback(
@@ -116,22 +129,28 @@ export function useAiSettings(client: ApiClient): AiSettings {
           params: { path: { id } },
         });
         if (data) return data;
-        return { ok: false, latencyMs: 0, message: error?.message ?? `${FAILED} (${response.status})` };
+        return {
+          ok: false,
+          latencyMs: 0,
+          message: errorMessage(language, errorCode(error), error?.message ?? httpFailureText(language, response.status)),
+        };
       } catch {
-        return { ok: false, latencyMs: 0, message: UNREACHABLE };
+        return { ok: false, latencyMs: 0, message: failureText(language) };
       }
     },
-    [client],
+    [client, language],
   );
 
   const assign = useCallback(
     (task: AiTask, providerId: string | null) =>
-      act(() =>
-        providerId === null
-          ? client.DELETE("/ai-tasks/{task}", { params: { path: { task } } })
-          : client.PUT("/ai-tasks/{task}", { params: { path: { task } }, body: { providerId } }),
+      act(
+        () =>
+          providerId === null
+            ? client.DELETE("/ai-tasks/{task}", { params: { path: { task } } })
+            : client.PUT("/ai-tasks/{task}", { params: { path: { task } }, body: { providerId } }),
+        language,
       ).then(refreshAfter),
-    [client, refreshAfter],
+    [client, language, refreshAfter],
   );
 
   return { state, reload, create, update, remove, test, assign };

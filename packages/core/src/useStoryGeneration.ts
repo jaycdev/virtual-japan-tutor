@@ -6,6 +6,9 @@ import type {
 } from "@vjt/api-client";
 import { useCallback, useEffect, useState } from "react";
 import type { ActionResult } from "./useAiSettings.ts";
+import { errorMessage, errorCode } from "./errors.ts";
+import { useInterfaceLanguage } from "./i18n/context.ts";
+import { translatePlain } from "./i18n/translate.ts";
 
 /**
  * State behind the On-demand Generate button and its progress bar (issue #33).
@@ -40,6 +43,7 @@ export interface StoryGeneration {
 }
 
 export function useStoryGeneration(client: ApiClient, pollMs = 1500): StoryGeneration {
+  const { language } = useInterfaceLanguage();
   const [generation, setGeneration] = useState<StoryGenerationState>({ status: "idle" });
   const [error, setError] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<StorySuggestions>({ genres: [], themes: [] });
@@ -95,8 +99,11 @@ export function useStoryGeneration(client: ApiClient, pollMs = 1500): StoryGener
       try {
         const res = await client.POST("/stories/generate", { body: req });
         if (res.error) {
-          const message =
-            ("message" in res.error && res.error.message) || "Couldn't start writing a Story.";
+          const message = errorMessage(
+            language,
+            "code" in res.error ? errorCode(res.error) : undefined,
+            ("message" in res.error && res.error.message) || translatePlain(language, "story.startFailed"),
+          );
           setError(message);
           // The refusal came from a run already going (Automatic or another
           // tap): re-read the server so that run shows in the bar.
@@ -109,12 +116,12 @@ export function useStoryGeneration(client: ApiClient, pollMs = 1500): StoryGener
         setWatch((w) => w + 1);
         return { ok: true };
       } catch {
-        const message = "Couldn't start writing a Story.";
+        const message = translatePlain(language, "story.startFailed");
         setError(message);
         return { ok: false, message };
       }
     },
-    [client],
+    [client, language],
   );
 
   return { generation, startGeneration, error, suggestions };

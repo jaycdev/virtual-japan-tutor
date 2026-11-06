@@ -5,7 +5,9 @@ import type {
   PracticeSession,
 } from "@vjt/api-client";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { FAILED, UNREACHABLE } from "./errors.ts";
+import { errorMessage, errorCode, exerciseInstruction, failureText, httpFailureText } from "./errors.ts";
+import { useInterfaceLanguage } from "./i18n/context.ts";
+import type { InterfaceLanguage } from "./i18n/language.ts";
 
 /**
  * State and actions behind the Practice Session screen (issue #9), shared by
@@ -74,11 +76,12 @@ export interface PracticeView {
   refresh(): Promise<boolean>;
 }
 
-function message(error: { message?: string } | undefined, status: number): string {
-  return error?.message ?? `${FAILED} (${status})`;
+function message(lang: InterfaceLanguage, error: { message?: string } | undefined, status: number): string {
+  return errorMessage(lang, errorCode(error), error?.message ?? httpFailureText(lang, status));
 }
 
 export function usePractice(client: ApiClient): PracticeView {
+  const { language } = useInterfaceLanguage();
   const [session, setSession] = useState<PracticeSession | null>(null);
   // Chosen and revealed options per exercise, kept locally until the server's
   // session view carries the result.
@@ -99,7 +102,7 @@ export function usePractice(client: ApiClient): PracticeView {
         body: seed === undefined ? {} : { seed },
       });
       if (!data) {
-        setError(message(err, response.status));
+        setError(message(language, err, response.status));
         setState("error");
         return;
       }
@@ -107,10 +110,10 @@ export function usePractice(client: ApiClient): PracticeView {
       setSession(data);
       setState(data.state === "complete" ? "done" : "active");
     } catch {
-      setError(UNREACHABLE);
+      setError(failureText(language));
       setState("error");
     }
-  }, [client]);
+  }, [client, language]);
 
   const refetch = useCallback(async (): Promise<boolean> => {
     if (!session) return false;
@@ -124,17 +127,17 @@ export function usePractice(client: ApiClient): PracticeView {
         setError(null);
         return true;
       }
-      setError(message(refreshed.error, refreshed.response.status));
+      setError(message(language, refreshed.error, refreshed.response.status));
       if (refreshed.response.status === 404) {
         setSession(null);
         setState("error");
       }
       return false;
     } catch {
-      setError(UNREACHABLE);
+      setError(failureText(language));
       return false;
     }
-  }, [client, session]);
+  }, [client, session, language]);
 
   const answer = useCallback(
     async (exerciseId: string, optionId: string) => {
@@ -151,7 +154,7 @@ export function usePractice(client: ApiClient): PracticeView {
           },
         );
         if (!data) {
-          setError(message(err, response.status));
+          setError(message(language, err, response.status));
           if (response.status === 404) {
             // The session is gone (expired or foreign): nothing to resume.
             setSession(null);
@@ -169,13 +172,13 @@ export function usePractice(client: ApiClient): PracticeView {
         );
         await refetch();
       } catch {
-        setError(UNREACHABLE);
+        setError(failureText(language));
       } finally {
         inFlight.current = false;
         setPending(false);
       }
     },
-    [client, refetch, session],
+    [client, language, refetch, session],
   );
 
   const exercises = useMemo<ExerciseView[]>(() => {
@@ -197,14 +200,16 @@ export function usePractice(client: ApiClient): PracticeView {
       return {
         id: ex.id,
         kind: ex.kind,
-        instruction: ex.instruction ?? "",
+        // English keeps the server's own sentence; Japanese shows the
+        // translated instruction for the exercise's kind (issue #125).
+        instruction: exerciseInstruction(language, ex.kind, ex.instruction ?? ""),
         prompt: ex.prompt,
         options: ex.options ?? [],
         answered: ex.answered,
         feedback,
       };
     });
-  }, [session, answers]);
+  }, [session, answers, language]);
 
   const current = useMemo(() => exercises.find((ex) => !ex.answered) ?? null, [exercises]);
 

@@ -1,44 +1,75 @@
 // The sentences Settings sections show about a server answer, and the small
-// rules behind form fields. Shared so web and mobile say the same thing.
+// rules behind form fields. Shared so web and mobile say the same thing —
+// and, since issue #125, say it in the Learner's Interface Language. The
+// sentences are string-table entries; data that came from the server (names,
+// ids, statuses, error text) rides through as {placeholder} values in the
+// Learner's own words only where we wrote them, never rewritten here.
 
 import type { GrammarReviewItem, MaruMoriSyncRun } from "@vjt/api-client";
+import { DEFAULT_INTERFACE_LANGUAGE, type InterfaceLanguage } from "./i18n/language.ts";
+import { translatePlain } from "./i18n/translate.ts";
 
 /** The line under "Sync now": what the finished run found. */
-export function syncOutcomeText(run: MaruMoriSyncRun): string {
-  if (run.status === "failed") return `Sync failed: ${run.error ?? "unknown error"}`;
+export function syncOutcomeText(
+  run: MaruMoriSyncRun,
+  lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
+): string {
+  if (run.status === "failed") {
+    return translatePlain(lang, "sync.failed", { error: run.error ?? translatePlain(lang, "sync.unknownError") });
+  }
   const counts = run.counts;
-  if (!counts) return "Sync complete";
-  return `Sync complete — ${counts.new} new Known Items, ${counts.levelChanges} level changes, ${counts.disappeared} disappeared`;
+  if (!counts) return translatePlain(lang, "sync.complete");
+  return translatePlain(lang, "sync.counts", {
+    new: counts.new,
+    levelChanges: counts.levelChanges,
+    disappeared: counts.disappeared,
+  });
 }
 
 /** One row of the recent Syncs list. */
-export function syncRunText(run: MaruMoriSyncRun): string {
+export function syncRunText(
+  run: MaruMoriSyncRun,
+  lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
+): string {
+  // startedAt and status are the server's own data: shown as they are, the
+  // row's connective words are ours.
   return (
     `${run.startedAt} — ${run.status}` +
     (run.error ? ` — ${run.error}` : "") +
-    (run.counts ? ` — ${run.counts.kanji} kanji, ${run.counts.vocabulary} vocabulary` : "")
+    (run.counts
+      ? ` — ${translatePlain(lang, "sync.runCounts", { kanji: run.counts.kanji, vocabulary: run.counts.vocabulary })}`
+      : "")
   );
 }
 
 /** One row of the read-only "Review these grammar matches" list (issue #6). */
-export function grammarReviewText(item: GrammarReviewItem): string {
+export function grammarReviewText(
+  item: GrammarReviewItem,
+  lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
+): string {
   return (
     `${item.pattern || item.marumoriId}` +
-    (item.jlptLevel ? ` (MaruMori level ${item.jlptLevel})` : "") +
+    (item.jlptLevel ? ` ${translatePlain(lang, "grammarReview.level", { level: item.jlptLevel })}` : "") +
     (item.matchedPointId
-      ? ` — matched point ${item.matchedPointId}, level was ambiguous`
-      : " — no Grammar Catalogue match")
+      ? ` ${translatePlain(lang, "grammarReview.matched", { point: item.matchedPointId })}`
+      : ` ${translatePlain(lang, "grammarReview.noMatch")}`)
   );
 }
 
 /** The result line after a Starting Level change: the Seeded Grammar counts. */
-export function grammarUpdatedText(counts: { added?: number; removed?: number }): string {
-  return `Grammar updated: ${counts.added ?? 0} added, ${counts.removed ?? 0} removed.`;
+export function grammarUpdatedText(
+  counts: { added?: number; removed?: number },
+  lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
+): string {
+  return translatePlain(lang, "grammar.updated", { added: counts.added ?? 0, removed: counts.removed ?? 0 });
 }
 
 /** The Lookup hold field's rule: a whole number of milliseconds from 0 to 10000. */
-export function parseLookupHold(text: string): { ok: true; ms: number } | { ok: false; message: string } {
-  const message = "The hold is a whole number of milliseconds from 0 to 10000.";
+export function parseLookupHold(
+  text: string,
+  lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
+): { ok: true; ms: number } | { ok: false; message: string } {
+  const message = translatePlain(lang, "settings.lookupHoldRule");
   if (text.trim() === "") return { ok: false, message };
   const ms = Number(text);
   if (!Number.isInteger(ms) || ms < 0 || ms > 10000) return { ok: false, message };

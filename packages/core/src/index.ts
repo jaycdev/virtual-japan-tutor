@@ -46,12 +46,49 @@ export type {
   StartingLevelHook,
   StartingLevelState,
 } from "./useOnboarding.ts";
+// Interface Language (issue #125): the typed string table, the furigana
+// notation, and the provider that hands the language to every core sentence.
+export {
+  DEFAULT_INTERFACE_LANGUAGE,
+  interfaceLanguageOptions,
+  isJapanese,
+  parseInterfaceLanguage,
+} from "./i18n/language.ts";
+export type { InterfaceLanguage, InterfaceLanguageOption } from "./i18n/language.ts";
+export { strings } from "./i18n/strings.ts";
+export type { StringKey } from "./i18n/strings.ts";
+export { parseRuby, stripRuby } from "./i18n/ruby.ts";
+export type { RubySegment, RubyText } from "./i18n/ruby.ts";
+export { translate, translatePlain } from "./i18n/translate.ts";
+export type { TranslateParams } from "./i18n/translate.ts";
+export {
+  ERROR_CODES,
+  errorMessage,
+  errorCode,
+  EXERCISE_KINDS,
+  exerciseInstruction,
+  failureText,
+  httpFailureText,
+} from "./i18n/errorMessages.ts";
+export type { ExerciseKind, ServerErrorCode } from "./i18n/errorMessages.ts";
+export {
+  InterfaceLanguageContext,
+  InterfaceLanguageProvider,
+  useInterfaceLanguage,
+  useT,
+} from "./i18n/context.ts";
+export type {
+  InterfaceLanguageContextValue,
+  InterfaceLanguageProviderProps,
+  InterfaceLanguageView,
+  Translator,
+} from "./i18n/context.ts";
 export { decideLandingSetup, hasSetupSeen, markSetupSeen, SETUP_SEEN_KEY } from "./firstRun.ts";
 export type { KeyValueStore, LandingSetupDecision } from "./firstRun.ts";
 export { memoryTokenStorage } from "./tokenStorage.ts";
 export type { TokenStorage } from "./tokenStorage.ts";
 export { deviceTimezone, TIMEZONE_OPTIONS } from "./timezones.ts";
-export { SETTINGS_SECTIONS, findSettingsSection } from "./settingsSections.ts";
+export { SETTINGS_SECTIONS, findSettingsSection, sectionBlurb, sectionTitle } from "./settingsSections.ts";
 export type { SettingsSection, StepSaveFn, StepSaveOutcome, StepSaveRegistrar } from "./settingsSections.ts";
 export { probeServerHealth, PROBE_TIMEOUT_MS } from "./serverHealth.ts";
 export type { FetchLike } from "./serverHealth.ts";

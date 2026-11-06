@@ -1,6 +1,7 @@
 import type { ApiClient, GrammarReviewItem, StartingLevelStatus } from "@vjt/api-client";
 import { useCallback, useEffect, useState } from "react";
-import { FAILED, UNREACHABLE } from "./errors.ts";
+import { errorMessage, errorCode, failureText, httpFailureText } from "./errors.ts";
+import { useInterfaceLanguage } from "./i18n/context.ts";
 
 export type StartingLevel = "N5" | "N4" | "N3" | "N2" | "N1";
 
@@ -40,6 +41,7 @@ export interface GrammarReview {
  * web and mobile. `client` must be a stable reference and must already authenticate.
  */
 export function useStartingLevel(client: ApiClient): StartingLevelHook {
+  const { language } = useInterfaceLanguage();
   const [state, setState] = useState<StartingLevelState>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
 
@@ -47,11 +49,14 @@ export function useStartingLevel(client: ApiClient): StartingLevelHook {
     try {
       const { data, error, response } = await client.GET("/starting-level");
       if (data) return { status: "ready", level: data };
-      return { status: "error", message: error?.message ?? `${FAILED} (${response.status})` };
+      return {
+        status: "error",
+        message: errorMessage(language, errorCode(error), error?.message ?? httpFailureText(language, response.status)),
+      };
     } catch {
-      return { status: "error", message: UNREACHABLE };
+      return { status: "error", message: failureText(language) };
     }
-  }, [client]);
+  }, [client, language]);
 
   useEffect(() => {
     let cancelled = false;
@@ -73,12 +78,15 @@ export function useStartingLevel(client: ApiClient): StartingLevelHook {
           setState({ status: "ready", level: data });
           return data;
         }
-        return { status: "error", message: error?.message ?? `${FAILED} (${response.status})` };
+        return {
+          status: "error",
+          message: errorMessage(language, errorCode(error), error?.message ?? httpFailureText(language, response.status)),
+        };
       } catch {
-        return { status: "error", message: UNREACHABLE };
+        return { status: "error", message: failureText(language) };
       }
     },
-    [client],
+    [client, language],
   );
 
   return { state, reload, setLevel };
@@ -89,6 +97,7 @@ export function useStartingLevel(client: ApiClient): StartingLevelHook {
  * could not resolve cleanly. Loads on demand, like the MaruMori Sync history.
  */
 export function useGrammarReview(client: ApiClient): GrammarReview {
+  const { language } = useInterfaceLanguage();
   const [state, setState] = useState<GrammarReviewState>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
 
@@ -99,15 +108,19 @@ export function useGrammarReview(client: ApiClient): GrammarReview {
       .then(({ data, error, response }) => {
         if (cancelled) return;
         if (data) setState({ status: "ready", items: data });
-        else setState({ status: "error", message: error?.message ?? `${FAILED} (${response.status})` });
+        else
+          setState({
+            status: "error",
+            message: errorMessage(language, errorCode(error), error?.message ?? httpFailureText(language, response.status)),
+          });
       })
       .catch(() => {
-        if (!cancelled) setState({ status: "error", message: UNREACHABLE });
+        if (!cancelled) setState({ status: "error", message: failureText(language) });
       });
     return () => {
       cancelled = true;
     };
-  }, [client, attempt]);
+  }, [client, language, attempt]);
 
   const reload = useCallback(() => setAttempt((n) => n + 1), []);
 

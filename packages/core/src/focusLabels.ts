@@ -1,5 +1,7 @@
 import type { ApiClient, FocusSetItem } from "@vjt/api-client";
 import { useEffect, useState } from "react";
+import { DEFAULT_INTERFACE_LANGUAGE, type InterfaceLanguage } from "./i18n/language.ts";
+import { translatePlain } from "./i18n/translate.ts";
 
 /**
  * Chip labels for the Focus Set (issue #47 review B1, moved to @vjt/core in
@@ -13,12 +15,13 @@ import { useEffect, useState } from "react";
  * The Focus Set in their own words (plan 4.3, P7): the API's `kind` reads as
  * the exercise type - "Grammar point", not "Grammar".
  */
-export function focusKindWord(kind: FocusSetItem["kind"]): string {
-  return kind === "grammar"
-    ? "Grammar point"
-    : kind === "vocabulary"
-      ? "Word"
-      : kind.charAt(0).toUpperCase() + kind.slice(1);
+export function focusKindWord(
+  kind: FocusSetItem["kind"],
+  lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
+): string {
+  if (kind === "grammar") return translatePlain(lang, "focus.grammarPoint");
+  if (kind === "vocabulary") return translatePlain(lang, "focus.word");
+  return kind.charAt(0).toUpperCase() + kind.slice(1);
 }
 
 /**
@@ -26,8 +29,11 @@ export function focusKindWord(kind: FocusSetItem["kind"]): string {
  * literal is already the label; for vocabulary and grammar `itemRef` is only an
  * id, so it stands in until the lookup supplies the real word or pattern.
  */
-export function focusChipLabel(item: FocusSetItem): string {
-  return item.kind === "kanji" ? item.itemRef : `${focusKindWord(item.kind)} ${item.itemRef}`;
+export function focusChipLabel(
+  item: FocusSetItem,
+  lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
+): string {
+  return item.kind === "kanji" ? item.itemRef : `${focusKindWord(item.kind, lang)} ${item.itemRef}`;
 }
 
 /**

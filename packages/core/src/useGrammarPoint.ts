@@ -1,6 +1,7 @@
 import type { ApiClient, GrammarPointDetail } from "@vjt/api-client";
 import { useCallback, useEffect, useState } from "react";
-import { FAILED, UNREACHABLE } from "./errors.ts";
+import { errorMessage, errorCode, failureText, httpFailureText } from "./errors.ts";
+import { useInterfaceLanguage } from "./i18n/context.ts";
 
 export type GrammarPointState =
   | { status: "idle" }
@@ -38,6 +39,7 @@ type Settled = { id: number; state: Extract<GrammarPointState, { status: "ready"
  * derived from those two facts — no setState runs in the effect body.
  */
 export function useGrammarPoint(client: ApiClient, id: number | undefined): GrammarPointRead {
+  const { language } = useInterfaceLanguage();
   const [attempt, setAttempt] = useState(0);
   const [settled, setSettled] = useState<Settled | null>(null);
 
@@ -49,15 +51,22 @@ export function useGrammarPoint(client: ApiClient, id: number | undefined): Gram
       .then(({ data, error, response }) => {
         if (cancelled) return;
         if (data) setSettled({ id, state: { status: "ready", point: data } });
-        else setSettled({ id, state: { status: "error", message: error?.message ?? `${FAILED} (${response.status})` } });
+        else
+          setSettled({
+            id,
+            state: {
+              status: "error",
+              message: errorMessage(language, errorCode(error), error?.message ?? httpFailureText(language, response.status)),
+            },
+          });
       })
       .catch(() => {
-        if (!cancelled) setSettled({ id, state: { status: "error", message: UNREACHABLE } });
+        if (!cancelled) setSettled({ id, state: { status: "error", message: failureText(language) } });
       });
     return () => {
       cancelled = true;
     };
-  }, [client, id, attempt]);
+  }, [client, id, attempt, language]);
 
   const state: GrammarPointState =
     id === undefined

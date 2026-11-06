@@ -8,7 +8,9 @@ import type {
 } from "@vjt/api-client";
 import { useCallback, useEffect, useState } from "react";
 import type { ActionResult } from "./useAiSettings.ts";
-import { FAILED, UNREACHABLE } from "./errors.ts";
+import { errorMessage, errorCode, failureText, httpFailureText } from "./errors.ts";
+import { useInterfaceLanguage } from "./i18n/context.ts";
+import type { InterfaceLanguage } from "./i18n/language.ts";
 
 /**
  * The Learner's Item Lists (issue #12) — named groups of Words, Kanji and
@@ -59,11 +61,12 @@ export interface ItemListsView {
 }
 
 
-function message(error: { message?: string } | undefined, status: number): string {
-  return error?.message ?? `${FAILED} (${status})`;
+function message(lang: InterfaceLanguage, error: { message?: string } | undefined, status: number): string {
+  return errorMessage(lang, errorCode(error), error?.message ?? httpFailureText(lang, status));
 }
 
 export function useItemLists(client: ApiClient): ItemListsView {
+  const { language } = useInterfaceLanguage();
   const [state, setState] = useState<ItemListsState>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
 
@@ -79,16 +82,16 @@ export function useItemLists(client: ApiClient): ItemListsView {
             lists: data.items ?? [],
             defaultListId: data.defaultListId ?? null,
           });
-        else setState({ status: "error", message: message(err, response.status) });
+        else setState({ status: "error", message: message(language, err, response.status) });
       } catch {
-        if (!cancelled) setState({ status: "error", message: UNREACHABLE });
+        if (!cancelled) setState({ status: "error", message: failureText(language) });
       }
     };
     void load();
     return () => {
       cancelled = true;
     };
-  }, [client, attempt]);
+  }, [client, attempt, language]);
 
   /**
    * Re-read after a mutation. A failed re-read never clobbers what is on
@@ -122,12 +125,12 @@ export function useItemLists(client: ApiClient): ItemListsView {
           await refresh();
           return { ok: true, list: created };
         }
-        return { ok: false, message: message(err, response.status) };
+        return { ok: false, message: message(language, err, response.status) };
       } catch {
-        return { ok: false, message: UNREACHABLE };
+        return { ok: false, message: failureText(language) };
       }
     },
-    [client, refresh],
+    [client, refresh, language],
   );
 
   const updateList = useCallback(
@@ -141,12 +144,12 @@ export function useItemLists(client: ApiClient): ItemListsView {
           await refresh();
           return { ok: true };
         }
-        return { ok: false, message: message(err, response.status) };
+        return { ok: false, message: message(language, err, response.status) };
       } catch {
-        return { ok: false, message: UNREACHABLE };
+        return { ok: false, message: failureText(language) };
       }
     },
-    [client, refresh],
+    [client, refresh, language],
   );
 
   const deleteList = useCallback(
@@ -159,12 +162,12 @@ export function useItemLists(client: ApiClient): ItemListsView {
           await refresh();
           return { ok: true };
         }
-        return { ok: false, message: message(err, response.status) };
+        return { ok: false, message: message(language, err, response.status) };
       } catch {
-        return { ok: false, message: UNREACHABLE };
+        return { ok: false, message: failureText(language) };
       }
     },
-    [client, refresh],
+    [client, refresh, language],
   );
 
   const setDefaultList = useCallback(
@@ -177,12 +180,12 @@ export function useItemLists(client: ApiClient): ItemListsView {
           await refresh();
           return { ok: true };
         }
-        return { ok: false, message: message(err, response.status) };
+        return { ok: false, message: message(language, err, response.status) };
       } catch {
-        return { ok: false, message: UNREACHABLE };
+        return { ok: false, message: failureText(language) };
       }
     },
-    [client, refresh],
+    [client, refresh, language],
   );
 
   const addToList = useCallback(
@@ -196,12 +199,12 @@ export function useItemLists(client: ApiClient): ItemListsView {
           await refresh();
           return { ok: true };
         }
-        return { ok: false, message: message(err, response.status) };
+        return { ok: false, message: message(language, err, response.status) };
       } catch {
-        return { ok: false, message: UNREACHABLE };
+        return { ok: false, message: failureText(language) };
       }
     },
-    [client, refresh],
+    [client, refresh, language],
   );
 
   const removeFromList = useCallback(
@@ -214,12 +217,12 @@ export function useItemLists(client: ApiClient): ItemListsView {
           await refresh();
           return { ok: true };
         }
-        return { ok: false, message: message(err, response.status) };
+        return { ok: false, message: message(language, err, response.status) };
       } catch {
-        return { ok: false, message: UNREACHABLE };
+        return { ok: false, message: failureText(language) };
       }
     },
-    [client, refresh],
+    [client, refresh, language],
   );
 
   const listItems = useCallback(
@@ -229,12 +232,12 @@ export function useItemLists(client: ApiClient): ItemListsView {
           params: { path: { listId } },
         });
         if (response.status === 200 && data) return { ok: true, members: data.items ?? [] };
-        return { ok: false, message: message(err, response.status) };
+        return { ok: false, message: message(language, err, response.status) };
       } catch {
-        return { ok: false, message: UNREACHABLE };
+        return { ok: false, message: failureText(language) };
       }
     },
-    [client],
+    [client, language],
   );
 
   const reportWeakSignals = useCallback(
@@ -245,12 +248,12 @@ export function useItemLists(client: ApiClient): ItemListsView {
           body: { signals },
         });
         if (response.status === 204) return { ok: true };
-        return { ok: false, message: message(err, response.status) };
+        return { ok: false, message: message(language, err, response.status) };
       } catch {
-        return { ok: false, message: UNREACHABLE };
+        return { ok: false, message: failureText(language) };
       }
     },
-    [client],
+    [client, language],
   );
 
   const reload = useCallback(() => setAttempt((n) => n + 1), []);

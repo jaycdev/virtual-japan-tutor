@@ -1,7 +1,9 @@
 import type { ApiClient, ReadingSettings } from "@vjt/api-client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ActionResult } from "./useAiSettings.ts";
-import { FAILED, UNREACHABLE } from "./errors.ts";
+import { errorMessage, errorCode, failureText, httpFailureText } from "./errors.ts";
+import { useInterfaceLanguage } from "./i18n/context.ts";
+import type { InterfaceLanguage } from "./i18n/language.ts";
 
 /**
  * The Learner's reader preferences (issue #11, extended by issue #12), kept
@@ -39,11 +41,12 @@ export interface ReadingSettingsView {
 // panel can call a setter.
 const DEFAULT_LOOKUP_HOLD_MS = 800;
 
-function message(error: { message?: string } | undefined, status: number): string {
-  return error?.message ?? `${FAILED} (${status})`;
+function message(lang: InterfaceLanguage, error: { message?: string } | undefined, status: number): string {
+  return errorMessage(lang, errorCode(error), error?.message ?? httpFailureText(lang, status));
 }
 
 export function useReadingSettings(client: ApiClient): ReadingSettingsView {
+  const { language } = useInterfaceLanguage();
   const [state, setState] = useState<ReadingSettingsState>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
   const last = useRef<ReadingSettings | null>(null);
@@ -57,16 +60,16 @@ export function useReadingSettings(client: ApiClient): ReadingSettingsView {
         if (data) {
           last.current = data;
           setState({ status: "ready", settings: data });
-        } else setState({ status: "error", message: message(err, response.status) });
+        } else setState({ status: "error", message: message(language, err, response.status) });
       } catch {
-        if (!cancelled) setState({ status: "error", message: UNREACHABLE });
+        if (!cancelled) setState({ status: "error", message: failureText(language) });
       }
     };
     void load();
     return () => {
       cancelled = true;
     };
-  }, [client, attempt]);
+  }, [client, attempt, language]);
 
   const put = useCallback(
     async (body: ReadingSettings): Promise<ActionResult> => {
@@ -77,12 +80,12 @@ export function useReadingSettings(client: ApiClient): ReadingSettingsView {
           setState({ status: "ready", settings: data });
           return { ok: true };
         }
-        return { ok: false, message: message(err, response.status) };
+        return { ok: false, message: message(language, err, response.status) };
       } catch {
-        return { ok: false, message: UNREACHABLE };
+        return { ok: false, message: failureText(language) };
       }
     },
-    [client],
+    [client, language],
   );
 
   const current = useCallback(

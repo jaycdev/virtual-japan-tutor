@@ -81,4 +81,33 @@ describe("stillUnreadFrom", () => {
     expect(stillUnreadFrom(story({ readAt: "2026-11-03T10:00:00Z" }), now, "Asia/Tokyo")).toBeNull();
     expect(stillUnreadFrom(story({ origin: "on_demand" }), now, "Asia/Tokyo")).toBeNull();
   });
+
+  it("names the unread weekday in Japanese too", () => {
+    expect(stillUnreadFrom(story(), now, "Asia/Tokyo", "ja")).toBe("月曜日");
+  });
+});
+
+// Issue #125: with an Interface Language passed, the clock itself speaks it,
+// while the internal YYYY-MM-DD keys stay en-CA whatever the UI shows.
+describe("the clock in Japanese", () => {
+  it("greets in Japanese, furigana included", () => {
+    expect(greetingFor("09", "ja")).toBe("お早うございます");
+    expect(greetingFor("23", "ja-furigana")).toBe("まだ勉強中ですか");
+  });
+
+  it("orders the Today greeting and date as ja-JP", () => {
+    const now = new Date("2026-11-03T22:30:00Z"); // Wed 4 Nov, 07:30 in Tokyo
+    expect(learnerClock(now, "Asia/Tokyo", "ja")).toEqual({
+      greeting: "お早うございます",
+      date: "2026年11月4日水曜日",
+    });
+  });
+
+  it("formats an instant as ja-JP", () => {
+    expect(formatInstant("2026-11-04T05:02:00Z", "Asia/Tokyo", "ja")).toBe("11月4日 14:02");
+  });
+
+  it("keeps the day keys plain YYYY-MM-DD for a Japanese UI", () => {
+    expect(localDayKey(new Date("2026-11-03T20:00:00Z"), "Asia/Tokyo")).toBe("2026-11-04");
+  });
 });

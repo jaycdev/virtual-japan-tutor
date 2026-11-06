@@ -1,7 +1,9 @@
 import type { ApiClient, MaruMoriStatus, MaruMoriSyncRun } from "@vjt/api-client";
 import { useCallback, useEffect, useState } from "react";
 import type { ActionResult } from "./useAiSettings.ts";
-import { FAILED, UNREACHABLE } from "./errors.ts";
+import { errorMessage, errorCode, failureText, httpFailureText } from "./errors.ts";
+import { useInterfaceLanguage } from "./i18n/context.ts";
+import type { InterfaceLanguage } from "./i18n/language.ts";
 
 export type MaruMoriState =
   | { status: "loading" }
@@ -35,13 +37,14 @@ export interface MaruMori {
 
 async function act(
   run: () => Promise<{ error?: { message?: string } | undefined; response: Response }>,
+  lang: InterfaceLanguage,
 ): Promise<ActionResult> {
   try {
     const { error, response } = await run();
     if (response.ok) return { ok: true };
-    return { ok: false, message: error?.message ?? `${FAILED} (${response.status})` };
+    return { ok: false, message: errorMessage(lang, errorCode(error), error?.message ?? httpFailureText(lang, response.status)) };
   } catch {
-    return { ok: false, message: UNREACHABLE };
+    return { ok: false, message: failureText(lang) };
   }
 }
 
@@ -50,6 +53,7 @@ async function act(
  * `client` must be a stable reference and must already authenticate (see `useAuth`).
  */
 export function useMarumori(client: ApiClient): MaruMori {
+  const { language } = useInterfaceLanguage();
   const [state, setState] = useState<MaruMoriState>({ status: "loading" });
   const [runs, setRuns] = useState<MaruMoriRunsState>({ status: "idle" });
   const [attempt, setAttempt] = useState(0);
@@ -58,11 +62,11 @@ export function useMarumori(client: ApiClient): MaruMori {
     try {
       const { data, error, response } = await client.GET("/marumori");
       if (data) return { status: "ready", marumori: data };
-      return { status: "error", message: error?.message ?? `${FAILED} (${response.status})` };
+      return { status: "error", message: errorMessage(language, errorCode(error), error?.message ?? httpFailureText(language, response.status)) };
     } catch {
-      return { status: "error", message: UNREACHABLE };
+      return { status: "error", message: failureText(language) };
     }
-  }, [client]);
+  }, [client, language]);
 
   useEffect(() => {
     let cancelled = false;
@@ -89,13 +93,13 @@ export function useMarumori(client: ApiClient): MaruMori {
   );
 
   const saveKey = useCallback(
-    (apiKey: string) => act(() => client.PUT("/marumori/key", { body: { apiKey } })).then(refreshAfter),
-    [client, refreshAfter],
+    (apiKey: string) => act(() => client.PUT("/marumori/key", { body: { apiKey } }), language).then(refreshAfter),
+    [client, language, refreshAfter],
   );
 
   const removeKey = useCallback(
-    () => act(() => client.DELETE("/marumori/key")).then(refreshAfter),
-    [client, refreshAfter],
+    () => act(() => client.DELETE("/marumori/key"), language).then(refreshAfter),
+    [client, language, refreshAfter],
   );
 
   const sync = useCallback(async (): Promise<SyncOutcome> => {
@@ -106,11 +110,11 @@ export function useMarumori(client: ApiClient): MaruMori {
         if (next.status === "ready") setState(next);
         return data;
       }
-      return { status: "error", message: error?.message ?? `${FAILED} (${response.status})` };
+      return { status: "error", message: errorMessage(language, errorCode(error), error?.message ?? httpFailureText(language, response.status)) };
     } catch {
-      return { status: "error", message: UNREACHABLE };
+      return { status: "error", message: failureText(language) };
     }
-  }, [client, fetchStatus]);
+  }, [client, language, fetchStatus]);
 
   const loadRuns = useCallback(() => {
     setRuns({ status: "loading" });
@@ -118,10 +122,14 @@ export function useMarumori(client: ApiClient): MaruMori {
       .GET("/marumori/syncs")
       .then(({ data, error, response }) => {
         if (data) setRuns({ status: "ready", runs: data });
-        else setRuns({ status: "error", message: error?.message ?? `${FAILED} (${response.status})` });
+        else
+          setRuns({
+            status: "error",
+            message: errorMessage(language, errorCode(error), error?.message ?? httpFailureText(language, response.status)),
+          });
       })
-      .catch(() => setRuns({ status: "error", message: UNREACHABLE }));
-  }, [client]);
+      .catch(() => setRuns({ status: "error", message: failureText(language) }));
+  }, [client, language]);
 
   return { state, runs, reload, loadRuns, saveKey, removeKey, sync };
 }

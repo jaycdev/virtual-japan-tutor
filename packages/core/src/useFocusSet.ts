@@ -1,6 +1,7 @@
 import type { ApiClient, FocusSetItem } from "@vjt/api-client";
 import { useCallback, useEffect, useState } from "react";
-import { FAILED, UNREACHABLE } from "./errors.ts";
+import { errorMessage, errorCode, failureText, httpFailureText } from "./errors.ts";
+import { useInterfaceLanguage } from "./i18n/context.ts";
 
 /**
  * The Focus Set on its own (plan 4.4 item 4): the Today glance needs the set
@@ -24,6 +25,7 @@ export type FocusSetView = {
 
 
 export function useFocusSet(client: ApiClient): FocusSetView {
+  const { language } = useInterfaceLanguage();
   const [items, setItems] = useState<FocusSetItem[] | null>(null);
   const [size, setSize] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -42,9 +44,10 @@ export function useFocusSet(client: ApiClient): FocusSetView {
           setItems(data.items);
           setSize(data.size);
           setError(null);
-        } else setError(err?.message ?? `${FAILED} (${response.status})`);
+        } else
+          setError(errorMessage(language, errorCode(err), err?.message ?? httpFailureText(language, response.status)));
       } catch {
-        if (!cancelled) setError(UNREACHABLE);
+        if (!cancelled) setError(failureText(language));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -52,7 +55,7 @@ export function useFocusSet(client: ApiClient): FocusSetView {
     return () => {
       cancelled = true;
     };
-  }, [client, attempt]);
+  }, [client, attempt, language]);
 
   const retry = useCallback(() => {
     setLoading(true);

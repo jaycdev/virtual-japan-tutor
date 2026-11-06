@@ -7,7 +7,9 @@ import type {
 } from "@vjt/api-client";
 import { useCallback, useEffect, useState } from "react";
 import type { ActionResult } from "./useAiSettings.ts";
-import { FAILED, UNREACHABLE } from "./errors.ts";
+import { errorMessage, errorCode, failureText, httpFailureText } from "./errors.ts";
+import { useInterfaceLanguage } from "./i18n/context.ts";
+import type { InterfaceLanguage } from "./i18n/language.ts";
 
 export type GrammarLevelFilter = GrammarJLPTLevel | "all";
 export type GrammarFilter = { level: GrammarLevelFilter; query: string; limit: number; offset: number };
@@ -46,8 +48,12 @@ export interface Grammar {
 
 const DEFAULT_LIMIT = 50;
 
-function failure(error: { message?: string } | undefined, status: number): { ok: false; message: string } {
-  return { ok: false, message: error?.message ?? `${FAILED} (${status})` };
+function failure(
+  lang: InterfaceLanguage,
+  error: { message?: string } | undefined,
+  status: number,
+): { ok: false; message: string } {
+  return { ok: false, message: errorMessage(lang, errorCode(error), error?.message ?? httpFailureText(lang, status)) };
 }
 
 /**
@@ -61,6 +67,7 @@ export function useGrammar(
   client: ApiClient,
   initial?: { query?: string; offset?: number; level?: GrammarLevelFilter },
 ): Grammar {
+  const { language } = useInterfaceLanguage();
   const [level, setLevelState] = useState<GrammarLevelFilter>(initial?.level ?? "all");
   const [query, setQueryState] = useState(initial?.query ?? "");
   const [offset, setOffsetState] = useState(Math.max(0, initial?.offset ?? 0));
@@ -83,11 +90,11 @@ export function useGrammar(
         },
       });
       if (data) return { status: "ready", page: data };
-      return { status: "error", ...failure(error, response.status) };
+      return { status: "error", ...failure(language, error, response.status) };
     } catch {
-      return { status: "error", message: UNREACHABLE };
+      return { status: "error", message: failureText(language) };
     }
-  }, [client, level, query, offset]);
+  }, [client, level, query, offset, language]);
 
   useEffect(() => {
     let cancelled = false;
@@ -130,11 +137,11 @@ export function useGrammar(
         .GET("/grammar/points/{id}", { params: { path: { id: String(id) } } })
         .then(({ data, error, response }) => {
           if (data) setDetail({ status: "ready", point: data });
-          else setDetail({ status: "error", id, ...failure(error, response.status) });
+          else setDetail({ status: "error", id, ...failure(language, error, response.status) });
         })
-        .catch(() => setDetail({ status: "error", id, message: UNREACHABLE }));
+        .catch(() => setDetail({ status: "error", id, message: failureText(language) }));
     },
-    [client],
+    [client, language],
   );
 
   const close = useCallback(() => setDetail({ status: "idle" }), []);
@@ -146,15 +153,15 @@ export function useGrammar(
           params: { path: { id: String(id) } },
           body: { explanation },
         });
-        if (!data) return failure(error, response.status);
+        if (!data) return failure(language, error, response.status);
         applyDetail(id, data);
         void refreshList();
         return { ok: true };
       } catch {
-        return { ok: false, message: UNREACHABLE };
+        return { ok: false, message: failureText(language) };
       }
     },
-    [client, applyDetail, refreshList],
+    [client, language, applyDetail, refreshList],
   );
 
   const generateExamples = useCallback(
@@ -164,7 +171,7 @@ export function useGrammar(
           params: { path: { id: String(id) } },
           body: count === undefined ? {} : { count },
         });
-        if (!data) return failure(error, response.status);
+        if (!data) return failure(language, error, response.status);
         setDetail((prev) =>
           prev.status === "ready" && prev.point.id === id
             ? { status: "ready", point: { ...prev.point, examples: data.examples } }
@@ -173,10 +180,10 @@ export function useGrammar(
         void refreshList();
         return { ok: true, result: data };
       } catch {
-        return { ok: false, message: UNREACHABLE };
+        return { ok: false, message: failureText(language) };
       }
     },
-    [client, refreshList],
+    [client, language, refreshList],
   );
 
   const regenerateExplanation = useCallback(
@@ -185,15 +192,15 @@ export function useGrammar(
         const { data, error, response } = await client.POST("/grammar/points/{id}/explanation/regenerate", {
           params: { path: { id: String(id) } },
         });
-        if (!data) return failure(error, response.status);
+        if (!data) return failure(language, error, response.status);
         applyDetail(id, data);
         void refreshList();
         return { ok: true };
       } catch {
-        return { ok: false, message: UNREACHABLE };
+        return { ok: false, message: failureText(language) };
       }
     },
-    [client, applyDetail, refreshList],
+    [client, language, applyDetail, refreshList],
   );
 
   return { state, filter, setLevel, setQuery, setOffset, reload, detail, open, close, saveExplanation, generateExamples, regenerateExplanation };

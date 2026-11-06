@@ -1,5 +1,7 @@
 import type { ApiClient, ApiMiddleware, User } from "@vjt/api-client";
 import { useCallback, useEffect, useState } from "react";
+import { useInterfaceLanguage } from "./i18n/context.ts";
+import { translatePlain } from "./i18n/translate.ts";
 import type { TokenStorage } from "./tokenStorage.ts";
 
 export type AuthState =
@@ -33,6 +35,7 @@ const errorText = (err: unknown) => (err instanceof Error ? err.message : String
  * a new one on every render would restart the session check in a loop.
  */
 export function useAuth(client: ApiClient, storage: TokenStorage): Auth {
+  const { language } = useInterfaceLanguage();
   const [state, setState] = useState<AuthState>({ status: "loading" });
   const [busy, setBusy] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -68,7 +71,7 @@ export function useAuth(client: ApiClient, storage: TokenStorage): Auth {
         const { data, response } = await client.GET("/me");
         if (data) set({ status: "signedIn", user: data });
         else if (response.status === 401) set({ status: "signedOut" });
-        else set({ status: "error", message: `Server answered ${response.status}` });
+        else set({ status: "error", message: translatePlain(language, "auth.serverAnswered", { status: response.status }) });
       } catch (err) {
         set({ status: "error", message: errorText(err) });
       }
@@ -78,7 +81,7 @@ export function useAuth(client: ApiClient, storage: TokenStorage): Auth {
       cancelled = true;
       client.eject(middleware);
     };
-  }, [client, storage, attempt]);
+  }, [client, storage, attempt, language]);
 
   const login = useCallback(
     async (username: string, password: string) => {
@@ -92,7 +95,7 @@ export function useAuth(client: ApiClient, storage: TokenStorage): Auth {
             await storage.set(data.token);
           } catch {
             // Signing in without being able to remember it would break on the next launch.
-            setState({ status: "signedOut", error: "Could not save the session on this device" });
+            setState({ status: "signedOut", error: translatePlain(language, "auth.sessionSaveFailed") });
             return;
           }
           setState({ status: "signedIn", user: data.user });
@@ -100,18 +103,20 @@ export function useAuth(client: ApiClient, storage: TokenStorage): Auth {
           const secs = response.headers.get("Retry-After");
           setState({
             status: "signedOut",
-            error: `Too many attempts. Try again${secs ? ` in ${secs} seconds` : " later"}.`,
+            error: secs
+              ? translatePlain(language, "auth.tryAgainIn", { secs })
+              : translatePlain(language, "auth.tryAgainLater"),
           });
         } else {
-          setState({ status: "signedOut", error: error?.message ?? "Login failed" });
+          setState({ status: "signedOut", error: error?.message ?? translatePlain(language, "auth.loginFailed") });
         }
       } catch {
-        setState({ status: "signedOut", error: "Cannot reach the server" });
+        setState({ status: "signedOut", error: translatePlain(language, "errors.unreachable") });
       } finally {
         setBusy(false);
       }
     },
-    [client, storage],
+    [client, storage, language],
   );
 
   const logout = useCallback(async () => {

@@ -8,7 +8,9 @@ import type {
 } from "@vjt/api-client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ActionResult } from "./useAiSettings.ts";
-import { FAILED, UNREACHABLE } from "./errors.ts";
+import { errorMessage, errorCode, failureText, httpFailureText } from "./errors.ts";
+import { useInterfaceLanguage } from "./i18n/context.ts";
+import { DEFAULT_INTERFACE_LANGUAGE, type InterfaceLanguage } from "./i18n/language.ts";
 
 /**
  * State and actions behind the Story screens (issues #10, #31, #32), shared by
@@ -98,8 +100,8 @@ export interface StoryView {
 
 const DEFAULT_LIMIT = 20;
 
-function message(error: { message?: string } | undefined, status: number): string {
-  return error?.message ?? `${FAILED} (${status})`;
+function message(lang: InterfaceLanguage, error: { message?: string } | undefined, status: number): string {
+  return errorMessage(lang, errorCode(error), error?.message ?? httpFailureText(lang, status));
 }
 
 export interface StorySettingsView {
@@ -118,6 +120,7 @@ export interface StorySettingsView {
  * the settings riding along with the library.
  */
 export function useStorySettings(client: ApiClient): StorySettingsView {
+  const { language } = useInterfaceLanguage();
   const [settings, setSettings] = useState<StorySettingsState>({ status: "loading" });
   const [settingsAttempt, setSettingsAttempt] = useState(0);
 
@@ -127,11 +130,11 @@ export function useStorySettings(client: ApiClient): StorySettingsView {
     try {
       const { data, error: err, response } = await client.GET("/story-settings");
       if (data) return { status: "ready", settings: data };
-      return { status: "error", message: message(err, response.status) };
+      return { status: "error", message: message(language, err, response.status) };
     } catch {
-      return { status: "error", message: UNREACHABLE };
+      return { status: "error", message: failureText(language) };
     }
-  }, [client]);
+  }, [client, language]);
 
   useEffect(() => {
     let cancelled = false;
@@ -153,12 +156,12 @@ export function useStorySettings(client: ApiClient): StorySettingsView {
           setSettings({ status: "ready", settings: data });
           return { ok: true };
         }
-        return { ok: false, message: message(err, response.status) };
+        return { ok: false, message: message(language, err, response.status) };
       } catch {
-        return { ok: false, message: UNREACHABLE };
+        return { ok: false, message: failureText(language) };
       }
     },
-    [client],
+    [client, language],
   );
 
   return { settings, saveSettings, reloadSettings };
@@ -170,14 +173,17 @@ export function useStorySettings(client: ApiClient): StorySettingsView {
  * read, same rules — a 404 means the generator has not written one (yet), not
  * that something failed.
  */
-export async function fetchTodaysStory(client: ApiClient): Promise<TodaysStoryState> {
+export async function fetchTodaysStory(
+  client: ApiClient,
+  lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
+): Promise<TodaysStoryState> {
   try {
     const { data, error: err, response } = await client.GET("/stories/today");
     if (data) return { status: "story", story: data };
     if (response.status === 404) return { status: "none" };
-    return { status: "error", message: message(err, response.status) };
+    return { status: "error", message: message(lang, err, response.status) };
   } catch {
-    return { status: "error", message: UNREACHABLE };
+    return { status: "error", message: failureText(lang) };
   }
 }
 
@@ -188,18 +194,19 @@ export interface TodaysStoryView {
 }
 
 export function useTodaysStory(client: ApiClient): TodaysStoryView {
+  const { language } = useInterfaceLanguage();
   const [today, setToday] = useState<TodaysStoryState>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
-    void fetchTodaysStory(client).then((next) => {
+    void fetchTodaysStory(client, language).then((next) => {
       if (!cancelled) setToday(next);
     });
     return () => {
       cancelled = true;
     };
-  }, [client, attempt]);
+  }, [client, attempt, language]);
 
   const reloadToday = useCallback(() => {
     // A manual reload flips the card to its loading state in place of the
@@ -214,6 +221,7 @@ export function useTodaysStory(client: ApiClient): TodaysStoryView {
 }
 
 export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
+  const { language } = useInterfaceLanguage();
   const [offset, setOffset] = useState(0);
   const [attempt, setAttempt] = useState(0);
   const [library, setLibrary] = useState<StoryLibraryState>({ status: "loading" });
@@ -240,11 +248,11 @@ export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
         params: { query: { limit, offset } },
       });
       if (data) return { status: "ready", page: data };
-      return { status: "error", message: message(err, response.status) };
+      return { status: "error", message: message(language, err, response.status) };
     } catch {
-      return { status: "error", message: UNREACHABLE };
+      return { status: "error", message: failureText(language) };
     }
-  }, [client, limit, offset]);
+  }, [client, limit, offset, language]);
 
   useEffect(() => {
     let cancelled = false;
@@ -259,7 +267,10 @@ export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
   // Today's Story comes from storage, exactly like opening it: a 404 is the
   // "the generator has not written one (yet)" state, not a failure; anything
   // else is a real error the view can retry.
-  const fetchToday = useCallback(async (): Promise<TodaysStoryState> => fetchTodaysStory(client), [client]);
+  const fetchToday = useCallback(
+    async (): Promise<TodaysStoryState> => fetchTodaysStory(client, language),
+    [client, language],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -307,14 +318,14 @@ export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
         // newer request's pending flag.
         if (requestedIdRef.current !== id) return;
         if (data) showStory(data);
-        else setError(message(err, response.status));
+        else setError(message(language, err, response.status));
       } catch {
-        if (requestedIdRef.current === id) setError(UNREACHABLE);
+        if (requestedIdRef.current === id) setError(failureText(language));
       } finally {
         if (requestedIdRef.current === id) setPending(false);
       }
     },
-    [client, showStory],
+    [client, language, showStory],
   );
 
   const close = useCallback(() => {
@@ -355,19 +366,19 @@ export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
           body: rating,
         });
         if (response.status !== 204) {
-          setError(message(err, response.status));
+          setError(message(language, err, response.status));
           return;
         }
         // Reflect the new rating on the open Story, the library page and
         // Today's Story.
         patchItem(storyId, { rating });
       } catch {
-        setError(UNREACHABLE);
+        setError(failureText(language));
       } finally {
         setPending(false);
       }
     },
-    [client, patchItem],
+    [client, language, patchItem],
   );
 
   const setRead = useCallback(
@@ -379,17 +390,17 @@ export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
           params: { path: { storyId } },
         });
         if (response.status !== 204) {
-          setError(message(err, response.status));
+          setError(message(language, err, response.status));
           return;
         }
         patchItem(storyId, { readAt: new Date().toISOString() });
       } catch {
-        setError(UNREACHABLE);
+        setError(failureText(language));
       } finally {
         setPending(false);
       }
     },
-    [client, patchItem],
+    [client, language, patchItem],
   );
 
   const clearRead = useCallback(
@@ -401,19 +412,19 @@ export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
           params: { path: { storyId } },
         });
         if (response.status !== 204) {
-          setError(message(err, response.status));
+          setError(message(language, err, response.status));
           return;
         }
         // The Go server omits a null readAt rather than sending null, so
         // clearing locally means dropping the key too.
         patchItem(storyId, { readAt: undefined });
       } catch {
-        setError(UNREACHABLE);
+        setError(failureText(language));
       } finally {
         setPending(false);
       }
     },
-    [client, patchItem],
+    [client, language, patchItem],
   );
 
   // Deleting drops the row from the page right away; the reader closes too
@@ -427,7 +438,7 @@ export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
           params: { path: { storyId } },
         });
         if (response.status !== 204) {
-          setError(message(err, response.status));
+          setError(message(language, err, response.status));
           return;
         }
         setLibrary((prev) =>
@@ -447,12 +458,12 @@ export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
         // underneath it (or to the empty state if that was the last one).
         if (today.status === "story" && today.story.id === storyId) void refreshToday();
       } catch {
-        setError(UNREACHABLE);
+        setError(failureText(language));
       } finally {
         setPending(false);
       }
     },
-    [client, close, today, refreshToday],
+    [client, language, close, today, refreshToday],
   );
 
   const answer = useCallback(
@@ -470,15 +481,15 @@ export function useStory(client: ApiClient, limit = DEFAULT_LIMIT): StoryView {
         // in flight; its verdict and its error belong to that Story, so a
         // late reply must not paint the now-open one.
         if (openIdRef.current !== storyId) return;
-        if (!data) setError(message(err, response.status));
+        if (!data) setError(message(language, err, response.status));
         else setAnswers((prev) => new Map(prev).set(position, data));
       } catch {
-        if (openIdRef.current === storyId) setError(UNREACHABLE);
+        if (openIdRef.current === storyId) setError(failureText(language));
       } finally {
         setPending(false);
       }
     },
-    [client, story, pending, answers],
+    [client, language, story, pending, answers],
   );
 
   const questions: StoryQuestionView[] = (story?.questions ?? []).map((q) => ({
