@@ -117,7 +117,9 @@ export { ITEM_KIND_LABELS, ITEM_KINDS, isSavedList, itemKindLabel, itemListHint 
 export type { ItemKind } from "./itemLists.ts";
 export {
   FURIGANA_LEVELS,
+  grammarReviewPatternRuby,
   grammarReviewRuby,
+  grammarReviewTailRuby,
   grammarReviewText,
   grammarUpdatedRuby,
   grammarUpdatedText,

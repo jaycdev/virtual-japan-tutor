@@ -44,16 +44,16 @@ describe('mobile SetupWizard', () => {
 
     // Step 1: the wizard's own lines (welcome, intro, step counter, step
     // title, buttons) and the embedded Starting Level section. The review
-    // row's Pattern is Learner-catalogue content, exempt by its testID.
+    // row's Pattern is Learner-catalogue content, exempt by its own testID.
     await screen.findByTestId('grammar-review-row');
     expect(document.querySelectorAll("[style*='font-size']").length).toBeGreaterThan(0);
-    expect(unrubyfiedKanji(document.body, ['grammar-review-row'])).toEqual([]);
+    expect(unrubyfiedKanji(document.body, ['grammar-review-pattern'])).toEqual([]);
 
     // Step 2: the MaruMori section's connective words and its field labels.
     // (The key-field label has no readings, so it settles as one text node
     // and tells us the section has mounted.)
     fireEvent.click(screen.getByRole('button', { name: 'このステップをスキップ' }));
     await screen.findByText('MaruMoriのAPIキー');
-    expect(unrubyfiedKanji(document.body, ['grammar-review-row'])).toEqual([]);
+    expect(unrubyfiedKanji(document.body, ['grammar-review-pattern'])).toEqual([]);
   });
 });

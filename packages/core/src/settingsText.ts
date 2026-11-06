@@ -90,8 +90,23 @@ export function grammarReviewRuby(
   item: GrammarReviewItem,
   lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
 ): RubyText {
+  return joinRuby([grammarReviewPatternRuby(item), grammarReviewTailRuby(item, lang)]);
+}
+
+/** The row's leading Pattern, as the plain text it always is. The phone draws
+ *  it under its own testID so its furigana check can exempt just this piece
+ *  (#125 review). */
+export function grammarReviewPatternRuby(item: GrammarReviewItem): RubyText {
+  return [{ text: item.pattern || item.marumoriId }];
+}
+
+/** The rest of the row — level and match notes, our connectives, annotated in
+ *  ja-furigana. */
+export function grammarReviewTailRuby(
+  item: GrammarReviewItem,
+  lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
+): RubyText {
   return joinRuby([
-    [{ text: item.pattern || item.marumoriId }],
     item.jlptLevel ? [{ text: " " }, ...translate(lang, "grammarReview.level", { level: item.jlptLevel })] : [],
     item.matchedPointId
       ? [{ text: " " }, ...translate(lang, "grammarReview.matched", { point: item.matchedPointId })]

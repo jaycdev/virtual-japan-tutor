@@ -1,7 +1,7 @@
 import type { ApiClient } from "@vjt/api-client";
 import {
   STARTING_LEVELS,
-  grammarReviewRuby,
+  grammarReviewTailRuby,
   grammarUpdatedRuby,
   useGrammarReview,
   useStartingLevel,
@@ -11,7 +11,7 @@ import {
   type StepSaveRegistrar,
 } from "@vjt/core";
 import { useEffect, useState } from "react";
-import { View } from "react-native";
+import { Text, View } from "react-native";
 
 import { Card } from "./components/ui/Card.tsx";
 import { Chip, ChipRow } from "./components/ui/Chip.tsx";
@@ -160,13 +160,17 @@ function GrammarReviewList({ client }: { client: ApiClient }) {
           <T k="settings.reviewNote" className="text-small text-muted-foreground" />
           {review.state.items.map((item) => (
             // The Pattern is Learner-catalogue content and rides unannotated;
-            // the coverage check exempts the row by this testID.
-            <TableText
-              key={item.marumoriId}
-              testID="grammar-review-row"
-              segments={grammarReviewRuby(item, language)}
-              className="text-body text-foreground"
-            />
+            // the coverage check exempts just that piece, by its testID — the
+            // connectives beside it are ours, and stay under the check.
+            <View key={item.marumoriId} testID="grammar-review-row" className="flex-row flex-wrap items-end">
+              <Text testID="grammar-review-pattern" className="text-body text-foreground">
+                {item.pattern || item.marumoriId}
+              </Text>
+              <TableText
+                segments={grammarReviewTailRuby(item, language)}
+                className="text-body text-foreground"
+              />
+            </View>
           ))}
         </>
       ) : null}
