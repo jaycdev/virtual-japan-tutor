@@ -1,6 +1,7 @@
 import type { ApiClient, GrammarReviewItem, StartingLevelStatus } from "@vjt/api-client";
-import { useCallback, useEffect, useState } from "react";
-import { FAILED, UNREACHABLE } from "./errors.ts";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useInterfaceLanguage } from "./i18n/context.ts";
+import { apiFailure, renderFailure, UNREACHABLE_FAILURE, type Failure } from "./i18n/failure.ts";
 
 export type StartingLevel = "N5" | "N4" | "N3" | "N2" | "N1";
 
@@ -34,29 +35,40 @@ export interface GrammarReview {
   reload(): void;
 }
 
+/** Held variants: the error carries a Failure, rendered at return time (B1). */
+type HeldStartingLevelState =
+  | { status: "loading" }
+  | { status: "error"; failure: Failure }
+  | { status: "ready"; level: StartingLevelStatus };
+
+type HeldGrammarReviewState =
+  | { status: "loading" }
+  | { status: "error"; failure: Failure }
+  | { status: "ready"; items: GrammarReviewItem[] };
 
 /**
  * State and actions behind the onboarding Starting Level picker (issue #6), shared by
  * web and mobile. `client` must be a stable reference and must already authenticate.
  */
 export function useStartingLevel(client: ApiClient): StartingLevelHook {
-  const [state, setState] = useState<StartingLevelState>({ status: "loading" });
+  const { language } = useInterfaceLanguage();
+  const [held, setHeld] = useState<HeldStartingLevelState>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
 
-  const fetchStatus = useCallback(async (): Promise<StartingLevelState> => {
+  const fetchStatus = useCallback(async (): Promise<HeldStartingLevelState> => {
     try {
       const { data, error, response } = await client.GET("/starting-level");
       if (data) return { status: "ready", level: data };
-      return { status: "error", message: error?.message ?? `${FAILED} (${response.status})` };
+      return { status: "error", failure: apiFailure(error, response.status) };
     } catch {
-      return { status: "error", message: UNREACHABLE };
+      return { status: "error", failure: UNREACHABLE_FAILURE };
     }
   }, [client]);
 
   useEffect(() => {
     let cancelled = false;
     void fetchStatus().then((next) => {
-      if (!cancelled) setState(next);
+      if (!cancelled) setHeld(next);
     });
     return () => {
       cancelled = true;
@@ -70,16 +82,23 @@ export function useStartingLevel(client: ApiClient): StartingLevelHook {
       try {
         const { data, error, response } = await client.PUT("/starting-level", { body: { level } });
         if (data) {
-          setState({ status: "ready", level: data });
+          setHeld({ status: "ready", level: data });
           return data;
         }
-        return { status: "error", message: error?.message ?? `${FAILED} (${response.status})` };
+        // One-shot outcome: written in the language of the moment the Learner
+        // chose, never re-rendered, so `language` here does not re-run any fetch.
+        return { status: "error", message: renderFailure(language, apiFailure(error, response.status)) };
       } catch {
-        return { status: "error", message: UNREACHABLE };
+        return { status: "error", message: renderFailure(language, UNREACHABLE_FAILURE) };
       }
     },
-    [client],
+    [client, language],
   );
+
+  const state = useMemo<StartingLevelState>(() => {
+    if (held.status !== "error") return held;
+    return { status: "error", message: renderFailure(language, held.failure) };
+  }, [held, language]);
 
   return { state, reload, setLevel };
 }
@@ -89,7 +108,8 @@ export function useStartingLevel(client: ApiClient): StartingLevelHook {
  * could not resolve cleanly. Loads on demand, like the MaruMori Sync history.
  */
 export function useGrammarReview(client: ApiClient): GrammarReview {
-  const [state, setState] = useState<GrammarReviewState>({ status: "loading" });
+  const { language } = useInterfaceLanguage();
+  const [held, setHeld] = useState<HeldGrammarReviewState>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
@@ -98,11 +118,11 @@ export function useGrammarReview(client: ApiClient): GrammarReview {
       .GET("/grammar/review")
       .then(({ data, error, response }) => {
         if (cancelled) return;
-        if (data) setState({ status: "ready", items: data });
-        else setState({ status: "error", message: error?.message ?? `${FAILED} (${response.status})` });
+        if (data) setHeld({ status: "ready", items: data });
+        else setHeld({ status: "error", failure: apiFailure(error, response.status) });
       })
       .catch(() => {
-        if (!cancelled) setState({ status: "error", message: UNREACHABLE });
+        if (!cancelled) setHeld({ status: "error", failure: UNREACHABLE_FAILURE });
       });
     return () => {
       cancelled = true;
@@ -110,6 +130,11 @@ export function useGrammarReview(client: ApiClient): GrammarReview {
   }, [client, attempt]);
 
   const reload = useCallback(() => setAttempt((n) => n + 1), []);
+
+  const state = useMemo<GrammarReviewState>(() => {
+    if (held.status !== "error") return held;
+    return { status: "error", message: renderFailure(language, held.failure) };
+  }, [held, language]);
 
   return { state, reload };
 }

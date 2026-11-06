@@ -1,65 +1,121 @@
 import type { Story, StoryGenerationProgress } from "@vjt/api-client";
+import {
+  DEFAULT_INTERFACE_LANGUAGE,
+  type InterfaceLanguage,
+} from "./i18n/language.ts";
+import type { StringKey } from "./i18n/strings.ts";
+import { translatePlain } from "./i18n/translate.ts";
 
 /**
  * Story words in the Learner's language, shared by the Stories screens (issue
  * #79 moved these out of apps/mobile's stories-parts). Pure functions: the
- * apps own the markup, the wording lives here once.
+ * apps own the markup, the wording lives here once. Issue #125 gave each one
+ * an Interface Language, defaulting to English so today's call sites and
+ * copy are unchanged.
  */
 
 /** Story Origin in Learner's words. */
-export function originLabel(story: Pick<Story, "origin">): string {
-  return story.origin === "on_demand" ? "On demand" : "Automatic";
+export function originLabel(
+  story: Pick<Story, "origin">,
+  lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
+): string {
+  return translatePlain(lang, story.origin === "on_demand" ? "story.originOnDemand" : "story.originAutomatic");
 }
 
-/** The api-client's genre ids in Learner's words; an unknown id shows as-is. */
-export function genreLabel(genre: string | null | undefined): string {
-  switch (genre) {
-    case "diary":
-      return "Diary";
-    case "travel":
-      return "Travel";
-    case "mystery":
-      return "Mystery";
-    case null:
-    case undefined:
-      return "";
-    default:
-      return genre;
-  }
+/**
+ * Genre ids in the Learner's words; an unknown genre shows as-is in either
+ * language — a Learner can type any genre, and its own words are its label.
+ * English maps only diary/travel/mystery, matched exactly as stored — the
+ * case-sensitive matching of the switch that shipped before the Interface
+ * Language work (issue #79), so "DIARY" shows as typed; every other genre
+ * shows exactly as stored. Japanese also maps the server's preset genres
+ * (story/service.go), case-insensitively. Display-only: what is stored and
+ * sent stays the English id. One table path for both languages: the same
+ * lookup and the same pass-through for a genre the table has never seen
+ * (issue #125 review S16 and R4). A typed genre like "constructor" names an
+ * Object.prototype member, not a table row, so the lookup only trusts own
+ * properties (issue #125 review N1).
+ */
+const GENRE_STRINGS_JA: Record<string, StringKey> = {
+  diary: "genre.diary",
+  travel: "genre.travel",
+  mystery: "genre.mystery",
+  "slice of life": "genre.sliceOfLife",
+  folktale: "genre.folktale",
+  food: "genre.food",
+  "school life": "genre.schoolLife",
+  "city life": "genre.cityLife",
+  nature: "genre.nature",
+};
+
+const GENRE_STRINGS: Record<InterfaceLanguage, Record<string, StringKey>> = {
+  en: {
+    diary: "genre.diary",
+    travel: "genre.travel",
+    mystery: "genre.mystery",
+  },
+  // The two Japanese settings speak the same words; only the furigana differs.
+  ja: GENRE_STRINGS_JA,
+  "ja-furigana": GENRE_STRINGS_JA,
+};
+
+export function genreLabel(
+  genre: string | null | undefined,
+  lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
+): string {
+  if (genre === null || genre === undefined) return "";
+  const table = GENRE_STRINGS[lang];
+  const id = lang === "en" ? genre : genre.toLowerCase();
+  const key = Object.hasOwn(table, id) ? table[id] : undefined;
+  return key === undefined ? genre : translatePlain(lang, key);
 }
 
-/** The card's date, short and unambiguous: "Nov 1, 2026". */
-export function storyDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+const EN_DATE = new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric" });
+const JA_DATE = new Intl.DateTimeFormat("ja-JP", { year: "numeric", month: "long", day: "numeric" });
+
+/** The card's date, short and unambiguous: "Nov 1, 2026" / "2026年11月1日". */
+export function storyDate(
+  iso: string,
+  lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
+): string {
+  return (lang === "en" ? EN_DATE : JA_DATE).format(new Date(iso));
 }
 
 /**
  * The Genre / Story Origin / date line of a Library card: "Diary · Automatic ·
  * Nov 1, 2026". A Story without a Genre says "Story" in its place.
  */
-export function storyCardMeta(story: Story): string {
-  return `${genreLabel(story.genre) || "Story"} · ${originLabel(story)} · ${storyDate(story.createdAt)}`;
+export function storyCardMeta(story: Story, lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE): string {
+  return `${genreLabel(story.genre, lang) || translatePlain(lang, "story.noGenre")} · ${originLabel(story, lang)} · ${storyDate(story.createdAt, lang)}`;
 }
 
+const STAGE_STRINGS = {
+  preparing: "stage.preparing",
+  writing: "stage.writing",
+  checking: "stage.checking",
+  saving: "stage.saving",
+} as const;
+
 /** The Learner-facing stage of a generation run, in every place a run shows progress. */
-export function stageLabel(progress: StoryGenerationProgress): string {
-  switch (progress.stage) {
-    case "preparing":
-      return "Preparing…";
-    case "writing":
-      return progress.attempt != null && progress.maxAttempts != null
-        ? `Writing… attempt ${progress.attempt} of ${progress.maxAttempts}`
-        : "Writing…";
-    case "checking":
-      return "Checking it fits your vocabulary…";
-    case "saving":
-      return "Saving…";
-    default:
-      return "Writing…";
+export function stageLabel(
+  progress: StoryGenerationProgress,
+  lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
+): string {
+  const key = STAGE_STRINGS[progress.stage as keyof typeof STAGE_STRINGS];
+  if (key === undefined) return translatePlain(lang, "stage.writing");
+  if (progress.stage === "writing" && progress.attempt != null && progress.maxAttempts != null) {
+    return translatePlain(lang, "stage.writingAttempt", {
+      attempt: progress.attempt,
+      max: progress.maxAttempts,
+    });
   }
+  return translatePlain(lang, key);
 }
 
 /** The progress line a run shows: its stage and the rounded percent. */
-export function progressLabel(progress: StoryGenerationProgress): string {
-  return `${stageLabel(progress)} ${Math.round(progress.percent ?? 0)}%`;
+export function progressLabel(
+  progress: StoryGenerationProgress,
+  lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
+): string {
+  return `${stageLabel(progress, lang)} ${Math.round(progress.percent ?? 0)}%`;
 }

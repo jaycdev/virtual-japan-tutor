@@ -1,7 +1,10 @@
 import { createApiClient } from "@vjt/api-client";
 import { act, renderHook, waitFor } from "@testing-library/react";
+import { createElement, useState, type ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { useFocusSet } from "./useFocusSet.ts";
+import { InterfaceLanguageProvider } from "./i18n/context.ts";
+import type { InterfaceLanguage } from "./i18n/language.ts";
 
 function fakeClient() {
   const fetchImpl = vi.fn();
@@ -9,6 +12,24 @@ function fakeClient() {
   const json = (status: number, body: unknown) =>
     new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
   return { client, fetchImpl, json };
+}
+
+/**
+ * Renders the hook under an Interface Language the test can switch after
+ * mount: the wrapper owns the provider state (renderHook's `wrapper` takes
+ * only children; its props never reach it).
+ */
+function languageHarness() {
+  let change: (language: InterfaceLanguage) => void = () => undefined;
+  function LanguageWrapper({ children }: { children: ReactNode }) {
+    const [language, setLanguage] = useState<InterfaceLanguage>("en");
+    change = setLanguage;
+    return createElement(InterfaceLanguageProvider, { language, setLanguage: () => undefined, children });
+  }
+  return {
+    wrapper: LanguageWrapper,
+    switchLanguage: (language: InterfaceLanguage) => act(() => change(language)),
+  };
 }
 
 const SET = {
@@ -56,5 +77,26 @@ describe("useFocusSet", () => {
     const { result } = renderHook(() => useFocusSet(client));
 
     await waitFor(() => expect(result.current.error).toBe("Cannot reach the server"));
+  });
+
+  it("re-labels a failed read in the new language without refetching (B1)", async () => {
+    const { client, fetchImpl, json } = fakeClient();
+    fetchImpl.mockImplementation(async () => json(500, { code: "internal", message: "Internal server error" }));
+    const { wrapper, switchLanguage } = languageHarness();
+    const { result } = renderHook(() => useFocusSet(client), { wrapper });
+
+    await waitFor(() => expect(result.current.error).toBe("Internal server error"));
+    expect(result.current.loading).toBe(false);
+
+    // The held failure is English-neutral: switching languages re-renders the
+    // same error in Japanese — no second GET, no flip back to `loading`.
+    switchLanguage("ja");
+    expect(result.current.error).toBe("サーバー側で問題が起きました");
+    expect(result.current.loading).toBe(false);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+
+    switchLanguage("en");
+    expect(result.current.error).toBe("Internal server error");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 });

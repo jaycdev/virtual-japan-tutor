@@ -5,9 +5,10 @@ import type {
   GrammarPointPage,
   GenerationResult,
 } from "@vjt/api-client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ActionResult } from "./useAiSettings.ts";
-import { FAILED, UNREACHABLE } from "./errors.ts";
+import { useInterfaceLanguage } from "./i18n/context.ts";
+import { apiFailure, renderFailure, UNREACHABLE_FAILURE, type Failure } from "./i18n/failure.ts";
 
 export type GrammarLevelFilter = GrammarJLPTLevel | "all";
 export type GrammarFilter = { level: GrammarLevelFilter; query: string; limit: number; offset: number };
@@ -21,6 +22,18 @@ export type GrammarDetailState =
   | { status: "idle" }
   | { status: "loading"; id: number }
   | { status: "error"; id: number; message: string }
+  | { status: "ready"; point: GrammarPointDetail };
+
+/** Held variants: an error carries a Failure, rendered at return time (B1). */
+type HeldGrammarListState =
+  | { status: "loading" }
+  | { status: "error"; failure: Failure }
+  | { status: "ready"; page: GrammarPointPage };
+
+type HeldGrammarDetailState =
+  | { status: "idle" }
+  | { status: "loading"; id: number }
+  | { status: "error"; id: number; failure: Failure }
   | { status: "ready"; point: GrammarPointDetail };
 
 /** Outcome of generating example sentences; failures carry a message fit to show the Learner. */
@@ -46,31 +59,32 @@ export interface Grammar {
 
 const DEFAULT_LIMIT = 50;
 
-function failure(error: { message?: string } | undefined, status: number): { ok: false; message: string } {
-  return { ok: false, message: error?.message ?? `${FAILED} (${status})` };
-}
-
 /**
  * State and actions behind the grammar catalogue screen, shared by web and mobile.
  * `client` must be a stable reference and must already authenticate (see `useAuth`).
  * `initial` starts the browse where the screen left it — the screen keeps the
  * Learner's search term and page across list→detail→back (#49 review S3), and
  * this is how they ride into the first read instead of refetching page one.
+ *
+ * List and detail failures are held untranslated and rendered in the current
+ * Interface Language, so switching languages re-labels them without refetching
+ * (issue #125 B1). Action outcomes are one-shot and rendered at call time.
  */
 export function useGrammar(
   client: ApiClient,
   initial?: { query?: string; offset?: number; level?: GrammarLevelFilter },
 ): Grammar {
+  const { language } = useInterfaceLanguage();
   const [level, setLevelState] = useState<GrammarLevelFilter>(initial?.level ?? "all");
   const [query, setQueryState] = useState(initial?.query ?? "");
   const [offset, setOffsetState] = useState(Math.max(0, initial?.offset ?? 0));
   const [attempt, setAttempt] = useState(0);
-  const [state, setState] = useState<GrammarListState>({ status: "loading" });
-  const [detail, setDetail] = useState<GrammarDetailState>({ status: "idle" });
+  const [held, setHeld] = useState<HeldGrammarListState>({ status: "loading" });
+  const [heldDetail, setHeldDetail] = useState<HeldGrammarDetailState>({ status: "idle" });
 
   const filter: GrammarFilter = { level, query, limit: DEFAULT_LIMIT, offset };
 
-  const fetchPage = useCallback(async (): Promise<GrammarListState> => {
+  const fetchPage = useCallback(async (): Promise<HeldGrammarListState> => {
     try {
       const { data, error, response } = await client.GET("/grammar/points", {
         params: {
@@ -83,16 +97,16 @@ export function useGrammar(
         },
       });
       if (data) return { status: "ready", page: data };
-      return { status: "error", ...failure(error, response.status) };
+      return { status: "error", failure: apiFailure(error, response.status) };
     } catch {
-      return { status: "error", message: UNREACHABLE };
+      return { status: "error", failure: UNREACHABLE_FAILURE };
     }
   }, [client, level, query, offset]);
 
   useEffect(() => {
     let cancelled = false;
     void fetchPage().then((next) => {
-      if (!cancelled) setState(next);
+      if (!cancelled) setHeld(next);
     });
     return () => {
       cancelled = true;
@@ -112,12 +126,12 @@ export function useGrammar(
 
   const refreshList = useCallback(async () => {
     const next = await fetchPage();
-    if (next.status === "ready") setState(next);
+    if (next.status === "ready") setHeld(next);
   }, [fetchPage]);
 
   /** Replace the open detail (only when it still shows this point) with the server's newest copy. */
   const applyDetail = useCallback((id: number, point: GrammarPointDetail) => {
-    setDetail((prev) => {
+    setHeldDetail((prev) => {
       const openId = prev.status === "idle" ? null : prev.status === "ready" ? prev.point.id : prev.id;
       return openId === id ? { status: "ready", point } : prev;
     });
@@ -125,19 +139,19 @@ export function useGrammar(
 
   const open = useCallback(
     (id: number) => {
-      setDetail({ status: "loading", id });
+      setHeldDetail({ status: "loading", id });
       void client
         .GET("/grammar/points/{id}", { params: { path: { id: String(id) } } })
         .then(({ data, error, response }) => {
-          if (data) setDetail({ status: "ready", point: data });
-          else setDetail({ status: "error", id, ...failure(error, response.status) });
+          if (data) setHeldDetail({ status: "ready", point: data });
+          else setHeldDetail({ status: "error", id, failure: apiFailure(error, response.status) });
         })
-        .catch(() => setDetail({ status: "error", id, message: UNREACHABLE }));
+        .catch(() => setHeldDetail({ status: "error", id, failure: UNREACHABLE_FAILURE }));
     },
     [client],
   );
 
-  const close = useCallback(() => setDetail({ status: "idle" }), []);
+  const close = useCallback(() => setHeldDetail({ status: "idle" }), []);
 
   const saveExplanation = useCallback(
     async (id: number, explanation: string): Promise<ActionResult> => {
@@ -146,15 +160,17 @@ export function useGrammar(
           params: { path: { id: String(id) } },
           body: { explanation },
         });
-        if (!data) return failure(error, response.status);
+        if (!data) return { ok: false, message: renderFailure(language, apiFailure(error, response.status)) };
         applyDetail(id, data);
         void refreshList();
         return { ok: true };
       } catch {
-        return { ok: false, message: UNREACHABLE };
+        return { ok: false, message: renderFailure(language, UNREACHABLE_FAILURE) };
       }
     },
-    [client, applyDetail, refreshList],
+    // `language` here is fine: a one-shot ActionResult belongs to the language
+    // of the call, and these callbacks are never effect dependencies (B1).
+    [client, language, applyDetail, refreshList],
   );
 
   const generateExamples = useCallback(
@@ -164,8 +180,8 @@ export function useGrammar(
           params: { path: { id: String(id) } },
           body: count === undefined ? {} : { count },
         });
-        if (!data) return failure(error, response.status);
-        setDetail((prev) =>
+        if (!data) return { ok: false, message: renderFailure(language, apiFailure(error, response.status)) };
+        setHeldDetail((prev) =>
           prev.status === "ready" && prev.point.id === id
             ? { status: "ready", point: { ...prev.point, examples: data.examples } }
             : prev,
@@ -173,10 +189,10 @@ export function useGrammar(
         void refreshList();
         return { ok: true, result: data };
       } catch {
-        return { ok: false, message: UNREACHABLE };
+        return { ok: false, message: renderFailure(language, UNREACHABLE_FAILURE) };
       }
     },
-    [client, refreshList],
+    [client, language, refreshList],
   );
 
   const regenerateExplanation = useCallback(
@@ -185,16 +201,26 @@ export function useGrammar(
         const { data, error, response } = await client.POST("/grammar/points/{id}/explanation/regenerate", {
           params: { path: { id: String(id) } },
         });
-        if (!data) return failure(error, response.status);
+        if (!data) return { ok: false, message: renderFailure(language, apiFailure(error, response.status)) };
         applyDetail(id, data);
         void refreshList();
         return { ok: true };
       } catch {
-        return { ok: false, message: UNREACHABLE };
+        return { ok: false, message: renderFailure(language, UNREACHABLE_FAILURE) };
       }
     },
-    [client, applyDetail, refreshList],
+    [client, language, applyDetail, refreshList],
   );
+
+  const state = useMemo<GrammarListState>(() => {
+    if (held.status !== "error") return held;
+    return { status: "error", message: renderFailure(language, held.failure) };
+  }, [held, language]);
+
+  const detail = useMemo<GrammarDetailState>(() => {
+    if (heldDetail.status !== "error") return heldDetail;
+    return { status: "error", id: heldDetail.id, message: renderFailure(language, heldDetail.failure) };
+  }, [heldDetail, language]);
 
   return { state, filter, setLevel, setQuery, setOffset, reload, detail, open, close, saveExplanation, generateExamples, regenerateExplanation };
 }

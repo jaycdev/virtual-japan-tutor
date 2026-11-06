@@ -1,4 +1,6 @@
 import type { Story, StoryGenerationProgress } from "@vjt/api-client";
+import { DEFAULT_INTERFACE_LANGUAGE, type InterfaceLanguage } from "./i18n/language.ts";
+import { translatePlain } from "./i18n/translate.ts";
 import type { StoryGenerationState } from "./useStoryGeneration.ts";
 import type { TodaysStoryState } from "./useStory.ts";
 
@@ -27,16 +29,23 @@ export type TodayCardPhase =
   | { kind: "empty" };
 
 /** What a failed run says when the server gave no words of its own. */
-export const FAILED_RUN_FALLBACK = "Couldn’t write a Story for you.";
+export const FAILED_RUN_FALLBACK = translatePlain("en", "story.runFailed");
 
-export function todayCardPhase(today: TodaysStoryState, generation: StoryGenerationState): TodayCardPhase {
+export function todayCardPhase(
+  today: TodaysStoryState,
+  generation: StoryGenerationState,
+  lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
+): TodayCardPhase {
   const running = generation.status === "running" ? generation.progress : null;
   if (today.status === "loading") return { kind: "loading" };
   if (today.status === "story") return { kind: "story", story: today.story, running };
   if (running) return { kind: "running", progress: running };
   if (today.status === "error") return { kind: "error", message: today.message };
   if (generation.status === "failed") {
-    return { kind: "failed", message: generation.progress.message ?? FAILED_RUN_FALLBACK };
+    return {
+      kind: "failed",
+      message: generation.progress.message ?? translatePlain(lang, "story.runFailed"),
+    };
   }
   return { kind: "empty" };
 }
