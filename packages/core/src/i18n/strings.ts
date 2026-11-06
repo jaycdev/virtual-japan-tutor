@@ -260,6 +260,8 @@ export const strings = {
   "shell.signedInAs": { en: "Signed in as", ja: "ログイン中《ちゅう》" },
   "shell.logOut": { en: "Log out", ja: "ログアウト" },
   "common.retry": { en: "Retry", ja: "もう一度《いちど》" },
+  "common.previous": { en: "Previous", ja: "前《まえ》へ" },
+  "common.next": { en: "Next", ja: "次《つぎ》へ" },
 
   // — Stories page (issue #125) —
   "stories.writing": { en: "Writing…", ja: "書《か》いています…" },
@@ -567,11 +569,11 @@ export const strings = {
   },
   "practice.next": {
     en: "The next exercise is on its way…",
-    ja: "次《つぎ》の練習《れんしゅう》は準備《じゅんび》中です…",
+    ja: "次《つぎ》の練習《れんしゅう》は準備《じゅんび》中《ちゅう》です…",
   },
   "practice.intro": {
     en: "A session is about twenty exercises drawn from your Focus Set, recognition and grammar cloze. Every answer feeds your mastery record.",
-    ja: "1回の練習《れんしゅう》は焦点《しょうてん》セットから作《つく》る約《やく》20問《もん》。意味《いみ》を問《と》う問題《もんだい》と文法《ぶんぽう》の穴埋《うず》め問題《もんだい》です。答《こた》えはすべて習熟《しゅうじゅく》記録《きろく》に反《はん》映《えい》します。",
+    ja: "1回《かい》の練習《れんしゅう》は焦点《しょうてん》セットから作《つく》る約《やく》20問《もん》。意味《いみ》を問《と》う問題《もんだい》と文法《ぶんぽう》の穴埋《うず》め問題《もんだい》です。答《こた》えはすべて習熟《しゅうじゅく》記録《きろく》に反《はん》映《えい》します。",
   },
   "practice.start": { en: "Start a practice session", ja: "練習《れんしゅう》を始《はじ》める" },
   "practice.empty": {
@@ -608,6 +610,77 @@ export const strings = {
   "practice.again": { en: "Practice again", ja: "もう一度《いちど》練習《れんしゅう》" },
   "item.kana": { en: "Kana", ja: "仮名《かな》" },
   "item.phrase": { en: "Phrase", ja: "フレーズ" },
+
+  // The Grammar Catalogue (ui-plan 4.6, /grammar). JLPT levels (N5…N1) are data
+  // and never translated; the level codes and MaruMori stay as-is in Japanese.
+  "grammar.title": { en: "Grammar", ja: "文法《ぶんぽう》" },
+  "grammar.loadFailed": {
+    en: "Cannot load grammar points: {message}",
+    ja: "文法《ぶんぽう》ポイントを読《よ》み込《こ》せません: {message}",
+  },
+  "grammar.noSearchMatch": {
+    en: "Nothing matches “{query}” — try another word.",
+    ja: "“{query}”に合《あ》う文法《ぶんぽう》ポイントはありません。他《ほか》のことばを試《ため》してみてください。",
+  },
+  "grammar.clearSearch": { en: "Clear search", ja: "検索《けんさく》をクリア" },
+  "grammar.noLevelPoints": {
+    en: "No {level} Grammar Points in the catalogue.",
+    ja: "カタログに{level}の文法《ぶんぽう》ポイントはありません。",
+  },
+  "grammar.showAllLevels": { en: "Show all levels", ja: "すべてのレベルを表示《ひょうじ》" },
+  "grammar.emptyCatalogue": {
+    en: "No grammar points yet — a MaruMori sync fills this catalogue.",
+    ja: "まだ文法《ぶんぽう》ポイントがありません。MaruMoriの同期《どうき》でカタログが埋《う》まります。",
+  },
+  "grammar.pointCount": {
+    en: "{count} Grammar Point{plural}",
+    ja: "文法《ぶんぽう》ポイント{count}件《けん》{plural}。",
+  },
+  "grammar.searchLabel": { en: "Search grammar", ja: "文法《ぶんぽう》を検索《けんさく》" },
+  "grammar.searchPlaceholder": {
+    en: "Search pattern or meaning",
+    ja: "パターンまたは意味《いみ》を検索《けんさく》",
+  },
+  "grammar.clearSearchAria": { en: "Clear search term", ja: "検索《けんさく》ワードをクリア" },
+  "grammar.levelsAria": { en: "JLPT Levels", ja: "JLPTレベル" },
+  "grammar.allLevels": { en: "All levels", ja: "すべてのレベル" },
+  "grammar.statusSeeded": { en: "Seeded", ja: "シード済《ず》み" },
+  "grammar.statusObserved": { en: "Observed", ja: "観察《かんさつ》済《ず》み" },
+  "grammar.statusNotKnown": { en: "Not known", ja: "未知《みち》" },
+  "grammar.pagesAria": { en: "Grammar pages", ja: "文法《ぶんぽう》ページ" },
+  "grammar.pageRange": {
+    en: "{from}–{to} of {total}",
+    ja: "全《ぜん》{total}件《けん》の{from}〜{to}件目《けんめ》",
+  },
+  "grammar.exampleCount": { en: "{count} example{plural}", ja: "例《れい》文《ぶん》{count}件《けん》{plural}" },
+  "grammar.backAria": { en: "Back to grammar", ja: "文法《ぶんぽう》へ戻《もど》る" },
+  "grammar.notCataloguePoint": {
+    en: "This is not a grammar point from the catalogue.",
+    ja: "これはカタログの文法《ぶんぽう》ポイントではありません。",
+  },
+  "grammar.detailLoadFailed": {
+    en: "Cannot load this grammar point: {message}",
+    ja: "この文法《ぶんぽう》ポイントを読《よ》み込《こ》せません: {message}",
+  },
+  "grammar.generating": {
+    en: "Preparing this page — the tutor writes a Grammar Point’s explanation the first time it is opened.",
+    ja: "このページは準備《じゅんび》中《ちゅう》です — 教師《きょうし》は文法《ぶんぽう》ポイントの解説《せつめい》を、初《はじ》めて開《ひら》くときに書《か》きます。",
+  },
+  "grammar.explanation": { en: "Explanation", ja: "解説《せつめい》" },
+  "grammar.explainFailed": {
+    en: "The tutor could not generate this explanation. Check the AI Provider for grammar content in Settings, then reload this page.",
+    ja: "教師《きょうし》はこの解説《せつめい》を生成《せいせい》できませんでした。設定《せってい》で文法《ぶんぽう》コンテンツのAIプロバイダを確認《かくにん》し、このページを読《よ》み直《なお》してください。",
+  },
+  "grammar.reload": { en: "Reload", ja: "読《よ》み直《なお》す" },
+  "grammar.examples": { en: "Example sentences", ja: "例《れい》文《ぶん》" },
+  "grammar.noValidatedExamples": {
+    en: "No validated examples yet.",
+    ja: "検証《けんしょう》済《ず》みの例《れい》文《ぶん》はまだありません。",
+  },
+  "grammar.alsoWritten": {
+    en: "Also written {variants}",
+    ja: "他《ほか》には{variants}とも書《か》かれます",
+  },
 } as const satisfies Record<string, { en: string; ja: string }>;
 
 /** Every table entry key — the type-checked union `keyof typeof strings`. */

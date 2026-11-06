@@ -6,11 +6,12 @@
 // catalogue server-side. "/" focuses search from anywhere outside a field.
 // Opening a point and pressing Back returns here with the same view and scroll.
 import type { ApiClient, GrammarPointSummary } from "@vjt/api-client";
-import { useGrammar, type GrammarLevelFilter } from "@vjt/core";
+import { useGrammar, useT, type GrammarLevelFilter } from "@vjt/core";
 import { ChevronRight, Search, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { Link, useLocation, useSearchParams } from "react-router";
 
+import { T, pluralEn } from "@/components/Text";
 import { EmptyState, ErrorState } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,6 +19,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { InterfaceLanguage, StringKey, TranslateParams } from "@vjt/core";
 import {
   exampleCountLabel,
   groupByLevel,
@@ -49,6 +51,7 @@ function isEditable(target: EventTarget | null): boolean {
 const LEVEL_CHOICES: GrammarLevelFilter[] = ["all", ...LEVEL_ORDER];
 
 export function GrammarCatalogue({ client }: { client: ApiClient }) {
+  const { language, tp } = useT();
   const location = useLocation();
   const [params, setParams] = useSearchParams();
   const urlQuery = params.get("q") ?? "";
@@ -163,7 +166,9 @@ export function GrammarCatalogue({ client }: { client: ApiClient }) {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-4">
-        <h1 className="text-display font-semibold text-foreground">Grammar</h1>
+        <h1 className="text-display font-semibold text-foreground">
+          <T k="grammar.title" />
+        </h1>
         <SearchField inputRef={searchRef} term={term} onTermChange={setTerm} />
       </div>
 
@@ -178,28 +183,31 @@ export function GrammarCatalogue({ client }: { client: ApiClient }) {
               <LevelGroupSkeleton />
             </div>
           ) : state.status === "error" ? (
-            <ErrorState message={`Cannot load grammar points: ${state.message}`} onRetry={reload} />
+            <ErrorState
+              message={tp("grammar.loadFailed", { message: state.message })}
+              onRetry={reload}
+            />
           ) : state.page.items.length === 0 ? (
             searching ? (
               <EmptyState
-                message={`Nothing matches “${filter.query}” — try another word.`}
+                message={tp("grammar.noSearchMatch", { query: filter.query })}
                 action={
                   <Button variant="outline" onClick={() => setTerm("")}>
-                    Clear search
+                    <T k="grammar.clearSearch" />
                   </Button>
                 }
               />
             ) : levelChosen ? (
               <EmptyState
-                message={`No ${filter.level} Grammar Points in the catalogue.`}
+                message={tp("grammar.noLevelPoints", { level: filter.level })}
                 action={
                   <Button variant="outline" onClick={() => chooseLevel("all")}>
-                    Show all levels
+                    <T k="grammar.showAllLevels" />
                   </Button>
                 }
               />
             ) : (
-              <EmptyState message="No grammar points yet — a MaruMori sync fills this catalogue." />
+              <EmptyState message={tp("grammar.emptyCatalogue")} />
             )
           ) : (
             <>
@@ -217,7 +225,7 @@ export function GrammarCatalogue({ client }: { client: ApiClient }) {
               ) : (
                 // One page of results: a single count line says all a pager would.
                 <p className="text-caption text-muted-foreground">
-                  {`${state.page.total} Grammar Point${state.page.total === 1 ? "" : "s"}`}
+                  <T k="grammar.pointCount" params={{ count: state.page.total, plural: pluralEn(language, state.page.total) }} />
                 </p>
               )}
             </>
@@ -237,10 +245,11 @@ function SearchField({
   term: string;
   onTermChange: (term: string) => void;
 }) {
+  const { tp } = useT();
   return (
     <div className="relative">
       <Label htmlFor="grammar-search" className="sr-only">
-        Search grammar
+        <T k="grammar.searchLabel" />
       </Label>
       <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
       <Input
@@ -249,7 +258,7 @@ function SearchField({
         type="search"
         value={term}
         onChange={(event) => onTermChange(event.target.value)}
-        placeholder="Search pattern or meaning"
+        placeholder={tp("grammar.searchPlaceholder")}
         autoComplete="off"
         spellCheck={false}
         className="pl-10 pr-12 [&::-webkit-search-cancel-button]:appearance-none"
@@ -265,7 +274,7 @@ function SearchField({
         <Button
           variant="ghost"
           size="icon"
-          aria-label="Clear search term"
+          aria-label={tp("grammar.clearSearchAria")}
           className="absolute right-1 top-1/2 -translate-y-1/2"
           onClick={() => onTermChange("")}
         >
@@ -288,8 +297,9 @@ function LevelIndex({
   current: GrammarLevelFilter;
   onChoose: (level: GrammarLevelFilter) => void;
 }) {
+  const { tp } = useT();
   return (
-    <nav aria-label="JLPT Levels" className="lg:sticky lg:top-6 lg:self-start">
+    <nav aria-label={tp("grammar.levelsAria")} className="lg:sticky lg:top-6 lg:self-start">
       <ul className="flex flex-wrap gap-1 lg:flex-col">
         {LEVEL_CHOICES.map((level) => {
           const active = level === current;
@@ -303,7 +313,7 @@ function LevelIndex({
                   active ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                 }`}
               >
-                {level === "all" ? "All levels" : level}
+                {level === "all" ? <T k="grammar.allLevels" /> : level}
               </button>
             </li>
           );
@@ -326,6 +336,7 @@ function LevelGroup({
   points: GrammarPointSummary[];
   onOpen: () => void;
 }) {
+  const { language, tp } = useT();
   return (
     <section id={levelId(level)} aria-labelledby={`${levelId(level)}-heading`} className="scroll-mt-6">
       <Card>
@@ -340,7 +351,7 @@ function LevelGroup({
           <ul className="flex flex-col divide-y divide-border">
             {points.map((point) => (
               <li key={point.id}>
-                <PointRow point={point} onOpen={onOpen} />
+                <PointRow point={point} onOpen={onOpen} language={language} tp={tp} />
               </li>
             ))}
           </ul>
@@ -350,12 +361,22 @@ function LevelGroup({
   );
 }
 
-function PointRow({ point, onOpen }: { point: GrammarPointSummary; onOpen: () => void }) {
+function PointRow({
+  point,
+  onOpen,
+  language,
+  tp,
+}: {
+  point: GrammarPointSummary;
+  onOpen: () => void;
+  language: InterfaceLanguage;
+  tp: (k: StringKey, params?: TranslateParams) => string;
+}) {
   // The label replaces the row's text for a screen reader, so it carries the
   // status (when there is one) and the example count too.
   const status = statusOf(point);
-  const statusText = status === undefined ? undefined : statusLabel(status);
-  const count = exampleCountLabel(point.exampleCount);
+  const statusText = status === undefined ? undefined : statusLabel(status, tp);
+  const count = exampleCountLabel(point.exampleCount, language);
   return (
     <Link
       to={`/grammar/${point.id}`}
@@ -369,7 +390,7 @@ function PointRow({ point, onOpen }: { point: GrammarPointSummary; onOpen: () =>
         <span className="text-small text-muted-foreground">{point.meaning}</span>
       </span>
       <span className="flex shrink-0 flex-col items-end gap-1">
-        {status === undefined ? null : <StatusMark status={status} />}
+        {status === undefined ? null : <StatusMark status={status} tp={tp} />}
         <span className="text-caption text-muted-foreground">{count}</span>
       </span>
       <ChevronRight aria-hidden="true" className="size-5 shrink-0 text-muted-foreground" />
@@ -377,16 +398,26 @@ function PointRow({ point, onOpen }: { point: GrammarPointSummary; onOpen: () =>
   );
 }
 
-function statusLabel(status: "seeded" | "observed" | "notKnown"): string {
-  if (status === "seeded") return "Seeded";
-  if (status === "observed") return "Observed";
-  return "Not known";
+function statusLabel(
+  status: "seeded" | "observed" | "notKnown",
+  tp: (k: StringKey, params?: TranslateParams) => string,
+): string {
+  if (status === "seeded") return tp("grammar.statusSeeded");
+  if (status === "observed") return tp("grammar.statusObserved");
+  return tp("grammar.statusNotKnown");
 }
 
 /** Seeded and Observed as a quiet pill; "Not known" as a caption, since there is no fact to badge. */
-function StatusMark({ status }: { status: "seeded" | "observed" | "notKnown" }) {
-  if (status === "notKnown") return <span className="text-caption text-muted-foreground">Not known</span>;
-  return <Badge variant="secondary">{statusLabel(status)}</Badge>;
+function StatusMark({
+  status,
+  tp,
+}: {
+  status: "seeded" | "observed" | "notKnown";
+  tp: (k: StringKey, params?: TranslateParams) => string;
+}) {
+  if (status === "notKnown")
+    return <span className="text-caption text-muted-foreground">{tp("grammar.statusNotKnown")}</span>;
+  return <Badge variant="secondary">{statusLabel(status, tp)}</Badge>;
 }
 
 function LevelGroupSkeleton() {
@@ -422,16 +453,17 @@ function Pager({
   total: number;
   onOffset: (offset: number) => void;
 }) {
+  const { tp } = useT();
   const from = shown === 0 ? 0 : offset + 1;
   const to = offset + shown;
   return (
-    <nav aria-label="Grammar pages" className="flex items-center justify-between gap-3">
+    <nav aria-label={tp("grammar.pagesAria")} className="flex items-center justify-between gap-3">
       <Button variant="outline" disabled={offset === 0} onClick={() => onOffset(Math.max(0, offset - limit))}>
-        Previous
+        <T k="common.previous" />
       </Button>
-      <p className="text-caption text-muted-foreground">{`${from}–${to} of ${total}`}</p>
+      <p className="text-caption text-muted-foreground">{tp("grammar.pageRange", { from, to, total })}</p>
       <Button variant="outline" disabled={to >= total} onClick={() => onOffset(offset + limit)}>
-        Next
+        <T k="common.next" />
       </Button>
     </nav>
   );
