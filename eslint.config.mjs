@@ -77,19 +77,60 @@ const noInlineFontSize = {
   },
 };
 
-// #125 interface-language rule: raw string literals in JSX children can never follow
-// the Learner's Interface Language setting, so apps/web renders interface text from
-// the @vjt/core table via <T k="…"/> / <TableText> instead. The rule flags JSXText
-// and bare string-expression children; punctuation-only text and learning content
-// (meanings, example sentences, exercise options) pass. Learning content arrives as
-// props, never as JSX text, so it needs no exemptions; the few deliberate exceptions
-// (the 読 logotype, the 吾輩は猫である sample line) carry targeted eslint-disable
-// comments with a reason. apps/mobile keeps its own conventions and is not covered.
-// Punctuation and symbols (（ ） – — ' ' … · ×), not letters or digits: anything
-// written in a language is copy, and copy belongs in the table.
-const LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
-function isPunctuationOnly(value) {
-  return !LETTER_OR_DIGIT.test(value);
+// #125 interface-language rule: raw string literals in JSX can never follow the
+// Learner's Interface Language setting, so apps/web renders interface copy from
+// the @vjt/core table via <T k="…"/> / <TableText>. The rule flags copy in JSXText
+// children, in bare string-expression children, and in string-valued attributes
+// that carry visible or announced text (aria-label, placeholder, title, label,
+// hint, error, message, legend, alt, description — the props our own components
+// read as copy), and it recurses through ConditionalExpression, LogicalExpression
+// and TemplateLiteral children so a ternary cannot hide copy inside an otherwise
+// table-backed element. Exempt: text with no letters — punctuation separators and
+// digit-only counts (<span>3</span>) are not copy — and learning content, which
+// arrives as props or interpolated values (meanings, example sentences, exercise
+// options), never as JSX text. tp()/translatePlain() calls pass: they are the
+// escape hatch for the handful of slots that only accept a string (aria-label,
+// placeholder, document.title). The few deliberate exceptions (the 読 logotype,
+// the 吾輩は猫である sample line) carry targeted eslint-disable comments with a
+// reason. apps/mobile keeps its own conventions and is not covered.
+const LETTER = /\p{L}/u;
+function isCopy(value) {
+  return LETTER.test(value);
+}
+
+const TEXT_ATTRIBUTES = new Set([
+  "aria-label",
+  "placeholder",
+  "title",
+  "label",
+  "hint",
+  "error",
+  "message",
+  "legend",
+  "alt",
+  "description",
+]);
+
+// Walk one expression for raw copy. Only leaf kinds are checked; calls (tp(…),
+// a Learner-typed value, a data prop) are not walked — their text is not in the
+// JSX. A template is copy when any literal chunk is: `Page ${n}` yes, `${a} · ${b}` no.
+function walkCopy(node, report) {
+  switch (node.type) {
+    case "Literal":
+      if (typeof node.value === "string" && isCopy(node.value.trim())) report(node);
+      break;
+    case "TemplateLiteral":
+      if (node.quasis.some((q) => isCopy(q.value.cooked ?? q.value.raw))) report(node);
+      break;
+    case "ConditionalExpression":
+      walkCopy(node.consequent, report);
+      walkCopy(node.alternate, report);
+      break;
+    case "LogicalExpression":
+      walkCopy(node.left, report);
+      walkCopy(node.right, report);
+      break;
+  }
 }
 
 // Walk the node's raw text up to its first non-whitespace character.
@@ -118,6 +159,7 @@ const noRawJsxText = {
     },
   },
   create(context) {
+    const flag = (node) => context.report({ node, messageId: "noRawText" });
     return {
       JSXText(node) {
         const value = node.value.trim();
@@ -125,13 +167,30 @@ const noRawJsxText = {
         // report at the first visible character instead, so an eslint-disable-next-line
         // above the copy covers it (and editors point at the copy, not the tag).
         const at = firstVisibleLoc(node);
-        if (value && !isPunctuationOnly(value)) context.report({ node, loc: at, messageId: "noRawText" });
+        if (value && isCopy(value)) context.report({ node, loc: at, messageId: "noRawText" });
       },
       JSXExpressionContainer(node) {
-        // Bare string literals in children are the sneaky twin of <span>Text</span>.
-        if (node.expression.type !== "Literal" || typeof node.expression.value !== "string") return;
-        const value = node.expression.value.trim();
-        if (value && !isPunctuationOnly(value)) context.report({ node: node.expression, messageId: "noRawText" });
+        // Children are always under inspection; an attribute's container only when
+        // the attribute carries text (review S4). Every other attribute expression
+        // — className, onClick, data — is not copy.
+        const parent = node.parent;
+        if (parent && parent.type === "JSXAttribute") {
+          const name = parent.name.type === "JSXIdentifier" ? parent.name.name : "";
+          if (!TEXT_ATTRIBUTES.has(name)) return;
+        } else if (!parent || (parent.type !== "JSXElement" && parent.type !== "JSXFragment")) {
+          return;
+        }
+        // Bare string literals in children are the sneaky twin of <span>Text</span>;
+        // the walk covers ternaries, && chains and templates too.
+        walkCopy(node.expression, flag);
+      },
+      JSXAttribute(node) {
+        // aria-label="Close": the plain literal form, which is not an expression container.
+        if (!node.value || node.value.type !== "Literal") return;
+        const name = node.name.type === "JSXIdentifier" ? node.name.name : "";
+        if (!TEXT_ATTRIBUTES.has(name)) return;
+        const value = String(node.value.value ?? "").trim();
+        if (value && isCopy(value)) context.report({ node: node.value, messageId: "noRawText" });
       },
     };
   },
