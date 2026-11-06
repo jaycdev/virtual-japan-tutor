@@ -2,13 +2,23 @@
 // API key, Sync now, and see the recent Syncs. The key is write-only: a saved key
 // shows as "set" with Replace, and is never put back into a field.
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { formatInstantRuby, syncOutcomeText, syncRunText, useMarumori, useT, type StepSaveOutcome, type StepSaveRegistrar } from "@vjt/core";
+import { formatInstantRuby, syncOutcomeText, syncRunText, useMarumori, useT, type InterfaceLanguage, type RubyText, type StepSaveOutcome, type StepSaveRegistrar } from "@vjt/core";
 
 import { Button } from "@/components/ui/button";
 import { T } from "@/components/Text";
 import { ErrorState, SkeletonLines } from "../../components/states.tsx";
 import { useSession } from "../../session/session.tsx";
 import { Fact, Note, SaveStatus, SectionBody, Subheading, TextField, type SaveState } from "../parts.tsx";
+
+// The Last Sync instant as param segments (round-5 review): English keeps the
+// device-locale toLocaleString the line always showed — formatInstantRuby
+// would rewrite it to "November 1, 08:00". The Japanese forms go through the
+// ruby date formatter, which is the point of the change (A3).
+function lastSyncWhen(iso: string, language: InterfaceLanguage): RubyText {
+  return language === "en"
+    ? [{ text: new Date(iso).toLocaleString() }]
+    : formatInstantRuby(iso, undefined, language);
+}
 
 export function MaruMoriSection({ registerSave }: { registerSave?: StepSaveRegistrar }) {
   const { client } = useSession();
@@ -108,7 +118,7 @@ export function MaruMoriSection({ registerSave }: { registerSave?: StepSaveRegis
         ) : null}
         {connected && status.counts?.lastSyncAt ? (
           <Note>
-            <T k="marumori.lastSync" params={{ when: formatInstantRuby(status.counts.lastSyncAt, undefined, language) }} />
+            <T k="marumori.lastSync" params={{ when: lastSyncWhen(status.counts.lastSyncAt, language) }} />
           </Note>
         ) : null}
         {connected && status.lastFailure ? (
