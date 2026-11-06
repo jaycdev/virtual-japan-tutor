@@ -174,7 +174,7 @@ const noRawJsxText = {
       },
       JSXExpressionContainer(node) {
         // Children are always under inspection; an attribute's container only when
-        // the attribute carries text (review S4). Every other attribute expression
+        // the attribute carries text. Every other attribute expression
         // — className, onClick, data — is not copy.
         const parent = node.parent;
         if (parent && parent.type === "JSXAttribute") {

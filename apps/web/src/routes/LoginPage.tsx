@@ -100,7 +100,7 @@ export function Component() {
 
         {/* Pre-login the page cannot ask the server anything, but the interface
             language is device-saved, so it can already be switched here (issue #125).
-            Compact: one row, no legend taking a row of its own (review V7). */}
+            Compact: one row, no legend taking a row of its own. */}
         <InterfaceLanguageChoice compact />
       </div>
     </div>

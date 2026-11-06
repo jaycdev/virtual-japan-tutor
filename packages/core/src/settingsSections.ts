@@ -86,7 +86,7 @@ export function sectionTitle(id: SettingsSection, lang: InterfaceLanguage = DEFA
   return translatePlain(lang, SECTION_TITLES[id]);
 }
 
-/** The table key behind a section's title, so a screen can render <T> and keep furigana (issue #125 review B3). */
+/** The table key behind a section's title, so a screen can render <T> and keep furigana (issue #125). */
 export function sectionTitleKey(id: SettingsSection): StringKey {
   return SECTION_TITLES[id];
 }

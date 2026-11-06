@@ -26,7 +26,7 @@ import { apiFailure, renderFailure, UNREACHABLE_FAILURE, type Failure } from "./
  *
  * The failure is held untranslated and rendered in the current Interface
  * Language at return time, so switching languages re-labels it without
- * touching the session (issue #125 B1). Exercise instructions are likewise
+ * touching the session (issue #125). Exercise instructions are likewise
  * rendered, not stored: switching languages re-labels the open session.
  */
 
@@ -204,7 +204,7 @@ export function usePractice(client: ApiClient): PracticeView {
         // English keeps the server's own sentence; Japanese shows the
         // translated instruction for the exercise's kind (issue #125).
         // Rendered here, not stored, so a language switch re-labels the
-        // open session without touching the server (B1).
+        // open session without touching the server.
         instruction: exerciseInstruction(language, ex.kind, ex.instruction ?? ""),
         prompt: ex.prompt,
         options: ex.options ?? [],

@@ -28,7 +28,7 @@ const PLACEHOLDER = /\{([A-Za-z0-9_]+)\}/g;
  * `ja` parses the notation and drops it, and `ja-furigana` keeps it for a UI
  * that can render ruby. Plain parameter values are inserted as text and never
  * parsed for furigana — a name typed by the Learner is shown as typed. A
- * RubyText parameter (round-4 review A3: dates and other interface text with
+ * RubyText parameter (dates and other interface text with
  * their own readings) splices its segments in: readings kept in ja-furigana,
  * joined to their base text in en and ja.
  */

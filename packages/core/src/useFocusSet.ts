@@ -10,7 +10,7 @@ import { apiFailure, renderFailure, UNREACHABLE_FAILURE, type Failure } from "./
  * `error` where the screen can show it with a Retry (plan §5).
  *
  * The failure is stored untranslated and rendered in the current Interface
- * Language, so switching languages re-labels it without another fetch (B1).
+ * Language, so switching languages re-labels it without another fetch.
  */
 
 export type FocusSetView = {

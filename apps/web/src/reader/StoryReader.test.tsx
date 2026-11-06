@@ -267,7 +267,7 @@ describe("Story reader: text", () => {
     expect(toggle.getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("keeps the English meta line exactly as it was before the string table (review S1)", async () => {
+  it("keeps the English meta line exactly as it was before the string table", async () => {
     // The pre-#125 line: the raw Genre id, the two Origin words, and a
     // toDateString() date — not the table's capitalised Genre or Intl date.
     const expected = `diary · Automatic · ${new Date("2026-11-01T09:00:00Z").toDateString()}`;

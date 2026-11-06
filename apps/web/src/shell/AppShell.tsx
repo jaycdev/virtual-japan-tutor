@@ -69,7 +69,7 @@ export function AppShell() {
   return (
     <div className="flex min-h-dvh bg-background text-foreground">
       {/* A <T> in furigana draws its ruby aria-hidden and carries a plain
-          sr-only copy, so the link's name is the words alone (round-4 A1). */}
+          sr-only copy, so the link's name is the words alone. */}
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[60] focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-body focus:text-primary-foreground focus:outline-none focus:ring-2 focus:ring-ring"
@@ -96,7 +96,7 @@ export function AppShell() {
             <SheetContent side="left" className="gap-0 p-0">
               {/* Plain tp(), not <T>: this header is sr-only, never drawn, and a
                   <ruby> inside it would have a screen reader say the reading too
-                  (#125 round-3 review S1). */}
+                  (issue #125). */}
               <SheetHeader className="sr-only">
                 <SheetTitle>{tp("shell.navTitle")}</SheetTitle>
                 <SheetDescription>{tp("shell.navDescription")}</SheetDescription>

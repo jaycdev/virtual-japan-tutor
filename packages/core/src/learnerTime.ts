@@ -95,7 +95,7 @@ export function greetingFor(hourText: string, lang: InterfaceLanguage = DEFAULT_
 /**
  * The same greeting as base/reading segments, for screens that draw furigana
  * with <TableText> — translatePlain drops the readings, which left the Today
- * greeting as bare kanji in ja-furigana (#125 round-2 review S5 follow-up).
+ * greeting as bare kanji in ja-furigana (issue #125).
  */
 export function greetingRubyFor(hourText: string, lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE): RubyText {
   return translate(lang, greetingKey(hourText));
@@ -114,7 +114,7 @@ export function learnerGreetingRuby(
 }
 
 /**
- * The Learner's clock as base/reading segments (#125 round-3 review S3): in
+ * The Learner's clock as base/reading segments (issue #125): in
  * ja-furigana the date's kanji — 年月日 and the weekday — carry readings; in
  * en and plain ja the segments are the one string learnerClock speaks, so
  * nothing about today's output changes.
@@ -201,7 +201,7 @@ export function formatInstant(
 }
 
 /**
- * The same instant as base/reading segments (round-4 review A3): en and ja are
+ * The same instant as base/reading segments: en and ja are
  * the one string formatInstant speaks; ja-furigana puts readings over the
  * kanji ja-JP writes — 月《がつ》 and a day like 4日《よっか》.
  */
@@ -272,7 +272,7 @@ export function stillUnreadFrom(
 }
 
 /**
- * The same hint as base/reading segments (round-4 review A3): the weekday in
+ * The same hint as base/reading segments: the weekday in
  * en and ja is the one string stillUnreadFrom speaks; ja-furigana reads it
  * (月曜日《げつようび》), so the {date} param carries no bare kanji.
  */

@@ -152,7 +152,7 @@ export function SwitchField({
  * Where a save stands. The status line is announced to screen readers.
  * `message` is a ReactNode so callers can pass a <T> element: storing the
  * element, not the resolved string, keeps the line in the Learner's language
- * if they switch while it is on screen (issue #125 review B3).
+ * if they switch while it is on screen (issue #125).
  */
 export type SaveState = { kind: "idle" } | { kind: "saving" } | { kind: "saved"; message?: ReactNode } | { kind: "error"; message: ReactNode };
 

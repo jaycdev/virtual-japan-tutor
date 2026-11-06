@@ -133,7 +133,7 @@ export function SaveBody({
   busy: boolean;
   // A ReactNode: StoryReader keeps the whole sentence (a <T> element or the
   // server's own words), so the furigana is not lost in a {message} param
-  // (issue #125 round-2 review S2).
+  // (issue #125).
   error: ReactNode;
   onSaveToList: (listId: string) => void;
   onCreateAndSave: (name: string) => void;

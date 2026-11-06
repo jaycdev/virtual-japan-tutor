@@ -29,7 +29,7 @@ export function SyncCard({
   const { language } = useT();
   const [syncing, setSyncing] = useState(false);
   // The note is a <T> element, not a resolved string: it stays in the Learner's
-  // language if they switch while it is on screen (issue #125 review B3).
+  // language if they switch while it is on screen (issue #125).
   const [syncNote, setSyncNote] = useState<ReactNode>(null);
 
   const connected = marumori.state.status === "ready" && marumori.state.marumori.connected;

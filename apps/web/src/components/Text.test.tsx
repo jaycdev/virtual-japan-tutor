@@ -45,7 +45,7 @@ describe("T", () => {
     expect(container.textContent).toBe("Items (3)");
   });
 
-  it("gives furigana mode one plain accessible copy (review A1)", () => {
+  it("gives furigana mode one plain accessible copy", () => {
     const { container } = renderT("ja-furigana", "settings.focusAria");
     // The drawn ruby half is hidden from assistive tech whole…
     const visual = container.querySelector("span[aria-hidden='true']");

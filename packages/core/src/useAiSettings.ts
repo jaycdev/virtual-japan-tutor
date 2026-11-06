@@ -44,7 +44,7 @@ export interface AiSettings {
 /**
  * Runs a request; maps a thrown network error and an API error body to an
  * ActionResult. One-shot: rendered in `lang` at call time for the toast, and
- * these callbacks are never effect dependencies (B1).
+ * these callbacks are never effect dependencies.
  */
 async function act(
   run: () => Promise<{ error?: { code?: string; message?: string } | undefined; response: Response }>,

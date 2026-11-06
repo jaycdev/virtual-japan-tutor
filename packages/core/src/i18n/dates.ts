@@ -1,4 +1,4 @@
-// Dates in the Interface Language (issue #125 round-3 review S3): the kanji
+// Dates in the Interface Language (issue #125): the kanji
 // Intl.DateTimeFormat writes into a Japanese date — 年月日, the weekdays, 時分
 // — are interface chrome, so ja-furigana puts a reading over each of them.
 // Those readings are date grammar, not sentence copy (the day 日 changes

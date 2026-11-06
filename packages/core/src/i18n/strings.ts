@@ -251,7 +251,7 @@ export const strings = {
   "settings.backShort": { en: "← Settings", ja: "← 設定《せってい》" },
   "settings.sectionsAria": { en: "Settings sections", ja: "設定《せってい》セクション" },
   "settings.focusTitle": { en: "Today’s Focus Set", ja: "本日《ほんじつ》の重点項目《じゅうてんこうもく》" },
-  // Whole-sentence keys (issue #125 round-2 review S2): the load-failure line
+  // Whole-sentence keys (issue #125): the load-failure line
   // is one table entry, so its furigana survives — a {what} param fed from
   // tp() would be inserted as plain text.
   "settings.readingLoadFailed": {

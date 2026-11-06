@@ -2,7 +2,7 @@
 // The option labels come from @vjt/core untranslated — each language names itself,
 // so the buttons read "English / 日本語 / 日本語（ふりがな）" whatever the page says.
 // Appearance uses the ChoiceGroup pattern (aria-pressed toggle buttons) with its
-// legend and hint; the login card (review V7) uses a compact one-row segmented
+// legend and hint; the login card uses a compact one-row segmented
 // control: same buttons, same aria-pressed state, small and unwrapping.
 import { useInterfaceLanguage, useT } from "@vjt/core";
 
@@ -20,7 +20,7 @@ export function InterfaceLanguageChoice({
   const { tp } = useT();
   // A Japanese option's label is Japanese text shown in every language: marked
   // lang="ja", like the other language names, so it is pronounced right and is
-  // not chrome the furigana renderer is expected to annotate (#125 round-2 S5).
+  // not chrome the furigana renderer is expected to annotate (issue #125).
   const labelFor = (option: (typeof options)[number]) =>
     option.value === "en" ? option.label : <span lang="ja">{option.label}</span>;
   if (compact) {

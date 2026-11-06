@@ -130,78 +130,22 @@
   }
 }
 
-/* Ruby in interface chrome (issue #125 reviews V1, V1b and V3) — only the
-   <ruby> the <T> renderer and the Grammar Ruby helper draw, which carry the
-   ui-ruby class. The Story reader's own ruby lives in reader.css under
-   .story-text and must keep the exact layout it had before #125, so none of
-   these rules is global (V1b).
-
-   These rules sit OUTSIDE @layer base on purpose: Tailwind resolves
-   @layer base below its utilities layer, and the <rt> carries the shared
-   text-furigana-* utilities (a fixed 10.5px size and the muted --furigana
-   colour, both also used by the Story reader, so the tokens themselves
-   cannot change). Unlayered rules win over every layer, which is what lets
-   the interface re-style its own readings (round-6 review) without
-   touching the reader.
-
-   V1: Chromium still justifies the base run under a longer reading even
-   with ruby-align: center computed (measured in 152: each 配色 box widened
-   to 26.3px under はいしょく). The Ruby component wraps the base in an
-   inline-block span — an atomic inline cannot be justified internally, so
-   the whole base sits centred at its natural advance — and
-   ruby-overhang: auto lets a wider reading borrow space from the edges and
-   the neighbouring kana (Chrome 152).
-
-   V3: the reading draws above the base inside the line box, and a ~10.5px
-   <rt> needs ~1.9em of room above the text; the UI steps' line heights
-   (body 24px on 16px type) give only about 4px of half-leading, so the
-   reading collided with button and pill edges. A ruby element therefore
-   carries its own tall inline box. Story paragraphs already sit at 2.0 to
-   2.2, so they are untouched, and nothing in the app clips with a fixed
-   height (controls use min-h-*), so a taller line simply grows the
-   control. rt never wraps: a reading stays one line.
-
-   Round-6 review (screenshots, 日本語（ふりがな）):
-   (1) the old fixed 10.5px reading over a 16px base is ~0.66em, so any
-       2-kanji word with a 3+ kana reading was wider than its base and the
-       layout pushed whole words apart — phantom spaces like "物語 はまだ
-       ありません". The standard half-size reading replaces it: 0.5em of
-       the base's font-size, so it scales in headings and small text too,
-       and two kana per kanji fit with nothing to borrow. Only longer
-       readings (物語《ものがたり》, 5 kana over 2 em of base) still
-       overhang, which ruby-overhang: auto absorbs into the neighbouring
-       kana. No negative margin: CSS cannot apply one "only when the
-       reading is wider", and an unconditional one would collide the bases.
-   (2) on filled buttons the muted --furigana grey vanished against the
-       dark background. The reading now takes the surrounding text colour
-       and softens with opacity instead — never a fixed colour. The 1.9em
-       inline box still holds the (now shorter) reading clear of the line
-       above in headings, nav items, buttons and pills. */
+/* Furigana in interface chrome: only the <ruby> drawn by Ruby.tsx (class
+   ui-ruby), never the Story reader's own. Unlayered on purpose, so these beat
+   the shared text-furigana-* utilities on the <rt>. */
 ruby.ui-ruby {
   ruby-align: center;
-  line-height: 1.9;
-  ruby-overhang: auto;
-  /* A2 (round-4): underline does not propagate past a box that computes
-     text-decoration: none, and a <ruby> sits between the link and its base
-     span. Inheriting here completes the chain a -> ruby -> span, so links
-     keep their underline through kanji. */
-  text-decoration: inherit;
+  ruby-overhang: auto; /* a long reading borrows space from neighbouring kana */
+  line-height: 1.9; /* room for the reading above the base */
+  text-decoration: inherit; /* keeps a link's underline through the base span */
 }
 ruby.ui-ruby rt {
-  white-space: nowrap;
-  /* Selecting UI text copies the words, not the readings printed above them
-     (round-3 review nit); -webkit- prefix for older Chromium/Safari. */
-  user-select: none;
-  -webkit-user-select: none;
-  /* (1): half-size reading, measured against the base — 0.5em of whatever
-     the surrounding text is. line-height: 1 keeps the annotation box to
-     exactly the reading's em height so the 1.9 inline box above has room. */
-  font-size: 0.5em;
+  font-size: max(0.5em, 9px); /* half the base, never below the smallest furigana token */
   line-height: 1;
   letter-spacing: 0;
-  /* (2): currentColor at three-quarter strength, so the reading reads on
-     any surface — foreground text, and the light text of a primary or
-     selected button alike. */
-  color: inherit;
+  white-space: nowrap;
+  color: inherit; /* readable on any surface, e.g. filled buttons */
   opacity: 0.75;
+  user-select: none; /* copying takes the words, not the readings */
+  -webkit-user-select: none;
 }

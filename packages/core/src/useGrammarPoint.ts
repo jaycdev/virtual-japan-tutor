@@ -15,7 +15,7 @@ export interface GrammarPointRead {
   reload(): void;
 }
 
-/** A finished read, tagged with the id it answers. The failure is held untranslated (B1). */
+/** A finished read, tagged with the id it answers. The failure is held untranslated. */
 type HeldSettledState =
   | { status: "ready"; point: GrammarPointDetail }
   | { status: "error"; failure: Failure };
@@ -44,7 +44,7 @@ type Settled = { id: number; state: HeldSettledState };
  *
  * The failure is stored untranslated and rendered in the current Interface
  * Language while deriving the visible state, so switching languages never
- * re-runs the read (issue #125 B1).
+ * re-runs the read (issue #125).
  */
 export function useGrammarPoint(client: ApiClient, id: number | undefined): GrammarPointRead {
   const { language } = useInterfaceLanguage();

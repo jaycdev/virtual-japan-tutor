@@ -104,9 +104,8 @@ function Greeting({
     <header className="flex flex-col gap-1">
       {/* Greeting and date both go through the table as segments, so in
           ja-furigana the date's kanji — 年月日 and the weekday — carries its
-          reading like every other piece of chrome (#125 round-2 review
-          coverage, round-3 review S3). learnerClock's plain strings would
-          drop it. */}
+          reading like every other piece of chrome (issue #125).
+          learnerClock's plain strings would drop it. */}
       <h1 className="text-display font-semibold text-foreground">
         <TableText segments={clock.greeting} />
       </h1>

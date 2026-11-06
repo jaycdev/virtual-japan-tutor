@@ -8,7 +8,7 @@ import { TEST_PASSWORD, TEST_USER, currentLocation, renderAppAt } from "../test/
 
 afterEach(() => {
   // The store outlives one render; a switched login page must not leave the
-  // next test in Japanese (#125 review S5).
+  // next test in Japanese (issue #125).
   interfaceLanguageStore.setLanguage("en");
 });
 
@@ -64,7 +64,7 @@ describe("Login", () => {
     const user = userEvent.setup();
     renderAppAt("/login", { signedIn: false });
 
-    // V7: one compact row, the legend now the group's accessible name.
+    // One compact row, the legend now the group's accessible name.
     expect(await screen.findByRole("group", { name: "Interface language" })).toBeTruthy();
 
     await user.click(await screen.findByRole("button", { name: "日本語" }));
@@ -81,7 +81,7 @@ describe("Login", () => {
     await waitFor(() => expect(document.documentElement.lang).toBe("en"));
   });
 
-  it("the login card in ja-furigana keeps its chrome inside ruby (review S5)", async () => {
+  it("the login card in ja-furigana keeps its chrome inside ruby", async () => {
     const user = userEvent.setup();
     const { container } = renderAppAt("/login", { signedIn: false });
 

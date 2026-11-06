@@ -73,7 +73,7 @@ describe("the string table", () => {
   it("puts every reading over a kanji base", () => {
     // A reading sits on the kanji run before it, so the character right
     // before 《 must be a kanji — unless an explicit ｜ base marker opened
-    // the base earlier in the same run (issue #125 review S15).
+    // the base earlier in the same run (issue #125).
     for (const key of KEYS) {
       const ja = strings[key].ja;
       const chars = Array.from(ja);
@@ -92,7 +92,7 @@ describe("the string table", () => {
 
   it("keeps readings flat: no 《 inside a reading", () => {
     // A 《reading》 closed by a later 》 would otherwise swallow a nested
-    // bracket pair (issue #125 review S15).
+    // bracket pair (issue #125).
     for (const key of KEYS) {
       const ja = strings[key].ja;
       for (const m of ja.matchAll(/《([^》]*)》/g)) {
@@ -169,7 +169,7 @@ describe("translate", () => {
   });
 
   it("splices a RubyText parameter in, readings kept only in furigana", () => {
-    // Round-4 review A3: the {date} of the still-unread line is the
+    // The {date} of the still-unread line is the
     // stillUnreadFromRuby segments, not bare text.
     expect(translatePlain("en", "today.storyStillUnread", { date: [{ text: "Monday" }] })).toBe(
       "Still unread from Monday.",

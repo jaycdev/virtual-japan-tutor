@@ -111,7 +111,7 @@ describe("useAuth: restoring a session", () => {
     await waitFor(() => expect(result.current.state).toEqual({ status: "signedIn", user: alice }));
   });
 
-  it("re-labels a failed session check in the new language without checking again (B1)", async () => {
+  it("re-labels a failed session check in the new language without checking again", async () => {
     const storage = memoryTokenStorage("tok-1");
     const { client, calls } = fakeServer({
       "GET /me": () => json(500, { code: "internal", message: "Internal server error" }),

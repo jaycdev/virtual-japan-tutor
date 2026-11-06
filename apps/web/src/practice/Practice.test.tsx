@@ -667,7 +667,7 @@ describe("Practice (web)", () => {
     expect(screen.getByRole("button", { name: "tree" })).toBeTruthy();
   });
 
-  it("in ja-furigana the screen keeps its chrome inside ruby (review S5)", async () => {
+  it("in ja-furigana the screen keeps its chrome inside ruby", async () => {
     const { container } = render(
       <MemoryRouter>
         <InterfaceLanguageProvider language="ja-furigana" setLanguage={() => undefined}>
@@ -676,11 +676,11 @@ describe("Practice (web)", () => {
       </MemoryRouter>,
     );
 
-    // A1 (round-4): the furigana half is aria-hidden and one sr-only span
+    // The furigana half is aria-hidden and one sr-only span
     // carries the sentence plain, so the name is the words, readings aside.
     fireEvent.click(screen.getByRole("button", { name: "練習を始める" }));
     // The full plain sentence now exists exactly once: the drawn line is split
-    // by the ruby pairs, so this query lands on the sr-only copy (A1).
+    // by the ruby pairs, so this query lands on the sr-only copy.
     await screen.findByText("意味はどれですか？");
     expect(container.querySelectorAll("ruby").length).toBeGreaterThan(0);
 

@@ -86,7 +86,7 @@ describe("Today page", () => {
     renderToday(api);
     const bar = await screen.findByRole("progressbar");
     expect(bar.getAttribute("aria-valuenow")).toBe("60");
-    // The visible line is <T> plus the percent as siblings (#125 review B3),
+    // The visible line is <T> plus the percent as siblings (issue #125),
     // so it is matched by textContent, not as one text node.
     expect(bar.parentElement?.querySelector("p[aria-live]")?.textContent).toBe(
       "Writing… attempt 2 of 3 60%",
@@ -233,7 +233,7 @@ describe("Today page", () => {
     await waitFor(() => expect(currentLocation(router)).toBe("/practice"));
   });
 
-  it("in ja-furigana every kanji of the page sits inside a <ruby> (review S5)", async () => {
+  it("in ja-furigana every kanji of the page sits inside a <ruby>", async () => {
     interfaceLanguageStore.setLanguage("ja-furigana");
     try {
       const api = fakeApi();

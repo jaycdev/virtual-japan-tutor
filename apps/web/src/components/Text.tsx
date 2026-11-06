@@ -1,6 +1,6 @@
 // Renders one string-table entry in the Learner's Interface Language (issue #125).
 // `t()` hands back base/reading segments; a reading becomes a <ruby> pair drawn
-// by the same Ruby helper the Grammar screens use (one markup, review nit), and
+// by the same Ruby helper the Grammar screens use (one markup), and
 // a segment without one is plain text. In English and plain Japanese there are
 // no readings at all, so this is just the sentence.
 
@@ -15,7 +15,7 @@ export function TableText({ segments }: { segments: RubyText }) {
     // exactly as it always rendered.
     return <Ruby runs={runs} />;
   }
-  // A1 (round-4 review): ruby markup splits an accessible name into pieces —
+  // Ruby markup splits an accessible name into pieces —
   // "練習 を 始 める" — because each inline-block base ends a text run. So
   // when anything carries a reading, the drawn half is hidden from assistive
   // tech whole, and one sr-only span carries the sentence plain: one clean

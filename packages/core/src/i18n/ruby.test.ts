@@ -44,7 +44,7 @@ describe("parseRuby", () => {
   });
 
   it("reads the iteration mark with what it repeats: 人々《ひとびと》", () => {
-    // 々 stands for the kanji before it, so the ruby covers the pair (issue #125 S14).
+    // 々 stands for the kanji before it, so the ruby covers the pair (issue #125).
     expect(parseRuby("人々《ひとびと》がいた")).toEqual([
       { text: "人々", ruby: "ひとびと" },
       { text: "がいた" },
@@ -60,7 +60,7 @@ describe("parseRuby", () => {
 
   it("walks by code point, so astral kanji stay whole", () => {
     // 𠮟 is outside the BMP: a UTF-16 walk would split it in half and lose
-    // the reading (issue #125 S14).
+    // the reading (issue #125).
     expect(parseRuby("𠮟《しか》る")).toEqual([
       { text: "𠮟", ruby: "しか" },
       { text: "る" },
@@ -99,7 +99,7 @@ describe("isKanji", () => {
 
   it("marks the iteration and closing marks, and astral kanji", () => {
     // 々〆〇 carry the reading of what they repeat; 𠮟 lives beyond the BMP
-    // (issue #125 S14).
+    // (issue #125).
     expect(isKanji("々")).toBe(true);
     expect(isKanji("〆")).toBe(true);
     expect(isKanji("〇")).toBe(true);

@@ -33,10 +33,10 @@ export function originLabel(
  * shows exactly as stored. Japanese also maps the server's preset genres
  * (story/service.go), case-insensitively. Display-only: what is stored and
  * sent stays the English id. One table path for both languages: the same
- * lookup and the same pass-through for a genre the table has never seen
- * (issue #125 review S16 and R4). A typed genre like "constructor" names an
+ * lookup and the same pass-through for a genre the table has never seen.
+ * A typed genre like "constructor" names an
  * Object.prototype member, not a table row, so the lookup only trusts own
- * properties (issue #125 review N1).
+ * properties.
  */
 const GENRE_STRINGS_JA: Record<string, StringKey> = {
   diary: "genre.diary",
@@ -87,7 +87,7 @@ export function storyDate(
 
 /**
  * The same date as base/reading segments: en and ja are the one plain string
- * storyDate speaks; ja-furigana reads 年月日 (#125 round-3 review S3). The
+ * storyDate speaks; ja-furigana reads 年月日 (issue #125). The
  * English options stay month-short exactly as EN_DATE has them.
  */
 export function storyDateRuby(
@@ -95,14 +95,14 @@ export function storyDateRuby(
   lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
 ): RubyText {
   // en and ja are storyDate's own string, through its already-cached
-  // formatters (round-4 review A4); only furigana builds parts.
+  // formatters (issue #125); only furigana builds parts.
   if (lang !== "ja-furigana") return [{ text: storyDate(iso, lang) }];
   return formatDateRuby(iso, { year: "numeric", month: "long", day: "numeric" }, lang);
 }
 
 /**
- * The Reader's meta line exactly as English showed it before the string table
- * (#125 review S1): the raw Genre (empty when there is none, not "Story"),
+ * The Reader's meta line exactly as English showed it before the string table:
+ * the raw Genre (empty when there is none, not "Story"),
  * the two Origin words, and the toDateString() date. English stays byte-identical
  * to that; Japanese gets the translated line from storyCardMeta.
  */
@@ -121,7 +121,7 @@ export function storyCardMeta(story: Story, lang: InterfaceLanguage = DEFAULT_IN
 /**
  * Story Origin as base/reading segments, for screens that draw furigana with
  * <TableText> — the same words as originLabel, readings kept in ja-furigana
- * (#125 review B3 coverage).
+ * (issue #125).
  */
 export function originRuby(story: Pick<Story, "origin">, lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE): RubyText {
   return translate(lang, story.origin === "on_demand" ? "story.originOnDemand" : "story.originAutomatic");
@@ -130,7 +130,7 @@ export function originRuby(story: Pick<Story, "origin">, lang: InterfaceLanguage
 /** The Genre in the same segment form; a genre the table has never seen passes through plain. */
 export function genreRuby(genre: string | null | undefined, lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE): RubyText {
   // An empty genre is "no genre" like null, not a word to show: storyCardMetaRuby
-  // falls back to the label only when this returns no segments (#125 review S3).
+  // falls back to the label only when this returns no segments (issue #125).
   if (!genre) return [];
   const table = GENRE_STRINGS[lang];
   const id = lang === "en" ? genre : genre.toLowerCase();
@@ -161,7 +161,7 @@ const STAGE_STRINGS = {
 /**
  * The table entry naming a run's stage. Screens that render copy through <T>
  * use this with progressStageParams so the visible line keeps its furigana
- * (#125 review B3); stageLabel stays the plain-text form for aria labels.
+ * (issue #125); stageLabel stays the plain-text form for aria labels.
  */
 export function progressStageKey(progress: StoryGenerationProgress): StringKey {
   const key = STAGE_STRINGS[progress.stage as keyof typeof STAGE_STRINGS];

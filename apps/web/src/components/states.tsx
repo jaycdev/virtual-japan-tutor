@@ -68,7 +68,7 @@ export function ErrorState({ message, onRetry }: { message: ReactNode; onRetry?:
  * and one status line under it that says what is happening. `value` is 0 to 1.
  * `label` is the visible line, so it can be a <T> element and keep its furigana
  * in ja-furigana; `ariaLabel` is the same sentence as plain text for the bar,
- * whose aria-label cannot carry ruby markup (issue #125 review B3).
+ * whose aria-label cannot carry ruby markup (issue #125).
  */
 export function ProgressStatus({
   value,

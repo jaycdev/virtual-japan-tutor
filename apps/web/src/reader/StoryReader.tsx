@@ -82,7 +82,7 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
   const [titleEnRevealed, setTitleEnRevealed] = useState(false);
   // The save notes are <T> elements, not resolved strings: they stay in the
   // Learner's language if it changes while on screen, and their furigana
-  // survives (issue #125 round-2 review S2, the SyncCard pattern).
+  // survives (issue #125, the SyncCard pattern).
   const [saveNote, setSaveNote] = useState<ReactNode>(null);
   const [saveBusy, setSaveBusy] = useState(false);
   const saveBusyRef = useRef(false);
@@ -320,7 +320,7 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
           lists.state.status === "ready" ? lists.state.lists.find((l) => l.id === listId)?.name : undefined;
         const listName = found ?? nameHint;
         // A known name is Learner data and fills the {list} slot; the fallback
-        // "your list" is chrome, so it gets a whole-sentence key (#125 review S2).
+        // "your list" is chrome, so it gets a whole-sentence key (issue #125).
         setSaveNote(
           listName ? (
             <T k="reader.savedToList" params={{ list: listName }} />
@@ -484,7 +484,7 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
             </span>
           </button>
         ) : null}
-        {/* English keeps the pre-#125 Reader meta line byte-for-byte (review S1);
+        {/* English keeps the pre-#125 Reader meta line byte-for-byte;
             Japanese speaks the same facts through the table. */}
         <p className="text-caption text-muted-foreground">
           {language === "en" ? (

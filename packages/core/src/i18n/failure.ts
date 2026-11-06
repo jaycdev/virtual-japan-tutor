@@ -1,4 +1,4 @@
-// How the hooks remember a failure (issue #125, branch review B1).
+// How the hooks remember a failure (issue #125).
 //
 // Hooks store failures in this language-independent shape, never as a
 // translated string: translating on storage would bake one Interface Language

@@ -10,10 +10,10 @@ import { ErrorState, SkeletonLines } from "../../components/states.tsx";
 import { useSession } from "../../session/session.tsx";
 import { Fact, Note, SaveStatus, SectionBody, Subheading, TextField, type SaveState } from "../parts.tsx";
 
-// The Last Sync instant as param segments (round-5 review): English keeps the
+// The Last Sync instant as param segments (issue #125): English keeps the
 // device-locale toLocaleString the line always showed — formatInstantRuby
 // would rewrite it to "November 1, 08:00". The Japanese forms go through the
-// ruby date formatter, which is the point of the change (A3).
+// ruby date formatter, which is the point of the change.
 function lastSyncWhen(iso: string, language: InterfaceLanguage): RubyText {
   return language === "en"
     ? [{ text: new Date(iso).toLocaleString() }]
@@ -126,7 +126,7 @@ export function MaruMoriSection({ registerSave }: { registerSave?: StepSaveRegis
             {status.lastFailure.error ? (
               // The server's own words are data: plain in the {error} slot. The
               // fallback sentence is a whole table entry so its furigana
-              // survives (issue #125 round-2 review S2).
+              // survives (issue #125).
               <T k="marumori.syncFailed" params={{ error: status.lastFailure.error }} />
             ) : (
               <T k="marumori.syncFailedUnknown" />

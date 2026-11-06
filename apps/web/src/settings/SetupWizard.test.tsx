@@ -176,7 +176,7 @@ describe("Setup wizard", () => {
     expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
   });
 
-  it("in ja-furigana the wizard keeps its chrome inside ruby (review S5)", async () => {
+  it("in ja-furigana the wizard keeps its chrome inside ruby", async () => {
     interfaceLanguageStore.setLanguage("ja-furigana");
     const { container } = renderSetup();
     // The step line and the section settle; ruby proves the furigana mode is live.

@@ -60,7 +60,7 @@ describe("formatInstant", () => {
   });
 });
 
-// #125 round-4 review A3: the sync line's {time} param is interface text too.
+// The sync line's {time} param is interface text too.
 describe("formatInstantRuby", () => {
   it("reads the date kanji in furigana and keeps the visible base equal to formatInstant", () => {
     const iso = "2026-11-04T05:02:00Z"; // Wed 4 Nov 14:02 in Tokyo
@@ -103,7 +103,7 @@ describe("stillUnreadFrom", () => {
     expect(stillUnreadFrom(story(), now, "Asia/Tokyo", "ja")).toBe("月曜日");
   });
 
-  // #125 round-4 review A3: the storyStillUnread {date} param carries ruby.
+  // The storyStillUnread {date} param carries ruby.
   it("reads the weekday in furigana, and stays the plain string otherwise", () => {
     expect(stillUnreadFromRuby(story(), now, "Asia/Tokyo")).toEqual([{ text: "Monday" }]);
     expect(stillUnreadFromRuby(story(), now, "Asia/Tokyo", "ja")).toEqual([{ text: "月曜日" }]);
@@ -123,7 +123,7 @@ describe("the clock in Japanese", () => {
   });
 
   it("keeps the greeting's readings as segments for screens that draw ruby", () => {
-    // review S5 follow-up: the Today header draws the greeting through
+    // The Today header draws the greeting through
     // <TableText>, so translatePlain's dropped readings are not enough.
     const segments = greetingRubyFor("23", "ja-furigana");
     expect(segments.map((s) => s.text).join("")).toBe("遅くまで勉強中ですね");
@@ -143,7 +143,7 @@ describe("the clock in Japanese", () => {
     });
   });
 
-  // #125 round-3 review S3.
+  // (issue #125).
   it("reads the date's kanji in furigana and keeps the plain forms untouched", () => {
     const now = new Date("2026-11-03T22:30:00Z"); // Wed 4 Nov, 07:30 in Tokyo
     const ruby = learnerClockRuby(now, "Asia/Tokyo", "ja-furigana");

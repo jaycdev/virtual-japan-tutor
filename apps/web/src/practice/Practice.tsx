@@ -261,7 +261,7 @@ function ActivePractice({
   const locked = settled || practice.pending;
   const percent = practice.target ? Math.round((answeredCount / practice.target) * 100) : 0;
   // aria-valuetext needs plain text, so the visible line below renders <T>
-  // elements and this stays a resolved string (issue #125 review B3).
+  // elements and this stays a resolved string (issue #125).
   const progressText =
     tp("practice.exerciseOf", { n: Math.max(1, position), total: practice.target }) +
     (skipped > 0
@@ -357,7 +357,7 @@ function ActivePractice({
   }
 
   // English keeps the server's own sentence; Japanese renders the table entry
-  // through <T> so it carries furigana (#125 review B3; hoisted per round-2 N4).
+  // through <T> so it carries furigana (issue #125).
   const instructionKey = language === "en" ? null : exerciseInstructionKey(current.kind);
 
   return (

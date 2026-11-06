@@ -55,7 +55,7 @@ describe("app shell", () => {
     await waitFor(() => expect(document.title).toBe("Practice · Virtual Japan Tutor"));
   });
 
-  it("the document title follows the interface language (review S5)", async () => {
+  it("the document title follows the interface language", async () => {
     interfaceLanguageStore.setLanguage("ja");
     renderAppAt("/practice");
     await screen.findByRole("main");

@@ -43,7 +43,7 @@ describe("ProgressStatus", () => {
     expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("100");
   });
 
-  it("names the bar with ariaLabel when the visible line is markup (review B3)", () => {
+  it("names the bar with ariaLabel when the visible line is markup", () => {
     render(
       <ProgressStatus
         value={0.5}

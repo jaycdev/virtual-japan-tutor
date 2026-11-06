@@ -1,4 +1,4 @@
-// The ruby-aware date formatter (#125 round-3 review S3): readings over the
+// The ruby-aware date formatter (issue #125): readings over the
 // kanji Intl puts into a Japanese date, the irregular day counters read as
 // whole words, and en/ja byte-identical to the plain Intl string.
 

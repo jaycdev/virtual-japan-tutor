@@ -79,7 +79,7 @@ describe("useFocusSet", () => {
     await waitFor(() => expect(result.current.error).toBe("Cannot reach the server"));
   });
 
-  it("re-labels a failed read in the new language without refetching (B1)", async () => {
+  it("re-labels a failed read in the new language without refetching", async () => {
     const { client, fetchImpl, json } = fakeClient();
     fetchImpl.mockImplementation(async () => json(500, { code: "internal", message: "Internal server error" }));
     const { wrapper, switchLanguage } = languageHarness();

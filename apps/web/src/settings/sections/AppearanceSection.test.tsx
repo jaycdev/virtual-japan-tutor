@@ -53,7 +53,7 @@ describe("Appearance › Interface Language", () => {
     const readings = Array.from(document.querySelectorAll("rt"));
     expect(readings.length).toBeGreaterThan(0);
     expect(document.documentElement.lang).toBe("ja");
-    // Review S5: no chrome kanji sits outside ruby. The 吾輩は猫である sample is
+    // No chrome kanji sits outside ruby. The 吾輩は猫である sample is
     // learning content (lang="ja") and the 読 mark is brand art (aria-hidden).
     expect(unrubyfiedKanji(document.body)).toEqual([]);
 

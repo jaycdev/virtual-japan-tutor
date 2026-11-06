@@ -63,7 +63,7 @@ export function createInterfaceLanguageStore(
     },
 
     setLanguage(language: InterfaceLanguage): void {
-      // The same value is not a change: no emit, no write (review nit).
+      // The same value is not a change: no emit, no write.
       if (state.language === language) return;
       state = { language };
       applyLanguage(language);

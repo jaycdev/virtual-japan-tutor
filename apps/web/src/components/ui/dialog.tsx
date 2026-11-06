@@ -7,7 +7,7 @@ import { useT } from "@vjt/core"
 import { cn } from "@/lib/utils"
 
 // The sr-only close label is plain tp() text, not <T>: a screen reader would
-// otherwise read the <rt> too (issue #125 review V2).
+// otherwise read the <rt> too (issue #125).
 
 // shadcn/ui Dialog (new-york v4) on Radix Dialog: focus is trapped, Escape closes
 // it and focus returns to the trigger. Colours are the @vjt/design tokens (the
