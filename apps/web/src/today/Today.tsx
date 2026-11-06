@@ -5,8 +5,7 @@
 // state, so one section failing never blanks the rest.
 import type { ApiClient } from "@vjt/api-client";
 import {
-  learnerClock,
-  learnerGreetingRuby,
+  learnerClockRuby,
   useFocusSet,
   useMarumori,
   useStoryGeneration,
@@ -100,16 +99,20 @@ function Greeting({
       </div>
     );
   }
-  const clock = learnerClock(now, timezone, language);
+  const clock = learnerClockRuby(now, timezone, language);
   return (
     <header className="flex flex-col gap-1">
-      {/* The greeting goes through the table as segments, so in ja-furigana the
-          kanji carries its reading like every other piece of chrome (#125
-          round-2 review coverage). learnerClock's plain string would drop it. */}
+      {/* Greeting and date both go through the table as segments, so in
+          ja-furigana the date's kanji — 年月日 and the weekday — carries its
+          reading like every other piece of chrome (#125 round-2 review
+          coverage, round-3 review S3). learnerClock's plain strings would
+          drop it. */}
       <h1 className="text-display font-semibold text-foreground">
-        <TableText segments={learnerGreetingRuby(now, timezone, language)} />
+        <TableText segments={clock.greeting} />
       </h1>
-      <p className="text-body text-muted-foreground">{clock.date}</p>
+      <p className="text-body text-muted-foreground">
+        <TableText segments={clock.date} />
+      </p>
       {settingsFailed ? (
         <p className="text-small text-muted-foreground">
           <T k="today.timezoneUnavailable" />
