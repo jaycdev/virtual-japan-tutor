@@ -1,7 +1,7 @@
 import type { Story } from "@vjt/api-client";
 import { describe, expect, it } from "vitest";
 
-import { formatInstant, greetingFor, learnerClock, localDayKey, normalizeTimezone, stillUnreadFrom } from "./learnerTime.ts";
+import { formatInstant, greetingFor, greetingRubyFor, learnerClock, learnerGreetingRuby, localDayKey, normalizeTimezone, stillUnreadFrom } from "./learnerTime.ts";
 
 function story(overrides: Partial<Story> = {}): Story {
   return {
@@ -93,6 +93,19 @@ describe("the clock in Japanese", () => {
   it("greets in Japanese, furigana included", () => {
     expect(greetingFor("09", "ja")).toBe("おはようございます");
     expect(greetingFor("23", "ja-furigana")).toBe("遅くまで勉強中ですね");
+  });
+
+  it("keeps the greeting's readings as segments for screens that draw ruby", () => {
+    // review S5 follow-up: the Today header draws the greeting through
+    // <TableText>, so translatePlain's dropped readings are not enough.
+    const segments = greetingRubyFor("23", "ja-furigana");
+    expect(segments.map((s) => s.text).join("")).toBe("遅くまで勉強中ですね");
+    expect(segments.some((s) => s.ruby === "べんきょうちゅう")).toBe(true);
+    // English has no readings: the segments are just the sentence.
+    expect(greetingRubyFor("09", "en").every((s) => !s.ruby)).toBe(true);
+    // The Learner's Timezone picks the same greeting as learnerClock.
+    const now = new Date("2026-11-03T22:30:00Z"); // Wed 4 Nov, 07:30 in Tokyo
+    expect(learnerGreetingRuby(now, "Asia/Tokyo", "ja").map((s) => s.text).join("")).toBe("おはようございます");
   });
 
   it("orders the Today greeting and date as ja-JP", () => {

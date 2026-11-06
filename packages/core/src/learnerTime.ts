@@ -3,7 +3,9 @@ import {
   DEFAULT_INTERFACE_LANGUAGE,
   type InterfaceLanguage,
 } from "./i18n/language.ts";
-import { translatePlain } from "./i18n/translate.ts";
+import type { StringKey } from "./i18n/strings.ts";
+import { translate, translatePlain } from "./i18n/translate.ts";
+import type { RubyText } from "./i18n/ruby.ts";
 
 /**
  * The Learner's clock (plan 4.4 item 1): the greeting, the date and the time on
@@ -75,14 +77,39 @@ const GREETING_KEYS = {
  * keep odd hours. Returned in English for English UIs and in Japanese for
  * Japanese ones (with the table's furigana dropped: this lands in a string).
  */
-export function greetingFor(hourText: string, lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE): string {
+function greetingKey(hourText: string): StringKey {
   // Some engines hand back "24" for midnight under hour12: false.
   const hour = Number.parseInt(hourText, 10) % 24;
-  if (Number.isNaN(hour)) return translatePlain(lang, GREETING_KEYS.hello);
-  if (hour >= 5 && hour < 12) return translatePlain(lang, GREETING_KEYS.morning);
-  if (hour >= 12 && hour < 18) return translatePlain(lang, GREETING_KEYS.afternoon);
-  if (hour >= 18 && hour < 22) return translatePlain(lang, GREETING_KEYS.evening);
-  return translatePlain(lang, GREETING_KEYS.lateNight);
+  if (Number.isNaN(hour)) return GREETING_KEYS.hello;
+  if (hour >= 5 && hour < 12) return GREETING_KEYS.morning;
+  if (hour >= 12 && hour < 18) return GREETING_KEYS.afternoon;
+  if (hour >= 18 && hour < 22) return GREETING_KEYS.evening;
+  return GREETING_KEYS.lateNight;
+}
+
+export function greetingFor(hourText: string, lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE): string {
+  return translatePlain(lang, greetingKey(hourText));
+}
+
+/**
+ * The same greeting as base/reading segments, for screens that draw furigana
+ * with <TableText> — translatePlain drops the readings, which left the Today
+ * greeting as bare kanji in ja-furigana (#125 round-2 review S5 follow-up).
+ */
+export function greetingRubyFor(hourText: string, lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE): RubyText {
+  return translate(lang, greetingKey(hourText));
+}
+
+/** The Learner's greeting, in their Timezone, as segments — see learnerClock. */
+export function learnerGreetingRuby(
+  now: Date,
+  timezone: string | undefined | null,
+  lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
+): RubyText {
+  const zone = normalizeTimezone(timezone);
+  // Same en-US hour read as learnerClock: the greeting only needs the number.
+  const parts = readParts(now, zone, "en-US", ["hour"]);
+  return greetingRubyFor(parts.hour ?? String(now.getHours()), lang);
 }
 
 /**

@@ -6,6 +6,7 @@
 import type { ApiClient } from "@vjt/api-client";
 import {
   learnerClock,
+  learnerGreetingRuby,
   useFocusSet,
   useMarumori,
   useStoryGeneration,
@@ -16,7 +17,7 @@ import {
 import { useEffect, useRef } from "react";
 
 import { Skeleton } from "@/components/ui/skeleton";
-import { T } from "@/components/Text.tsx";
+import { T, TableText } from "@/components/Text.tsx";
 import { useMinuteClock } from "@/lib/useMinuteClock.ts";
 import { TodayStoryCard } from "../stories/TodayStoryCard.tsx";
 import { FocusGlance } from "./FocusGlance.tsx";
@@ -102,7 +103,12 @@ function Greeting({
   const clock = learnerClock(now, timezone, language);
   return (
     <header className="flex flex-col gap-1">
-      <h1 className="text-display font-semibold text-foreground">{clock.greeting}</h1>
+      {/* The greeting goes through the table as segments, so in ja-furigana the
+          kanji carries its reading like every other piece of chrome (#125
+          round-2 review coverage). learnerClock's plain string would drop it. */}
+      <h1 className="text-display font-semibold text-foreground">
+        <TableText segments={learnerGreetingRuby(now, timezone, language)} />
+      </h1>
       <p className="text-body text-muted-foreground">{clock.date}</p>
       {settingsFailed ? (
         <p className="text-small text-muted-foreground">

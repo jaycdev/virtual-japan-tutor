@@ -135,7 +135,9 @@ export type { EntryLookup } from "./reader/useEntryLookup.ts";
 export {
   formatInstant,
   greetingFor,
+  greetingRubyFor,
   learnerClock,
+  learnerGreetingRuby,
   localDayKey,
   normalizeTimezone,
   stillUnreadFrom,
