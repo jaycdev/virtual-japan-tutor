@@ -297,6 +297,117 @@ export const strings = {
   "setup.skipStep": { en: "Skip this step", ja: "このステップをスキップ" },
   "setup.next": { en: "Next", ja: "次《つぎ》へ" },
   "setup.finish": { en: "Finish", ja: "完《かん》了《りょう》" },
+  "today.timezoneUnavailable": {
+    en: "Timezone unavailable — showing your browser’s time.",
+    ja: "タイムゾーンを取得《しゅとく》できません。ブラウザの時《とき》を表示《ひょうじ》しています。",
+  },
+  "today.focusHeading": { en: "Focus", ja: "焦点《しょうてん》" },
+  "today.wordsLabel": { en: "Words", ja: "単語《たんご》" },
+  "today.grammarLabel": { en: "Grammar", ja: "文法《ぶんぽう》" },
+  "today.focusEmpty": {
+    en: "No Focus Set yet — add words on Maru Mori and choose the set in Settings › Focus.",
+    ja: "焦点《しょうてん》セットはまだありません。Maru Mori で単語《たんご》を追加《ついか》し、設定《せってい》›焦点《しょうてん》でセットを選《えら》んでください。",
+  },
+  "today.focusStudyMaruMori": { en: "Study on Maru Mori", ja: "Maru Mori で学習《がくしゅう》" },
+  "today.focusOpenSet": { en: "Open Focus Set", ja: "焦点《しょうてん》セットを開《ひら》く" },
+  "today.wordsCount": { en: "{count} words", ja: "{count}語《ご》" },
+  "today.storyHeading": { en: "Today’s Story", ja: "今日《きょう》の物語《ものがたり》" },
+  "today.storyEmptyToday": {
+    en: "No Story yet — the tutor writes one for you every day.",
+    ja: "物語《ものがたり》はまだありません。指導《しどう》システムは毎日《まいにち》書《か》きます。",
+  },
+  "today.storyEmptyStories": {
+    en: "No Story for today yet — the tutor writes one for you every day.",
+    ja: "今日《きょう》の物語《ものがたり》はまだありません。指導《しどう》システムは毎日《まいにち》書《か》きます。",
+  },
+  "today.storyGenerating": {
+    en: "A new Story is on its way — you can leave and come back.",
+    ja: "新《あらた》な物語《ものがたり》を作《つく》っています。離《はな》れても戻《もど》って見《み》られます。",
+  },
+  "today.storyError": {
+    en: "Cannot load today’s Story: {message}",
+    ja: "今日《きょう》の物語《ものがたり》を読《よ》み込《こ》めません: {message}",
+  },
+  "today.storyGenerate": { en: "Generate a Story", ja: "物語《ものがたり》を作《つく》る" },
+  "today.storyRetry": { en: "Try again", ja: "再《ふたた》び試《ため》す" },
+  "today.storyCheckAgain": { en: "Check again", ja: "再《ふたた》び確《たし》かめる" },
+  "today.storyStillUnread": {
+    en: "Still unread from {date}.",
+    ja: "{date}の読《よ》んでいない物語《ものがたり》があります。",
+  },
+  "today.storyReadAgain": { en: "Read again", ja: "再《ふたた》び読《よ》む" },
+  "today.storyOpen": { en: "Open", ja: "開《ひら》く" },
+  "today.storyAriaReadAgain": {
+    en: "Read again today’s Story: {title}",
+    ja: "今日《きょう》の物語《ものがたり》を再《ふたた》び読《よ》む: {title}",
+  },
+  "today.storyAriaOpen": {
+    en: "Open today’s Story: {title}",
+    ja: "今日《きょう》の物語《ものがたり》を開《ひら》く: {title}",
+  },
+  "today.storyReadyNow": { en: "Ready, read now", ja: "読《よ》み始《はじ》められます" },
+  "today.storyNewerWriting": {
+    en: "A newer Story is being written.",
+    ja: "新《あら》たな物語《ものがたり》を書《か》いています。",
+  },
+  "today.syncNow": { en: "Sync now", ja: "今《いま》同期《どうき》" },
+  "today.syncSyncing": { en: "Syncing…", ja: "同期《どうき》中《ちゅう》…" },
+  "today.moreCount": { en: "+{count} more", ja: "他《ほか》{count}件《けん》" },
+  "today.focusSetHeading": { en: "Focus Set", ja: "焦点《しょうてん》セット" },
+  "today.seeAll": { en: "See all", ja: "すべて見《み》る" },
+  "today.focusReadError": {
+    en: "Your Focus Set could not be read.",
+    ja: "焦点《しょうてん》セットを読《よ》み込《こ》めませんでした。",
+  },
+  "today.focusNothingChosen": {
+    en: "Nothing chosen yet — a Sync, a Story or a Practice session fills it in.",
+    ja: "まだ選《えら》ばれていません。同期《どうき》・物語《ものがたり》・練習《れんしゅう》で自動《じどう》的《てき》に決《き》まります。",
+  },
+  "today.focusAriaGlance": { en: "Focus Set at a glance", ja: "焦点《しょうてん》セット一覧《いちらん》" },
+  "today.lastSyncHeading": { en: "Last sync", ja: "最終《さいしゅう》同期《どうき》" },
+  "today.syncFailedFallback": { en: "Sync failed.", ja: "同期《どうき》に失敗《しっぱい》しました。" },
+  "today.syncSucceededNote": { en: "Sync succeeded.", ja: "同期《どうき》が完了《かんりょう》しました。" },
+  "today.syncNotLinked": {
+    en: "No MaruMori account linked yet, so nothing has been synced.",
+    ja: "MaruMoriアカウントが接続《せつぞく》されていないため、同期《どうき》されていません。",
+  },
+  "today.syncLinkMaruMori": { en: "Link MaruMori", ja: "MaruMoriを接続《せつぞく》" },
+  "today.syncFailedLine": {
+    en: "Last sync failed {time}.",
+    ja: "最終《さいしゅう》同期《どうき》は{time}に失敗《しっぱい》しました。",
+  },
+  "today.syncNoneYet": {
+    en: "No sync has finished yet. Press Sync now to pull your knowledge across.",
+    ja: "まだ同期《どうき》が完了《かんりょう》していません。「今《いま》同期《どうき》」を押《お》して学習《がくしゅう》状況《じょうきょう》を取《と》り込《こ》んでください。",
+  },
+  "today.syncSucceededLine": {
+    en: "Last sync succeeded {time}.",
+    ja: "最終《さいしゅう》同期《どうき》は{time}に完了《かんりょう》しました。",
+  },
+  "today.syncNoCounts": {
+    en: "The sync finished with no counts to report.",
+    ja: "同期《どうき》は報告《ほうこく》できる件数《けんすう》なく終《お》わりました。",
+  },
+  "today.syncResultCounts": {
+    en: "{new} new item{newPlural}, {levelChanges} level change{levelPlural}, {linked} linked to reference data.",
+    ja: "新《あら》たな項目《こうもく》{new}件《けん》{newPlural}、レベル変《へん》化《か》{levelChanges}件《けん》{levelPlural}、参照《さんしょう》データとの連《つな》がり{linked}件《けん》。",
+  },
+  "today.practiceHeading": { en: "Practice", ja: "練習《れんしゅう》" },
+  "today.practiceWaitingNone": {
+    en: "Nothing is waiting in your Focus Set yet.",
+    ja: "焦点《しょうてん》セットに待《ま》ち項《こう》目《もく》はありません。",
+  },
+  "today.practiceWaitingCount": {
+    en: "{count} Focus Set item{plural} waiting.",
+    ja: "焦点《しょうてん》セットに待《ま》ち項《こう》目《もく》{count}件《けん》{plural}。",
+  },
+  "today.practiceSessionNote": {
+    en: "A session is built from your Focus Set, so there is nothing to practise until a Sync or a Story adds items.",
+    ja: "練習《れんしゅう》は焦点《しょうてん》セットで作《つく》ります。同期《どうき》や物語《ものがたり》で項《こう》目《もく》が増《ふ》えるまで練習《れんしゅう》できません。",
+  },
+  "today.practiceStart": { en: "Start", ja: "始《はじ》める" },
+  "today.practiceStartAria": { en: "Start practice", ja: "練習《れんしゅう》を始《はじ》める" },
+  "today.practiceSession": { en: "{done} of {total} done · {kind}", ja: "{done}/{total}完《かん》了《りょう》 · {kind}" },
   "language.legend": { en: "Interface language", ja: "表示《ひょうじ》言語《げんご》" },
   "language.hint": {
     en: "Saved on this device. Stories, exercises and dictionary lookups stay Japanese whatever you choose.",

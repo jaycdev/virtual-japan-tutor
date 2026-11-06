@@ -10,11 +10,13 @@ import {
   useMarumori,
   useStoryGeneration,
   useStorySettings,
+  useT,
   useTodaysStory,
 } from "@vjt/core";
 import { useEffect, useRef } from "react";
 
 import { Skeleton } from "@/components/ui/skeleton";
+import { T } from "@/components/Text.tsx";
 import { useMinuteClock } from "@/lib/useMinuteClock.ts";
 import { TodayStoryCard } from "../stories/TodayStoryCard.tsx";
 import { FocusGlance } from "./FocusGlance.tsx";
@@ -88,6 +90,7 @@ function Greeting({
   settingsPending: boolean;
   settingsFailed: boolean;
 }) {
+  const { language } = useT();
   if (settingsPending) {
     return (
       <div className="flex flex-col gap-2 py-1" aria-busy="true">
@@ -96,13 +99,15 @@ function Greeting({
       </div>
     );
   }
-  const clock = learnerClock(now, timezone);
+  const clock = learnerClock(now, timezone, language);
   return (
     <header className="flex flex-col gap-1">
       <h1 className="text-display font-semibold text-foreground">{clock.greeting}</h1>
       <p className="text-body text-muted-foreground">{clock.date}</p>
       {settingsFailed ? (
-        <p className="text-small text-muted-foreground">Timezone unavailable — showing your browser’s time.</p>
+        <p className="text-small text-muted-foreground">
+          <T k="today.timezoneUnavailable" />
+        </p>
       ) : null}
     </header>
   );
