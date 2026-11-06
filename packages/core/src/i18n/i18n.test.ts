@@ -73,7 +73,7 @@ describe("the string table", () => {
   it("puts every reading over a kanji base", () => {
     // A reading sits on the kanji run before it, so the character right
     // before 《 must be a kanji — unless an explicit ｜ base marker opened
-    // the base earlier in the same run (issue #125 review S15).
+    // the base earlier in the same run (issue #125).
     for (const key of KEYS) {
       const ja = strings[key].ja;
       const chars = Array.from(ja);
@@ -92,7 +92,7 @@ describe("the string table", () => {
 
   it("keeps readings flat: no 《 inside a reading", () => {
     // A 《reading》 closed by a later 》 would otherwise swallow a nested
-    // bracket pair (issue #125 review S15).
+    // bracket pair (issue #125).
     for (const key of KEYS) {
       const ja = strings[key].ja;
       for (const m of ja.matchAll(/《([^》]*)》/g)) {
@@ -166,6 +166,31 @@ describe("translate", () => {
     const segments = translate("ja", "reader.menu.saveToTarget", { list: "語《ご》" });
     expect(segments.map((s) => s.text).join("")).toBe("語《ご》に保存");
     expect(segments.some((s) => s.ruby === "ご")).toBe(false);
+  });
+
+  it("splices a RubyText parameter in, readings kept only in furigana", () => {
+    // The {date} of the still-unread line is the
+    // stillUnreadFromRuby segments, not bare text.
+    expect(translatePlain("en", "today.storyStillUnread", { date: [{ text: "Monday" }] })).toBe(
+      "Still unread from Monday.",
+    );
+    expect(translatePlain("ja", "today.storyStillUnread", { date: [{ text: "月曜日", ruby: "げつようび" }] })).toBe(
+      "月曜日の読んでいない物語があります。",
+    );
+    const furiganaSegments = translate("ja-furigana", "today.storyStillUnread", {
+      date: [{ text: "月曜日", ruby: "げつようび" }],
+    });
+    // The spliced weekday sits first, reading and all, and the base sentence
+    // around it is the plain ja one.
+    expect(furiganaSegments[0]).toEqual({ text: "月曜日", ruby: "げつようび" });
+    expect(furiganaSegments.map((s) => s.text).join("")).toBe("月曜日の読んでいない物語があります。");
+    // A multi-segment param (a whole date) joins into the surrounding text.
+    const date = [{ text: "11" }, { text: "月", ruby: "がつ" }, { text: "4日", ruby: "よっか" }];
+    expect(translatePlain("ja", "today.syncSucceededLine", { time: date })).toBe("最終同期は11月4日に完了しました。");
+    const furigana = translate("ja-furigana", "today.syncSucceededLine", { time: date });
+    expect(furigana.some((s) => s.text === "4日" && s.ruby === "よっか")).toBe(true);
+    // The param array itself is never mutated by the splice.
+    expect(date[0]).toEqual({ text: "11" });
   });
 
   it("leaves a placeholder visible when its value is missing", () => {

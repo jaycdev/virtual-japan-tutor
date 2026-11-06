@@ -129,3 +129,23 @@
     }
   }
 }
+
+/* Furigana in interface chrome: only the <ruby> drawn by Ruby.tsx (class
+   ui-ruby), never the Story reader's own. Unlayered on purpose, so these beat
+   the shared text-furigana-* utilities on the <rt>. */
+ruby.ui-ruby {
+  ruby-align: center;
+  ruby-overhang: auto; /* a long reading borrows space from neighbouring kana */
+  line-height: 1.9; /* room for the reading above the base */
+  text-decoration: inherit; /* keeps a link's underline through the base span */
+}
+ruby.ui-ruby rt {
+  font-size: max(0.5em, 9px); /* half the base, never below the smallest furigana token */
+  line-height: 1;
+  letter-spacing: 0;
+  white-space: nowrap;
+  color: inherit; /* readable on any surface, e.g. filled buttons */
+  opacity: 0.75;
+  user-select: none; /* copying takes the words, not the readings */
+  -webkit-user-select: none;
+}

@@ -5,8 +5,9 @@
 // the server's 409 message.
 import type { AiProvider, AiProviderTestResult, AiTask } from "@vjt/api-client";
 import {
-  AI_TASK_LABELS,
+  AI_TASK_LABELS, // keys only: TASKS below; the labels come from the table via aiTaskLabel
   EMPTY_PROVIDER_FORM,
+  aiTaskLabel,
   canSubmitProviderForm,
   isProviderFormTouched,
   providerCreateInput,
@@ -14,6 +15,7 @@ import {
   providerSummary,
   providerUpdateInput,
   useAiSettings,
+  useT,
   type ProviderForm,
   type StepSaveOutcome,
   type StepSaveRegistrar,
@@ -21,6 +23,7 @@ import {
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
+import { T } from "@/components/Text";
 import { ErrorState, SkeletonLines } from "../../components/states.tsx";
 import { useSession } from "../../session/session.tsx";
 import { Note, SaveStatus, SectionBody, Subheading, SwitchField, TextField, type SaveState } from "../parts.tsx";
@@ -29,6 +32,7 @@ const TASKS = Object.keys(AI_TASK_LABELS) as AiTask[];
 
 export function AiProvidersSection({ registerSave }: { registerSave?: StepSaveRegistrar }) {
   const { client } = useSession();
+  const { language, tp } = useT();
   const settings = useAiSettings(client);
   const [editing, setEditing] = useState<AiProvider | null>(null);
   const [form, setForm] = useState<ProviderForm>(EMPTY_PROVIDER_FORM);
@@ -66,7 +70,7 @@ export function AiProvidersSection({ registerSave }: { registerSave?: StepSaveRe
       return "blocked";
     }
     stopEdit();
-    setSave({ kind: "saved", message: editing ? "Provider saved." : "Provider added." });
+    setSave({ kind: "saved", message: <T k={editing ? "ai.saved" : "ai.added"} /> });
     return "saved";
   };
 
@@ -78,7 +82,7 @@ export function AiProvidersSection({ registerSave }: { registerSave?: StepSaveRe
     registerSave(async () => {
       if (!isProviderFormTouched(form)) return "nothing" as const;
       if (!canSubmitProviderForm(form)) {
-        setSave({ kind: "error", message: "Fill in the name, base URL and model, or leave the step." });
+        setSave({ kind: "error", message: <T k="ai.formIncomplete" /> });
         return "blocked" as const;
       }
       return submit();
@@ -88,7 +92,7 @@ export function AiProvidersSection({ registerSave }: { registerSave?: StepSaveRe
 
   if (settings.state.status === "loading") return <SkeletonLines lines={3} />;
   if (settings.state.status === "error") {
-    return <ErrorState message={`Cannot load settings: ${settings.state.message}`} onRetry={settings.reload} />;
+    return <ErrorState message={<T k="ai.loadFailed" params={{ message: settings.state.message }} />} onRetry={settings.reload} />;
   }
 
   const { providers, tasks } = settings.state;
@@ -120,7 +124,7 @@ export function AiProvidersSection({ registerSave }: { registerSave?: StepSaveRe
     // focus the clicked button leaves behind (issue #81 review).
     providersRef.current?.focus();
     if (res.ok) {
-      setSave({ kind: "saved", message: "Provider deleted." });
+      setSave({ kind: "saved", message: <T k="ai.deleted" /> });
       if (editing?.id === provider.id) stopEdit();
     } else setSave({ kind: "error", message: res.message });
   };
@@ -128,7 +132,7 @@ export function AiProvidersSection({ registerSave }: { registerSave?: StepSaveRe
   const assign = async (task: AiTask, providerId: string | null) => {
     setSave({ kind: "saving" });
     const res = await settings.assign(task, providerId);
-    setSave(res.ok ? { kind: "saved", message: "Assignment saved." } : { kind: "error", message: res.message });
+    setSave(res.ok ? { kind: "saved", message: <T k="ai.assignmentSaved" /> } : { kind: "error", message: res.message });
   };
 
   const keyIsSet = editing?.hasApiKey === true;
@@ -136,9 +140,13 @@ export function AiProvidersSection({ registerSave }: { registerSave?: StepSaveRe
   return (
     <SectionBody>
       <div className="flex flex-col gap-3">
-        <Subheading ref={providersRef}>Providers</Subheading>
+        <Subheading ref={providersRef}>
+          <T k="ai.providersHeading" />
+        </Subheading>
         {providers.length === 0 ? (
-          <p className="text-body text-muted-foreground">No providers yet. Add an OpenAI-compatible endpoint below.</p>
+          <p className="text-body text-muted-foreground">
+            <T k="ai.empty" />
+          </p>
         ) : (
           <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
             {providers.map((provider) => {
@@ -147,22 +155,24 @@ export function AiProvidersSection({ registerSave }: { registerSave?: StepSaveRe
                 <li key={provider.id} className="flex flex-col gap-3 p-4">
                   <div className="flex flex-col gap-0.5">
                     <span className="text-body font-medium text-foreground">{provider.name}</span>
-                    <span className="text-small text-muted-foreground">{providerSummary(provider, assignedTasks(provider.id))}</span>
+                    <span className="text-small text-muted-foreground">
+                      {providerSummary(provider, assignedTasks(provider.id), language)}
+                    </span>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Button type="button" variant="outline" disabled={busy} onClick={() => startEdit(provider)}>
-                      Edit {provider.name}
+                      <T k="ai.editButton" params={{ name: provider.name }} />
                     </Button>
                     <Button type="button" variant="outline" disabled={busy || testing === provider.id} onClick={() => void test(provider)}>
-                      {testing === provider.id ? "Testing…" : `Test connection to ${provider.name}`}
+                      {testing === provider.id ? <T k="ai.testing" /> : <T k="ai.testButton" params={{ name: provider.name }} />}
                     </Button>
                     {confirmingDelete === provider.id ? (
                       <>
                         <Button type="button" variant="destructive" disabled={busy} onClick={() => void remove(provider)}>
-                          Confirm delete
+                          <T k="common.confirmDelete" />
                         </Button>
                         <Button type="button" variant="ghost" onClick={() => setConfirmingDelete(null)}>
-                          Keep
+                          <T k="stories.deleteKeep" />
                         </Button>
                       </>
                     ) : (
@@ -173,13 +183,13 @@ export function AiProvidersSection({ registerSave }: { registerSave?: StepSaveRe
                         disabled={busy}
                         onClick={() => setConfirmingDelete(provider.id)}
                       >
-                        Delete {provider.name}
+                        <T k="ai.deleteButton" params={{ name: provider.name }} />
                       </Button>
                     )}
                   </div>
                   {result ? (
                     <p role="status" className={result.ok ? "text-small text-success" : "text-small text-destructive"}>
-                      {`${result.message} (${result.latencyMs} ms)`}
+                      <T k="ai.testResult" params={{ message: result.message, latency: result.latencyMs }} />
                     </p>
                   ) : null}
                 </li>
@@ -190,10 +200,12 @@ export function AiProvidersSection({ registerSave }: { registerSave?: StepSaveRe
       </div>
 
       <form className="flex flex-col gap-4" onSubmit={onSubmit} noValidate>
-        <Subheading>{editing ? `Edit ${editing.name}` : "Add a provider"}</Subheading>
+        <Subheading>
+          {editing ? <T k="ai.editHeading" params={{ name: editing.name }} /> : <T k="ai.addHeading" />}
+        </Subheading>
         <TextField
           id="ai-name"
-          label="Name"
+          label={<T k="ai.nameLabel" />}
           required
           value={form.name}
           disabled={busy}
@@ -201,17 +213,17 @@ export function AiProvidersSection({ registerSave }: { registerSave?: StepSaveRe
         />
         <TextField
           id="ai-base-url"
-          label="Base URL"
+          label={<T k="ai.baseUrlLabel" />}
           inputMode="url"
           autoComplete="off"
-          placeholder="https://api.openai.com/v1 or http://localhost:11434"
+          placeholder={tp("ai.baseUrlPlaceholder")}
           value={form.baseUrl}
           disabled={busy}
           onChange={(event) => setForm({ ...form, baseUrl: event.target.value })}
         />
         <TextField
           id="ai-model"
-          label="Model"
+          label={<T k="ai.modelLabel" />}
           autoComplete="off"
           value={form.model}
           disabled={busy}
@@ -223,59 +235,67 @@ export function AiProvidersSection({ registerSave }: { registerSave?: StepSaveRe
               line names itself (issue #81 review). */}
           {keyIsSet && !replacingKey && !form.removeKey ? (
             <div className="flex flex-wrap items-center gap-3">
-              <span className="text-body text-foreground">API key set</span>
+              <span className="text-body text-foreground">
+                <T k="ai.keySet" />
+              </span>
               <Button type="button" variant="outline" disabled={busy} onClick={() => setReplacingKey(true)}>
-                Replace
+                <T k="marumori.replace" />
               </Button>
             </div>
           ) : null}
           {(!keyIsSet || replacingKey) && !form.removeKey ? (
             <TextField
               id="ai-key"
-              label="New API key"
+              label={<T k="ai.newKeyLabel" />}
               type="password"
               autoComplete="off"
               spellCheck={false}
               value={form.apiKey}
               disabled={busy}
-              hint={keyIsSet ? "Leave empty to keep the saved key." : "Leave empty if the endpoint needs none."}
+              hint={keyIsSet ? <T k="ai.keyHintKeep" /> : <T k="ai.keyHintNone" />}
               onChange={(event) => setForm({ ...form, apiKey: event.target.value })}
             />
           ) : null}
           {keyIsSet ? (
             <SwitchField
               id="ai-remove-key"
-              label="Remove the saved key"
+              label={<T k="ai.removeKeyLabel" />}
               checked={form.removeKey}
               disabled={busy}
               onChange={(removeKey) => setForm({ ...form, removeKey, apiKey: removeKey ? "" : form.apiKey })}
             />
           ) : null}
-          {form.removeKey ? <Note>The saved key will be removed when you save.</Note> : null}
+          {form.removeKey ? (
+            <Note>
+              <T k="ai.removeKeyNote" />
+            </Note>
+          ) : null}
         </div>
 
         <div className="flex flex-wrap items-center gap-4">
           <Button type="submit" disabled={busy || !canSubmitProviderForm(form)}>
-            {editing ? "Save changes" : "Add provider"}
+            {editing ? <T k="ai.saveChanges" /> : <T k="ai.addSubmit" />}
           </Button>
           {editing ? (
             <Button type="button" variant="ghost" onClick={stopEdit}>
-              Cancel
+              <T k="common.cancel" />
             </Button>
           ) : null}
         </div>
       </form>
 
       <div className="flex flex-col gap-4">
-        <Subheading>Which provider to use</Subheading>
+        <Subheading>
+          <T k="ai.assignmentHeading" />
+        </Subheading>
         {TASKS.map((task) => {
           const current = tasks.find((t) => t.task === task)?.providerId ?? null;
           return (
             <div key={task} className="flex flex-col gap-2">
-              <span className="text-body font-medium text-foreground">{AI_TASK_LABELS[task]}</span>
+              <span className="text-body font-medium text-foreground">{aiTaskLabel(language, task)}</span>
               <div className="flex flex-wrap gap-2">
                 <Button type="button" variant={current === null ? "default" : "outline"} aria-pressed={current === null} disabled={busy} onClick={() => void assign(task, null)}>
-                  None
+                  <T k="common.none" />
                 </Button>
                 {providers.map((provider) => (
                   <Button

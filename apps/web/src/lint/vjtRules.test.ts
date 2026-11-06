@@ -60,3 +60,42 @@ describe("vjt/no-inline-font-size", () => {
     expect(await ruleIds("apps/web/src/probe.tsx", code)).toContain("vjt/no-inline-font-size");
   });
 });
+
+describe("vjt/no-raw-jsx-text (#125)", () => {
+  it.each([
+    ["plain text in a JSX child", 'const a = <p>Interface text</p>;'],
+    ["text in a component child", 'const a = <SheetTitle>Reading settings</SheetTitle>;'],
+    ["a bare string expression child", 'const a = <p>{"Interface text"}</p>;'],
+    ["multi-line JSX text", "const a = (\n  <p>\n    Interface text\n  </p>\n);"],
+    ["a ternary child", 'const a = <p>{ok ? "Saved" : "Failed"}</p>;'],
+    ["an && child", 'const a = <p>{ready && "Ready"}</p>;'],
+    ["a template child with words", "const a = <p>{`Page ${n} of 3`}</p>;"],
+    ["a raw aria-label attribute", 'const a = <button aria-label="Close" />;'],
+    ["a string-expression aria-label attribute", 'const a = <button aria-label={"Close"} />;'],
+    ["a raw label prop", 'const a = <TextField label="Name" />;'],
+    ["a template in a message prop", "const a = <EmptyState message={`Nothing ${x} here`} />;"],
+    ["a ternary in a legend prop", 'const a = <ChoiceGroup legend={open ? "Less" : "More"} />;'],
+  ])("flags %s in apps/web", async (_label, code) => {
+    expect(await ruleIds("apps/web/src/probe.tsx", code)).toContain("vjt/no-raw-jsx-text");
+  });
+
+  it.each([
+    ["punctuation only", 'const a = <span>(</span>;'],
+    ["a middle dot separator", 'const a = <span>·</span>;'],
+    ["a digit-only count", "<span>3</span>;"],
+    ["a count template with no words", "const a = <p>{`${n} / ${total}`}</p>;"],
+    ["an interpolated learning-content prop", "const a = <p>{item.meaningEn}</p>;"],
+    ["a table-backed translation", 'const a = <T k="nav.practice" />;'],
+    ["a translated aria-label", 'const a = <button aria-label={tp("nav.practice")} />;'],
+    ["a ternary of elements", 'const a = <p>{ok ? <T k="x.saved" /> : null}</p>;'],
+    ["class names are not copy", 'const a = <p className="text-body font-semibold">{null}</p>;'],
+  ])("passes %s", async (_label, code) => {
+    expect(await ruleIds("apps/web/src/probe.tsx", code)).not.toContain("vjt/no-raw-jsx-text");
+  });
+
+  it("does not apply to apps/mobile", async () => {
+    expect(await ruleIds("apps/mobile/src/probe.tsx", "const a = <p>Interface text</p>;")).not.toContain(
+      "vjt/no-raw-jsx-text",
+    );
+  });
+});

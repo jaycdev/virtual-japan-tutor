@@ -12,7 +12,7 @@ export type AuthState =
   /** The stored session could not be checked (server unreachable). The token is kept. */
   | { status: "error"; message: string };
 
-/** The same state while it is held: failures are stored untranslated (B1). */
+/** The same state while it is held: failures are stored untranslated. */
 type HeldAuthState =
   | { status: "loading" }
   | { status: "signedOut"; error?: Failure }
@@ -44,7 +44,7 @@ const errorText = (err: unknown) => (err instanceof Error ? err.message : String
  *
  * Failures are held untranslated and rendered in the current Interface
  * Language at return time, so switching languages re-labels the session check
- * without re-running it (issue #125 review B1).
+ * without re-running it (issue #125).
  */
 export function useAuth(client: ApiClient, storage: TokenStorage): Auth {
   const { language } = useInterfaceLanguage();

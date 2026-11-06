@@ -3,14 +3,21 @@
 // is what the line reports, in destructive, with the same way out as the
 // Settings section.
 import type { MaruMoriSyncRun } from "@vjt/api-client";
-import { formatInstant, type MaruMori } from "@vjt/core";
-import { useState } from "react";
+import {
+  formatInstantRuby,
+  pluralEn,
+  useT,
+  type InterfaceLanguage,
+  type MaruMori,
+} from "@vjt/core";
+import { useState, type ReactNode } from "react";
 import { Link } from "react-router";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/states";
+import { T } from "@/components/Text.tsx";
 
 export function SyncCard({
   marumori,
@@ -19,8 +26,11 @@ export function SyncCard({
   marumori: MaruMori;
   timezone: string | undefined;
 }) {
+  const { language } = useT();
   const [syncing, setSyncing] = useState(false);
-  const [syncNote, setSyncNote] = useState<string | null>(null);
+  // The note is a <T> element, not a resolved string: it stays in the Learner's
+  // language if they switch while it is on screen (issue #125).
+  const [syncNote, setSyncNote] = useState<ReactNode>(null);
 
   const connected = marumori.state.status === "ready" && marumori.state.marumori.connected;
 
@@ -36,11 +46,11 @@ export function SyncCard({
         // The run ran and failed: the server's Learner-facing reason, which
         // is more useful than anything the screen could invent (issue #47
         // review S1).
-        setSyncNote(outcome.error ?? "Sync failed.");
+        setSyncNote(outcome.error ?? <T k="today.syncFailedFallback" />);
       } else {
         // sync() already re-read the status on success, so the Last Sync line
         // under this note is the fresh one without a second reload (S3).
-        setSyncNote("Sync succeeded.");
+        setSyncNote(<T k="today.syncSucceededNote" />);
       }
     });
   };
@@ -49,7 +59,7 @@ export function SyncCard({
     <Card className="gap-3 px-6" aria-labelledby="sync-heading" data-testid="today-sync-card">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 id="sync-heading" className="text-title-sm font-semibold text-foreground">
-          Last sync
+          <T k="today.lastSyncHeading" />
         </h2>
         <Button
           variant="outline"
@@ -57,7 +67,7 @@ export function SyncCard({
           disabled={syncing || marumori.state.status !== "ready" || !connected}
           data-testid="today-sync-now"
         >
-          {syncing ? "Syncing…" : "Sync now"}
+          {syncing ? <T k="today.syncSyncing" /> : <T k="today.syncNow" />}
         </Button>
       </div>
 
@@ -73,14 +83,16 @@ export function SyncCard({
       ) : !connected ? (
         <div className="flex flex-col items-start gap-3">
           <p className="text-body text-muted-foreground">
-            No MaruMori account linked yet, so nothing has been synced.
+            <T k="today.syncNotLinked" />
           </p>
           <Button asChild variant="outline">
-            <Link to="/settings/marumori">Link MaruMori</Link>
+            <Link to="/settings/marumori">
+              <T k="today.syncLinkMaruMori" />
+            </Link>
           </Button>
         </div>
       ) : (
-        <SyncLine marumori={marumori} timezone={timezone} />
+        <SyncLine marumori={marumori} timezone={timezone} language={language} />
       )}
 
       {syncNote ? (
@@ -95,9 +107,11 @@ export function SyncCard({
 function SyncLine({
   marumori,
   timezone,
+  language,
 }: {
   marumori: MaruMori;
   timezone: string | undefined;
+  language: InterfaceLanguage;
 }) {
   if (marumori.state.status !== "ready") return null;
   const { lastSync, lastFailure } = marumori.state.marumori;
@@ -111,7 +125,7 @@ function SyncLine({
     return (
       <div className="flex flex-col gap-2">
         <p className="text-body text-destructive">
-          {`Last sync failed ${formatInstant(failed.finishedAt ?? failed.startedAt, timezone)}.`}
+          <T k="today.syncFailedLine" params={{ time: formatInstantRuby(failed.finishedAt ?? failed.startedAt, timezone, language) }} />
         </p>
         {failed.error ? <p className="text-small text-muted-foreground">{failed.error}</p> : null}
       </div>
@@ -120,7 +134,7 @@ function SyncLine({
   if (!lastSync) {
     return (
       <p className="text-body text-muted-foreground">
-        No sync has finished yet. Press Sync now to pull your knowledge across.
+        <T k="today.syncNoneYet" />
       </p>
     );
   }
@@ -129,9 +143,11 @@ function SyncLine({
       {/* Explicit about what the timestamp is (issue #47 review polish): a
           bare clock time does not read as "this sync worked". */}
       <p className="text-body text-foreground">
-        {`Last sync succeeded ${formatInstant(lastSync.finishedAt ?? lastSync.startedAt, timezone)}.`}
+        <T k="today.syncSucceededLine" params={{ time: formatInstantRuby(lastSync.finishedAt ?? lastSync.startedAt, timezone, language) }} />
       </p>
-      <p className="text-small text-muted-foreground">{syncResultLine(lastSync)}</p>
+      <p className="text-small text-muted-foreground">
+        {syncResultLine(lastSync, language)}
+      </p>
     </div>
   );
 }
@@ -140,10 +156,21 @@ function newer(a: string, b: string): boolean {
   return new Date(a).getTime() > new Date(b).getTime();
 }
 
-function syncResultLine(run: MaruMoriSyncRun): string {
+function syncResultLine(run: MaruMoriSyncRun, language: InterfaceLanguage): ReactNode {
   const counts = run.counts;
-  if (!counts) return "The sync finished with no counts to report.";
-  return `${counts.new} new item${counts.new === 1 ? "" : "s"}, ${counts.levelChanges} level change${
-    counts.levelChanges === 1 ? "" : "s"
-  }, ${counts.linked} linked to reference data.`;
+  if (!counts) return <T k="today.syncNoCounts" />;
+  // The English column carries the plural -s as a parameter; the Japanese
+  // column keeps the same placeholder and always receives "" (issue #125).
+  return (
+    <T
+      k="today.syncResultCounts"
+      params={{
+        new: counts.new,
+        newPlural: pluralEn(language, counts.new),
+        levelChanges: counts.levelChanges,
+        levelPlural: pluralEn(language, counts.levelChanges),
+        linked: counts.linked,
+      }}
+    />
+  );
 }

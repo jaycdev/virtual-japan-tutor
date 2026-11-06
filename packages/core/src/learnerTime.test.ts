@@ -1,7 +1,7 @@
 import type { Story } from "@vjt/api-client";
 import { describe, expect, it } from "vitest";
 
-import { formatInstant, greetingFor, learnerClock, localDayKey, normalizeTimezone, stillUnreadFrom } from "./learnerTime.ts";
+import { formatInstant, formatInstantRuby, greetingFor, greetingRubyFor, learnerClock, learnerClockRuby, learnerGreetingRuby, localDayKey, normalizeTimezone, stillUnreadFrom, stillUnreadFromRuby } from "./learnerTime.ts";
 
 function story(overrides: Partial<Story> = {}): Story {
   return {
@@ -60,6 +60,23 @@ describe("formatInstant", () => {
   });
 });
 
+// The sync line's {time} param is interface text too.
+describe("formatInstantRuby", () => {
+  it("reads the date kanji in furigana and keeps the visible base equal to formatInstant", () => {
+    const iso = "2026-11-04T05:02:00Z"; // Wed 4 Nov 14:02 in Tokyo
+    const furigana = formatInstantRuby(iso, "Asia/Tokyo", "ja-furigana");
+    expect(furigana.map((s) => s.text).join("")).toBe(formatInstant(iso, "Asia/Tokyo", "ja"));
+    expect(furigana.some((s) => s.text === "月" && s.ruby === "がつ")).toBe(true);
+    expect(furigana.some((s) => s.text === "4日" && s.ruby === "よっか")).toBe(true);
+  });
+
+  it("en and ja are the one plain segment formatInstant speaks", () => {
+    const iso = "2026-11-04T05:02:00Z";
+    expect(formatInstantRuby(iso, "Asia/Tokyo", "en")).toEqual([{ text: "November 4, 14:02" }]);
+    expect(formatInstantRuby(iso, "Asia/Tokyo", "ja")).toEqual([{ text: "11月4日 14:02" }]);
+  });
+});
+
 describe("localDayKey", () => {
   it("gives the calendar day in the zone", () => {
     const instant = new Date("2026-11-03T20:00:00Z");
@@ -85,6 +102,16 @@ describe("stillUnreadFrom", () => {
   it("names the unread weekday in Japanese too", () => {
     expect(stillUnreadFrom(story(), now, "Asia/Tokyo", "ja")).toBe("月曜日");
   });
+
+  // The storyStillUnread {date} param carries ruby.
+  it("reads the weekday in furigana, and stays the plain string otherwise", () => {
+    expect(stillUnreadFromRuby(story(), now, "Asia/Tokyo")).toEqual([{ text: "Monday" }]);
+    expect(stillUnreadFromRuby(story(), now, "Asia/Tokyo", "ja")).toEqual([{ text: "月曜日" }]);
+    expect(stillUnreadFromRuby(story(), now, "Asia/Tokyo", "ja-furigana")).toEqual([
+      { text: "月曜日", ruby: "げつようび" },
+    ]);
+    expect(stillUnreadFromRuby(story({ readAt: "2026-11-03T10:00:00Z" }), now, "Asia/Tokyo", "ja-furigana")).toBeNull();
+  });
 });
 
 // Issue #125: with an Interface Language passed, the clock itself speaks it,
@@ -95,11 +122,46 @@ describe("the clock in Japanese", () => {
     expect(greetingFor("23", "ja-furigana")).toBe("遅くまで勉強中ですね");
   });
 
+  it("keeps the greeting's readings as segments for screens that draw ruby", () => {
+    // The Today header draws the greeting through
+    // <TableText>, so translatePlain's dropped readings are not enough.
+    const segments = greetingRubyFor("23", "ja-furigana");
+    expect(segments.map((s) => s.text).join("")).toBe("遅くまで勉強中ですね");
+    expect(segments.some((s) => s.ruby === "べんきょうちゅう")).toBe(true);
+    // English has no readings: the segments are just the sentence.
+    expect(greetingRubyFor("09", "en").every((s) => !s.ruby)).toBe(true);
+    // The Learner's Timezone picks the same greeting as learnerClock.
+    const now = new Date("2026-11-03T22:30:00Z"); // Wed 4 Nov, 07:30 in Tokyo
+    expect(learnerGreetingRuby(now, "Asia/Tokyo", "ja").map((s) => s.text).join("")).toBe("おはようございます");
+  });
+
   it("orders the Today greeting and date as ja-JP", () => {
     const now = new Date("2026-11-03T22:30:00Z"); // Wed 4 Nov, 07:30 in Tokyo
     expect(learnerClock(now, "Asia/Tokyo", "ja")).toEqual({
       greeting: "おはようございます",
       date: "2026年11月4日水曜日",
+    });
+  });
+
+  // (issue #125).
+  it("reads the date's kanji in furigana and keeps the plain forms untouched", () => {
+    const now = new Date("2026-11-03T22:30:00Z"); // Wed 4 Nov, 07:30 in Tokyo
+    const ruby = learnerClockRuby(now, "Asia/Tokyo", "ja-furigana");
+    // Visible base text equals the plain ja string, byte for byte.
+    expect(ruby.date.map((s) => s.text).join("")).toBe("2026年11月4日水曜日");
+    // 4日 is one irregular word; the weekday sits over the whole name.
+    expect(ruby.date.some((s) => s.text === "4日" && s.ruby === "よっか")).toBe(true);
+    expect(ruby.date.some((s) => s.text === "年" && s.ruby === "ねん")).toBe(true);
+    expect(ruby.date.some((s) => s.text === "水曜日" && s.ruby === "すいようび")).toBe(true);
+    expect(ruby.greeting.some((s) => s.text === "おはようございます")).toBe(true);
+    // en and plain ja are the exact strings learnerClock already speaks.
+    expect(learnerClockRuby(now, "Asia/Tokyo", "ja")).toEqual({
+      greeting: [{ text: "おはようございます" }],
+      date: [{ text: "2026年11月4日水曜日" }],
+    });
+    expect(learnerClockRuby(now, "Asia/Tokyo", "en")).toEqual({
+      greeting: [{ text: "Good morning" }],
+      date: [{ text: "Wednesday, November 4" }],
     });
   });
 

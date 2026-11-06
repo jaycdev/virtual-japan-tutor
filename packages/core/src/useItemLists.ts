@@ -22,7 +22,7 @@ import { apiFailure, renderFailure, UNREACHABLE_FAILURE, type Failure } from "./
  * Like the other hooks this never rejects: failures land in `state` or in the
  * returned ActionResult. The view's failure is held untranslated and
  * rendered in the current Interface Language, so a language switch needs no
- * refetch (B1); ActionResult messages belong to the call that produced them
+ * refetch; ActionResult messages belong to the call that produced them
  * and are rendered at call time.
  */
 

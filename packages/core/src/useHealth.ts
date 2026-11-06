@@ -9,7 +9,7 @@ export type HealthState =
   | { state: "degraded"; health: Health }
   | { state: "error"; message: string };
 
-/** Held state: the failure stays untranslated until it is rendered (B1). */
+/** Held state: the failure stays untranslated until it is rendered. */
 type HeldHealthState =
   | { state: "loading" }
   | { state: "ok"; health: Health }

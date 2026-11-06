@@ -86,6 +86,16 @@ export function sectionTitle(id: SettingsSection, lang: InterfaceLanguage = DEFA
   return translatePlain(lang, SECTION_TITLES[id]);
 }
 
+/** The table key behind a section's title, so a screen can render <T> and keep furigana (issue #125). */
+export function sectionTitleKey(id: SettingsSection): StringKey {
+  return SECTION_TITLES[id];
+}
+
+/** The table key behind a section's blurb, same reason. */
+export function sectionBlurbKey(id: SettingsSection): StringKey {
+  return SECTION_BLURBS[id];
+}
+
 /** A section's blurb in the Learner's Interface Language. */
 export function sectionBlurb(id: SettingsSection, lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE): string {
   return translatePlain(lang, SECTION_BLURBS[id]);

@@ -4,6 +4,7 @@
 // position was left so Back can return to it. No React here, so the rules are
 // tested without a DOM.
 import type { GrammarJLPTLevel, GrammarPointSummary } from "@vjt/api-client";
+import { translatePlain, pluralEn, type InterfaceLanguage } from "@vjt/core";
 
 /** How long a typed search term settles before the catalogue re-reads (ui-plan 4.6). */
 export const SEARCH_DEBOUNCE_MS = 300;
@@ -76,9 +77,12 @@ export function offsetForPage(page: number): number {
   return (Math.max(1, page) - 1) * PAGE_SIZE;
 }
 
-/** "1 example" / "3 examples". */
-export function exampleCountLabel(count: number): string {
-  return `${count} example${count === 1 ? "" : "s"}`;
+/** "1 example" / "3 examples", in the Learner's Interface Language. */
+export function exampleCountLabel(count: number, lang: InterfaceLanguage = "en"): string {
+  return translatePlain(lang, "grammar.exampleCount", {
+    count,
+    plural: pluralEn(lang, count),
+  });
 }
 
 /** One block of an explanation: a paragraph, or a run of bullets or numbered items. */

@@ -7,11 +7,12 @@
 // All text here comes from the server (AI-generated), so it is rendered as React
 // text nodes. Nothing is inserted as HTML.
 import type { ApiClient, GrammarExample, GrammarPointDetail } from "@vjt/api-client";
-import { useGrammarPoint } from "@vjt/core";
+import { useGrammarPoint, useT } from "@vjt/core";
 import { ChevronLeft } from "lucide-react";
 import { useLocation, useNavigate, useParams } from "react-router";
 
 import { Ruby, type RubyRun } from "@/components/Ruby";
+import { T } from "@/components/Text";
 import { EmptyState, ErrorState } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -39,6 +40,7 @@ export function parsePointId(raw: string | undefined): number | undefined {
 }
 
 export function GrammarPointPage({ client, pointId }: { client: ApiClient; pointId: number | undefined }) {
+  const { tp } = useT();
   const navigate = useNavigate();
   const location = useLocation();
   const { state, reload } = useGrammarPoint(client, pointId);
@@ -55,19 +57,19 @@ export function GrammarPointPage({ client, pointId }: { client: ApiClient; point
   return (
     <div className="flex flex-col gap-6">
       {/* Pulled left by the ghost padding, so the chevron lines up with the content edge. */}
-      <Button variant="ghost" aria-label="Back to grammar" className="-ml-2 self-start text-primary hover:text-primary" onClick={back}>
+      <Button variant="ghost" aria-label={tp("grammar.backAria")} className="-ml-2 self-start text-primary hover:text-primary" onClick={back}>
         <ChevronLeft aria-hidden="true" />
-        Grammar
+        <T k="grammar.title" />
       </Button>
 
       {pointId === undefined ? (
         <p role="alert" className="text-body text-destructive">
-          This is not a grammar point from the catalogue.
+          <T k="grammar.notCataloguePoint" />
         </p>
       ) : state.status === "loading" || state.status === "idle" ? (
         <GeneratingBody />
       ) : state.status === "error" ? (
-        <ErrorState message={`Cannot load this grammar point: ${state.message}`} onRetry={reload} />
+        <ErrorState message={<T k="grammar.detailLoadFailed" params={{ message: state.message }} />} onRetry={reload} />
       ) : (
         <ReadyBody point={state.point} onReload={reload} />
       )}
@@ -86,7 +88,7 @@ function GeneratingBody() {
       <Card>
         <CardContent className="flex flex-col gap-4">
           <p role="status" className="text-body text-muted-foreground">
-            Preparing this page — the tutor writes a Grammar Point’s explanation the first time it is opened.
+            <T k="grammar.generating" />
           </p>
           <div className="flex flex-col gap-2">
             <Skeleton className="h-4 w-full" />
@@ -115,9 +117,11 @@ function ReadyBody({ point, onReload }: { point: GrammarPointDetail; onReload: (
           <Badge variant="secondary">{point.jlptLevel}</Badge>
           <span className="text-caption text-muted-foreground">{`#${point.catalogueNumber}`}</span>
         </div>
-        <p className="text-body text-foreground">{point.meaning}</p>
+        <p lang="en" className="text-body text-foreground">{point.meaning}</p>
         {point.variants.length > 0 ? (
-          <p className="text-caption text-muted-foreground">{`Also written ${point.variants.join(", ")}`}</p>
+          <p className="text-caption text-muted-foreground">
+            <T k="grammar.alsoWritten" params={{ variants: point.variants.join(", ") }} />
+          </p>
         ) : null}
       </header>
 
@@ -125,7 +129,7 @@ function ReadyBody({ point, onReload }: { point: GrammarPointDetail; onReload: (
         <CardContent>
         <section aria-labelledby="grammar-explanation-heading" className="flex flex-col gap-4">
           <h2 id="grammar-explanation-heading" className="text-title-sm font-semibold text-foreground">
-            Explanation
+            <T k="grammar.explanation" />
           </h2>
           {point.explanation === "" ? (
             // The server tried to generate the explanation inside this very read and
@@ -133,10 +137,10 @@ function ReadyBody({ point, onReload }: { point: GrammarPointDetail; onReload: (
             // give the way out.
             <EmptyState
               compact
-              message="The tutor could not generate this explanation. Check the AI Provider for grammar content in Settings, then reload this page."
+              message={<T k="grammar.explainFailed" />}
               action={
                 <Button variant="outline" onClick={onReload}>
-                  Reload
+                  <T k="grammar.reload" />
                 </Button>
               }
             />
@@ -151,10 +155,12 @@ function ReadyBody({ point, onReload }: { point: GrammarPointDetail; onReload: (
         <CardContent>
         <section aria-labelledby="grammar-examples-heading" className="flex flex-col gap-4">
           <h2 id="grammar-examples-heading" className="text-title-sm font-semibold text-foreground">
-            Example sentences
+            <T k="grammar.examples" />
           </h2>
           {point.examples.length === 0 ? (
-            <p className="text-body text-muted-foreground">No validated examples yet.</p>
+            <p className="text-body text-muted-foreground">
+              <T k="grammar.noValidatedExamples" />
+            </p>
           ) : (
             <ol className="flex flex-col gap-5">
               {point.examples.map((example) => (
@@ -237,7 +243,7 @@ function ExampleRow({ example }: { example: GrammarExample }) {
         </mark>
         <Ruby runs={tail} />
       </p>
-      <p className="text-small text-muted-foreground">{example.translationEn}</p>
+      <p lang="en" className="text-small text-muted-foreground">{example.translationEn}</p>
     </div>
   );
 }

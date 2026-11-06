@@ -34,7 +34,7 @@ export interface MaruMori {
   sync(): Promise<SyncOutcome>;
 }
 
-/** Held variants: errors carry a Failure until rendered (B1). */
+/** Held variants: errors carry a Failure until rendered. */
 type HeldMaruMoriState =
   | { status: "loading" }
   | { status: "error"; failure: Failure }

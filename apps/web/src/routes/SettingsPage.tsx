@@ -5,8 +5,16 @@
 // section with a Back link. Both layouts come from the same markup and CSS, so
 // there is one set of links and one section in the page at a time.
 import { Link, Navigate, useParams } from "react-router";
-import { findSettingsSection, SETTINGS_SECTIONS, type SettingsSection } from "@vjt/core";
+import {
+  findSettingsSection,
+  sectionBlurbKey,
+  sectionTitleKey,
+  SETTINGS_SECTIONS,
+  useT,
+  type SettingsSection,
+} from "@vjt/core";
 
+import { T } from "@/components/Text";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "../components/states.tsx";
 import { cn } from "@/lib/utils";
@@ -23,13 +31,13 @@ import { useWideLayout } from "../settings/useWideLayout.ts";
 
 // Today's "See all" deep link. The full Focus Set is not one of the eight hub
 // sections (ui-plan 4.4), so this route exists without a list entry.
-const FOCUS_DEEP_LINK = { id: "focus", title: "Today’s Focus Set" } as const;
+const FOCUS_DEEP_LINK_ID = "focus" as const;
 
 export function Component() {
   const { section } = useParams();
   const wide = useWideLayout();
   const found = findSettingsSection(section);
-  const isFocus = section === FOCUS_DEEP_LINK.id;
+  const isFocus = section === FOCUS_DEEP_LINK_ID;
 
   // Wide: /settings is not a page of its own, so it lands on Appearance.
   if (!section && wide) return <Navigate to="/settings/appearance" replace />;
@@ -37,12 +45,16 @@ export function Component() {
   if (section && !found && !isFocus) {
     return (
       <section className="flex flex-col gap-4">
-        <h1 tabIndex={-1} data-page-focus className="text-title font-semibold text-foreground">Settings</h1>
+        <h1 tabIndex={-1} data-page-focus className="text-title font-semibold text-foreground">
+          <T k="nav.settings" />
+        </h1>
         <EmptyState
-          message="That settings section doesn’t exist."
+          message={<T k="settings.notFound" />}
           action={
             <Button asChild variant="outline">
-              <Link to="/settings">Back to Settings</Link>
+              <Link to="/settings">
+                <T k="settings.back" />
+              </Link>
             </Button>
           }
         />
@@ -54,7 +66,9 @@ export function Component() {
   if (!section) {
     return (
       <section className="flex flex-col gap-6">
-        <h1 tabIndex={-1} data-page-focus className="text-title font-semibold text-foreground">Settings</h1>
+        <h1 tabIndex={-1} data-page-focus className="text-title font-semibold text-foreground">
+          <T k="nav.settings" />
+        </h1>
         <SectionList current={null} />
       </section>
     );
@@ -69,15 +83,17 @@ export function Component() {
       <section className="flex min-w-0 max-w-2xl flex-1 flex-col gap-6">
         <div className="lg:hidden">
           <Button asChild variant="ghost" className="px-0">
-            <Link to="/settings">← Settings</Link>
+            <Link to="/settings">
+              <T k="settings.backShort" />
+            </Link>
           </Button>
         </div>
         {/* data-page-focus: the shell focuses this heading after a section switch
             (handle `shellFocus: false`), so Tab reaches the content directly. */}
         <h1 tabIndex={-1} data-page-focus className="text-title font-semibold text-foreground focus:outline-none">
-          {isFocus ? FOCUS_DEEP_LINK.title : found?.title}
+          {isFocus ? <T k="settings.focusTitle" /> : found ? <T k={sectionTitleKey(found.id)} /> : ""}
         </h1>
-        <SectionContent section={isFocus ? FOCUS_DEEP_LINK.id : (section as SettingsSection)} />
+        <SectionContent section={isFocus ? FOCUS_DEEP_LINK_ID : (section as SettingsSection)} />
       </section>
     </div>
   );
@@ -85,8 +101,9 @@ export function Component() {
 
 /** The section list: one link per section, the open one marked with aria-current. */
 function SectionList({ current }: { current: SettingsSection | null }) {
+  const { tp } = useT();
   return (
-    <nav aria-label="Settings sections">
+    <nav aria-label={tp("settings.sectionsAria")}>
       <ul className="flex flex-col gap-1">
         {SETTINGS_SECTIONS.map((item) => {
           const active = item.id === current;
@@ -100,8 +117,10 @@ function SectionList({ current }: { current: SettingsSection | null }) {
                   active ? "bg-accent font-semibold text-accent-foreground" : "text-foreground hover:bg-accent",
                 )}
               >
-                <span>{item.title}</span>
-                <span className="text-small font-normal text-muted-foreground">{item.blurb}</span>
+                <span><T k={sectionTitleKey(item.id)} /></span>
+                <span className="text-small font-normal text-muted-foreground">
+                  <T k={sectionBlurbKey(item.id)} />
+                </span>
               </Link>
             </li>
           );
@@ -111,7 +130,7 @@ function SectionList({ current }: { current: SettingsSection | null }) {
   );
 }
 
-function SectionContent({ section }: { section: SettingsSection | typeof FOCUS_DEEP_LINK.id }) {
+function SectionContent({ section }: { section: SettingsSection | typeof FOCUS_DEEP_LINK_ID }) {
   switch (section) {
     case "appearance":
       return <AppearanceSection />;

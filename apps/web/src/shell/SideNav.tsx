@@ -4,6 +4,7 @@ import { LogOut } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { T } from "../components/Text.tsx";
 import { useSession } from "../session/session.tsx";
 import { NavList } from "./NavList.tsx";
 import { Wordmark } from "./Wordmark.tsx";
@@ -14,7 +15,7 @@ export function SideNavContent({ onNavigate }: { onNavigate?: () => void }) {
       <div className="flex flex-col gap-6 p-4">
         <div className="flex items-baseline gap-2 py-2">
           <Wordmark className="text-display" />
-          <span className="text-small font-semibold text-muted-foreground">Virtual Japan Tutor</span>
+          <span className="text-small font-semibold text-muted-foreground"><T k="brand.app" /></span>
         </div>
         <NavList onNavigate={onNavigate} />
       </div>
@@ -35,11 +36,11 @@ function AccountFooter() {
   return (
     <>
       <p className="text-small text-muted-foreground">
-        Signed in as <span className="font-semibold text-foreground">{username}</span>
+        <T k="shell.signedInAs" /> <span className="font-semibold text-foreground">{username}</span>
       </p>
       <Button variant="ghost" className="justify-start px-2 text-destructive hover:text-destructive" onClick={() => void logout()}>
         <LogOut aria-hidden="true" />
-        Log out
+        <T k="shell.logOut" />
       </Button>
     </>
   );

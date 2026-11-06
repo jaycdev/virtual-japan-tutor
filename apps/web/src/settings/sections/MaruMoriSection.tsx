@@ -2,15 +2,27 @@
 // API key, Sync now, and see the recent Syncs. The key is write-only: a saved key
 // shows as "set" with Replace, and is never put back into a field.
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { syncOutcomeText, syncRunText, useMarumori, type StepSaveOutcome, type StepSaveRegistrar } from "@vjt/core";
+import { formatInstantRuby, syncOutcomeText, syncRunText, useMarumori, useT, type InterfaceLanguage, type RubyText, type StepSaveOutcome, type StepSaveRegistrar } from "@vjt/core";
 
 import { Button } from "@/components/ui/button";
+import { T } from "@/components/Text";
 import { ErrorState, SkeletonLines } from "../../components/states.tsx";
 import { useSession } from "../../session/session.tsx";
 import { Fact, Note, SaveStatus, SectionBody, Subheading, TextField, type SaveState } from "../parts.tsx";
 
+// The Last Sync instant as param segments (issue #125): English keeps the
+// device-locale toLocaleString the line always showed — formatInstantRuby
+// would rewrite it to "November 1, 08:00". The Japanese forms go through the
+// ruby date formatter, which is the point of the change.
+function lastSyncWhen(iso: string, language: InterfaceLanguage): RubyText {
+  return language === "en"
+    ? [{ text: new Date(iso).toLocaleString() }]
+    : formatInstantRuby(iso, undefined, language);
+}
+
 export function MaruMoriSection({ registerSave }: { registerSave?: StepSaveRegistrar }) {
   const { client } = useSession();
+  const { language } = useT();
   const maru = useMarumori(client);
   const [draft, setDraft] = useState("");
   const [replacing, setReplacing] = useState(false);
@@ -33,7 +45,7 @@ export function MaruMoriSection({ registerSave }: { registerSave?: StepSaveRegis
     if (res.ok) {
       setDraft("");
       setReplacing(false);
-      setSave({ kind: "saved", message: "Connected to MaruMori." });
+      setSave({ kind: "saved", message: <T k="marumori.connected" /> });
       return "saved";
     }
     setSave({ kind: "error", message: res.message });
@@ -48,7 +60,7 @@ export function MaruMoriSection({ registerSave }: { registerSave?: StepSaveRegis
 
   if (maru.state.status === "loading") return <SkeletonLines lines={3} />;
   if (maru.state.status === "error") {
-    return <ErrorState message={`Cannot load MaruMori status: ${maru.state.message}`} onRetry={maru.reload} />;
+    return <ErrorState message={<T k="marumori.loadFailed" params={{ message: maru.state.message }} />} onRetry={maru.reload} />;
   }
 
   const status = maru.state.marumori;
@@ -66,7 +78,7 @@ export function MaruMoriSection({ registerSave }: { registerSave?: StepSaveRegis
     setSave({ kind: "saving" });
     const res = await maru.removeKey();
     keyHeadingRef.current?.focus();
-    setSave(res.ok ? { kind: "saved", message: "The MaruMori key was removed." } : { kind: "error", message: res.message });
+    setSave(res.ok ? { kind: "saved", message: <T k="marumori.keyRemoved" /> } : { kind: "error", message: res.message });
   };
 
   const sync = async () => {
@@ -75,7 +87,7 @@ export function MaruMoriSection({ registerSave }: { registerSave?: StepSaveRegis
     const outcome = await maru.sync();
     setSave({ kind: "idle" });
     if (outcome.status === "error") setSyncResult({ ok: false, text: outcome.message });
-    else setSyncResult({ ok: outcome.status === "ok", text: syncOutcomeText(outcome) });
+    else setSyncResult({ ok: outcome.status === "ok", text: syncOutcomeText(outcome, language) });
   };
 
   const toggleRuns = () => {
@@ -89,35 +101,54 @@ export function MaruMoriSection({ registerSave }: { registerSave?: StepSaveRegis
   return (
     <SectionBody>
       <div className="flex flex-col gap-2">
-        <p className="text-body text-foreground">{connected ? "Connected to MaruMori." : "Not connected."}</p>
+        <p className="text-body text-foreground">
+          <T k={connected ? "marumori.connected" : "marumori.notConnected"} />
+        </p>
         {connected && status.counts ? (
           <Note>
-            Known kanji: {status.counts.kanji} · Known vocabulary: {status.counts.vocabulary} · Vocabulary linked:{" "}
-            {Math.round(status.counts.vocabularyLinkRate * 100)}%
+            <T
+              k="marumori.counts"
+              params={{
+                kanji: status.counts.kanji,
+                vocabulary: status.counts.vocabulary,
+                rate: Math.round(status.counts.vocabularyLinkRate * 100),
+              }}
+            />
           </Note>
         ) : null}
         {connected && status.counts?.lastSyncAt ? (
-          <Note>Last Sync {new Date(status.counts.lastSyncAt).toLocaleString()}</Note>
+          <Note>
+            <T k="marumori.lastSync" params={{ when: lastSyncWhen(status.counts.lastSyncAt, language) }} />
+          </Note>
         ) : null}
         {connected && status.lastFailure ? (
           <p role="alert" className="text-small text-destructive">
-            Last Sync failed: {status.lastFailure.error ?? "unknown error"}
+            {status.lastFailure.error ? (
+              // The server's own words are data: plain in the {error} slot. The
+              // fallback sentence is a whole table entry so its furigana
+              // survives (issue #125).
+              <T k="marumori.syncFailed" params={{ error: status.lastFailure.error }} />
+            ) : (
+              <T k="marumori.syncFailedUnknown" />
+            )}
           </p>
         ) : null}
       </div>
 
       <div className="flex flex-col gap-4">
-        <Subheading ref={keyHeadingRef}>API key</Subheading>
+        <Subheading ref={keyHeadingRef}>
+          <T k="marumori.apiKeyHeading" />
+        </Subheading>
         {connected && !replacing ? (
           // The Replace button lives inside the dd: a bare <div> child of <dl> is not
-          // valid markup (issue #81 review), and "Saved key" keeps the label from
-          // repeating the heading above.
+          // valid markup (issue #81 review), and the label keeps the heading from
+          // repeating above.
           <dl className="flex flex-col gap-2">
-            <Fact label="Saved key">
+            <Fact label={<T k="marumori.savedKey" />}>
               <span className="flex flex-wrap items-center gap-3">
-                set
+                <T k="marumori.keySet" />
                 <Button type="button" variant="outline" disabled={busy} onClick={() => setReplacing(true)}>
-                  Replace
+                  <T k="marumori.replace" />
                 </Button>
               </span>
             </Fact>
@@ -127,22 +158,22 @@ export function MaruMoriSection({ registerSave }: { registerSave?: StepSaveRegis
           <form className="flex flex-col gap-4" onSubmit={(event) => void submitKey(event)} noValidate>
             <TextField
               id="marumori-key"
-              label="MaruMori API key"
+              label={<T k="marumori.keyLabel" />}
               type="password"
               autoComplete="off"
               spellCheck={false}
               value={draft}
               disabled={busy}
-              hint={connected ? "Paste a new key to replace the saved one. The saved key is never shown." : undefined}
+              hint={connected ? <T k="marumori.keyHint" /> : undefined}
               onChange={(event) => setDraft(event.target.value)}
             />
             <div className="flex flex-wrap items-center gap-4">
               <Button type="submit" disabled={busy || draft.trim() === ""}>
-                Save key
+                <T k="marumori.saveKey" />
               </Button>
               {connected ? (
                 <Button type="button" variant="ghost" onClick={() => { setReplacing(false); setDraft(""); }}>
-                  Keep the saved key
+                  <T k="marumori.keepKey" />
                 </Button>
               ) : null}
             </div>
@@ -152,16 +183,16 @@ export function MaruMoriSection({ registerSave }: { registerSave?: StepSaveRegis
           confirmRemove ? (
             <div className="flex flex-wrap gap-3">
               <Button type="button" variant="destructive" disabled={busy} onClick={() => void remove()}>
-                Confirm remove
+                <T k="marumori.confirmRemove" />
               </Button>
               <Button type="button" variant="ghost" onClick={() => setConfirmRemove(false)}>
-                Keep
+                <T k="stories.deleteKeep" />
               </Button>
             </div>
           ) : (
             <div>
               <Button type="button" variant="ghost" className="text-destructive" disabled={busy} onClick={() => setConfirmRemove(true)}>
-                Remove key
+                <T k="marumori.removeKey" />
               </Button>
             </div>
           )
@@ -170,13 +201,15 @@ export function MaruMoriSection({ registerSave }: { registerSave?: StepSaveRegis
 
       {connected ? (
         <div className="flex flex-col gap-4">
-          <Subheading>Sync</Subheading>
+          <Subheading>
+            <T k="marumori.syncHeading" />
+          </Subheading>
           <div className="flex flex-wrap items-center gap-4">
             <Button type="button" disabled={busy} onClick={() => void sync()}>
-              Sync now
+              <T k="marumori.syncNow" />
             </Button>
             <Button type="button" variant="ghost" onClick={toggleRuns}>
-              {showRuns ? "Hide recent Syncs" : "Show recent Syncs"}
+              <T k={showRuns ? "marumori.hideRuns" : "marumori.showRuns"} />
             </Button>
           </div>
           {syncResult ? (
@@ -186,16 +219,18 @@ export function MaruMoriSection({ registerSave }: { registerSave?: StepSaveRegis
           ) : null}
           {showRuns && maru.runs.status === "loading" ? <SkeletonLines lines={3} /> : null}
           {showRuns && maru.runs.status === "error" ? (
-            <ErrorState message={`Cannot load Sync history: ${maru.runs.message}`} />
+            <ErrorState message={<T k="marumori.runsLoadFailed" params={{ message: maru.runs.message }} />} />
           ) : null}
           {showRuns && maru.runs.status === "ready" ? (
             maru.runs.runs.length === 0 ? (
-              <p className="text-body text-muted-foreground">No Syncs yet.</p>
+              <p className="text-body text-muted-foreground">
+                <T k="marumori.noRuns" />
+              </p>
             ) : (
               <ul className="flex flex-col gap-1 rounded-lg border border-border bg-card p-4">
                 {maru.runs.runs.map((run) => (
                   <li key={run.id} className="text-small text-muted-foreground">
-                    {syncRunText(run)}
+                    {syncRunText(run, language)}
                   </li>
                 ))}
               </ul>

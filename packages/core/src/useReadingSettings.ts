@@ -15,7 +15,7 @@ import { apiFailure, renderFailure, UNREACHABLE_FAILURE, type Failure } from "./
  * The PUT body carries both fields (the spec requires the whole settings
  * object), so each setter merges with the last settings the server returned.
  * Like the other hooks this never rejects: failures land in `state`, held
- * untranslated and rendered in the current Interface Language (B1).
+ * untranslated and rendered in the current Interface Language.
  */
 
 export type ReadingSettingsState =

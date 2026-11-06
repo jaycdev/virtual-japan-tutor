@@ -24,7 +24,7 @@ export type GrammarDetailState =
   | { status: "error"; id: number; message: string }
   | { status: "ready"; point: GrammarPointDetail };
 
-/** Held variants: an error carries a Failure, rendered at return time (B1). */
+/** Held variants: an error carries a Failure, rendered at return time. */
 type HeldGrammarListState =
   | { status: "loading" }
   | { status: "error"; failure: Failure }
@@ -68,7 +68,7 @@ const DEFAULT_LIMIT = 50;
  *
  * List and detail failures are held untranslated and rendered in the current
  * Interface Language, so switching languages re-labels them without refetching
- * (issue #125 B1). Action outcomes are one-shot and rendered at call time.
+ * (issue #125). Action outcomes are one-shot and rendered at call time.
  */
 export function useGrammar(
   client: ApiClient,
@@ -169,7 +169,7 @@ export function useGrammar(
       }
     },
     // `language` here is fine: a one-shot ActionResult belongs to the language
-    // of the call, and these callbacks are never effect dependencies (B1).
+    // of the call, and these callbacks are never effect dependencies.
     [client, language, applyDetail, refreshList],
   );
 

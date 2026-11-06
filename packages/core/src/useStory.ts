@@ -28,7 +28,7 @@ import { DEFAULT_INTERFACE_LANGUAGE, type InterfaceLanguage } from "./i18n/langu
  *
  * Failures are stored in the language-independent Failure shape and rendered
  * in the current Interface Language at return time, so switching languages
- * re-labels what is on screen without re-fetching anything (issue #125 B1).
+ * re-labels what is on screen without re-fetching anything (issue #125).
  */
 
 /**
@@ -180,7 +180,7 @@ export function useStorySettings(client: ApiClient): StorySettingsView {
     },
     // `language` here is fine: a one-shot ActionResult is written in the
     // language of the moment the Learner pressed Save, and this callback is
-    // never an effect dependency (B1).
+    // never an effect dependency.
     [client, language],
   );
 

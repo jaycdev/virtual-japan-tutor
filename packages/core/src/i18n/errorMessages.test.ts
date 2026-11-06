@@ -51,7 +51,7 @@ describe("error codes", () => {
 
   it("a code that shadows Object.prototype falls back too", () => {
     // ERROR_STRINGS is a plain object: only own properties are translations
-    // (issue #125 review N1).
+    // (issue #125).
     expect(errorMessage("ja", "constructor", "The server explained it")).toBe("The server explained it");
   });
 
@@ -111,7 +111,7 @@ describe("exercise instructions", () => {
 
   it("a kind that shadows Object.prototype keeps the server's sentence", () => {
     // EXERCISE_STRINGS is a plain object: only own properties are
-    // translations (issue #125 review N1).
+    // translations (issue #125).
     expect(exerciseInstruction("ja", "constructor", "Read and choose")).toBe("Read and choose");
   });
 });

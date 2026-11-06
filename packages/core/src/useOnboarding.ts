@@ -35,7 +35,7 @@ export interface GrammarReview {
   reload(): void;
 }
 
-/** Held variants: the error carries a Failure, rendered at return time (B1). */
+/** Held variants: the error carries a Failure, rendered at return time. */
 type HeldStartingLevelState =
   | { status: "loading" }
   | { status: "error"; failure: Failure }

@@ -8,6 +8,7 @@ import {
   focusChipKey,
   focusChipLabel,
   useFocusChipLabels,
+  useT,
   type FocusSetView,
 } from "@vjt/core";
 import { useMemo } from "react";
@@ -15,11 +16,13 @@ import { Link } from "react-router";
 
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { T } from "@/components/Text.tsx";
 
 /** At most eight chips on the glance; "See all" carries the rest (plan 4.4). */
 const FOCUS_CHIPS_MAX = 8;
 
 export function FocusGlance({ client, focus }: { client: ApiClient; focus: FocusSetView }) {
+  const { tp } = useT();
   const items = focus.items ?? [];
   const resolve = useMemo(() => createFocusLabelResolver(client), [client]);
   const labels = useFocusChipLabels(client, items, resolve);
@@ -28,12 +31,12 @@ export function FocusGlance({ client, focus }: { client: ApiClient; focus: Focus
     <Card className="gap-3 px-6" aria-labelledby="focus-glance-heading" data-testid="today-focus-card">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 id="focus-glance-heading" className="text-title-sm font-semibold text-foreground">
-          Focus Set
+          <T k="today.focusSetHeading" />
         </h2>
         {/* A router Link, not an <a>: the app is a SPA and a full page reload
             here would throw away the shell and every loaded state. */}
         <Link to="/settings/focus" className="text-small font-medium text-primary hover:underline">
-          See all
+          <T k="today.seeAll" />
         </Link>
       </div>
 
@@ -46,13 +49,15 @@ export function FocusGlance({ client, focus }: { client: ApiClient; focus: Focus
       ) : focus.error ? (
         // The same failure is already on the Practice card next door with a full
         // Retry; here one quiet line is enough to explain the missing chips.
-        <p className="text-small text-muted-foreground">Your Focus Set could not be read.</p>
+        <p className="text-small text-muted-foreground">
+          <T k="today.focusReadError" />
+        </p>
       ) : items.length === 0 ? (
         <p className="text-small text-muted-foreground">
-          Nothing chosen yet — a Sync, a Story or a Practice session fills it in.
+          <T k="today.focusNothingChosen" />
         </p>
       ) : (
-        <ul className="flex flex-wrap gap-1.5" aria-label="Focus Set at a glance">
+        <ul className="flex flex-wrap gap-1.5" aria-label={tp("today.focusAriaGlance")}>
           {items.slice(0, FOCUS_CHIPS_MAX).map((item) => (
             <li
               key={focusChipKey(item)}
@@ -63,7 +68,7 @@ export function FocusGlance({ client, focus }: { client: ApiClient; focus: Focus
           ))}
           {items.length > FOCUS_CHIPS_MAX ? (
             <li className="rounded-md border border-border bg-muted/40 px-2 py-1 text-caption text-muted-foreground">
-              {`+${items.length - FOCUS_CHIPS_MAX} more`}
+              <T k="today.moreCount" params={{ count: items.length - FOCUS_CHIPS_MAX }} />
             </li>
           ) : null}
         </ul>

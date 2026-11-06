@@ -109,7 +109,7 @@ export function errorMessage(
   if (lang === "en" || code === undefined || code === null) return fallbackMessage;
   const table = ERROR_STRINGS as Record<string, StringKey | undefined>;
   // Only own properties are table rows: a code like "constructor" names an
-  // Object.prototype member, not an entry (issue #125 review N1).
+  // Object.prototype member, not an entry (issue #125).
   const key = Object.hasOwn(table, code) ? table[code] : undefined;
   return key === undefined ? fallbackMessage : translatePlain(lang, key);
 }
@@ -148,6 +148,19 @@ const EXERCISE_STRINGS: Record<ExerciseKind, StringKey> = {
 };
 
 /**
+ * The table entry for an exercise kind, or null when the server sent a kind
+ * this client has never seen. Screens that render visible copy through <T>
+ * use this so the line keeps its furigana in ja-furigana; exerciseInstruction
+ * stays the plain-text form (issue #125).
+ */
+export function exerciseInstructionKey(kind: ExerciseKind | string): StringKey | null {
+  const table = EXERCISE_STRINGS as Record<string, StringKey | undefined>;
+  // Only own properties are table rows, never Object.prototype members.
+  const key = Object.hasOwn(table, kind) ? table[kind] : undefined;
+  return key ?? null;
+}
+
+/**
  * The instruction over an exercise: English keeps the server's own sentence
  * (what the Learner reads today), Japanese uses the translated line. An
  * unknown kind — a newer server than this client — falls back to the
@@ -160,8 +173,7 @@ export function exerciseInstruction(
 ): string {
   if (lang === "en") return fallbackMessage;
   const table = EXERCISE_STRINGS as Record<string, StringKey | undefined>;
-  // Only own properties are table rows, never Object.prototype members
-  // (issue #125 review N1).
+  // Only own properties are table rows, never Object.prototype members.
   const key = Object.hasOwn(table, kind) ? table[kind] : undefined;
   return key === undefined ? fallbackMessage : translatePlain(lang, key);
 }

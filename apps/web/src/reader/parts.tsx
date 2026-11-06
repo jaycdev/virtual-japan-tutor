@@ -1,6 +1,12 @@
+import { T } from "@/components/Text.tsx";
+
 /** The MaruMori SRS Level, as small caption text: `SRS 4` (GLOSSARY: SRS Level). */
 export function SrsLevelText({ level }: { level: number }) {
-  return <span className="text-caption text-muted-foreground">SRS {level}</span>;
+  return (
+    <span className="text-caption text-muted-foreground">
+      <T k="reader.srs" params={{ level }} />
+    </span>
+  );
 }
 
 /** The JLPT level pill: secondary surface, foreground text, the same for every level (ui-plan 2.2). */

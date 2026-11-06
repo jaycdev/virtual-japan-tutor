@@ -3,7 +3,10 @@ import {
   DEFAULT_INTERFACE_LANGUAGE,
   type InterfaceLanguage,
 } from "./i18n/language.ts";
-import { translatePlain } from "./i18n/translate.ts";
+import { jaDateRuby } from "./i18n/dates.ts";
+import type { StringKey } from "./i18n/strings.ts";
+import { translate, translatePlain } from "./i18n/translate.ts";
+import type { RubyText } from "./i18n/ruby.ts";
 
 /**
  * The Learner's clock (plan 4.4 item 1): the greeting, the date and the time on
@@ -75,14 +78,61 @@ const GREETING_KEYS = {
  * keep odd hours. Returned in English for English UIs and in Japanese for
  * Japanese ones (with the table's furigana dropped: this lands in a string).
  */
-export function greetingFor(hourText: string, lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE): string {
+function greetingKey(hourText: string): StringKey {
   // Some engines hand back "24" for midnight under hour12: false.
   const hour = Number.parseInt(hourText, 10) % 24;
-  if (Number.isNaN(hour)) return translatePlain(lang, GREETING_KEYS.hello);
-  if (hour >= 5 && hour < 12) return translatePlain(lang, GREETING_KEYS.morning);
-  if (hour >= 12 && hour < 18) return translatePlain(lang, GREETING_KEYS.afternoon);
-  if (hour >= 18 && hour < 22) return translatePlain(lang, GREETING_KEYS.evening);
-  return translatePlain(lang, GREETING_KEYS.lateNight);
+  if (Number.isNaN(hour)) return GREETING_KEYS.hello;
+  if (hour >= 5 && hour < 12) return GREETING_KEYS.morning;
+  if (hour >= 12 && hour < 18) return GREETING_KEYS.afternoon;
+  if (hour >= 18 && hour < 22) return GREETING_KEYS.evening;
+  return GREETING_KEYS.lateNight;
+}
+
+export function greetingFor(hourText: string, lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE): string {
+  return translatePlain(lang, greetingKey(hourText));
+}
+
+/**
+ * The same greeting as base/reading segments, for screens that draw furigana
+ * with <TableText> — translatePlain drops the readings, which left the Today
+ * greeting as bare kanji in ja-furigana (issue #125).
+ */
+export function greetingRubyFor(hourText: string, lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE): RubyText {
+  return translate(lang, greetingKey(hourText));
+}
+
+/** The Learner's greeting, in their Timezone, as segments — see learnerClock. */
+export function learnerGreetingRuby(
+  now: Date,
+  timezone: string | undefined | null,
+  lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
+): RubyText {
+  const zone = normalizeTimezone(timezone);
+  // Same en-US hour read as learnerClock: the greeting only needs the number.
+  const parts = readParts(now, zone, "en-US", ["hour"]);
+  return greetingRubyFor(parts.hour ?? String(now.getHours()), lang);
+}
+
+/**
+ * The Learner's clock as base/reading segments (issue #125): in
+ * ja-furigana the date's kanji — 年月日 and the weekday — carry readings; in
+ * en and plain ja the segments are the one string learnerClock speaks, so
+ * nothing about today's output changes.
+ */
+export function learnerClockRuby(
+  now: Date,
+  timezone: string | undefined | null,
+  lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
+): { greeting: RubyText; date: RubyText } {
+  if (lang !== "ja-furigana") {
+    const clock = learnerClock(now, timezone, lang);
+    return { greeting: [{ text: clock.greeting }], date: [{ text: clock.date }] };
+  }
+  const zone = normalizeTimezone(timezone);
+  const parts = readParts(now, zone, "en-US", ["hour"]);
+  const greeting = greetingRubyFor(parts.hour ?? String(now.getHours()), lang);
+  const date = jaDateRuby(now, { timeZone: zone, year: "numeric", month: "long", day: "numeric", weekday: "long" });
+  return { greeting, date };
 }
 
 /**
@@ -150,6 +200,31 @@ export function formatInstant(
   return `${parts.month} ${parts.day}, ${parts.hour}:${parts.minute}`;
 }
 
+/**
+ * The same instant as base/reading segments: en and ja are
+ * the one string formatInstant speaks; ja-furigana puts readings over the
+ * kanji ja-JP writes — 月《がつ》 and a day like 4日《よっか》.
+ */
+export function formatInstantRuby(
+  iso: string,
+  timezone: string | undefined | null,
+  lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
+): RubyText {
+  if (lang !== "ja-furigana") return [{ text: formatInstant(iso, timezone, lang) }];
+  try {
+    return jaDateRuby(new Date(iso), {
+      timeZone: normalizeTimezone(timezone),
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  } catch {
+    return [{ text: new Date(iso).toLocaleString() }];
+  }
+}
+
 /** The local calendar day of an instant in the zone, as YYYY-MM-DD (sortable as text). */
 export function localDayKey(instant: Date, timezone: string | undefined | null): string {
   const zone = normalizeTimezone(timezone);
@@ -168,6 +243,18 @@ export function localDayKey(instant: Date, timezone: string | undefined | null):
 }
 
 /**
+ * The day an unread older Automatic Story belongs to, or null when the hint
+ * does not apply. Shared by both stillUnreadFrom forms.
+ */
+function unreadEarlierStoryDay(story: Story, now: Date, timezone: string | undefined | null): Date | null {
+  if (story.readAt || story.origin === "on_demand") return null;
+  const created = new Date(story.createdAt);
+  if (Number.isNaN(created.getTime())) return null;
+  if (!(localDayKey(created, timezone) < localDayKey(now, timezone))) return null;
+  return created;
+}
+
+/**
  * The "Still unread from Monday." hint (issue #62): when Today's Story is an
  * Automatic Story the Learner has not read and it belongs to an earlier local
  * day, the weekday it belongs to. Null otherwise. Japanese UIs get the
@@ -179,10 +266,28 @@ export function stillUnreadFrom(
   timezone: string | undefined | null,
   lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
 ): string | null {
-  if (story.readAt || story.origin === "on_demand") return null;
-  const created = new Date(story.createdAt);
-  if (Number.isNaN(created.getTime())) return null;
-  if (!(localDayKey(created, timezone) < localDayKey(now, timezone))) return null;
+  const created = unreadEarlierStoryDay(story, now, timezone);
+  if (!created) return null;
+  return readParts(created, normalizeTimezone(timezone), displayLocale(lang), ["weekday"]).weekday ?? null;
+}
+
+/**
+ * The same hint as base/reading segments: the weekday in
+ * en and ja is the one string stillUnreadFrom speaks; ja-furigana reads it
+ * (月曜日《げつようび》), so the {date} param carries no bare kanji.
+ */
+export function stillUnreadFromRuby(
+  story: Story,
+  now: Date,
+  timezone: string | undefined | null,
+  lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
+): RubyText | null {
+  const created = unreadEarlierStoryDay(story, now, timezone);
+  if (!created) return null;
   const zone = normalizeTimezone(timezone);
-  return readParts(created, zone, displayLocale(lang), ["weekday"]).weekday ?? null;
+  if (lang !== "ja-furigana") {
+    const day = readParts(created, zone, displayLocale(lang), ["weekday"]).weekday;
+    return day === undefined ? null : [{ text: day }];
+  }
+  return jaDateRuby(created, { timeZone: zone, weekday: "long" });
 }
