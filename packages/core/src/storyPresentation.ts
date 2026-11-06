@@ -25,13 +25,15 @@ export function originLabel(
 /**
  * Genre ids in the Learner's words; an unknown genre shows as-is in either
  * language — a Learner can type any genre, and its own words are its label.
- * English maps only diary/travel/mystery (issue #79); Japanese also maps the
- * server's eight preset genres (story/service.go). Display-only: what is
- * stored and sent stays the English id. One table path for both languages:
- * the same lookup, the same case handling, and the same pass-through for a
- * genre the table has never seen (issue #125 review S16).
+ * English maps only diary/travel/mystery, exactly the labels that shipped
+ * before the Interface Language work (issue #79); every other genre shows
+ * exactly as stored. Japanese also maps the server's preset genres
+ * (story/service.go). Display-only: what is stored and sent stays the
+ * English id. One table path for both languages: the same lookup, the same
+ * case handling, and the same pass-through for a genre the table has never
+ * seen (issue #125 review S16 and R4).
  */
-const GENRE_STRINGS: Record<string, StringKey> = {
+const GENRE_STRINGS_JA: Record<string, StringKey> = {
   diary: "genre.diary",
   travel: "genre.travel",
   mystery: "genre.mystery",
@@ -43,12 +45,23 @@ const GENRE_STRINGS: Record<string, StringKey> = {
   nature: "genre.nature",
 };
 
+const GENRE_STRINGS: Record<InterfaceLanguage, Record<string, StringKey>> = {
+  en: {
+    diary: "genre.diary",
+    travel: "genre.travel",
+    mystery: "genre.mystery",
+  },
+  // The two Japanese settings speak the same words; only the furigana differs.
+  ja: GENRE_STRINGS_JA,
+  "ja-furigana": GENRE_STRINGS_JA,
+};
+
 export function genreLabel(
   genre: string | null | undefined,
   lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
 ): string {
   if (genre === null || genre === undefined) return "";
-  const key = GENRE_STRINGS[genre.toLowerCase()];
+  const key = GENRE_STRINGS[lang][genre.toLowerCase()];
   return key === undefined ? genre : translatePlain(lang, key);
 }
 
