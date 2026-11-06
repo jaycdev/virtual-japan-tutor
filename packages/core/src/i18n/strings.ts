@@ -172,7 +172,7 @@ export const strings = {
   "aiTask.story": { en: "Story generation", ja: "物語《ものがたり》生成《せいせい》" },
   "aiTask.grammarContent": { en: "Grammar content", ja: "文法《ぶんぽう》コンテンツ" },
   "settings.ai.usedFor": { en: "used for {tasks}", ja: "{tasks}に使用《しよう》" },
-  "settings.ai.keySaved": { en: "Key saved", ja: "キー保存《ほぞん》済《ず》み" },
+  "settings.ai.keySaved": { en: "Key saved", ja: "キー保存済《ほぞんず》み" },
   "settings.ai.noKey": { en: "No key", ja: "キーなし" },
 
   // — Focus Set chips —
@@ -251,11 +251,13 @@ export const strings = {
   "settings.backShort": { en: "← Settings", ja: "← 設定《せってい》" },
   "settings.sectionsAria": { en: "Settings sections", ja: "設定《せってい》セクション" },
   "settings.focusTitle": { en: "Today’s Focus Set", ja: "本日《ほんじつ》の重点項目《じゅうてんこうもく》" },
-  "settings.loadFailed": {
-    en: "Cannot load your {what}: {message}",
-    ja: "あなたの{what}を読《よ》み込《こ》めません: {message}",
+  // Whole-sentence keys (issue #125 round-2 review S2): the load-failure line
+  // is one table entry, so its furigana survives — a {what} param fed from
+  // tp() would be inserted as plain text.
+  "settings.readingLoadFailed": {
+    en: "Cannot load your reading settings: {message}",
+    ja: "あなたの読解《どっかい》設定《せってい》を読《よ》み込《こ》めません: {message}",
   },
-  "settings.readingWhat": { en: "reading settings", ja: "読解《どっかい》設定《せってい》" },
   "settings.readingSaved": {
     en: "Saved. The reader uses this from the next lookup on.",
     ja: "保存《ほぞん》しました。次《つぎ》の検索《けんさく》から読解《どっかい》パネルに使《つか》われます。",
@@ -289,9 +291,14 @@ export const strings = {
     en: "The server is reachable and its database is connected.",
     ja: "サーバーは接続《せつぞく》可能《かのう》で、データベースもつながっています。",
   },
-  "server.answeredBut": { en: "The server answered, but {what}", ja: "サーバーは応答《おうとう》しましたが、{what}" },
-  "server.dbUnreachable": { en: "cannot reach its database.", ja: "データベースに接続《せつぞく》できません。" },
-  "server.degradedPart": { en: "reports a degraded part.", ja: "一部《いちぶ》の機能《きのう》が劣化《れっか》しています。" },
+  "server.answeredButDbUnreachable": {
+    en: "The server answered, but cannot reach its database.",
+    ja: "サーバーは応答《おうとう》しましたが、データベースに接続《せつぞく》できません。",
+  },
+  "server.answeredButDegraded": {
+    en: "The server answered, but reports a degraded part.",
+    ja: "サーバーは応答《おうとう》しましたが、一部《いちぶ》の機能《きのう》が劣化《れっか》しています。",
+  },
   "server.checkAgain": { en: "Check again", ja: "もう一度《いちど》確認《かくにん》" },
 
   // The full Focus Set behind Today's "See all".
@@ -326,7 +333,7 @@ export const strings = {
   },
   "settings.levelLegend": { en: "Choose your level", ja: "レベルを選《えら》ぶ" },
   "settings.levelSave": { en: "Save level", ja: "レベルを保存《ほぞん》" },
-  "settings.levelReviewHeading": { en: "Review these grammar matches", ja: "文法《ぶんぽう》の照合《しょうごう》の確認《かくにん》" },
+  "settings.levelReviewHeading": { en: "Review these grammar matches", ja: "文法《ぶんぽう》の照合《しょうごう》結果《けっか》の確認《かくにん》" },
   "settings.reviewLoadFailed": {
     en: "Cannot load the review list: {message}",
     ja: "見直《みなお》しリストを読《よ》み込《こ》めません: {message}",
@@ -501,7 +508,7 @@ export const strings = {
     ja: "新《あら》たな物語《ものがたり》を書《か》いています。",
   },
   "today.syncNow": { en: "Sync now", ja: "今《いま》すぐ同期《どうき》" },
-  "today.syncSyncing": { en: "Syncing…", ja: "同期《どうき》中《ちゅう》…" },
+  "today.syncSyncing": { en: "Syncing…", ja: "同期中《どうきちゅう》…" },
   "today.moreCount": { en: "+{count} more", ja: "他《ほか》{count}件《けん》" },
   "today.focusSetHeading": { en: "Focus Set", ja: "重点項目《じゅうてんこうもく》" },
   "today.seeAll": { en: "See all", ja: "すべて見《み》る" },
@@ -567,7 +574,10 @@ export const strings = {
   "settings.themeLight": { en: "Light", ja: "ライト" },
   "settings.themeDark": { en: "Dark", ja: "ダーク" },
   "settings.themeSystem": { en: "System", ja: "システム" },
-  "settings.storyWhat": { en: "story settings", ja: "物語《ものがたり》設定《せってい》" },
+  "settings.storyLoadFailed": {
+    en: "Cannot load your story settings: {message}",
+    ja: "あなたの物語《ものがたり》設定《せってい》を読《よ》み込《こ》めません: {message}",
+  },
   "settings.storySaved": {
     en: "Saved. The next Story written for you uses this.",
     ja: "保存《ほぞん》しました。次《つぎ》にあなた用《よう》に書《か》かれる物語《ものがたり》に使《つか》われます。",
@@ -614,17 +624,21 @@ export const strings = {
   },
   "marumori.lastSync": { en: "Last Sync {when}", ja: "最終《さいしゅう》同期《どうき》 {when}" },
   "marumori.syncFailed": { en: "Last Sync failed: {error}", ja: "最終《さいしゅう》同期《どうき》は失敗《しっぱい》: {error}" },
+  "marumori.syncFailedUnknown": {
+    en: "Last Sync failed: unknown error",
+    ja: "最終《さいしゅう》同期《どうき》は失敗《しっぱい》: 原因《げんいん》不明《ふめい》",
+  },
   "marumori.apiKeyHeading": { en: "API key", ja: "APIキー" },
-  "marumori.savedKey": { en: "Saved key", ja: "保存《ほぞん》済《ず》みのキー" },
-  "marumori.keySet": { en: "set", ja: "設定《せってい》済《ず》み" },
+  "marumori.savedKey": { en: "Saved key", ja: "保存済《ほぞんず》みのキー" },
+  "marumori.keySet": { en: "set", ja: "設定済《せっていず》み" },
   "marumori.replace": { en: "Replace", ja: "置《お》き換《か》える" },
   "marumori.keyLabel": { en: "MaruMori API key", ja: "MaruMoriのAPIキー" },
   "marumori.keyHint": {
     en: "Paste a new key to replace the saved one. The saved key is never shown.",
-    ja: "新《あたら》しいキーを貼《は》ると保存《ほぞん》済《ず》みのキーを置《お》き換《か》えます。保存《ほぞん》済《ず》みのキーは表示《ひょうじ》されません。",
+    ja: "新《あたら》しいキーを貼《は》ると保存済《ほぞんず》みのキーを置《お》き換《か》えます。保存済《ほぞんず》みのキーは表示《ひょうじ》されません。",
   },
   "marumori.saveKey": { en: "Save key", ja: "キーを保存《ほぞん》" },
-  "marumori.keepKey": { en: "Keep the saved key", ja: "保存《ほぞん》済《ず》みのキーを残《のこ》す" },
+  "marumori.keepKey": { en: "Keep the saved key", ja: "保存済《ほぞんず》みのキーを残《のこ》す" },
   "marumori.confirmRemove": { en: "Confirm remove", ja: "削除《さくじょ》を確定《かくてい》" },
   "marumori.removeKey": { en: "Remove key", ja: "キーを削除《さくじょ》" },
   "marumori.syncHeading": { en: "Sync", ja: "同期《どうき》" },
@@ -672,13 +686,16 @@ export const strings = {
   },
   "reader.blurSaveFailed": { en: "Could not save that — {message}", ja: "保存《ほぞん》できませんでした — {message}" },
   "reader.saveFailed": { en: "Could not save — {message}", ja: "保存《ほぞん》できません — {message}" },
+  "reader.saveFailedListVanished": {
+    en: "Could not save — the new list vanished",
+    ja: "保存《ほぞん》できません — 新《あたら》しいリストが消《き》えました",
+  },
   "reader.saveListsLoading": {
     en: "Could not save — Your Item Lists are still loading",
     ja: "保存《ほぞん》できません — リストの読《よ》み込《こ》み中《ちゅう》です",
   },
   "reader.savedToList": { en: "Saved to {list}.", ja: "{list}に保存《ほぞん》しました。" },
-  "reader.yourList": { en: "your list", ja: "あなたのリスト" },
-  "reader.listVanished": { en: "the new list vanished", ja: "新《あたら》しいリストが消《き》えました" },
+  "reader.savedToListYours": { en: "Saved to your list.", ja: "あなたのリストに保存《ほぞん》しました。" },
   "reader.wordMenuAria": { en: "Word menu", ja: "語《ことば》のメニュー" },
   "reader.dictionaryEntry": { en: "Dictionary Entry", ja: "辞書《じしょ》" },
   "reader.dictNoAnswer": {
@@ -749,7 +766,7 @@ export const strings = {
   "practice.sessionComplete": { en: "Session complete", ja: "セッション完了《かんりょう》" },
   "practice.scoreLine": {
     en: "{correct} of {total} correct - {count} exercise{plural} from your Focus Set.",
-    ja: "{total}問中《もんちゅう》{correct}問正解《もんせいかい》です（重点項目《じゅうてんこうもく》から{count}問《もん》{plural}）。",
+    ja: "{total}問《もん》中《ちゅう》{correct}問《もん》正解《せいかい》です（重点項目《じゅうてんこうもく》から{count}問《もん》{plural}）。",
   },
   "practice.needsLook": { en: "Needs another look", ja: "見直《みなお》す" },
   "practice.correctAnswer": { en: "Correct answer: {answer}", ja: "正解《せいかい》: {answer}" },
@@ -795,7 +812,7 @@ export const strings = {
   "grammar.levelsAria": { en: "JLPT Levels", ja: "JLPTレベル" },
   "grammar.allLevels": { en: "All levels", ja: "すべてのレベル" },
   "grammar.statusSeeded": { en: "Seeded", ja: "開始《かいし》レベルから推定《すいてい》" },
-  "grammar.statusObserved": { en: "Observed", ja: "観察《かんさつ》済《ず》み" },
+  "grammar.statusObserved": { en: "Observed", ja: "観察済《かんさつず》み" },
   "grammar.statusNotKnown": { en: "Not known", ja: "未知《みち》" },
   "grammar.pagesAria": { en: "Grammar pages", ja: "文法《ぶんぽう》ページ" },
   "grammar.pageRange": {
@@ -814,7 +831,7 @@ export const strings = {
   },
   "grammar.generating": {
     en: "Preparing this page — the tutor writes a Grammar Point’s explanation the first time it is opened.",
-    ja: "このページは準備《じゅんび》中《ちゅう》です — チューターは文法《ぶんぽう》ポイントの解説《せつめい》を、初《はじ》めて開《ひら》くときに書《か》きます。",
+    ja: "このページは準備中《じゅんびちゅう》です — チューターは文法《ぶんぽう》ポイントの解説《せつめい》を、初《はじ》めて開《ひら》くときに書《か》きます。",
   },
   "grammar.explanation": { en: "Explanation", ja: "解説《せつめい》" },
   "grammar.explainFailed": {
@@ -825,12 +842,15 @@ export const strings = {
   "grammar.examples": { en: "Example sentences", ja: "例文《れいぶん》" },
   "grammar.noValidatedExamples": {
     en: "No validated examples yet.",
-    ja: "検証《けんしょう》済《ず》みの例文《れいぶん》はまだありません。",
+    ja: "検証済《けんしょうず》みの例文《れいぶん》はまだありません。",
   },
   // The Item Lists section (issue #12's management): master/detail, membership,
   // and the Default/Boosting choices. "Saved" and the level of the built-in list
   // follow the section's terminology (リスト, 優先, 重点項目).
-  "settings.listsWhat": { en: "Item Lists", ja: "リスト" },
+  "settings.listsLoadFailed": {
+    en: "Cannot load your Item Lists: {message}",
+    ja: "あなたのリストを読《よ》み込《こ》めません: {message}",
+  },
   "lists.introNote": {
     en: "Saving a word from a story adds it to the Default List. A Boosting List also pulls its not-yet-known items into your stories’ Focus Sets. Choose a list to manage its items.",
     ja: "物語《ものがたり》から単語《たんご》を保存《ほぞん》すると、既定《きてい》のリストに追加《ついか》されます。優先《ゆうせん》リストは、まだ知《し》らない項目《こうもく》を物語《ものがたり》の重点項目《じゅうてんこうもく》にも追加《ついか》します。リストを選《えら》んで項目《こうもく》を管理《かんり》してください。",
@@ -903,26 +923,26 @@ export const strings = {
   "ai.editHeading": { en: "Edit {name}", ja: "{name}を編集《へんしゅう》" },
   "ai.addHeading": { en: "Add a provider", ja: "AIプロバイダーを追加《ついか》" },
   "ai.nameLabel": { en: "Name", ja: "名前《なまえ》" },
-  "ai.baseUrlLabel": { en: "Base URL", ja: "ベース URL" },
+  "ai.baseUrlLabel": { en: "Base URL", ja: "ベースURL" },
   "ai.baseUrlPlaceholder": {
     en: "https://api.openai.com/v1 or http://localhost:11434",
     ja: "https://api.openai.com/v1 または http://localhost:11434",
   },
   "ai.modelLabel": { en: "Model", ja: "モデル" },
-  "ai.keySet": { en: "API key set", ja: "APIキーを設定《せってい》済《ず》み" },
-  "ai.newKeyLabel": { en: "New API key", ja: "新《あたら》しい APIキー" },
+  "ai.keySet": { en: "API key set", ja: "APIキーを設定済《せっていず》み" },
+  "ai.newKeyLabel": { en: "New API key", ja: "新《あたら》しいAPIキー" },
   "ai.keyHintKeep": {
     en: "Leave empty to keep the saved key.",
-    ja: "空《から》にすると保存《ほぞん》済《ず》みのキーが保《たも》たれます。",
+    ja: "空《から》にすると保存済《ほぞんず》みのキーが保《たも》たれます。",
   },
   "ai.keyHintNone": {
     en: "Leave empty if the endpoint needs none.",
     ja: "エンドポイントにキーが不要《ふよう》なら空《から》にしてください。",
   },
-  "ai.removeKeyLabel": { en: "Remove the saved key", ja: "保存《ほぞん》済《ず》みのキーを削除《さくじょ》" },
+  "ai.removeKeyLabel": { en: "Remove the saved key", ja: "保存済《ほぞんず》みのキーを削除《さくじょ》" },
   "ai.removeKeyNote": {
     en: "The saved key will be removed when you save.",
-    ja: "保存《ほぞん》すると、保存《ほぞん》済《ず》みのキーは削除《さくじょ》されます。",
+    ja: "保存《ほぞん》すると、保存済《ほぞんず》みのキーは削除《さくじょ》されます。",
   },
   "ai.saveChanges": { en: "Save changes", ja: "変更《へんこう》を保存《ほぞん》" },
   "ai.addSubmit": { en: "Add provider", ja: "AIプロバイダーを追加《ついか》" },

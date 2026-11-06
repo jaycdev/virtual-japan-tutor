@@ -40,7 +40,7 @@ export function StoriesSection() {
   if (stories.settings.status === "error") {
     return (
       <ErrorState
-        message={<T k="settings.loadFailed" params={{ what: tp("settings.storyWhat"), message: stories.settings.message }} />}
+        message={<T k="settings.storyLoadFailed" params={{ message: stories.settings.message }} />}
         onRetry={stories.reloadSettings}
       />
     );

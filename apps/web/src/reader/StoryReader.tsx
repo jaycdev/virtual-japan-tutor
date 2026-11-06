@@ -16,7 +16,7 @@ import {
   type TokenRef,
 } from "@vjt/core";
 import { Check, ChevronLeft, ChevronRight, ThumbsDown, ThumbsUp } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router";
 
 import { Button } from "@/components/ui/button";
@@ -80,10 +80,13 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
   const [menu, setMenu] = useState<{ ref: TokenRef; box: Box } | null>(null);
   const [dialog, setDialog] = useState<{ kind: DialogKind; ref: TokenRef } | null>(null);
   const [titleEnRevealed, setTitleEnRevealed] = useState(false);
-  const [saveNote, setSaveNote] = useState<string | null>(null);
+  // The save notes are <T> elements, not resolved strings: they stay in the
+  // Learner's language if it changes while on screen, and their furigana
+  // survives (issue #125 round-2 review S2, the SyncCard pattern).
+  const [saveNote, setSaveNote] = useState<ReactNode>(null);
   const [saveBusy, setSaveBusy] = useState(false);
   const saveBusyRef = useRef(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<ReactNode>(null);
   const [blurError, setBlurError] = useState<string | null>(null);
   // The word the last overlay belongs to: focus goes back there when it closes.
   const lastWord = useRef<TokenRef | null>(null);
@@ -303,7 +306,7 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
     nameHint?: string,
   ) => {
     if (!listId) {
-      setSaveNote(tp("reader.saveListsLoading"));
+      setSaveNote(<T k="reader.saveListsLoading" />);
       return;
     }
     if (saveBusyRef.current) return; // one save at a time
@@ -315,11 +318,20 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
       if (res.ok) {
         const found =
           lists.state.status === "ready" ? lists.state.lists.find((l) => l.id === listId)?.name : undefined;
-        setSaveNote(tp("reader.savedToList", { list: found ?? nameHint ?? tp("reader.yourList") }));
+        const listName = found ?? nameHint;
+        // A known name is Learner data and fills the {list} slot; the fallback
+        // "your list" is chrome, so it gets a whole-sentence key (#125 review S2).
+        setSaveNote(
+          listName ? (
+            <T k="reader.savedToList" params={{ list: listName }} />
+          ) : (
+            <T k="reader.savedToListYours" />
+          ),
+        );
         setDialog(null);
         setSaveError(null);
       } else {
-        setSaveNote(tp("reader.saveFailed", { message: res.message }));
+        setSaveNote(<T k="reader.saveFailed" params={{ message: res.message }} />);
       }
     } finally {
       saveBusyRef.current = false;
@@ -376,7 +388,13 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
           await saveInto(created.list.id, item, created.list.name);
           return;
         }
-        setSaveError(created.ok ? tp("reader.listVanished") : created.message);
+        setSaveError(
+          created.ok ? (
+            <T k="reader.saveFailedListVanished" />
+          ) : (
+            <T k="reader.saveFailed" params={{ message: created.message }} />
+          ),
+        );
       })
       .finally(() => {
         saveBusyRef.current = false;

@@ -10,7 +10,7 @@ import { useSession } from "../../session/session.tsx";
 import { Note, SaveStatus, SectionBody, SwitchField, TextField, type SaveState } from "../parts.tsx";
 
 export function ReadingSection() {
-  const { language, tp } = useT();
+  const { language } = useT();
   const { client } = useSession();
   const reading = useReadingSettings(client);
   // The Lookup hold as typed; null until the Learner edits it.
@@ -21,7 +21,7 @@ export function ReadingSection() {
   if (reading.state.status === "error") {
     return (
       <ErrorState
-        message={<T k="settings.loadFailed" params={{ what: tp("settings.readingWhat"), message: reading.state.message }} />}
+        message={<T k="settings.readingLoadFailed" params={{ message: reading.state.message }} />}
         onRetry={reading.reload}
       />
     );

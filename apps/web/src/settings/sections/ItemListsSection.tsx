@@ -23,7 +23,6 @@ import { ChoiceGroup, Note, SectionBody, SwitchField, TextField, Subheading } fr
 
 export function ItemListsSection() {
   const { client } = useSession();
-  const { tp } = useT();
   const lists = useItemLists(client);
   const [openId, setOpenId] = useState<string | null>(null);
   // Once a detail has been opened, the master only reappears through "Back to
@@ -35,7 +34,7 @@ export function ItemListsSection() {
   if (lists.state.status === "error") {
     return (
       <ErrorState
-        message={<T k="settings.loadFailed" params={{ what: tp("settings.listsWhat"), message: lists.state.message }} />}
+        message={<T k="settings.listsLoadFailed" params={{ message: lists.state.message }} />}
         onRetry={lists.reload}
       />
     );

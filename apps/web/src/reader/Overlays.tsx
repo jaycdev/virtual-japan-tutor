@@ -131,7 +131,10 @@ export function SaveBody({
   lists: ItemList[];
   defaultListId: string | null;
   busy: boolean;
-  error: string | null;
+  // A ReactNode: StoryReader keeps the whole sentence (a <T> element or the
+  // server's own words), so the furigana is not lost in a {message} param
+  // (issue #125 round-2 review S2).
+  error: ReactNode;
   onSaveToList: (listId: string) => void;
   onCreateAndSave: (name: string) => void;
 }) {
@@ -143,7 +146,7 @@ export function SaveBody({
     <div className="flex flex-col gap-4">
       {error ? (
         <p role="alert" className="text-small text-destructive">
-          <T k="reader.saveFailed" params={{ message: error }} />
+          {error}
         </p>
       ) : null}
       <ul className="flex max-h-64 flex-col overflow-y-auto">

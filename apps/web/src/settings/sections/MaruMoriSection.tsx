@@ -12,7 +12,7 @@ import { Fact, Note, SaveStatus, SectionBody, Subheading, TextField, type SaveSt
 
 export function MaruMoriSection({ registerSave }: { registerSave?: StepSaveRegistrar }) {
   const { client } = useSession();
-  const { language, tp } = useT();
+  const { language } = useT();
   const maru = useMarumori(client);
   const [draft, setDraft] = useState("");
   const [replacing, setReplacing] = useState(false);
@@ -113,7 +113,14 @@ export function MaruMoriSection({ registerSave }: { registerSave?: StepSaveRegis
         ) : null}
         {connected && status.lastFailure ? (
           <p role="alert" className="text-small text-destructive">
-            <T k="marumori.syncFailed" params={{ error: status.lastFailure.error ?? tp("sync.unknownError") }} />
+            {status.lastFailure.error ? (
+              // The server's own words are data: plain in the {error} slot. The
+              // fallback sentence is a whole table entry so its furigana
+              // survives (issue #125 round-2 review S2).
+              <T k="marumori.syncFailed" params={{ error: status.lastFailure.error }} />
+            ) : (
+              <T k="marumori.syncFailedUnknown" />
+            )}
           </p>
         ) : null}
       </div>

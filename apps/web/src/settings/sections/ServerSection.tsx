@@ -2,7 +2,7 @@
 // server it talks to, so its address is this page's own origin and is not
 // editable here (the Android app keeps its address field).
 import { useState } from "react";
-import { useHealth, useT } from "@vjt/core";
+import { useHealth } from "@vjt/core";
 
 import { Button } from "@/components/ui/button";
 import { ErrorState, SkeletonLines } from "../../components/states.tsx";
@@ -26,7 +26,6 @@ export function ServerSection() {
 }
 
 function HealthLine({ client, onRecheck }: { client: ReturnType<typeof useSession>["client"]; onRecheck: () => void }) {
-  const { tp } = useT();
   const health = useHealth(client);
   if (health.state === "loading") return <SkeletonLines lines={1} />;
   if (health.state === "error") {
@@ -41,12 +40,7 @@ function HealthLine({ client, onRecheck }: { client: ReturnType<typeof useSessio
       ) : (
         <p role="status" className="text-body text-destructive">
           <T
-            k="server.answeredBut"
-            // The {what} slot takes plain text: table params are never parsed
-            // for furigana (issue #125).
-            params={{
-              what: health.health.database === "unreachable" ? tp("server.dbUnreachable") : tp("server.degradedPart"),
-            }}
+            k={health.health.database === "unreachable" ? "server.answeredButDbUnreachable" : "server.answeredButDegraded"}
           />
         </p>
       )}
