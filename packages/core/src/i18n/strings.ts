@@ -558,6 +558,56 @@ export const strings = {
   "reader.srs": { en: "SRS {level}", ja: "SRS {level}" },
   "reader.pitchHeiban": { en: "heiban (flat)", ja: "平板《へいばん》（フラット）" },
   "reader.pitchDownstep": { en: "downstep after mora {n}", ja: "モーラ{n}の落《お》ち目《め》" },
+
+  // — The web Practice screen (issue #125 Part 2) —
+  "practice.heading": { en: "Practice", ja: "練習《れんしゅう》" },
+  "practice.building": {
+    en: "Building your session from the Focus Set…",
+    ja: "焦点《しょうてん》セットから練習《れんしゅう》を作《つく》っています…",
+  },
+  "practice.next": {
+    en: "The next exercise is on its way…",
+    ja: "次《つぎ》の練習《れんしゅう》は準備《じゅんび》中です…",
+  },
+  "practice.intro": {
+    en: "A session is about twenty exercises drawn from your Focus Set, recognition and grammar cloze. Every answer feeds your mastery record.",
+    ja: "1回の練習《れんしゅう》は焦点《しょうてん》セットから作《つく》る約《やく》20問《もん》。意味《いみ》を問《と》う問題《もんだい》と文法《ぶんぽう》の穴埋《うず》め問題《もんだい》です。答《こた》えはすべて習熟《しゅうじゅく》記録《きろく》に反《はん》映《えい》します。",
+  },
+  "practice.start": { en: "Start a practice session", ja: "練習《れんしゅう》を始《はじ》める" },
+  "practice.empty": {
+    en: "Nothing in your Focus Set to practise yet",
+    ja: "練習《れんしゅう》できる焦点《しょうてん》セットの項目《こうもく》はまだありません",
+  },
+  "practice.openLists": { en: "Open your Item Lists", ja: "リストを開《ひら》く" },
+  "practice.exerciseOf": { en: "Exercise {n} of {total}", ja: "{total}問《もん》中《ちゅう》{n}問目《もんめ》" },
+  "practice.skipped": {
+    en: "({count} Focus Set item{plural} without content, skipped)",
+    ja: "（内容《ないよう》のない焦点《しょうてん》項目《こうもく》{count}件《けん》{plural}はスキップ）",
+  },
+  "practice.progressAria": { en: "Practice Session progress", ja: "練習《れんしゅう》セッションの進《すす》み" },
+  "practice.continue": { en: "Continue", ja: "続行《ぞくこう》" },
+  "practice.correct": { en: "Correct", ja: "正《ただ》しい" },
+  "practice.notQuite": { en: "Not quite", ja: "惜《お》しい" },
+  "practice.notQuiteAnswer": {
+    en: "Not quite. Correct answer: {answer}",
+    ja: "惜《お》しい。正解《せいかい》: {answer}",
+  },
+  "practice.destinationGrammar": { en: "Open Grammar Point", ja: "文法《ぶんぽう》ポイントを開《ひら》く" },
+  "practice.destinationLists": { en: "Open Item Lists", ja: "リストを開《ひら》く" },
+  "practice.sessionComplete": { en: "Session complete", ja: "セッション完了《かんりょう》" },
+  "practice.scoreLine": {
+    en: "{correct} of {total} correct - {count} exercise{plural} from your Focus Set.",
+    ja: "焦点《しょうてん》セットから{count}問《もん》、{total}問《もん》答《こた》えて{correct}問《もん》正解《せいかい》{plural}。",
+  },
+  "practice.needsLook": { en: "Needs another look", ja: "再《ふたた》び見《み》直《なお》す" },
+  "practice.correctAnswer": { en: "Correct answer: {answer}", ja: "正解《せいかい》: {answer}" },
+  "practice.nothingToRevisit": {
+    en: "Nothing to revisit this time.",
+    ja: "今回《こんかい》、見《み》直《なお》す項目《こうもく》はありません。",
+  },
+  "practice.again": { en: "Practice again", ja: "もう一度《いちど》練習《れんしゅう》" },
+  "item.kana": { en: "Kana", ja: "仮名《かな》" },
+  "item.phrase": { en: "Phrase", ja: "フレーズ" },
 } as const satisfies Record<string, { en: string; ja: string }>;
 
 /** Every table entry key — the type-checked union `keyof typeof strings`. */
