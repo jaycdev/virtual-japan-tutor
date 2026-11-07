@@ -167,8 +167,9 @@ machine running the Docker daemon. Optional overrides (credentials, `SERVER_PORT
 
 ### Publishing
 
-`.github/workflows/publish.yml` builds the `server` and `import` targets of `apps/server/Dockerfile` for
-`linux/amd64` and `linux/arm64` and pushes them to GitHub Container Registry
+`.github/workflows/publish.yml` first runs CI (`.github/workflows/ci.yml`) on the commit, and publishes nothing
+unless every CI job passes (ADR-0016). It then builds the `server` and `import` targets of
+`apps/server/Dockerfile` for `linux/amd64` and `linux/arm64` and pushes them to GitHub Container Registry
 (`ghcr.io/jaycdev/virtual-japan-tutor-server` and `-import`):
 
 | Trigger                    | Tags pushed                                          |
@@ -183,8 +184,10 @@ A tag creates a GitHub Release with `virtual-japan-tutor-X.Y.Z.apk` attached (`-
 A push to `main` replaces the APK on the rolling `dev` pre-release. The job refuses to publish if any signing setting is
 missing. **Losing the keystore means existing installs cannot be updated**, so keep an offline backup.
 
-Cut a release with `git tag v0.1.0 && git push origin v0.1.0`. The workflow does not wait for CI, so tag a
-commit whose CI run is green. New GHCR packages start **private**: after the first publish, open each package's
+Cut a release with `git tag v0.1.0 && git push origin v0.1.0`. The tag must point at a commit that is on `main`.
+The workflow runs CI again on that commit and publishes nothing if CI fails or the commit is not on `main`.
+If one publish job fails after CI passed (say the image is up but the APK failed), re-run the failed job.
+New GHCR packages start **private**: after the first publish, open each package's
 settings on GitHub and make it public (and link it to the repository) so anyone can pull without logging in.
 
 ### Importing reference data

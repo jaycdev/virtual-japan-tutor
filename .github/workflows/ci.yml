@@ -1,16 +1,19 @@
 name: CI
 
+# Runs on pull requests, and publish.yml calls it for every push to main and every release tag, so
+# nothing is published from a commit that has not passed it (ADR-0016). It has no push trigger of its own.
 on:
-  push:
-    branches: [main]
   pull_request:
+  workflow_call:
 
 permissions:
   contents: read
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Only a superseded pull request run is cancelled. When publish.yml calls this workflow for main or a
+  # tag, the run is never cancelled, because publishing waits for its result.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   go:
@@ -102,7 +105,7 @@ jobs:
       DOCKER_BUILDKIT: "1"
     steps:
       - uses: actions/checkout@v7.0.1
-      # Builds both Dockerfile targets without pushing (publishing happens in publish.yml on main).
+      # Builds both Dockerfile targets without pushing. publish.yml pushes them, but only after this workflow passes.
       - name: Build server image (API + web app)
         run: docker build --target server -f apps/server/Dockerfile -t vjt-server:ci .
       - name: Build import image
@@ -130,8 +133,11 @@ jobs:
   # so native build breakage shows up before main (ADR-0012). The job always runs and reports
   # success when the change does not touch those paths, so it can stay a required check.
   # Unsigned: PR builds never see the signing secrets.
+  # Pull requests only. On main and on tags the signed build in publish.yml is the Android build,
+  # so the app is built once there instead of twice (ADR-0016).
   android:
     name: Android APK build
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
@@ -141,10 +147,6 @@ jobs:
         name: Decide whether the APK build is needed
         shell: bash
         run: |
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
           # Three dots: the changes this PR makes, not changes that landed on main after it branched.
           changed=$(git diff --name-only "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}")
           if echo "$changed" | grep -Eq '^(apps/mobile/|packages/|pnpm-lock\.yaml$|\.github/workflows/ci\.yml$)'; then
@@ -178,6 +180,6 @@ jobs:
       - uses: actions/upload-artifact@v7.0.2
         if: steps.changes.outputs.run == 'true'
         with:
-          name: vjt-android-pr-${{ github.event.pull_request.number || github.sha }}
+          name: vjt-android-pr-${{ github.event.pull_request.number }}
           path: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
           retention-days: 7
