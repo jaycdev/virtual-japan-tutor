@@ -14,4 +14,4 @@ The Android app ships as a signed APK built in our own GitHub Actions: `expo pre
 - The dev build is a separate app (`com.jaycdev.virtualjapantutor.dev`, "VJT Dev") so it installs next to the release app. Its `versionCode` is the workflow run number and its `versionName` is `dev.<run>+<short sha>`.
 - Release `versionName` comes from the tag, and `versionCode` is `major×1,000,000 + minor×10,000 + patch×100 + n`, where `n` is the rc number or 99 for a final release, so an rc always sorts below its release. `app.config.ts` does not hold the version.
 - Release builds stay HTTPS-only, so the server must be behind HTTPS to use the prebuilt APK.
-- Like the images, publishing does not wait for CI. `release.yml` checks CI before it tags, and computes the version from the commits (ADR-0014).
+- Like the images, publishing runs CI first and only goes ahead if it passes (ADR-0016). `release.yml` also checks CI before it tags, and computes the version from the commits (ADR-0014).

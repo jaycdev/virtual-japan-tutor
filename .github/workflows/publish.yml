@@ -1,8 +1,12 @@
-name: Publish images
+name: Publish
 
-# Publishes the server and the reference-data import image to GitHub Container Registry.
-#   push to main   -> :dev (and :sha-<commit>)
-#   push of vX.Y.Z -> :X.Y.Z, :X.Y and :latest   (pre-release tags such as v1.0.0-rc.1 never move :latest)
+# Publishes the server and the reference-data import image to GitHub Container Registry, and the
+# signed Android APK to GitHub Releases. Nothing is published until CI (ci.yml) has passed on the
+# commit being published, and any red CI job blocks all of it (ADR-0016).
+#   push to main   -> :dev (and :sha-<commit>), and the rolling `dev` APK
+#   push of vX.Y.Z -> :X.Y.Z, :X.Y and :latest, and a GitHub Release with the APK
+#                     (pre-release tags such as v1.0.0-rc.1 never move :latest)
+# A tag re-runs CI on the tagged commit, and the commit must be on main.
 on:
   push:
     branches: [main]
@@ -13,11 +17,12 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
+# One run per ref at a time, never cancelled, queued in order (up to 100). Every main commit gets
+# its own CI result, and an older commit can never publish after a newer one.
 concurrency:
   group: publish-${{ github.ref }}
-  cancel-in-progress: false
+  queue: max
 
 jobs:
   # Pushes pass straight through. A manual run must target a release tag, so no branch can move
@@ -38,10 +43,44 @@ jobs:
             exit 1
           fi
 
+  ci:
+    name: CI
+    needs: ref-check
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+
+  # A release tag has to point at a commit on main. CI passing on the tagged commit does not show
+  # that, and a tag cut from a feature branch would otherwise publish :latest. This job runs on
+  # every event so the publish jobs can depend on it, and only checks on tags. It runs after CI so
+  # a failure of either one is reported separately.
+  guard:
+    name: Tag is on main
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - if: github.ref_type == 'tag'
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Refuse a tag that is not on main
+        if: github.ref_type == 'tag'
+        run: |
+          commit=$(git rev-parse "$GITHUB_SHA^{commit}")
+          if ! git merge-base --is-ancestor "$commit" origin/main; then
+            echo "::error::$GITHUB_REF_NAME points at $commit, which is not on main. Merge the change to main, then tag the merged commit."
+            exit 1
+          fi
+
   images:
     name: ${{ matrix.target }} image
-    needs: ref-check
+    needs: [ci, guard]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:
@@ -92,10 +131,12 @@ jobs:
 
   # Signed Android APK (ADR-0012). A tag vX.Y.Z creates its GitHub Release with the APK attached
   # (pre-releases for -rc tags). A push to main moves the dev tag and updates the rolling `dev`
-  # pre-release with the dev app. Like the images, this does not wait for CI; release.yml checks CI before it tags (ADR-0014).
+  # pre-release with the dev app. Like the images, this waits for CI and the tag check. This signed
+  # build is also the Android build on main and tags: CI only builds the unsigned APK on pull requests.
+  # A broken native build fails this job only and does not block the images.
   android:
     name: Android APK
-    needs: ref-check
+    needs: [ci, guard]
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -18,7 +18,7 @@ We chose this because the project is self-hosted from this repo and ADR-0012 alr
 - The version comes from the commits alone. No `package.json` or `app.config.ts` holds a version, and CI never commits to `main`.
 - When a pull request is squashed, its title becomes the commit subject, so the version depends on conventional PR titles. Nothing enforces that yet. Commits that do not count are listed in the job summary, so drift is visible. A PR-title lint can be added later.
 - `feat` is a minor bump, and `fix`, `perf` and `revert` are patch bumps. While the version is 0.x, a breaking change bumps the minor version, so 1.0.0 is a deliberate `release_as` rather than something a `!` triggers.
-- The release run requires the newest CI run for its commit to have passed. It does not wait for a run that is still in progress.
+- The release run requires CI to have passed for its commit. It does not wait for a run that is still in progress. CI has no push run of its own (ADR-0016), so the release run reads the "CI / …" jobs of the commit's `publish.yml` run on `main`.
 - A tag pushed with `GITHUB_TOKEN` starts no other workflow, so `publish.yml` gets a `workflow_dispatch` trigger. That trigger accepts only release tags, so a manual run from a branch cannot move the `dev` release.
 - If publishing fails after the tag is pushed, the tag stays and publishing is re-run by hand. The release workflow never deletes a tag.
-- Pushing a tag by hand still works. It skips the CI check and the version calculation.
+- Pushing a tag by hand still works. It skips the version calculation, but `publish.yml` runs CI on the tagged commit and publishes nothing if CI fails or the commit is not on `main` (ADR-0016).

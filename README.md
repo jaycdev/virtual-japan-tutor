@@ -167,8 +167,9 @@ machine running the Docker daemon. Optional overrides (credentials, `SERVER_PORT
 
 ### Publishing
 
-`.github/workflows/publish.yml` builds the `server` and `import` targets of `apps/server/Dockerfile` for
-`linux/amd64` and `linux/arm64` and pushes them to GitHub Container Registry
+`.github/workflows/publish.yml` first runs CI (`.github/workflows/ci.yml`) on the commit, and publishes nothing
+unless every CI job passes (ADR-0016). It then builds the `server` and `import` targets of
+`apps/server/Dockerfile` for `linux/amd64` and `linux/arm64` and pushes them to GitHub Container Registry
 (`ghcr.io/jaycdev/virtual-japan-tutor-server` and `-import`):
 
 | Trigger                    | Tags pushed                                          |
@@ -185,8 +186,9 @@ missing. **Losing the keystore means existing installs cannot be updated**, so k
 
 Cut a release from the **Release** workflow: on `main`, run `release.yml` from the Actions tab, or run
 `gh workflow run release.yml`. It reads the conventional commits since the last final release, picks the version,
-tags that commit, and starts `publish.yml` for the tag. The run refuses to tag unless the newest CI run for that
-commit passed. Inputs:
+tags that commit, and starts `publish.yml` for the tag. The run refuses to tag unless CI passed for that commit. CI
+for a `main` commit runs inside that commit's `publish.yml` run (ADR-0016), so that is where the release run reads
+it. Inputs:
 
 - `dry_run`: show the version, the commits and the notes in the job summary, and create no tag.
 - `prerelease`: cut `vX.Y.Z-rc.N` instead of a final release.
@@ -200,8 +202,10 @@ commit passed. Inputs:
 | `docs`, `ci`, `test`, `chore`, `refactor`, `data`, `build`, `style`, or not conventional | none                              |
 
 If `publish.yml` fails after the tag is pushed, the tag stays. Retry with `gh workflow run publish.yml --ref vX.Y.Z`.
-Pushing a tag by hand (`git tag vX.Y.Z && git push origin vX.Y.Z`) still starts `publish.yml`, but it skips the CI
-check and the version calculation. New GHCR packages start **private**: after the first publish, open each package's
+Pushing a tag by hand (`git tag vX.Y.Z && git push origin vX.Y.Z`) still starts `publish.yml`, but it skips the
+version calculation. Either way `publish.yml` runs CI again on the tagged commit, and publishes nothing if CI fails
+or the commit is not on `main`. If one publish job fails after CI passed (say the image is up but the APK failed),
+re-run the failed job. New GHCR packages start **private**: after the first publish, open each package's
 settings on GitHub and make it public (and link it to the repository) so anyone can pull without logging in.
 
 ### Importing reference data

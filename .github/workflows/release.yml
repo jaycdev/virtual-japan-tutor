@@ -53,14 +53,22 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # The newest push-to-main CI run for this commit decides. A run still in progress does not pass.
-          state=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&event=push&branch=main&per_page=100" \
-            --jq 'if (.workflow_runs | length) == 0 then "none" else (.workflow_runs | sort_by(.created_at) | last | "\(.status):\(.conclusion // "")") end')
-          if [ "$state" != "completed:success" ]; then
-            echo "::error::The latest CI run for $GITHUB_SHA is '$state', not 'completed:success'. Let CI pass, then run this workflow again."
+          # CI has no push run of its own: publish.yml calls it for every push to main (ADR-0016), and its
+          # jobs show up there as "CI / <job>". The newest push-to-main publish.yml run for this commit decides.
+          # A job still running, failed or cancelled does not pass. A skipped job does (the PR-only Android build).
+          run_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/publish.yml/runs?head_sha=$GITHUB_SHA&event=push&branch=main&per_page=100" \
+            --jq '.workflow_runs | sort_by(.created_at) | last | .id // empty')
+          if [ -z "$run_id" ]; then
+            state="none"
+          else
+            state=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/jobs?per_page=100" \
+              --jq '[.jobs[] | select(.name | startswith("CI / "))] | if length == 0 then "none" else (map(select(((.conclusion // "pending") != "success") and ((.conclusion // "pending") != "skipped"))) | if length == 0 then "passed" else "not passed" end) end')
+          fi
+          if [ "$state" != "passed" ]; then
+            echo "::error::CI for $GITHUB_SHA is '$state' in its publish.yml run (${run_id:-no run}), not 'passed'. Let CI pass, then run this workflow again."
             exit 1
           fi
-          echo "CI passed for $GITHUB_SHA."
+          echo "CI passed for $GITHUB_SHA (publish.yml run $run_id)."
 
       - name: Compute the version and notes
         id: plan
