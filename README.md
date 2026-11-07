@@ -183,8 +183,25 @@ A tag creates a GitHub Release with `virtual-japan-tutor-X.Y.Z.apk` attached (`-
 A push to `main` replaces the APK on the rolling `dev` pre-release. The job refuses to publish if any signing setting is
 missing. **Losing the keystore means existing installs cannot be updated**, so keep an offline backup.
 
-Cut a release with `git tag v0.1.0 && git push origin v0.1.0`. The workflow does not wait for CI, so tag a
-commit whose CI run is green. New GHCR packages start **private**: after the first publish, open each package's
+Cut a release from the **Release** workflow: on `main`, run `release.yml` from the Actions tab, or run
+`gh workflow run release.yml`. It reads the conventional commits since the last final release, picks the version,
+tags that commit, and starts `publish.yml` for the tag. The run refuses to tag unless the newest CI run for that
+commit passed. Inputs:
+
+- `dry_run`: show the version, the commits and the notes in the job summary, and create no tag.
+- `prerelease`: cut `vX.Y.Z-rc.N` instead of a final release.
+- `release_as`: tag this exact version (`X.Y.Z` or `X.Y.Z-rc.N`) instead of the computed one.
+
+| Commits since the last release                                                 | Bump                                        |
+| ------------------------------------------------------------------------------ | ------------------------------------------- |
+| `type!:` or a `BREAKING CHANGE:` footer                                        | major (minor while the version is 0.x)      |
+| `feat`                                                                         | minor                                       |
+| `fix`, `perf`, `revert`                                                        | patch                                       |
+| `docs`, `ci`, `test`, `chore`, `refactor`, `data`, `build`, `style`, or not conventional | none                              |
+
+If `publish.yml` fails after the tag is pushed, the tag stays. Retry with `gh workflow run publish.yml --ref vX.Y.Z`.
+Pushing a tag by hand (`git tag vX.Y.Z && git push origin vX.Y.Z`) still starts `publish.yml`, but it skips the CI
+check and the version calculation. New GHCR packages start **private**: after the first publish, open each package's
 settings on GitHub and make it public (and link it to the repository) so anyone can pull without logging in.
 
 ### Importing reference data
