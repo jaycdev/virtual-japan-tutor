@@ -1,0 +1,182 @@
+// The three render modes of a table entry on the phone (issue #125): English is
+// the plain sentence, plain Japanese is the sentence in kanji, and Japanese
+// (furigana) stands each annotated unit up as the reader stands its words —
+// a reading column above its base, in a wrapping row. Screen readers get the
+// sentence plain either way: the columns are hidden and the container carries
+// one clean label.
+
+import { describe, expect, it } from "vitest";
+import { render } from "@testing-library/react";
+import { InterfaceLanguageProvider, type InterfaceLanguage, type StringKey } from "@vjt/core";
+import type { ReactNode } from "react";
+import { Pressable } from "react-native";
+
+import { chromeFuriganaPx, Labeled, labelAria, T, useTp, wrapPieces } from "./Text.tsx";
+
+function renderT(language: InterfaceLanguage, k: StringKey, params?: Record<string, string | number>, className?: string) {
+  return render(
+    <InterfaceLanguageProvider language={language} setLanguage={() => undefined}>
+      <T k={k} params={params} className={className} />
+    </InterfaceLanguageProvider>,
+  );
+}
+
+describe("T", () => {
+  it("renders the English entry as one plain line", () => {
+    const { container } = renderT("en", "settings.focusAria");
+    expect(container.textContent).toBe("Focus Set");
+    // No reading columns: no inline reading size anywhere.
+    expect(container.querySelectorAll("[style*='font-size']")).toHaveLength(0);
+  });
+
+  it("renders the Japanese entry without any readings", () => {
+    const { container } = renderT("ja", "settings.focusAria");
+    expect(container.textContent).toBe("重点項目");
+    expect(container.querySelectorAll("[style*='font-size']")).toHaveLength(0);
+  });
+
+  it("stands each annotated unit in its own reading column for the furigana mode", () => {
+    // Two annotated words → two columns, each carrying its reading inline.
+    const { container } = renderT("ja-furigana", "errors.invalid_settings");
+    // 設定《せってい》が正《ただ》しくありません — one unit per word.
+    const readings = Array.from(container.querySelectorAll("[style*='font-size']"));
+    expect(readings).toHaveLength(2);
+    expect(readings.map((r) => r.textContent)).toEqual(["せってい", "ただ"]);
+  });
+
+  it("names the line with the plain Japanese, readings left out", () => {
+    const { container } = renderT("ja-furigana", "settings.focusAria");
+    const line = container.querySelector("[aria-label='重点項目']");
+    expect(line).not.toBeNull();
+    // The drawn reading is inside, at half the base size.
+    expect(line?.querySelector("[style*='font-size']")?.textContent).toBe("じゅうてんこうもく");
+  });
+
+  it("keeps params intact across the segments", () => {
+    const { container } = renderT("en", "lists.itemsHeading", { count: 3 });
+    expect(container.textContent).toBe("Items (3)");
+  });
+
+  it("sets the reading to half the line's size, never under 9px", () => {
+    expect(chromeFuriganaPx(12)).toBe(9); // caption: 6 floors to 9
+    expect(chromeFuriganaPx(16)).toBe(9); // body: 8 floors to 9
+    expect(chromeFuriganaPx(18)).toBe(9); // title-sm: exactly 9
+    expect(chromeFuriganaPx(22)).toBe(11); // title: half
+    expect(chromeFuriganaPx(28)).toBe(14); // display: half
+
+    // The drawn reading carries that as its own font size, whatever the
+    // uniwind stub makes of the class — a native Text takes no size from a
+    // parent. text-caption (12px) floors to 9.
+    const { container } = renderT("ja-furigana", "settings.focusAria", undefined, "text-caption text-muted-foreground");
+    const reading = container.querySelector("[style*='font-size']");
+    expect(reading?.getAttribute("style")).toMatch(/font-size:\s*9px/);
+  });
+});
+
+describe("wrapPieces (where a plain run may break)", () => {
+  it("keeps a Latin word, a number and a URL in one whole piece", () => {
+    expect(wrapPieces("Virtual Japan Tutor")).toEqual(["Virtual ", "Japan ", "Tutor"]);
+    expect(wrapPieces("MaruMori")).toEqual(["MaruMori"]);
+    expect(wrapPieces("http://10.0.2.2:8080")).toEqual(["http://10.0.2.2:8080"]);
+    // Whole next to breakable: the word stands while the kana break around it.
+    expect(wrapPieces("MaruMoriに接続")).toEqual(["MaruMori", "に", "接", "続"]);
+  });
+
+  it("never starts a piece with sentence punctuation", () => {
+    const pieces = wrapPieces("設定が正しくありません。");
+    expect(pieces.every((p) => !p.startsWith("。"))).toBe(true);
+    expect(pieces[pieces.length - 1]).toBe("ん。");
+    // …and a closing mark after a whole word rides with that word, not the line after it.
+    expect(wrapPieces("MaruMori。")).toEqual(["MaruMori。"]);
+  });
+
+  it("never ends a piece with an opening bracket", () => {
+    const pieces = wrapPieces("「続ける」をタップ");
+    expect(pieces.every((p) => !p.endsWith("「"))).toBe(true);
+    expect(pieces[0]).toBe("「続");
+    // The fullwidth bracket glues to the whole URL that follows it.
+    expect(wrapPieces("（http://10.0.2.2:8080）")).toEqual(["（http://10.0.2.2:8080）"]);
+  });
+});
+
+describe("tp (never-drawn strings)", () => {
+  function Probe({ k }: { k: StringKey }) {
+    const tp = useTp();
+    return <span>{tp(k)}</span>;
+  }
+
+  it("in furigana mode names the string plain, readings left out", () => {
+    const { getByText } = render(
+      <InterfaceLanguageProvider language="ja-furigana" setLanguage={() => undefined}>
+        <Probe k="settings.focusAria" />
+      </InterfaceLanguageProvider>,
+    );
+    expect(getByText("重点項目")).toBeTruthy();
+  });
+});
+
+describe("labelAria", () => {
+  function Names({ label }: { label: ReactNode }) {
+    const tp = useTp();
+    return <span data-testid="name">{labelAria(label, tp) ?? "(none)"}</span>;
+  }
+
+  it("takes a plain string label as its own name", () => {
+    const { getByTestId } = render(<Names label="Server" />);
+    expect(getByTestId("name").textContent).toBe("Server");
+  });
+
+  it("names a control after the table entry its label draws", () => {
+    const { getByTestId } = render(
+      <InterfaceLanguageProvider language="ja-furigana" setLanguage={() => undefined}>
+        <Names label={<T k="settings.focusAria" />} />
+      </InterfaceLanguageProvider>,
+    );
+    // The plain Japanese, not the drawn furigana.
+    expect(getByTestId("name").textContent).toBe("重点項目");
+  });
+});
+
+describe("Labeled (furigana inside a labelled control)", () => {
+  // The ui primitives (Chip, Row, TabBar…) name themselves from labelAria/tp
+  // and wrap the drawn label in <Labeled>; a <T> inside then adds nothing to
+  // the accessibility tree.
+  function NamedButton() {
+    const tp = useTp();
+    return (
+      <Pressable accessibilityRole="button" accessibilityLabel={tp("settings.focusAria")}>
+        <Labeled>
+          <T k="settings.focusAria" className="text-body" />
+        </Labeled>
+      </Pressable>
+    );
+  }
+
+  it("exposes exactly one accessible element, named with the plain Japanese", () => {
+    const { container } = render(
+      <InterfaceLanguageProvider language="ja-furigana" setLanguage={() => undefined}>
+        <NamedButton />
+      </InterfaceLanguageProvider>,
+    );
+    const named = Array.from(container.querySelectorAll("[aria-label]"));
+    expect(named).toHaveLength(1);
+    expect(named[0]?.getAttribute("aria-label")).toBe("重点項目");
+    expect(named[0]?.getAttribute("role")).toBe("button");
+    // …while the drawing is unchanged and hides itself from assistive tech:
+    // base and reading both show, and the row carries aria-hidden.
+    expect(container.querySelectorAll('[aria-hidden="true"]')).toHaveLength(1);
+    expect(container.querySelector("[data-testid='furigana-reading']")?.textContent).toBe("じゅうてんこうもく");
+    expect(container.querySelector("[data-testid='furigana-base']")?.textContent).toBe("じゅうてんこうもく重点項目");
+  });
+
+  it("leaves a lone <T> to name its own row", () => {
+    const { container } = render(
+      <InterfaceLanguageProvider language="ja-furigana" setLanguage={() => undefined}>
+        <T k="settings.focusAria" className="text-body" />
+      </InterfaceLanguageProvider>,
+    );
+    const named = Array.from(container.querySelectorAll("[aria-label]"));
+    expect(named).toHaveLength(1);
+    expect(named[0]?.getAttribute("aria-label")).toBe("重点項目");
+  });
+});

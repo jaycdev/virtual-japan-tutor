@@ -1,10 +1,13 @@
 import type { ApiClient } from "@vjt/api-client";
 import {
   STARTING_LEVELS,
+  grammarReviewPatternRuby,
+  grammarReviewTailRuby,
   grammarReviewText,
-  grammarUpdatedText,
+  grammarUpdatedRuby,
   useGrammarReview,
   useStartingLevel,
+  useT,
   type StartingLevel,
   type StepSaveOutcome,
   type StepSaveRegistrar,
@@ -14,6 +17,7 @@ import { Text, View } from "react-native";
 
 import { Card } from "./components/ui/Card.tsx";
 import { Chip, ChipRow } from "./components/ui/Chip.tsx";
+import { T, TableText } from "./components/Text.tsx";
 import { ActionButton } from "./stories-parts.tsx";
 import { InlineError, SkeletonBar } from "./state/states.tsx";
 
@@ -39,10 +43,11 @@ export function StartingLevelSettings({
   const [choice, setChoice] = useState<StartingLevel | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
-  const [result, setResult] = useState<string | undefined>();
+  const [result, setResult] = useState<{ added?: number; removed?: number } | undefined>();
 
   const stored = level.state.status === "ready" ? level.state.level.level : null;
   const selected = choice ?? stored ?? "N5";
+  const { language } = useT();
 
   const save = async () => {
     setBusy(true);
@@ -51,7 +56,9 @@ export function StartingLevelSettings({
     try {
       const res = await level.setLevel(selected);
       if ("status" in res) setError(res.message);
-      else setResult(grammarUpdatedText(res));
+      // Server data, not a resolved sentence: the line is drawn in whatever
+      // Interface Language is current when it renders (issue #125, B3).
+      else setResult({ added: res.added, removed: res.removed });
     } finally {
       setBusy(false);
     }
@@ -71,7 +78,7 @@ export function StartingLevelSettings({
         setError(res.message);
         return "blocked";
       }
-      setResult(grammarUpdatedText(res));
+      setResult({ added: res.added, removed: res.removed });
       setChoice(null);
       return "saved";
     });
@@ -90,7 +97,7 @@ export function StartingLevelSettings({
   if (level.state.status === "error") {
     return (
       <InlineError
-        message={`Cannot load your Starting Level: ${level.state.message}`}
+        message={<T k="settings.levelLoadFailed" params={{ message: level.state.message }} />}
         onRetry={level.reload}
       />
     );
@@ -98,11 +105,11 @@ export function StartingLevelSettings({
 
   return (
     <View className="gap-4">
-      <Text className="text-body text-foreground">
-        {level.state.level.configured
-          ? `Starting level: ${level.state.level.level}`
-          : "Not chosen yet. Pick one to mark everything at or below it as known."}
-      </Text>
+      {level.state.level.configured ? (
+        <T k="settings.levelCurrent" params={{ level: level.state.level.level ?? "" }} className="text-body text-foreground" />
+      ) : (
+        <T k="settings.levelUnset" className="text-body text-foreground" />
+      )}
       <Card>
         <ChipRow>
           {STARTING_LEVELS.map((l) => (
@@ -110,11 +117,14 @@ export function StartingLevelSettings({
           ))}
         </ChipRow>
       </Card>
-      <ActionButton label="Save level" onPress={() => void save()} filled disabled={busy} />
+      <ActionButton label={<T k="settings.levelSave" />} onPress={() => void save()} filled disabled={busy} />
       {result && (
-        <Text role="status" accessibilityLiveRegion="polite" className="text-body text-success">
-          {result}
-        </Text>
+        // The live status line, drawn in the Interface Language: TableText's
+        // own roles do not include "status", so the wrapper carries it, as
+        // ServerSettings and ReadingSettingsSection do.
+        <View role="status" accessibilityLiveRegion="polite">
+          <TableText segments={grammarUpdatedRuby(result, language)} className="text-body text-success" />
+        </View>
       )}
       {error && <InlineError message={error} />}
 
@@ -129,29 +139,54 @@ export function StartingLevelSettings({
 
 function GrammarReviewList({ client }: { client: ApiClient }) {
   const review = useGrammarReview(client);
+  const { language } = useT();
   return (
     <View className="gap-2">
-      <Text accessibilityRole="header" className="text-title-sm font-semibold text-foreground">
-        Review these grammar matches
-      </Text>
+      <T
+        k="settings.levelReviewHeading"
+        className="text-title-sm font-semibold text-foreground"
+        accessibilityRole="header"
+      />
       {review.state.status === "loading" ? <SkeletonBar width="60%" height={20} /> : null}
       {review.state.status === "error" ? (
-        <InlineError message={`Cannot load the review list: ${review.state.message}`} onRetry={review.reload} />
+        <InlineError
+          message={<T k="settings.reviewLoadFailed" params={{ message: review.state.message }} />}
+          onRetry={review.reload}
+        />
       ) : null}
       {review.state.status === "ready" && review.state.items.length === 0 ? (
-        <Text className="text-body text-muted-foreground">Nothing needs a second look.</Text>
+        <T k="settings.reviewEmpty" className="text-body text-muted-foreground" />
       ) : null}
       {review.state.status === "ready" && review.state.items.length > 0 ? (
         <>
-          <Text className="text-small text-muted-foreground">
-            These MaruMori grammar points did not match the Catalogue cleanly. They re-check
-            themselves on later Syncs.
-          </Text>
-          {review.state.items.map((item) => (
-            <Text key={item.marumoriId} className="text-body text-foreground">
-              {grammarReviewText(item)}
-            </Text>
-          ))}
+          <T k="settings.reviewNote" className="text-small text-muted-foreground" />
+          {review.state.items.map((item) => {
+            const tail = grammarReviewTailRuby(item, language);
+            if (!tail.some((segment) => segment.ruby)) {
+              // Nothing to annotate (en, ja): the whole row as one Text,
+              // one paragraph that wraps under itself — exactly the row as
+              // it rendered before issue #125.
+              return (
+                <Text key={item.marumoriId} testID="grammar-review-row" className="text-body text-foreground">
+                  {grammarReviewText(item, language)}
+                </Text>
+              );
+            }
+            // With readings the row is the wrap row of columns: the Pattern
+            // is Learner-catalogue content and rides unannotated — the
+            // coverage check exempts just that piece, by its testID, while
+            // the connectives beside it stay under the check.
+            return (
+              <View key={item.marumoriId} testID="grammar-review-row" className="flex-row flex-wrap items-end">
+                <TableText
+                  testID="grammar-review-pattern"
+                  segments={grammarReviewPatternRuby(item)}
+                  className="text-body text-foreground"
+                />
+                <TableText segments={tail} className="text-body text-foreground" />
+              </View>
+            );
+          })}
         </>
       ) : null}
     </View>

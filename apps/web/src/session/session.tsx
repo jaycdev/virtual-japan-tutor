@@ -8,6 +8,7 @@ import type { ApiClient } from "@vjt/api-client";
 import { useAuth, type Auth, type TokenStorage } from "@vjt/core";
 
 import { ErrorState, SkeletonLines } from "../components/states";
+import { T } from "../components/Text.tsx";
 
 /**
  * The auth state plus the client it talks through. `endedByChoice` is true from
@@ -91,7 +92,7 @@ export function SessionBoundary({ children }: { children: ReactNode }) {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-background p-6">
         <div className="w-full max-w-sm">
-          <ErrorState message={`Cannot reach the server: ${state.message}`} onRetry={retry} />
+          <ErrorState message={<><T k="errors.unreachable" />: {state.message}</>} onRetry={retry} />
         </div>
       </div>
     );

@@ -3,11 +3,11 @@
 // read-only list of grammar matches the Learner may want to glance at.
 import { useEffect, useState, type FormEvent } from "react";
 import {
-  STARTING_LEVELS,
   grammarReviewText,
-  grammarUpdatedText,
+  STARTING_LEVELS,
   useGrammarReview,
   useStartingLevel,
+  useT,
   type StartingLevel,
   type StepSaveOutcome,
   type StepSaveRegistrar,
@@ -15,10 +15,12 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { ErrorState, SkeletonLines } from "../../components/states.tsx";
+import { T } from "../../components/Text.tsx";
 import { useSession } from "../../session/session.tsx";
 import { ChoiceGroup, Note, SaveStatus, SectionBody, Subheading, type SaveState } from "../parts.tsx";
 
 export function StartingLevelSection({ registerSave }: { registerSave?: StepSaveRegistrar }) {
+  const { language } = useT();
   const { client } = useSession();
   const level = useStartingLevel(client);
   const review = useGrammarReview(client);
@@ -40,7 +42,7 @@ export function StartingLevelSection({ registerSave }: { registerSave?: StepSave
       return "blocked";
     }
     setChoice(null);
-    setSave({ kind: "saved", message: grammarUpdatedText(res) });
+    setSave({ kind: "saved", message: <T k="grammar.updated" params={{ added: res.added ?? 0, removed: res.removed ?? 0 }} /> });
     return "saved";
   };
 
@@ -53,7 +55,9 @@ export function StartingLevelSection({ registerSave }: { registerSave?: StepSave
 
   if (level.state.status === "loading") return <SkeletonLines lines={2} />;
   if (level.state.status === "error") {
-    return <ErrorState message={`Cannot load your Starting Level: ${level.state.message}`} onRetry={level.reload} />;
+    return (
+      <ErrorState message={<T k="settings.levelLoadFailed" params={{ message: level.state.message }} />} onRetry={level.reload} />
+    );
   }
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -66,12 +70,12 @@ export function StartingLevelSection({ registerSave }: { registerSave?: StepSave
     <SectionBody>
       <p className="text-body text-foreground">
         {level.state.level.configured
-          ? `Starting level: ${level.state.level.level}`
-          : "Not chosen yet. Pick one to mark everything at or below it as known."}
+          ? <T k="settings.levelCurrent" params={{ level: level.state.level.level ?? "" }} />
+          : <T k="settings.levelUnset" />}
       </p>
       <form className="flex flex-col gap-4" onSubmit={(event) => void submit(event)}>
         <ChoiceGroup
-          legend="Choose your level"
+          legend={<T k="settings.levelLegend" />}
           options={STARTING_LEVELS.map((l) => ({ value: l, label: l }))}
           value={selected}
           onChange={setChoice}
@@ -80,30 +84,28 @@ export function StartingLevelSection({ registerSave }: { registerSave?: StepSave
         <div className="flex flex-wrap items-center gap-4">
           {/* Save level is only offered when a pick is pending; the picker alone shows the current level. */}
           <Button type="submit" disabled={busy || choice === null}>
-            Save level
+            <T k="settings.levelSave" />
           </Button>
           <SaveStatus state={save} />
         </div>
       </form>
 
       <div className="flex flex-col gap-2">
-        <Subheading>Review these grammar matches</Subheading>
+        <Subheading><T k="settings.levelReviewHeading" /></Subheading>
         {review.state.status === "loading" ? <SkeletonLines lines={1} /> : null}
         {review.state.status === "error" ? (
-          <ErrorState message={`Cannot load the review list: ${review.state.message}`} onRetry={review.reload} />
+          <ErrorState message={<T k="settings.reviewLoadFailed" params={{ message: review.state.message }} />} onRetry={review.reload} />
         ) : null}
         {review.state.status === "ready" && review.state.items.length === 0 ? (
-          <p className="text-body text-muted-foreground">Nothing needs a second look.</p>
+          <p className="text-body text-muted-foreground"><T k="settings.reviewEmpty" /></p>
         ) : null}
         {review.state.status === "ready" && review.state.items.length > 0 ? (
           <>
-            <Note>
-              These MaruMori grammar points did not match the Catalogue cleanly. They re-check themselves on later Syncs.
-            </Note>
+            <Note><T k="settings.reviewNote" /></Note>
             <ul className="flex list-disc flex-col gap-1 pl-5">
               {review.state.items.map((item) => (
                 <li key={item.marumoriId} className="text-body text-foreground">
-                  {grammarReviewText(item)}
+                  {grammarReviewText(item, language)}
                 </li>
               ))}
             </ul>

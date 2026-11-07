@@ -4,10 +4,11 @@
 import type { ItemList, ItemListMember } from "@vjt/api-client";
 import {
   ITEM_KINDS,
-  ITEM_KIND_LABELS,
   isSavedList,
   itemListHint,
+  itemKindLabel,
   useItemLists,
+  useT,
   type ActionResult,
   type ItemKind,
   type ItemListsView,
@@ -15,6 +16,7 @@ import {
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
+import { T } from "@/components/Text";
 import { ErrorState, SkeletonLines } from "../../components/states.tsx";
 import { useSession } from "../../session/session.tsx";
 import { ChoiceGroup, Note, SectionBody, SwitchField, TextField, Subheading } from "../parts.tsx";
@@ -30,7 +32,12 @@ export function ItemListsSection() {
 
   if (lists.state.status === "loading") return <SkeletonLines lines={3} />;
   if (lists.state.status === "error") {
-    return <ErrorState message={`Cannot load your Item Lists: ${lists.state.message}`} onRetry={lists.reload} />;
+    return (
+      <ErrorState
+        message={<T k="settings.listsLoadFailed" params={{ message: lists.state.message }} />}
+        onRetry={lists.reload}
+      />
+    );
   }
 
   const open = lists.state.lists.find((list) => list.id === openId) ?? null;
@@ -83,6 +90,7 @@ function ListsMaster({
   onOpen: (id: string) => void;
   backFocus: boolean;
 }) {
+  const { language, tp } = useT();
   const { busy, error, run } = useAction();
   const [name, setName] = useState("");
   const state = lists.state.status === "ready" ? lists.state : null;
@@ -105,12 +113,17 @@ function ListsMaster({
     <SectionBody>
       {error ? <p role="alert" className="text-small text-destructive">{error}</p> : null}
       <Note>
-        Saving a word from a story adds it to the Default List. A Boosting List also pulls its not-yet-known items into
-        your stories’ Focus Sets. Choose a list to manage its items.
+        <T k="lists.introNote" />
       </Note>
 
-      <Subheading ref={headingRef}>Your lists</Subheading>
-      {state && state.lists.length === 0 ? <p className="text-body text-muted-foreground">No lists yet.</p> : null}
+      <Subheading ref={headingRef}>
+        <T k="lists.yourLists" />
+      </Subheading>
+      {state && state.lists.length === 0 ? (
+        <p className="text-body text-muted-foreground">
+          <T k="lists.empty" />
+        </p>
+      ) : null}
       {state && state.lists.length > 0 ? (
         <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
           {state.lists.map((list) => (
@@ -123,9 +136,11 @@ function ListsMaster({
               >
                 <span className="flex min-w-0 flex-col items-start gap-0.5">
                   <span className="text-body font-medium text-foreground">{list.name}</span>
-                  <span className="text-small text-muted-foreground">{itemListHint(list)}</span>
+                  <span className="text-small text-muted-foreground">{itemListHint(list, language)}</span>
                 </span>
-                <span className="text-small text-primary">Manage</span>
+                <span className="text-small text-primary">
+                  <T k="lists.manage" />
+                </span>
               </Button>
             </li>
           ))}
@@ -133,19 +148,21 @@ function ListsMaster({
       ) : null}
 
       <form className="flex flex-col gap-4" onSubmit={(event) => void addList(event)} noValidate>
-        <Subheading>Add a list</Subheading>
+        <Subheading>
+          <T k="lists.addHeading" />
+        </Subheading>
         <TextField
           id="list-name"
-          label="List name"
+          label={<T k="lists.nameLabel" />}
           value={name}
           maxLength={60}
-          placeholder="food, travel…"
+          placeholder={tp("lists.namePlaceholder")}
           disabled={busy}
           onChange={(event) => setName(event.target.value)}
         />
         <div>
           <Button type="submit" disabled={busy || name.trim() === ""}>
-            Add list
+            <T k="lists.addSubmit" />
           </Button>
         </div>
       </form>
@@ -164,6 +181,7 @@ function ListDetail({
   isDefault: boolean;
   onBack: () => void;
 }) {
+  const { language, tp } = useT();
   const { busy, error, setError, run } = useAction();
   const [members, setMembers] = useState<{ rows: ItemListMember[] | null; error?: string }>({ rows: null });
   const [renaming, setRenaming] = useState(false);
@@ -244,7 +262,7 @@ function ListDetail({
     <SectionBody>
       <div className="flex flex-wrap items-center gap-3">
         <Button type="button" variant="ghost" onClick={onBack}>
-          Back to all lists
+          <T k="lists.back" />
         </Button>
       </div>
       {error ? <p role="alert" className="text-small text-destructive">{error}</p> : null}
@@ -253,7 +271,7 @@ function ListDetail({
         <form className="flex flex-col gap-4" onSubmit={(event) => void rename(event)} noValidate>
           <TextField
             id="list-rename"
-            label="New name"
+            label={<T k="lists.renameLabel" />}
             value={renameValue}
             maxLength={60}
             disabled={busy}
@@ -261,10 +279,10 @@ function ListDetail({
           />
           <div className="flex flex-wrap gap-3">
             <Button type="submit" disabled={busy || renameValue.trim() === ""}>
-              Save name
+              <T k="lists.saveName" />
             </Button>
             <Button type="button" variant="ghost" onClick={() => setRenaming(false)}>
-              Cancel
+              <T k="common.cancel" />
             </Button>
           </div>
         </form>
@@ -273,18 +291,20 @@ function ListDetail({
           <Subheading ref={nameRef}>{list.name}</Subheading>
           <SwitchField
             id="list-boosting"
-            label="Boosting"
-            hint="Push not-yet-known items into Focus Sets."
+            label={<T k="lists.boostingLabel" />}
+            hint={<T k="lists.boostingHint" />}
             checked={list.boosting}
             disabled={busy}
             onChange={(boosting) => void run(() => lists.updateList(list.id, { boosting }))}
           />
           <div className="flex flex-wrap gap-2">
             {isDefault ? (
-              <Note>This is the Default List: a Save from a story goes here.</Note>
+              <Note>
+                <T k="lists.defaultNote" />
+              </Note>
             ) : (
               <Button type="button" variant="outline" disabled={busy} onClick={() => void run(() => lists.setDefaultList(list.id))}>
-                Make default
+                <T k="lists.makeDefault" />
               </Button>
             )}
             {saved ? null : (
@@ -299,37 +319,45 @@ function ListDetail({
                     setError(undefined);
                   }}
                 >
-                  Rename
+                  <T k="common.rename" />
                 </Button>
                 {confirmingDelete ? (
                   <>
                     <Button type="button" variant="destructive" disabled={busy} onClick={() => void remove()}>
-                      Confirm delete
+                      <T k="common.confirmDelete" />
                     </Button>
                     <Button type="button" variant="ghost" onClick={() => setConfirmingDelete(false)}>
-                      Keep
+                      <T k="stories.deleteKeep" />
                     </Button>
                   </>
                 ) : (
                   <Button type="button" variant="ghost" className="text-destructive" disabled={busy} onClick={() => setConfirmingDelete(true)}>
-                    Delete list
+                    <T k="lists.deleteList" />
                   </Button>
                 )}
               </>
             )}
           </div>
-          {saved ? <Note>Saved is built in: it can be configured, not renamed or deleted.</Note> : null}
+          {saved ? (
+            <Note>
+              <T k="lists.savedNote" />
+            </Note>
+          ) : null}
         </div>
       )}
 
       <div className="flex flex-col gap-3">
-        <Subheading ref={itemsRef}>Items ({list.itemCount})</Subheading>
+        <Subheading ref={itemsRef}>
+          <T k="lists.itemsHeading" params={{ count: list.itemCount }} />
+        </Subheading>
         {members.error ? (
           <ErrorState message={members.error} onRetry={() => void reread()} />
         ) : members.rows === null ? (
           <SkeletonLines lines={3} />
         ) : members.rows.length === 0 ? (
-          <p className="text-body text-muted-foreground">No items yet.</p>
+          <p className="text-body text-muted-foreground">
+            <T k="lists.itemsEmpty" />
+          </p>
         ) : (
           <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
             {members.rows.map((item) => (
@@ -343,11 +371,11 @@ function ListDetail({
                   variant="ghost"
                   size="default"
                   className="text-destructive"
-                  aria-label={`Remove ${item.surface}`}
+                  aria-label={tp("lists.removeAria", { surface: item.surface })}
                   disabled={busy}
                   onClick={() => void removeMember(item)}
                 >
-                  Remove
+                  <T k="common.remove" />
                 </Button>
               </li>
             ))}
@@ -356,18 +384,20 @@ function ListDetail({
       </div>
 
       <form className="flex flex-col gap-4" onSubmit={(event) => void addMember(event)} noValidate>
-        <Subheading>Add an item</Subheading>
+        <Subheading>
+          <T k="lists.addItemHeading" />
+        </Subheading>
         <ChoiceGroup
-          legend="Kind"
-          options={ITEM_KINDS.map((k) => ({ value: k, label: ITEM_KIND_LABELS[k] }))}
+          legend={<T k="lists.kindLegend" />}
+          options={ITEM_KINDS.map((k) => ({ value: k, label: itemKindLabel(k, language) }))}
           value={kind}
           onChange={setKind}
           disabled={busy}
         />
         <TextField
           id="list-item-ref"
-          label="Reference (dictionary entry sequence or grammar point id)"
-          hint={kind === "kanji" ? "For a Kanji, type the character itself." : undefined}
+          label={<T k="lists.refLabel" />}
+          hint={kind === "kanji" ? <T k="lists.kanjiRefHint" /> : undefined}
           value={itemRef}
           inputMode={kind === "kanji" ? "text" : "numeric"}
           autoComplete="off"
@@ -379,11 +409,11 @@ function ListDetail({
         />
         <div className="flex flex-wrap items-center gap-4">
           <Button type="submit" disabled={busy || itemRef.trim() === ""}>
-            Add to list
+            <T k="lists.addToSubmit" />
           </Button>
           {added ? (
             <p role="status" className="text-small text-success">
-              Added.
+              <T k="lists.added" />
             </p>
           ) : null}
         </div>

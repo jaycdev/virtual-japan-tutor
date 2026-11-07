@@ -1,6 +1,7 @@
 import { Icon } from '@/components/ui/icon';
 import { NativeOnlyAnimatedView } from '@/components/ui/native-only-animated-view';
 import { cn } from '@/lib/utils';
+import { useTp } from '../../src/components/Text.tsx';
 import * as DialogPrimitive from '@rn-primitives/dialog';
 import { X } from 'lucide-react-native';
 import * as React from 'react';
@@ -58,6 +59,7 @@ function DialogContent({
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   portalHost?: string;
 }) {
+  const tp = useTp();
   return (
     <DialogPortal hostName={portalHost}>
       <DialogOverlay>
@@ -70,7 +72,8 @@ function DialogContent({
           <>{children}</>
           <DialogPrimitive.Close className="absolute right-4 top-4 rounded opacity-70 active:opacity-100" hitSlop={12}>
             <Icon as={X} className="text-accent-foreground size-4 shrink-0" />
-            <Text className="sr-only">Close</Text>
+            {/* Screen-reader-only name, in the Learner's Interface Language. */}
+            <Text className="sr-only">{tp("common.close")}</Text>
           </DialogPrimitive.Close>
         </DialogPrimitive.Content>
       </DialogOverlay>

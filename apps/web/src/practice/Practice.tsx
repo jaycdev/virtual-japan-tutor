@@ -13,12 +13,23 @@
 // feedback line is a polite live region that is always in the DOM, so a screen
 // reader announces the verdict as it appears.
 import type { ApiClient } from "@vjt/api-client";
-import { displayPrompt, usePractice, type ExerciseView, type PracticeView } from "@vjt/core";
+import {
+  displayPrompt,
+  exerciseInstructionKey,
+  pluralEn,
+  translatePlain,
+  usePractice,
+  useT,
+  type ExerciseView,
+  type InterfaceLanguage,
+  type PracticeView,
+} from "@vjt/core";
 import { ChevronRight, CircleCheck, CircleX } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { Link } from "react-router";
 
 import { Button } from "@/components/ui/button";
+import { T } from "@/components/Text.tsx";
 import { EmptyState, ErrorState, SkeletonLines } from "@/components/states";
 import { cn } from "@/lib/utils";
 
@@ -116,18 +127,24 @@ export function Practice({ client, seed }: { client: ApiClient; seed?: number })
   } else if (practice.state === "done") {
     body = <PracticeResults practice={practice} onAgain={practiceAgain} />;
   } else {
-    body = <p className="text-body text-muted-foreground">The next exercise is on its way…</p>;
+    body = (
+      <p className="text-body text-muted-foreground">
+        <T k="practice.next" />
+      </p>
+    );
   }
 
   return (
     <section className="mx-auto flex w-full max-w-[35rem] flex-col gap-6">
-      <h1 className="text-title font-semibold text-foreground">Practice</h1>
+      <h1 className="text-title font-semibold text-foreground">
+        <T k="practice.heading" />
+      </h1>
       {/* Always mounted: only its text changes, so a screen reader announces
           the starting status without a new live region appearing. No role=status
           here: the app shell's route announcer is one, and the two must not be
           confused (aria-live alone is enough for a persistent region). */}
       <p data-testid="practice-status" aria-live="polite" className="text-body text-muted-foreground">
-        {practice.state === "starting" ? "Building your session from the Focus Set…" : ""}
+        {practice.state === "starting" ? <T k="practice.building" /> : ""}
       </p>
       {body}
     </section>
@@ -175,11 +192,12 @@ function StartPractice({ error, onStart }: { error: string | null; onStart: () =
     <PracticeCard>
       {error ? <ErrorState message={error} onRetry={onStart} /> : null}
       <p className="text-body text-muted-foreground">
-        A session is about twenty exercises drawn from your Focus Set, recognition and grammar cloze. Every answer
-        feeds your mastery record.
+        <T k="practice.intro" />
       </p>
       <div>
-        <Button onClick={onStart}>Start a practice session</Button>
+        <Button onClick={onStart}>
+          <T k="practice.start" />
+        </Button>
       </div>
     </PracticeCard>
   );
@@ -204,10 +222,12 @@ function NothingToPractise() {
     <PracticeCard>
       <EmptyState
         compact
-        message="Nothing in your Focus Set to practise yet"
+        message={<T k="practice.empty" />}
         action={
           <Button asChild variant="outline">
-            <Link to="/settings/lists">Open your Item Lists</Link>
+            <Link to="/settings/lists">
+              <T k="practice.openLists" />
+            </Link>
           </Button>
         }
       />
@@ -228,6 +248,7 @@ function ActivePractice({
   onRetry: () => void;
   onAnswer: (exerciseId: string, optionId: string) => void;
 }) {
+  const { language, tp } = useT();
   const answeredCount = practice.exercises.filter((ex) => ex.answered).length;
   const skipped = practice.session?.skipped ?? 0;
   const feedback = current.feedback;
@@ -239,9 +260,13 @@ function ActivePractice({
   const settled = feedback !== null;
   const locked = settled || practice.pending;
   const percent = practice.target ? Math.round((answeredCount / practice.target) * 100) : 0;
-  const progressLabel =
-    `Exercise ${Math.max(1, position)} of ${practice.target}` +
-    (skipped > 0 ? ` (${skipped} Focus Set item${skipped === 1 ? "" : "s"} without content, skipped)` : "");
+  // aria-valuetext needs plain text, so the visible line below renders <T>
+  // elements and this stays a resolved string (issue #125).
+  const progressText =
+    tp("practice.exerciseOf", { n: Math.max(1, position), total: practice.target }) +
+    (skipped > 0
+      ? ` ${tp("practice.skipped", { count: skipped, plural: pluralEn(language, skipped) })}`
+      : "");
 
   const continueRef = useRef<HTMLButtonElement | null>(null);
   const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -331,17 +356,29 @@ function ActivePractice({
     optionRefs.current[next]?.focus();
   }
 
+  // English keeps the server's own sentence; Japanese renders the table entry
+  // through <T> so it carries furigana (issue #125).
+  const instructionKey = language === "en" ? null : exerciseInstructionKey(current.kind);
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-2">
-        <p className="text-caption text-muted-foreground">{progressLabel}</p>
+        <p className="text-caption text-muted-foreground">
+          <T k="practice.exerciseOf" params={{ n: Math.max(1, position), total: practice.target }} />
+          {skipped > 0 ? (
+            <>
+              {" "}
+              <T k="practice.skipped" params={{ count: skipped, plural: pluralEn(language, skipped) }} />
+            </>
+          ) : null}
+        </p>
         <div
           role="progressbar"
-          aria-label="Practice Session progress"
+          aria-label={tp("practice.progressAria")}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={percent}
-          aria-valuetext={progressLabel}
+          aria-valuetext={progressText}
           className="h-1 w-full overflow-hidden rounded-full bg-muted"
         >
           <div
@@ -353,7 +390,7 @@ function ActivePractice({
       <PracticeCard>
         <div className="flex flex-col gap-3">
           <p id={instructionId} className="text-small text-muted-foreground">
-            {current.instruction}
+            {instructionKey === null ? current.instruction : <T k={instructionKey} />}
           </p>
           <p id={promptTextId} lang="ja" className="font-serif text-display text-foreground">
             <PromptText text={current.prompt} />
@@ -404,7 +441,7 @@ function ActivePractice({
                   feedback.correct ? "text-success" : "text-destructive",
                 )}
               >
-                {feedbackLine(current, feedback)}
+                {feedbackLine(current, feedback, language)}
               </span>
             </>
           ) : null}
@@ -413,7 +450,7 @@ function ActivePractice({
         {settled ? (
           <div className="flex justify-end">
             <Button ref={continueRef} onClick={onContinue}>
-              Continue
+              <T k="practice.continue" />
               <ChevronRight aria-hidden="true" />
             </Button>
           </div>
@@ -427,10 +464,16 @@ function ActivePractice({
  * The feedback line. A miss names the right answer outright, so the Learner
  * does not have to find a marker on the option list.
  */
-function feedbackLine(current: ExerciseView, feedback: NonNullable<ExerciseView["feedback"]>): string {
-  if (feedback.correct) return "Correct";
+function feedbackLine(
+  current: ExerciseView,
+  feedback: NonNullable<ExerciseView["feedback"]>,
+  lang: InterfaceLanguage,
+): string {
+  if (feedback.correct) return translatePlain(lang, "practice.correct");
   const answer = current.options.find((opt) => opt.id === feedback.correctOptionId)?.text;
-  return answer ? `Not quite. Correct answer: ${answer}` : "Not quite";
+  return answer
+    ? translatePlain(lang, "practice.notQuiteAnswer", { answer })
+    : translatePlain(lang, "practice.notQuite");
 }
 
 function OptionButton({
@@ -484,16 +527,18 @@ function OptionButton({
   );
 }
 
-/** itemKind as Learner-facing copy, not the API's raw token. */
-function humanKind(kind: string): string {
-  const words: Record<string, string> = {
-    kanji: "Kanji",
-    kana: "Kana",
-    grammar: "Grammar point",
-    vocabulary: "Word",
-    phrase: "Phrase",
+/** itemKind as Learner-facing copy in the Interface Language, not the API's raw token. */
+function humanKind(kind: string, lang: InterfaceLanguage): string {
+  const keys: Record<string, "item.kanji" | "item.kana" | "focus.grammarPoint" | "item.vocabulary" | "item.phrase"> = {
+    kanji: "item.kanji",
+    kana: "item.kana",
+    grammar: "focus.grammarPoint",
+    vocabulary: "item.vocabulary",
+    phrase: "item.phrase",
   };
-  return words[kind] ?? kind.charAt(0).toUpperCase() + kind.slice(1);
+  const key = keys[kind];
+  if (key === undefined) return kind.charAt(0).toUpperCase() + kind.slice(1);
+  return translatePlain(lang, key);
 }
 
 /**
@@ -505,14 +550,19 @@ function humanKind(kind: string): string {
  * Grammar: /grammar/:grammarId takes the Grammar Catalogue point id as text (PR
  * #86's parsePointId), and the grammar itemRef is that same id, so it links as is.
  */
-export function destinationForItem(itemKind: string, itemRef: string): { to: string; label: string } {
+export function destinationForItem(
+  itemKind: string,
+  itemRef: string,
+  lang: InterfaceLanguage = "en",
+): { to: string; label: string } {
   if (itemKind === "grammar") {
-    return { to: `/grammar/${encodeURIComponent(itemRef)}`, label: "Open Grammar Point" };
+    return { to: `/grammar/${encodeURIComponent(itemRef)}`, label: translatePlain(lang, "practice.destinationGrammar") };
   }
-  return { to: "/settings/lists", label: "Open Item Lists" };
+  return { to: "/settings/lists", label: translatePlain(lang, "practice.destinationLists") };
 }
 
 function PracticeResults({ practice, onAgain }: { practice: PracticeView; onAgain: () => void }) {
+  const { language } = useT();
   const headingRef = useRef<HTMLHeadingElement | null>(null);
   const exercises = practice.session?.exercises ?? [];
   const items = practice.results?.items ?? [];
@@ -530,22 +580,29 @@ function PracticeResults({ practice, onAgain }: { practice: PracticeView; onAgai
   return (
     <PracticeCard>
       <h2 ref={headingRef} tabIndex={-1} className="text-title font-semibold text-foreground outline-none">
-        Session complete
+        <T k="practice.sessionComplete" />
       </h2>
       <p className="text-body text-muted-foreground">
-        {practice.results?.correct ?? 0} of {practice.results?.total ?? 0} correct - {totalExercises} exercise
-        {totalExercises === 1 ? "" : "s"} from your Focus Set.
+        <T
+          k="practice.scoreLine"
+          params={{
+            correct: practice.results?.correct ?? 0,
+            total: practice.results?.total ?? 0,
+            count: totalExercises,
+            plural: pluralEn(language, totalExercises),
+          }}
+        />
       </p>
       {again.length > 0 ? (
         <section className="flex flex-col gap-3" aria-labelledby="practice-needs-look">
           <h3 id="practice-needs-look" className="text-small font-semibold text-muted-foreground">
-            Needs another look
+            <T k="practice.needsLook" />
           </h3>
           <ul className="flex flex-col gap-3">
             {again.map(({ item, index }) => {
               const exercise = practice.exercises[index];
               const answer = exercise?.options.find((opt) => opt.id === exercise.feedback?.correctOptionId)?.text;
-              const destination = destinationForItem(item.itemKind, item.itemRef);
+              const destination = destinationForItem(item.itemKind, item.itemRef, language);
               return (
                 <li
                   key={`${item.itemKind}:${item.itemRef}:${index}`}
@@ -553,7 +610,11 @@ function PracticeResults({ practice, onAgain }: { practice: PracticeView; onAgai
                 >
                   <CircleX aria-hidden="true" className="mt-1 size-5 shrink-0 text-destructive" />
                   <div className="flex min-w-0 flex-1 flex-col gap-1">
-                    {answer ? <span className="text-small text-foreground">Correct answer: {answer}</span> : null}
+                    {answer ? (
+                      <span className="text-small text-foreground">
+                        <T k="practice.correctAnswer" params={{ answer }} />
+                      </span>
+                    ) : null}
                     {/* The link's name is its prompt and where it goes ("…。 Open
                         Grammar Point"), so a screen reader hears the destination. */}
                     <Link
@@ -566,17 +627,21 @@ function PracticeResults({ practice, onAgain }: { practice: PracticeView; onAgai
                       <span className="text-small group-hover:underline">{destination.label}</span>
                     </Link>
                   </div>
-                  <span className="text-caption text-muted-foreground">{humanKind(item.itemKind)}</span>
+                  <span className="text-caption text-muted-foreground">{humanKind(item.itemKind, language)}</span>
                 </li>
               );
             })}
           </ul>
         </section>
       ) : (
-        <p className="text-body text-muted-foreground">Nothing to revisit this time.</p>
+        <p className="text-body text-muted-foreground">
+          <T k="practice.nothingToRevisit" />
+        </p>
       )}
       <div>
-        <Button onClick={onAgain}>Practice again</Button>
+        <Button onClick={onAgain}>
+          <T k="practice.again" />
+        </Button>
       </div>
     </PracticeCard>
   );

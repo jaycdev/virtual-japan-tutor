@@ -7,6 +7,8 @@ import { Navigate, useSearchParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { T } from "../components/Text.tsx";
+import { InterfaceLanguageChoice } from "../interfacelanguage/LanguageChoice.tsx";
 import { useSession } from "../session/session.tsx";
 import { safeNextPath } from "./nextPath.ts";
 import { Wordmark } from "../shell/Wordmark.tsx";
@@ -45,13 +47,13 @@ export function Component() {
       <div className="flex w-full max-w-sm flex-col gap-6 rounded-2xl border border-border bg-card p-6 shadow-md">
         <div className="flex flex-col items-center gap-1">
           <Wordmark className="text-display" />
-          <h1 className="text-title-sm font-semibold text-foreground">Virtual Japan Tutor</h1>
+          <h1 className="text-title-sm font-semibold text-foreground"><T k="brand.app" /></h1>
         </div>
 
         <form className="flex flex-col gap-6" onSubmit={submit} noValidate>
           <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="login-username">Username</Label>
+              <Label htmlFor="login-username"><T k="login.username" /></Label>
               <Input
                 id="login-username"
                 name="username"
@@ -69,7 +71,7 @@ export function Component() {
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="login-password">Password</Label>
+              <Label htmlFor="login-password"><T k="login.password" /></Label>
               <Input
                 id="login-password"
                 name="password"
@@ -92,9 +94,14 @@ export function Component() {
           ) : null}
 
           <Button type="submit" disabled={!canSubmit}>
-            {busy ? "Logging in…" : "Log in"}
+            {busy ? <T k="login.loggingIn" /> : <T k="login.logIn" />}
           </Button>
         </form>
+
+        {/* Pre-login the page cannot ask the server anything, but the interface
+            language is device-saved, so it can already be switched here (issue #125).
+            Compact: one row, no legend taking a row of its own. */}
+        <InterfaceLanguageChoice compact />
       </div>
     </div>
   );

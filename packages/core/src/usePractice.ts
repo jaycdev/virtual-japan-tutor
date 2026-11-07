@@ -5,7 +5,9 @@ import type {
   PracticeSession,
 } from "@vjt/api-client";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { FAILED, UNREACHABLE } from "./errors.ts";
+import { useInterfaceLanguage } from "./i18n/context.ts";
+import { exerciseInstruction } from "./i18n/errorMessages.ts";
+import { apiFailure, renderFailure, UNREACHABLE_FAILURE, type Failure } from "./i18n/failure.ts";
 
 /**
  * State and actions behind the Practice Session screen (issue #9), shared by
@@ -21,6 +23,11 @@ import { FAILED, UNREACHABLE } from "./errors.ts";
  * session stays usable. An answer request is one at a time (`pending`); a
  * session that has expired mid-answer (404) is unrecoverable and returns the
  * screen to the Start form.
+ *
+ * The failure is held untranslated and rendered in the current Interface
+ * Language at return time, so switching languages re-labels it without
+ * touching the session (issue #125). Exercise instructions are likewise
+ * rendered, not stored: switching languages re-labels the open session.
  */
 
 
@@ -74,18 +81,15 @@ export interface PracticeView {
   refresh(): Promise<boolean>;
 }
 
-function message(error: { message?: string } | undefined, status: number): string {
-  return error?.message ?? `${FAILED} (${status})`;
-}
-
 export function usePractice(client: ApiClient): PracticeView {
+  const { language } = useInterfaceLanguage();
   const [session, setSession] = useState<PracticeSession | null>(null);
   // Chosen and revealed options per exercise, kept locally until the server's
   // session view carries the result.
   const [answers, setAnswers] = useState<Map<string, AnswerFeedback>>(() => new Map());
   const [state, setState] = useState<PracticeView["state"]>("idle");
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<Failure | null>(null);
   // Ref, not state: answer() must see the in-flight flag synchronously,
   // before React re-renders. It stops a double-click posting the same answer
   // twice (the second POST would 409 already_answered).
@@ -93,13 +97,13 @@ export function usePractice(client: ApiClient): PracticeView {
 
   const start = useCallback(async (seed?: number) => {
     setState("starting");
-    setError(null);
+    setFailure(null);
     try {
       const { data, error: err, response } = await client.POST("/practice/sessions", {
         body: seed === undefined ? {} : { seed },
       });
       if (!data) {
-        setError(message(err, response.status));
+        setFailure(apiFailure(err, response.status));
         setState("error");
         return;
       }
@@ -107,7 +111,7 @@ export function usePractice(client: ApiClient): PracticeView {
       setSession(data);
       setState(data.state === "complete" ? "done" : "active");
     } catch {
-      setError(UNREACHABLE);
+      setFailure(UNREACHABLE_FAILURE);
       setState("error");
     }
   }, [client]);
@@ -121,17 +125,17 @@ export function usePractice(client: ApiClient): PracticeView {
       if (refreshed.data) {
         setSession(refreshed.data);
         setState(refreshed.data.state === "complete" ? "done" : "active");
-        setError(null);
+        setFailure(null);
         return true;
       }
-      setError(message(refreshed.error, refreshed.response.status));
+      setFailure(apiFailure(refreshed.error, refreshed.response.status));
       if (refreshed.response.status === 404) {
         setSession(null);
         setState("error");
       }
       return false;
     } catch {
-      setError(UNREACHABLE);
+      setFailure(UNREACHABLE_FAILURE);
       return false;
     }
   }, [client, session]);
@@ -141,7 +145,7 @@ export function usePractice(client: ApiClient): PracticeView {
       if (!session || inFlight.current) return;
       inFlight.current = true;
       setPending(true);
-      setError(null);
+      setFailure(null);
       try {
         const { data, error: err, response } = await client.POST(
           "/practice/sessions/{sessionId}/answers",
@@ -151,7 +155,7 @@ export function usePractice(client: ApiClient): PracticeView {
           },
         );
         if (!data) {
-          setError(message(err, response.status));
+          setFailure(apiFailure(err, response.status));
           if (response.status === 404) {
             // The session is gone (expired or foreign): nothing to resume.
             setSession(null);
@@ -169,7 +173,7 @@ export function usePractice(client: ApiClient): PracticeView {
         );
         await refetch();
       } catch {
-        setError(UNREACHABLE);
+        setFailure(UNREACHABLE_FAILURE);
       } finally {
         inFlight.current = false;
         setPending(false);
@@ -197,16 +201,25 @@ export function usePractice(client: ApiClient): PracticeView {
       return {
         id: ex.id,
         kind: ex.kind,
-        instruction: ex.instruction ?? "",
+        // English keeps the server's own sentence; Japanese shows the
+        // translated instruction for the exercise's kind (issue #125).
+        // Rendered here, not stored, so a language switch re-labels the
+        // open session without touching the server.
+        instruction: exerciseInstruction(language, ex.kind, ex.instruction ?? ""),
         prompt: ex.prompt,
         options: ex.options ?? [],
         answered: ex.answered,
         feedback,
       };
     });
-  }, [session, answers]);
+  }, [session, answers, language]);
 
   const current = useMemo(() => exercises.find((ex) => !ex.answered) ?? null, [exercises]);
+
+  const error = useMemo(
+    () => (failure === null ? null : renderFailure(language, failure)),
+    [failure, language],
+  );
 
   return {
     state,

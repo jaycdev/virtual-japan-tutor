@@ -1,10 +1,13 @@
 import { ScrollView } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 
-import { SETTINGS_SECTIONS, type SettingsSection } from "../../src/SettingsHome.tsx";
+import { sectionTitleKey, SETTINGS_SECTIONS, type SettingsSection } from "@vjt/core";
+
 import { useSession } from "../../src/session.tsx";
+import { useJapaneseFont } from "../../src/japaneseFont/index.tsx";
 import { SectionBack, SectionHeading } from "../../src/settingsSections.tsx";
 import { EmptyState } from "../../src/state/states.tsx";
+import { T, useTp } from "../../src/components/Text.tsx";
 import { AppearanceSettings } from "../../src/AppearanceSettings.tsx";
 import { ReadingSettingsSection } from "../../src/ReadingSettingsSection.tsx";
 import { StartingLevelSettings } from "../../src/StartingLevelSettings.tsx";
@@ -24,14 +27,16 @@ export default function SettingsSectionRoute() {
   const { section } = useLocalSearchParams<{ section: string }>();
   const router = useRouter();
   const session = useSession();
+  const jp = useJapaneseFont();
+  const tp = useTp();
   const onBack = () => (router.canGoBack() ? router.back() : router.replace("/settings"));
 
   const found = SETTINGS_SECTIONS.find((s) => s.id === section);
   if (!found) {
     return (
       <EmptyState
-        message="That settings section doesn’t exist."
-        actionLabel="Back to settings"
+        message={<T k="settings.notFound" className="text-body text-foreground" />}
+        actionLabel={tp("mobile.backToSettings")}
         onAction={() => router.replace("/settings")}
       />
     );
@@ -39,8 +44,14 @@ export default function SettingsSectionRoute() {
 
   return (
     <ScrollView className="flex-1" contentContainerStyle={{ padding: 16 }}>
-      <SectionBack label="Back" onPress={onBack} />
-      <SectionHeading>{found.title}</SectionHeading>
+      <SectionBack label={tp("setup.back")} onPress={onBack} />
+      <SectionHeading>
+        <T
+          k={sectionTitleKey(found.id)}
+          className={`text-title-sm ${jp.regular} text-foreground`}
+          accessibilityRole="header"
+        />
+      </SectionHeading>
       <SectionBody section={found.id} client={session.client} session={session} />
     </ScrollView>
   );

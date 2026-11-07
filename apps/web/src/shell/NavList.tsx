@@ -1,7 +1,9 @@
 import { BookOpen, Dumbbell, GraduationCap, House, Settings, type LucideIcon } from "lucide-react";
 import { Link, useLocation } from "react-router";
+import { useT } from "@vjt/core";
 
 import { cn } from "@/lib/utils";
+import { T } from "../components/Text.tsx";
 import { DESTINATIONS, activeDestination } from "./destinations.ts";
 
 const ICONS: Record<string, LucideIcon> = {
@@ -18,11 +20,12 @@ const ICONS: Record<string, LucideIcon> = {
  */
 export function NavList({ onNavigate }: { onNavigate?: () => void }) {
   const { pathname } = useLocation();
+  const { tp } = useT();
   const active = activeDestination(pathname);
   return (
-    <nav aria-label="Main">
+    <nav aria-label={tp("nav.main")}>
       <ul className="flex flex-col gap-1">
-        {DESTINATIONS.map(({ path, label }) => {
+        {DESTINATIONS.map(({ path, labelKey }) => {
           const selected = path === active;
           const Icon = ICONS[path] ?? House;
           return (
@@ -37,7 +40,7 @@ export function NavList({ onNavigate }: { onNavigate?: () => void }) {
                 )}
               >
                 <Icon className="size-5 shrink-0" aria-hidden="true" />
-                <span>{label}</span>
+                <span><T k={labelKey} /></span>
               </Link>
             </li>
           );

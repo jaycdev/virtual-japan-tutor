@@ -42,6 +42,21 @@ describe("ProgressStatus", () => {
     rerender(<ProgressStatus value={3} label="Done" />);
     expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("100");
   });
+
+  it("names the bar with ariaLabel when the visible line is markup", () => {
+    render(
+      <ProgressStatus
+        value={0.5}
+        label={
+          <span>
+            書き込み中<span className="furigana">かきちゅう</span>…
+          </span>
+        }
+        ariaLabel="Writing your Story…"
+      />,
+    );
+    expect(screen.getByRole("progressbar", { name: "Writing your Story…" })).toBeTruthy();
+  });
 });
 
 describe("SkeletonLines", () => {

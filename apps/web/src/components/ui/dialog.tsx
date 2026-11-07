@@ -2,7 +2,12 @@ import * as React from "react"
 import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { XIcon } from "lucide-react"
 
+import { useT } from "@vjt/core"
+
 import { cn } from "@/lib/utils"
+
+// The sr-only close label is plain tp() text, not <T>: a screen reader would
+// otherwise read the <rt> too (issue #125).
 
 // shadcn/ui Dialog (new-york v4) on Radix Dialog: focus is trapped, Escape closes
 // it and focus returns to the trigger. Colours are the @vjt/design tokens (the
@@ -47,6 +52,7 @@ function DialogContent({
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
 }) {
+  const { tp } = useT()
   return (
     <DialogPortal data-slot="dialog-portal">
       <DialogOverlay />
@@ -65,7 +71,7 @@ function DialogContent({
             className="absolute top-4 right-4 rounded-xs text-muted-foreground opacity-70 transition-opacity hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
           >
             <XIcon />
-            <span className="sr-only">Close</span>
+            <span className="sr-only">{tp("common.close")}</span>
           </DialogPrimitive.Close>
         )}
       </DialogPrimitive.Content>

@@ -2,6 +2,8 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
+import { unrubyfiedKanji } from './test/kanjiCoverage.ts';
+
 // Per-device settings persist in the Android secure store; the test host swaps
 // it for an in-memory map so the persisted values can be seeded and read back.
 const secure = vi.hoisted(() => new Map<string, string>());
@@ -26,8 +28,15 @@ async function freshAppearanceSettings() {
   const { AppearanceSettings } = await import('./AppearanceSettings.tsx');
   const { ThemeProvider } = await import('./theme/index.tsx');
   const { StoryTextSizeProvider } = await import('./storysize/index.tsx');
+  const { InterfaceLanguageProvider } = await import('@vjt/core');
   stub.setThemeCalls.length = 0;
-  return { AppearanceSettings, ThemeProvider, StoryTextSizeProvider, setThemeCalls: stub.setThemeCalls };
+  return {
+    AppearanceSettings,
+    ThemeProvider,
+    StoryTextSizeProvider,
+    InterfaceLanguageProvider,
+    setThemeCalls: stub.setThemeCalls,
+  };
 }
 
 describe('mobile AppearanceSettings', () => {
@@ -111,5 +120,29 @@ describe('mobile AppearanceSettings', () => {
         ),
       ).toBe('true'),
     );
+  });
+
+  it('in Japanese (furigana) every chrome kanji stands in a reading column', async () => {
+    // Legends, theme and font names, notes and the hint are table strings;
+    // the size letters are the same in every language; the sample sentence
+    // is an example of Japanese, never chrome — and it is pure kana anyway.
+    const { AppearanceSettings, ThemeProvider, StoryTextSizeProvider, InterfaceLanguageProvider } =
+      await freshAppearanceSettings();
+    render(
+      <ThemeProvider>
+        <StoryTextSizeProvider>
+          <InterfaceLanguageProvider language="ja-furigana" setLanguage={() => undefined}>
+            <AppearanceSettings />
+          </InterfaceLanguageProvider>
+        </StoryTextSizeProvider>
+      </ThemeProvider>,
+    );
+
+    await waitFor(() =>
+      expect(document.querySelectorAll("[style*='font-size']").length).toBeGreaterThan(0),
+    );
+    // The language chips name themselves in their own language — the mobile
+    // twin of the web's lang="ja" exemption.
+    expect(unrubyfiedKanji(document.body, ['language-choice'])).toEqual([]);
   });
 });

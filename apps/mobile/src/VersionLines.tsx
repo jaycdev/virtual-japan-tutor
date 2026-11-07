@@ -2,8 +2,9 @@
 // Shown in Settings > Server, under the health line; the server version comes from GET /health
 // through the shared client (useHealth).
 import Constants from "expo-constants";
-import { Text, View } from "react-native";
+import { View } from "react-native";
 
+import { T } from "./components/Text.tsx";
 import { versionMismatchNotice } from "./versionNotice.ts";
 
 export function VersionLines({ serverVersion }: { serverVersion: string | undefined }) {
@@ -12,12 +13,18 @@ export function VersionLines({ serverVersion }: { serverVersion: string | undefi
 
   return (
     <View className="gap-1">
-      <Text className="text-small text-muted-foreground">App version: {appVersion}</Text>
-      <Text className="text-small text-muted-foreground">Server version: {serverVersion ?? "unknown"}</Text>
+      <T k="mobile.appVersion" params={{ version: appVersion }} className="text-small text-muted-foreground" />
+      <T
+        k="mobile.serverVersion"
+        params={{ version: serverVersion ?? "unknown" }}
+        className="text-small text-muted-foreground"
+      />
       {notice ? (
-        <Text role="alert" className="text-small text-destructive">
-          {notice}
-        </Text>
+        // The alert wrapper stays a View: a furigana line is a row of columns,
+        // and a status line keeps its role around it.
+        <View role="alert">
+          <T k="mobile.versionMismatch" params={notice} className="text-small text-destructive" />
+        </View>
       ) : null}
     </View>
   );

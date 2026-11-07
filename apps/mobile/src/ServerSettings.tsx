@@ -1,10 +1,11 @@
 import type { ApiClient } from "@vjt/api-client";
-import { probeServerHealth, useHealth } from "@vjt/core";
+import { probeServerHealth, useHealth, useT, type EntryRef } from "@vjt/core";
 import { useState } from "react";
-import { Text, View } from "react-native";
+import { View } from "react-native";
 
 import { Field } from "./components/ui/Field.tsx";
 import { LinkButton } from "./components/ui/LinkButton.tsx";
+import { T } from "./components/Text.tsx";
 import { ActionButton } from "./stories-parts.tsx";
 import { InlineError, SkeletonBar } from "./state/states.tsx";
 import { normalizeServerUrl } from "./config.ts";
@@ -33,16 +34,20 @@ export function ServerSettings({
   currentUrl: string;
   onSave: (url: string) => Promise<void>;
 }) {
+  const { tp: plain } = useT();
   const [url, setUrl] = useState(currentUrl);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | undefined>();
+  // A table-backed failure stays a string-table entry ({ k, params }) so the
+  // text follows the Interface Language however long the note sits here; only
+  // the server's own message arrives pre-resolved.
+  const [error, setError] = useState<EntryRef | string | undefined>();
   // Bumped by "Check again"; keys the health child so it refetches (see above).
   const [attempt, setAttempt] = useState(0);
 
   const save = async () => {
     const next = normalizeServerUrl(url);
     if (!next) {
-      setError("Enter the full address, like http://192.168.1.10:8080");
+      setError({ k: "mobile.serverUrlShape" });
       return;
     }
     setBusy(true);
@@ -61,7 +66,7 @@ export function ServerSettings({
       await onSave(next);
       setUrl(next);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save the address");
+      setError(err instanceof Error ? err.message : { k: "mobile.serverSaveFailed" });
     } finally {
       setBusy(false);
     }
@@ -69,9 +74,7 @@ export function ServerSettings({
 
   return (
     <View className="gap-4">
-      <Text className="text-body text-foreground">
-        The app talks to your Virtual Japan Tutor server at this address.
-      </Text>
+      <T k="mobile.serverIntro" className="text-body text-foreground" />
 
       <HealthLine
         key={attempt}
@@ -80,24 +83,31 @@ export function ServerSettings({
       />
 
       <>
-          <Text className="text-small text-muted-foreground">Currently: {currentUrl}</Text>
+          <T k="mobile.serverCurrent" params={{ url: currentUrl }} className="text-small text-muted-foreground" />
           <Field
-            label="Server address"
+            label={<T k="server.addressLabel" className="text-small text-muted-foreground" />}
             value={url}
             onChangeText={setUrl}
             onSubmit={() => void save()}
             keyboardType="url"
-            placeholder="http://192.168.1.10:8080"
+            placeholder={plain("mobile.serverUrlPlaceholder")}
             disabled={busy}
           />
           {/* Review S1: saving is a sign-out, not a silent switch — say so. */}
-          <Text className="text-small text-muted-foreground">
-            Saving signs you out and reconnects the app to that server.
-          </Text>
-          <ActionButton label="Save server" onPress={() => void save()} filled disabled={busy} />
-          {error && <InlineError message={error} />}
+          <T k="mobile.serverSignOutNote" className="text-small text-muted-foreground" />
+          <ActionButton
+            label={<T k="mobile.saveServer" className="text-body font-semibold text-primary-foreground" />}
+            onPress={() => void save()}
+            filled
+            disabled={busy}
+          />
+          {error ? (
+            <InlineError
+              message={typeof error === "string" ? error : <T k={error.k} params={error.params} />}
+            />
+          ) : null}
           <LinkButton
-            label="Use the emulator default (http://10.0.2.2:8080)"
+            label={<T k="mobile.emulatorDefault" className="text-body text-primary" />}
             onPress={() => setUrl("http://10.0.2.2:8080")}
             disabled={busy}
           />
@@ -113,23 +123,29 @@ function HealthLine({ client, onRecheck }: { client: ApiClient; onRecheck: () =>
   return (
     <View className="gap-3">
       {health.state === "ok" && (
-        <Text role="status" accessibilityLiveRegion="polite" className="text-body text-success">
-          The server is reachable and its database is connected.
-        </Text>
+        <View role="status" accessibilityLiveRegion="polite">
+          <T k="server.healthy" className="text-body text-success" />
+        </View>
       )}
       {health.state === "degraded" && (
-        <Text role="status" accessibilityLiveRegion="polite" className="text-body text-destructive">
-          The server answered, but {health.health.database === "unreachable" ? "cannot reach its database" : "reports a degraded part"}.
-        </Text>
+        <View role="status" accessibilityLiveRegion="polite">
+          <T
+            k={health.health.database === "unreachable" ? "server.answeredButDbUnreachable" : "server.answeredButDegraded"}
+            className="text-body text-destructive"
+          />
+        </View>
       )}
       {(health.state === "ok" || health.state === "degraded") && (
         <VersionLines serverVersion={health.health.version} />
       )}
       {health.state === "error" && (
-        <InlineError message={`Cannot reach the server: ${health.message}`} onRetry={onRecheck} />
+        <InlineError
+          message={<T k="server.unreachable" params={{ message: health.message }} />}
+          onRetry={onRecheck}
+        />
       )}
       {health.state !== "error" && (
-        <LinkButton label="Check again" onPress={onRecheck} />
+        <LinkButton label={<T k="server.checkAgain" className="text-body text-primary" />} onPress={onRecheck} />
       )}
     </View>
   );

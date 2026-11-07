@@ -1,4 +1,6 @@
 import type { StoryGrammarSpan, StorySentence, StoryToken, WeakSignalRequest } from "@vjt/api-client";
+import { DEFAULT_INTERFACE_LANGUAGE, type InterfaceLanguage } from "../i18n/language.ts";
+import { translatePlain } from "../i18n/translate.ts";
 
 /**
  * The Lookup Menu gesture (issue #14), as pure state so the hold/slide/release
@@ -130,34 +132,43 @@ export function menuOptions(
   defaultListName?: string,
   /** The last lookup for this word failed (issue #14 review): Dictionary dims. */
   dictionaryFailed = false,
+  lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
 ): MenuOption[] {
   const linked = token.entSeq !== undefined;
   const saveable = linked || span !== null;
-  const unlinked = "This word did not match a dictionary entry";
-  const failed = "The dictionary did not answer — hold again to try once more";
-  const loading = "Your Item Lists are still loading";
-  const target = defaultListName ? `Save to ${defaultListName}` : "Save to the default list";
+  const unlinked = translatePlain(lang, "reader.menu.unlinked");
+  const failed = translatePlain(lang, "reader.menu.lookupFailed");
+  const loading = translatePlain(lang, "reader.menu.listsLoading");
+  const target = defaultListName
+    ? translatePlain(lang, "reader.menu.saveToTarget", { list: defaultListName })
+    : translatePlain(lang, "reader.menu.saveToDefault");
   const options: MenuOption[] = [
     {
       id: "dictionary",
-      label: "Dictionary",
+      label: translatePlain(lang, "reader.menu.dictionary"),
       enabled: linked && !dictionaryFailed,
       hint: !linked ? unlinked : dictionaryFailed ? failed : undefined,
     },
   ];
-  if (span) options.push({ id: "grammar", label: "Grammar", enabled: true, hint: `${span.pattern}: ${span.meaning}` });
+  if (span)
+    options.push({
+      id: "grammar",
+      label: translatePlain(lang, "reader.menu.grammar"),
+      enabled: true,
+      hint: `${span.pattern}: ${span.meaning}`,
+    });
   options.push(
     {
       id: "save",
-      label: "Save",
+      label: translatePlain(lang, "reader.menu.save"),
       enabled: saveable && listsReady,
       hint: !saveable ? unlinked : !listsReady ? loading : target,
     },
     {
       id: "saveTo",
-      label: "Save to…",
+      label: translatePlain(lang, "reader.menu.saveTo"),
       enabled: saveable && listsReady,
-      hint: !saveable ? unlinked : !listsReady ? loading : "Save into another Item List",
+      hint: !saveable ? unlinked : !listsReady ? loading : translatePlain(lang, "reader.menu.saveToOther"),
     },
   );
   return options;

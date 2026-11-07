@@ -12,16 +12,17 @@ import { Icon } from "./components/ui/icon";
 export type { StepSaveFn, StepSaveOutcome, StepSaveRegistrar } from "@vjt/core";
 
 /** Back affordance for the section route. */
-export function SectionBack({ label, onPress }: { label: string; onPress: () => void }) {
+export function SectionBack({ label, onPress }: { label: ReactNode; onPress: () => void }) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={label}
+      // A plain string names the button; a <T> is its own labelled element.
+      accessibilityLabel={typeof label === "string" ? label : undefined}
       onPress={onPress}
       className="mb-3 min-h-11 flex-row items-center gap-1 self-start rounded-md px-2 active:bg-accent"
     >
       <Icon name="chevron-left" size="sm" />
-      <Text className="text-body text-foreground">{label}</Text>
+      {typeof label === "string" ? <Text className="text-body text-foreground">{label}</Text> : label}
     </Pressable>
   );
 }
@@ -29,6 +30,9 @@ export function SectionBack({ label, onPress }: { label: string; onPress: () => 
 /** The section's name above its content. */
 export function SectionHeading({ children }: { children: ReactNode }) {
   const jp = useJapaneseFont();
+  // A string gets this component's Text; a <T> (issue #125) brings its own
+  // line, header role and classes — including the Japanese font class.
+  if (typeof children !== "string") return <>{children}</>;
   return (
     // text-foreground is not decoration: without an explicit colour class the
     // heading inherits the test host's default near-black, which disappears

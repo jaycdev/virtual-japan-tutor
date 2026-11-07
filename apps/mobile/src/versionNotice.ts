@@ -12,10 +12,17 @@ export function releaseLine(version: string | null | undefined): string | null {
   return match ? `${match[1]}.${match[2]}` : null;
 }
 
-/** A warning for the Learner when both versions are releases and their major.minor differ, else null. */
-export function versionMismatchNotice(appVersion: string, serverVersion: string | null | undefined): string | null {
+/**
+ * A warning for the Learner when both versions are releases and their major.minor
+ * differ, else null. The sentence itself lives in the string table (issue #125);
+ * this names the two versions it fills in.
+ */
+export function versionMismatchNotice(
+  appVersion: string,
+  serverVersion: string | null | undefined,
+): { app: string; server: string } | null {
   const app = releaseLine(appVersion);
   const server = releaseLine(serverVersion);
   if (!app || !server || app === server) return null;
-  return `This app is ${appVersion} and the server is ${serverVersion}. They may not work together: update the app or the server to the same release.`;
+  return { app: appVersion, server: serverVersion ?? server };
 }

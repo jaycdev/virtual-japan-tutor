@@ -8,6 +8,7 @@ import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { T } from "./Text.tsx";
 
 /** Placeholder bars while content loads. The last line is shorter, like a paragraph. */
 export function SkeletonLines({ lines = 3, className }: { lines?: number; className?: string }) {
@@ -30,7 +31,7 @@ export function EmptyState({
   action,
   compact = false,
 }: {
-  message: string;
+  message: ReactNode;
   action?: ReactNode;
   compact?: boolean;
 }) {
@@ -46,7 +47,7 @@ export function EmptyState({
  * A failure in place of the content that failed, with one Retry action. Omit
  * `onRetry` when there is nothing to retry (a validation message).
  */
-export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
+export function ErrorState({ message, onRetry }: { message: ReactNode; onRetry?: () => void }) {
   return (
     <div
       role="alert"
@@ -55,7 +56,7 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
       <p className="flex-1 text-body text-destructive">{message}</p>
       {onRetry ? (
         <Button variant="destructive" onClick={onRetry}>
-          Retry
+          <T k="common.retry" />
         </Button>
       ) : null}
     </div>
@@ -65,14 +66,28 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
 /**
  * Long-running work (Story generation, Sync): a bar carrying no text of its own,
  * and one status line under it that says what is happening. `value` is 0 to 1.
+ * `label` is the visible line, so it can be a <T> element and keep its furigana
+ * in ja-furigana; `ariaLabel` is the same sentence as plain text for the bar,
+ * whose aria-label cannot carry ruby markup (issue #125).
  */
-export function ProgressStatus({ value, label }: { value: number; label: string }) {
+export function ProgressStatus({
+  value,
+  label,
+  ariaLabel,
+}: {
+  value: number;
+  label: ReactNode;
+  ariaLabel?: string;
+}) {
   const percent = Math.round(Math.min(1, Math.max(0, value)) * 100);
+  // A plain-string label can name the bar itself; a <T> element cannot go into
+  // aria-label, so those callers pass ariaLabel.
+  const barLabel = ariaLabel ?? (typeof label === "string" ? label : undefined);
   return (
     <div className="flex flex-col gap-2">
       <div
         role="progressbar"
-        aria-label={label}
+        aria-label={barLabel}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={percent}

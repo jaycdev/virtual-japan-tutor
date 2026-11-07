@@ -26,11 +26,11 @@ describe('versionMismatchNotice', () => {
 
   it('warns with both versions when major.minor differ', () => {
     const minor = versionMismatchNotice('1.2.3', '1.3.0');
-    expect(minor).toContain('1.2.3');
-    expect(minor).toContain('1.3.0');
+    expect(minor?.app).toContain('1.2.3');
+    expect(minor?.server).toContain('1.3.0');
     const major = versionMismatchNotice('2.0.0-rc.1', '1.9.9');
-    expect(major).toContain('2.0.0-rc.1');
-    expect(major).toContain('1.9.9');
+    expect(major?.app).toContain('2.0.0-rc.1');
+    expect(major?.server).toContain('1.9.9');
   });
 
   it('never warns for dev or unknown builds on either side', () => {

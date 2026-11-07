@@ -1,6 +1,9 @@
+import type { ReactNode } from "react";
 import { Switch } from "react-native";
 import { useCSSVariable } from "uniwind";
 
+import { useT } from "@vjt/core";
+import { labelAria } from "../Text.tsx";
 import { Row } from "./Row.tsx";
 
 /**
@@ -28,8 +31,8 @@ export function SwitchRow({
   disabled = false,
   last = false,
 }: {
-  label: string;
-  hint?: string;
+  label: ReactNode;
+  hint?: ReactNode;
   value: boolean;
   onToggle: (next: boolean) => void;
   disabled?: boolean;
@@ -38,6 +41,7 @@ export function SwitchRow({
   const trackOff = useCSSVariable("--color-muted-foreground") ?? undefined;
   const trackOn = useCSSVariable("--color-primary") ?? undefined;
   const thumb = useCSSVariable("--color-card") ?? undefined;
+  const { tp } = useT();
   return (
     <Row
       label={label}
@@ -45,7 +49,8 @@ export function SwitchRow({
       last={last}
       right={
         <Switch
-          accessibilityLabel={label}
+          // The label — plain string or <T> — names the switch.
+          accessibilityLabel={labelAria(label, tp)}
           value={value}
           disabled={disabled}
           onValueChange={onToggle}

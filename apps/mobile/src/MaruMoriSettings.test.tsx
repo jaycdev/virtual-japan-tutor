@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { InterfaceLanguageProvider } from '@vjt/core';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { MaruMoriSettings } from './MaruMoriSettings.tsx';
 import { formatInstant } from './Today.tsx';
 import { createApiClient } from '@vjt/api-client';
+import { unrubyfiedKanji } from './test/kanjiCoverage.ts';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -211,5 +213,27 @@ describe('mobile MaruMoriSettings', () => {
     await waitFor(() => {
       expect((screen.getByLabelText('MaruMori API key') as HTMLInputElement).value).toBe('');
     });
+  });
+
+  it('in Japanese (furigana) every chrome kanji stands in a reading column', async () => {
+    // Prose, counts, the humanised last-Sync stamp and the sync result all
+    // come from the table and its RubyText twins; the only words that stay
+    // unannotated are the server's own (ISO stamps, statuses, error text).
+    status = connected;
+    const client = createApiClient({ baseUrl: 'http://localhost', fetch: fetchMock as unknown as typeof fetch });
+    render(
+      <InterfaceLanguageProvider language="ja-furigana" setLanguage={() => undefined}>
+        <MaruMoriSettings client={client} />
+      </InterfaceLanguageProvider>,
+    );
+    await screen.findByText('MaruMoriのAPIキー');
+    expect(document.querySelectorAll("[style*='font-size']").length).toBeGreaterThan(0);
+    expect(unrubyfiedKanji(document.body)).toEqual([]);
+
+    // The live sync-result line: drawn from the finished run, in the current
+    // language — readings and all.
+    fireEvent.click(screen.getByRole('button', { name: '今すぐ同期' }));
+    await waitFor(() => expect(screen.getByRole('status')).toBeTruthy());
+    expect(unrubyfiedKanji(document.body)).toEqual([]);
   });
 });

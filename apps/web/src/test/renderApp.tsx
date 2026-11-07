@@ -10,6 +10,7 @@ import type { AuthState } from "@vjt/core";
 
 import { appRoutes } from "../appRoutes.tsx";
 import { SessionContext, type Session } from "../session/session.tsx";
+import { InterfaceLanguageGate } from "../interfacelanguage";
 
 export const TEST_USER: User = { id: "11111111-1111-4111-8111-111111111111", username: "ada" };
 export const TEST_PASSWORD = "correct horse";
@@ -91,7 +92,9 @@ export function renderAppAt(path: string, options: HarnessOptions = {}) {
 
   const view = render(
     <Harness>
-      <RouterProvider router={router} />
+      <InterfaceLanguageGate>
+        <RouterProvider router={router} />
+      </InterfaceLanguageGate>
     </Harness>,
   );
   return { router, ...view };

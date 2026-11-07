@@ -1,11 +1,13 @@
 import type { ApiClient } from "@vjt/api-client";
 import { createApiClient } from "@vjt/api-client";
+import { InterfaceLanguageProvider } from "@vjt/core";
 import { PortalHost } from "@rn-primitives/portal";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { flushPressConfig } from "../test/press-config.ts";
 import { Stories } from "./Stories.tsx";
+import { unrubyfiedKanji } from "./test/kanjiCoverage.ts";
 
 /**
  * The rebuilt Stories page (issue #48, plan §4.5): Today's Story pinned above
@@ -596,6 +598,28 @@ describe("On-demand Generate dialog", () => {
         api.requests.filter((r) => r.method === "POST" && r.path === "/stories/generate").length,
       ).toBe(2),
     );
+  });
+});
+
+describe("Interface Language", () => {
+  it("in Japanese (furigana) every chrome kanji stands in a reading column", async () => {
+    // Headings, filter chips, the Generate button and the card meta line (whose
+    // date is written out in Japanese) all come from the string table; the
+    // Story Titles are Learner content and sit outside the rule.
+    render(
+      <>
+        <PortalHost />
+        <InterfaceLanguageProvider language="ja-furigana" setLanguage={() => undefined}>
+          <Stories client={fakeApi().client} onOpenStory={vi.fn()} />
+        </InterfaceLanguageProvider>
+      </>,
+    );
+    // The page settles: the Library's second card is the last thing to arrive.
+    await screen.findByTestId("story-card-st-2");
+
+    // Reading columns are being drawn — the meta date proves the chrome is annotated.
+    expect(document.querySelectorAll("[style*='font-size']").length).toBeGreaterThan(0);
+    expect(unrubyfiedKanji(document.body, ["today-story-title", "story-card-title"])).toEqual([]);
   });
 });
 

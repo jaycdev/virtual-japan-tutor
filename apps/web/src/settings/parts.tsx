@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { T } from "../components/Text.tsx";
 
 /**
  * A section's own heading below the page title. Focusable (tabIndex -1) so a
@@ -36,7 +37,7 @@ export function TextField({
   error,
   className,
   ...input
-}: Omit<ComponentProps<"input">, "id"> & { id: string; label: string; hint?: string; error?: string }) {
+}: Omit<ComponentProps<"input">, "id"> & { id: string; label: ReactNode; hint?: ReactNode; error?: ReactNode }) {
   const hintId = hint ? `${id}-hint` : undefined;
   const errorId = error ? `${id}-error` : undefined;
   const describedBy = [hintId, errorId].filter(Boolean).join(" ") || undefined;
@@ -75,8 +76,8 @@ export function ChoiceGroup<T extends string | number>({
   onChange,
   disabled = false,
 }: {
-  legend: string;
-  options: readonly { value: T; label: string }[];
+  legend: ReactNode;
+  options: readonly { value: T; label: ReactNode }[];
   value: T | null;
   onChange: (value: T) => void;
   disabled?: boolean;
@@ -114,8 +115,8 @@ export function SwitchField({
   onChange,
 }: {
   id: string;
-  label: string;
-  hint?: string;
+  label: ReactNode;
+  hint?: ReactNode;
   checked: boolean;
   disabled?: boolean;
   onChange: (checked: boolean) => void;
@@ -147,21 +148,26 @@ export function SwitchField({
   );
 }
 
-/** Where a save stands. The status line is announced to screen readers. */
-export type SaveState = { kind: "idle" } | { kind: "saving" } | { kind: "saved"; message?: string } | { kind: "error"; message: string };
+/**
+ * Where a save stands. The status line is announced to screen readers.
+ * `message` is a ReactNode so callers can pass a <T> element: storing the
+ * element, not the resolved string, keeps the line in the Learner's language
+ * if they switch while it is on screen (issue #125).
+ */
+export type SaveState = { kind: "idle" } | { kind: "saving" } | { kind: "saved"; message?: ReactNode } | { kind: "error"; message: ReactNode };
 
 export function SaveStatus({ state }: { state: SaveState }) {
   if (state.kind === "saving") {
     return (
       <p role="status" className="text-small text-muted-foreground">
-        Saving…
+        <T k="settings.saving" />
       </p>
     );
   }
   if (state.kind === "saved") {
     return (
       <p role="status" className="text-small text-success">
-        {state.message ?? "Saved."}
+        {state.message ?? <T k="settings.saved" />}
       </p>
     );
   }
@@ -176,7 +182,7 @@ export function SaveStatus({ state }: { state: SaveState }) {
 }
 
 /** Read-only facts (the Server address, the key state). */
-export function Fact({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
+export function Fact({ label, children, className }: { label: ReactNode; children: ReactNode; className?: string }) {
   return (
     <div className={cn("flex flex-col gap-0.5", className)}>
       <dt className="text-small font-medium text-muted-foreground">{label}</dt>

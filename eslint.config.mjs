@@ -77,6 +77,135 @@ const noInlineFontSize = {
   },
 };
 
+// #125 interface-language rule: raw string literals in JSX can never follow the
+// Learner's Interface Language setting, so apps/web renders interface copy from
+// the @vjt/core table via <T k="…"/> / <TableText>. The rule flags copy in JSXText
+// children, in bare string-expression children, and in string-valued attributes
+// that carry visible or announced text (aria-label, placeholder, title, label,
+// hint, error, message, legend, alt, description — the props our own components
+// read as copy), and it recurses through ConditionalExpression, LogicalExpression
+// and TemplateLiteral children so a ternary cannot hide copy inside an otherwise
+// table-backed element. Exempt: text with no letters — punctuation separators and
+// digit-only counts (<span>3</span>) are not copy — and learning content, which
+// arrives as props or interpolated values (meanings, example sentences, exercise
+// options), never as JSX text. tp()/translatePlain() calls pass: they are the
+// escape hatch for the handful of slots that only accept a string (aria-label,
+// placeholder, document.title). The few deliberate exceptions (the 読 logotype,
+// the 吾輩は猫である sample line) carry targeted eslint-disable comments with a
+// reason. apps/mobile is covered by the same rule (#125), with the React Native
+// text attributes added to TEXT_ATTRIBUTES below.
+const LETTER = /\p{L}/u;
+function isCopy(value) {
+  return LETTER.test(value);
+}
+
+const TEXT_ATTRIBUTES = new Set([
+  "aria-label",
+  "aria-valuetext",
+  "aria-description",
+  "aria-placeholder",
+  "placeholder",
+  "title",
+  "label",
+  "hint",
+  "error",
+  "message",
+  "legend",
+  "alt",
+  "description",
+  // React Native props that carry copy on mobile (#125): announced by
+  // TalkBack (accessibilityLabel/Hint/Value) or read by our own components
+  // (label on form fields). accessibilityRole is an enum, not copy.
+  "accessibilityLabel",
+  "accessibilityHint",
+  "accessibilityValue",
+]);
+
+// Walk one expression for raw copy. Only leaf kinds are checked; calls (tp(…),
+// a Learner-typed value, a data prop) are not walked — their text is not in the
+// JSX. A template is copy when any literal chunk is: `Page ${n}` yes, `${a} · ${b}` no.
+function walkCopy(node, report) {
+  switch (node.type) {
+    case "Literal":
+      if (typeof node.value === "string" && isCopy(node.value.trim())) report(node);
+      break;
+    case "TemplateLiteral":
+      if (node.quasis.some((q) => isCopy(q.value.cooked ?? q.value.raw))) report(node);
+      break;
+    case "ConditionalExpression":
+      walkCopy(node.consequent, report);
+      walkCopy(node.alternate, report);
+      break;
+    case "LogicalExpression":
+      walkCopy(node.left, report);
+      walkCopy(node.right, report);
+      break;
+  }
+}
+
+// Walk the node's raw text up to its first non-whitespace character.
+function firstVisibleLoc(node) {
+  let line = node.loc.start.line;
+  let column = node.loc.start.column;
+  for (const ch of node.value) {
+    if (!/\s/u.test(ch)) break;
+    if (ch === "\n") {
+      line += 1;
+      column = 0;
+    } else {
+      column += 1;
+    }
+  }
+  return { line, column };
+}
+
+const noRawJsxText = {
+  meta: {
+    type: "problem",
+    schema: [],
+    messages: {
+      noRawText:
+        "Raw text in JSX. Interface copy comes from the @vjt/core string table so it follows the Learner's language setting; use <T k=\"…\"/> / <TableText>. Learning content (props, not JSX text) and punctuation are exempt.",
+    },
+  },
+  create(context) {
+    const flag = (node) => context.report({ node, messageId: "noRawText" });
+    return {
+      JSXText(node) {
+        const value = node.value.trim();
+        // JSXText starts right after the previous element/expression, on ITS line —
+        // report at the first visible character instead, so an eslint-disable-next-line
+        // above the copy covers it (and editors point at the copy, not the tag).
+        const at = firstVisibleLoc(node);
+        if (value && isCopy(value)) context.report({ node, loc: at, messageId: "noRawText" });
+      },
+      JSXExpressionContainer(node) {
+        // Children are always under inspection; an attribute's container only when
+        // the attribute carries text. Every other attribute expression
+        // — className, onClick, data — is not copy.
+        const parent = node.parent;
+        if (parent && parent.type === "JSXAttribute") {
+          const name = parent.name.type === "JSXIdentifier" ? parent.name.name : "";
+          if (!TEXT_ATTRIBUTES.has(name)) return;
+        } else if (!parent || (parent.type !== "JSXElement" && parent.type !== "JSXFragment")) {
+          return;
+        }
+        // Bare string literals in children are the sneaky twin of <span>Text</span>;
+        // the walk covers ternaries, && chains and templates too.
+        walkCopy(node.expression, flag);
+      },
+      JSXAttribute(node) {
+        // aria-label="Close": the plain literal form, which is not an expression container.
+        if (!node.value || node.value.type !== "Literal") return;
+        const name = node.name.type === "JSXIdentifier" ? node.name.name : "";
+        if (!TEXT_ATTRIBUTES.has(name)) return;
+        const value = String(node.value.value ?? "").trim();
+        if (value && isCopy(value)) context.report({ node: node.value, messageId: "noRawText" });
+      },
+    };
+  },
+};
+
 export default tseslint.config(
   {
     ignores: [
@@ -96,7 +225,13 @@ export default tseslint.config(
     languageOptions: { globals: { ...globals.browser, ...globals.node } },
     plugins: {
       "react-hooks": reactHooks,
-      vjt: { rules: { "no-hardcoded-color": noHardcodedColor, "no-inline-font-size": noInlineFontSize } },
+      vjt: {
+        rules: {
+          "no-hardcoded-color": noHardcodedColor,
+          "no-inline-font-size": noInlineFontSize,
+          "no-raw-jsx-text": noRawJsxText,
+        },
+      },
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
@@ -118,6 +253,15 @@ export default tseslint.config(
     // the DOM: a text-* class, or var(--story-text-size), never "16px".
     files: ["apps/mobile/src/**/*.tsx", "apps/web/src/**/*.{ts,tsx}"],
     rules: { "vjt/no-inline-font-size": "error" },
+  },
+  {
+    // The interface-language gate (#125): apps/web and apps/mobile, source
+    // files only - tests may quote raw copy. Mobile copy also comes from the
+    // @vjt/core table via <T> / <TableText>; tp() covers the string-only slots
+    // (accessibilityLabel, placeholder, Alert titles, header/tab titles).
+    files: ["apps/web/src/**/*.tsx", "apps/mobile/**/*.tsx"],
+    ignores: ["apps/web/src/**/*.test.tsx", "apps/mobile/**/*.test.tsx"],
+    rules: { "vjt/no-raw-jsx-text": "error" },
   },
   {
     // `_`-prefixed arguments/variables document a signature while staying

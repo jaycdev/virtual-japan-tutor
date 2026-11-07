@@ -46,6 +46,9 @@ describe("Settings › MaruMori", () => {
     renderMaruMori({ marumori: CONNECTED });
     expect(await screen.findByText("Connected to MaruMori.")).toBeTruthy();
     expect(screen.getByText("Known kanji: 12 · Known vocabulary: 300 · Vocabulary linked: 53%")).toBeTruthy();
+    // English keeps the device-locale toLocaleString the line
+    // always showed, not the ruby formatter's "November 1, 08:00".
+    expect(screen.getByText(`Last Sync ${new Date("2026-11-01T08:00:00Z").toLocaleString()}`)).toBeTruthy();
     expect(screen.getByText("set")).toBeTruthy();
     expect(screen.queryByLabelText("MaruMori API key")).toBeNull();
 

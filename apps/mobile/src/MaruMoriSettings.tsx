@@ -1,13 +1,19 @@
 import type { ApiClient } from "@vjt/api-client";
-import { syncOutcomeText, syncRunText, useMarumori } from "@vjt/core";
+import {
+  formatInstantRuby,
+  syncOutcomeRuby,
+  syncRunRuby,
+  useMarumori,
+  useT,
+} from "@vjt/core";
 import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 
+import { T, TableText } from "./components/Text.tsx";
 import { Card } from "./components/ui/Card.tsx";
 import { Field } from "./components/ui/Field.tsx";
 import { LinkButton } from "./components/ui/LinkButton.tsx";
 import { ActionButton } from "./stories-parts.tsx";
-import { formatInstant } from "./Today.tsx";
 import { InlineError, Skeleton, SkeletonBar } from "./state/states.tsx";
 import type { StepSaveOutcome, StepSaveRegistrar } from "./settingsSections.tsx";
 
@@ -28,11 +34,14 @@ export function MaruMoriSettings({
 }) {
   const maru = useMarumori(client);
   const { state } = maru;
+  const { language, tp } = useT();
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
   const [confirmRemove, setConfirmRemove] = useState(false);
-  const [syncResult, setSyncResult] = useState<{ ok: boolean; text: string } | undefined>();
+  const [syncResult, setSyncResult] = useState<
+    Awaited<ReturnType<typeof maru.sync>> | undefined
+  >();
   const [showRuns, setShowRuns] = useState(false);
 
   const saveKey = async () => {
@@ -92,9 +101,7 @@ export function MaruMoriSettings({
     setError(undefined);
     setSyncResult(undefined);
     try {
-      const outcome = await maru.sync();
-      if (outcome.status === "error") setSyncResult({ ok: false, text: outcome.message });
-      else setSyncResult({ ok: outcome.status === "ok", text: syncOutcomeText(outcome) });
+      setSyncResult(await maru.sync());
     } finally {
       setBusy(false);
     }
@@ -119,7 +126,10 @@ export function MaruMoriSettings({
   }
   if (state.status === "error") {
     return (
-      <InlineError message={`Cannot load MaruMori status: ${state.message}`} onRetry={maru.reload} />
+      <InlineError
+        message={<T k="marumori.loadFailed" params={{ message: state.message }} />}
+        onRetry={maru.reload}
+      />
     );
   }
 
@@ -127,88 +137,140 @@ export function MaruMoriSettings({
     <View className="gap-4">
       {error ? <InlineError message={error} /> : null}
       {state.marumori.connected ? (
-        <Text className="text-body text-foreground">Connected to MaruMori</Text>
+        <T k="mobile.marumoriConnected" className="text-body text-foreground" />
       ) : (
-        <Text className="text-body text-muted-foreground">
-          Not connected. Paste your MaruMori API key to connect.
-        </Text>
+        <T k="mobile.marumoriNotConnected" className="text-body text-muted-foreground" />
       )}
       {state.marumori.connected && state.marumori.counts && (
-        <Text className="text-small text-muted-foreground">
-          Known kanji: {state.marumori.counts.kanji} · Known vocabulary:{" "}
-          {state.marumori.counts.vocabulary} · Vocabulary linked:{" "}
-          {Math.round(state.marumori.counts.vocabularyLinkRate * 100)}%
-        </Text>
+        <T
+          k="mobile.marumoriCounts"
+          params={{
+            kanji: state.marumori.counts.kanji,
+            vocabulary: state.marumori.counts.vocabulary,
+            linkRate: Math.round(state.marumori.counts.vocabularyLinkRate * 100),
+          }}
+          className="text-small text-muted-foreground"
+        />
       )}
+      {/* P5: the raw ISO stamp read like a debug dump. Same humanising and
+          device-timezone fallback Today's sync lines use (formatInstantRuby
+          with no Learner Timezone falls back to the device's). */}
       {state.marumori.connected && state.marumori.counts?.lastSyncAt && (
-        <Text className="text-small text-muted-foreground">
-          {/* P5: the raw ISO stamp read like a debug dump. Same humanising and
-              device-timezone fallback Today's sync lines use (formatInstant
-              with no Learner Timezone falls back to the device's). */}
-          Last Sync {formatInstant(state.marumori.counts.lastSyncAt, undefined)}
-        </Text>
+        <T
+          k="marumori.lastSync"
+          params={{ when: formatInstantRuby(state.marumori.counts.lastSyncAt, undefined, language) }}
+          className="text-small text-muted-foreground"
+        />
       )}
       {state.marumori.connected && state.marumori.lastFailure && (
         <InlineError
-          message={`Last Sync failed: ${state.marumori.lastFailure.error ?? "unknown error"}`}
+          message={
+            state.marumori.lastFailure.error ? (
+              <T k="marumori.syncFailed" params={{ error: state.marumori.lastFailure.error }} />
+            ) : (
+              <T k="marumori.syncFailedUnknown" />
+            )
+          }
         />
       )}
 
-      <Text className="text-small font-semibold uppercase text-muted-foreground">API key</Text>
+      <T k="marumori.apiKeyHeading" className="text-small font-semibold uppercase text-muted-foreground" />
       <Field
-        label="MaruMori API key"
+        label={<T k="marumori.keyLabel" className="text-small text-muted-foreground" />}
         value={key}
         onChangeText={setKey}
         onSubmit={() => void saveKey()}
         secure
         placeholder={
-          state.marumori.connected ? "Key saved — paste a new one to replace it" : "Your MaruMori API key"
+          state.marumori.connected
+            ? tp("mobile.marumoriKeySavedPlaceholder")
+            : tp("mobile.marumoriKeyPlaceholder")
         }
         disabled={busy}
       />
-      <ActionButton label="Save key" onPress={() => void saveKey()} filled disabled={busy || key.trim() === ""} />
+      <ActionButton
+        label={<T k="marumori.saveKey" className="text-body font-semibold text-primary-foreground" />}
+        onPress={() => void saveKey()}
+        filled
+        disabled={busy || key.trim() === ""}
+      />
       {state.marumori.connected &&
         (confirmRemove ? (
           <View className="flex-row gap-3">
-            <LinkButton label="Confirm remove" onPress={() => void remove()} danger />
-            <LinkButton label="Keep" onPress={() => setConfirmRemove(false)} />
+            <LinkButton
+              label={<T k="marumori.confirmRemove" className="text-body text-destructive" />}
+              onPress={() => void remove()}
+              danger
+            />
+            <LinkButton
+              label={<T k="stories.deleteKeep" className="text-body text-primary" />}
+              onPress={() => setConfirmRemove(false)}
+            />
           </View>
         ) : (
-          <LinkButton label="Remove key" onPress={() => setConfirmRemove(true)} disabled={busy} danger />
+          <LinkButton
+            label={<T k="marumori.removeKey" className="text-body text-destructive" />}
+            onPress={() => setConfirmRemove(true)}
+            disabled={busy}
+            danger
+          />
         ))}
 
       {state.marumori.connected && (
         <>
-          <Text className="text-small font-semibold uppercase text-muted-foreground">Sync</Text>
-          <ActionButton label="Sync now" onPress={() => void sync()} filled disabled={busy} />
+          <T k="marumori.syncHeading" className="text-small font-semibold uppercase text-muted-foreground" />
+          <ActionButton
+            label={<T k="marumori.syncNow" className="text-body font-semibold text-primary-foreground" />}
+            onPress={() => void sync()}
+            filled
+            disabled={busy}
+          />
           <LinkButton
-            label={showRuns ? "Hide recent Syncs" : "Show recent Syncs"}
+            label={
+              showRuns ? (
+                <T k="marumori.hideRuns" className="text-body text-primary" />
+              ) : (
+                <T k="marumori.showRuns" className="text-body text-primary" />
+              )
+            }
             onPress={toggleRuns}
           />
         </>
       )}
       {syncResult && (
-        <Text
-          role="status"
-          accessibilityLiveRegion="polite"
-          className={`text-body ${syncResult.ok ? "text-success" : "text-destructive"}`}
-        >
-          {syncResult.text}
-        </Text>
+        // The live status line. TableText's own roles do not include
+        // "status", so the wrapper carries it, as ServerSettings does. The
+        // server's own error words stay plain — they are not ours to annotate.
+        <View role="status" accessibilityLiveRegion="polite">
+          {syncResult.status === "error" ? (
+            <Text className="text-body text-destructive">{syncResult.message}</Text>
+          ) : (
+            <TableText
+              segments={syncOutcomeRuby(syncResult, language)}
+              className={`text-body ${syncResult.status === "ok" ? "text-success" : "text-destructive"}`}
+            />
+          )}
+        </View>
       )}
       {showRuns && maru.runs.status === "loading" && <Skeleton lines={3} />}
       {showRuns && maru.runs.status === "error" && (
-        <InlineError message={`Cannot load Sync history: ${maru.runs.message}`} />
+        <InlineError
+          message={<T k="marumori.runsLoadFailed" params={{ message: maru.runs.message }} />}
+        />
       )}
       {showRuns && maru.runs.status === "ready" && (
         <Card>
           {maru.runs.runs.length === 0 ? (
-            <Text className="text-body text-muted-foreground">No Syncs yet.</Text>
+            <T k="marumori.noRuns" className="text-body text-muted-foreground" />
           ) : (
             maru.runs.runs.map((r) => (
-              <Text key={r.id} className="text-small text-muted-foreground">
-                {syncRunText(r)}
-              </Text>
+              // startedAt and status are the server's own words; ours come
+              // from the table, readings and all.
+              <TableText
+                key={r.id}
+                segments={syncRunRuby(r, language)}
+                className="text-small text-muted-foreground"
+              />
             ))
           )}
         </Card>

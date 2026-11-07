@@ -3,8 +3,9 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { createApiClient } from "@vjt/api-client";
-import { displayPrompt, practiceSeedForStory } from "@vjt/core";
+import { displayPrompt, InterfaceLanguageProvider, practiceSeedForStory } from "@vjt/core";
 
+import { unrubyfiedKanji } from "../test/kanjiCoverage.ts";
 import { Practice, destinationForItem } from "./Practice.tsx";
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -639,6 +640,53 @@ describe("Practice (web)", () => {
     expect(grammarLink.textContent).toMatch(/Open Grammar Point$/);
     expect(destinationForItem("grammar", "42")).toEqual({ to: "/grammar/42", label: "Open Grammar Point" });
     expect(destinationForItem("vocabulary", "1234")).toEqual({ to: "/settings/lists", label: "Open Item Lists" });
+  });
+
+  // Issue #125: the exercise INSTRUCTION is interface text and translates; the
+  // Learner's content (prompt, options) comes from the server and never does.
+  it("in Japanese the instruction is translated while the session content stays as served", async () => {
+    render(
+      <MemoryRouter>
+        <InterfaceLanguageProvider language="ja" setLanguage={() => undefined}>
+          <Practice client={makeClient()} seed={undefined} />
+        </InterfaceLanguageProvider>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "練習を始める" }));
+    await waitFor(() => {
+      expect(screen.getByText("2問中1問目")).toBeTruthy();
+    });
+
+    // The instruction line reads in Japanese, not the server's English...
+    expect(screen.getByText("意味はどれですか？")).toBeTruthy();
+    expect(screen.queryByText("What does this mean?")).toBeNull();
+    // ...while the item itself is exactly what the server served.
+    expect(screen.getByText("学")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "learn" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "tree" })).toBeTruthy();
+  });
+
+  it("in ja-furigana the screen keeps its chrome inside ruby", async () => {
+    const { container } = render(
+      <MemoryRouter>
+        <InterfaceLanguageProvider language="ja-furigana" setLanguage={() => undefined}>
+          <Practice client={makeClient()} seed={undefined} />
+        </InterfaceLanguageProvider>
+      </MemoryRouter>,
+    );
+
+    // The furigana half is aria-hidden and one sr-only span
+    // carries the sentence plain, so the name is the words, readings aside.
+    fireEvent.click(screen.getByRole("button", { name: "練習を始める" }));
+    // The full plain sentence now exists exactly once: the drawn line is split
+    // by the ruby pairs, so this query lands on the sr-only copy.
+    await screen.findByText("意味はどれですか？");
+    expect(container.querySelectorAll("ruby").length).toBeGreaterThan(0);
+
+    // The prompt and options are learning content (lang="ja"); everything the
+    // app itself says sits inside a <ruby>.
+    expect(unrubyfiedKanji(container)).toEqual([]);
   });
 
   describe("keyboard", () => {

@@ -2,22 +2,30 @@ import type { ApiClient, MaruMoriSyncRun, Story } from "@vjt/api-client";
 import {
   createFocusLabelResolver,
   formatInstant,
+  formatInstantRuby,
   learnerClock,
-  stageLabel,
+  learnerClockRuby,
+  pluralEn,
+  progressStageKey,
+  progressStageParams,
   todayCardPhase,
   useFocusSet,
   useMarumori,
   useStoryGeneration,
   useStorySettings,
+  useT,
   useTodaysStory,
   type FocusSetView,
+  type InterfaceLanguage,
   type MaruMori,
+  type RubyText,
   type StoryGenerationState,
   type TodaysStoryState,
 } from "@vjt/core";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
+import { Labeled, T, TableText } from "./components/Text.tsx";
 import { Card } from "./components/ui/Card.tsx";
 import { FocusSetPanel, FOCUS_CHIPS_MAX } from "./components/ui/FocusSetPanel.tsx";
 import { EmptyState, InlineError, ProgressBar, SkeletonBar } from "./state/states.tsx";
@@ -36,7 +44,8 @@ export { formatInstant, learnerClock };
  * section failing never blanks the rest, and each failure retries in place.
  *
  * Styling is design-token classes only (plan §3): no palette colours, no inline
- * font sizes.
+ * font sizes. Chrome speaks the Interface Language (issue #125); the Story's
+ * own words never change.
  */
 
 /**
@@ -60,6 +69,7 @@ export function Today({
   onOpenWordLists: () => void;
   onOpenMarumoriSettings: () => void;
 }) {
+  const { tp: plain } = useT();
   const today = useTodaysStory(client);
   const { settings: learnerSettings } = useStorySettings(client);
   const generation = useStoryGeneration(client);
@@ -90,7 +100,7 @@ export function Today({
   }, [generation.generation.status, reloadToday]);
 
   return (
-    <ScrollView className="flex-1" accessibilityLabel="Today" contentContainerStyle={styles.page}>
+    <ScrollView className="flex-1" accessibilityLabel={plain("nav.today")} contentContainerStyle={styles.page}>
       <View className="w-full gap-4" style={styles.column}>
         <Greeting
           timezone={timezone}
@@ -145,6 +155,7 @@ function Greeting({
   settingsPending: boolean;
   settingsFailed: boolean;
 }) {
+  const { language } = useT();
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     // One tick a minute keeps the greeting honest across a morning scroll
@@ -152,7 +163,7 @@ function Greeting({
     const timer = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(timer);
   }, []);
-  const clock = learnerClock(now, timezone);
+  const clock = learnerClockRuby(now, timezone, language);
   return (
     <View className="mb-1 gap-1" testID="today-greeting">
       {settingsPending ? (
@@ -165,18 +176,14 @@ function Greeting({
       ) : (
         <>
           {/* Section labels read as headings to assistive tech (issue #47 review S4). */}
-          <Text
-            role="heading"
-            accessibilityRole="header"
+          <TableText
+            segments={clock.greeting}
             className="text-display font-semibold text-foreground"
-          >
-            {clock.greeting}
-          </Text>
-          <Text className="text-body text-muted-foreground">{clock.date}</Text>
+            accessibilityRole="header"
+          />
+          <TableText segments={clock.date} className="text-body text-muted-foreground" />
           {settingsFailed ? (
-            <Text className="text-small text-muted-foreground">
-              Timezone unavailable — showing your device's time.
-            </Text>
+            <T k="mobile.todayTzUnavailable" className="text-small text-muted-foreground" />
           ) : null}
         </>
       )}
@@ -202,16 +209,15 @@ function TodayStoryCard({
   onOpenStory: (storyId: string) => void;
   onOpenStories: () => void;
 }) {
+  const { t, tp, language } = useT();
   const phase = todayCardPhase(today, generation);
   return (
     <Card testID="today-story-card">
-      <Text
-        role="heading"
-        accessibilityRole="header"
+      <T
+        k="today.storyHeading"
         className="text-title-sm font-semibold text-foreground"
-      >
-        Today’s Story
-      </Text>
+        accessibilityRole="header"
+      />
 
       {phase.kind === "loading" ? (
         // Shaped like the settled card: a story-title bar, a shorter meta
@@ -224,11 +230,18 @@ function TodayStoryCard({
         </View>
       ) : phase.kind === "story" ? (
         <View className="gap-3">
-          <Text className="text-title font-semibold text-foreground">{phase.story.title}</Text>
-          <Text className="text-small text-muted-foreground">{storyMeta(phase.story)}</Text>
+          {/* The Story Title is Learner content: never translated, never
+              annotated — the coverage check exempts it by this testID. */}
+          <Text testID="today-story-title" className="text-title font-semibold text-foreground">
+            {phase.story.title}
+          </Text>
+          <TableText
+            segments={storyMetaSegments(t, phase.story, language)}
+            className="text-small text-muted-foreground"
+          />
           <ActionButton
-            label="Open"
-            accessibilityLabel="Open today's story"
+            label={<T k="today.storyOpen" className="text-body font-semibold text-primary-foreground" />}
+            accessibilityLabel={tp("mobile.storyAriaOpenToday")}
             onPress={() => onOpenStory(phase.story.id)}
             filled
             testID="today-story-open"
@@ -236,35 +249,45 @@ function TodayStoryCard({
           {/* A run started from Stories keeps its bar there; the card only says
               the story on screen is not the newest thing happening. */}
           {phase.running ? (
-            <Text className="text-caption text-muted-foreground">
-              A newer Story is being written.
-            </Text>
+            <T k="today.storyNewerWriting" className="text-caption text-muted-foreground" />
           ) : null}
         </View>
       ) : phase.kind === "running" ? (
         <View className="gap-3">
-          <Text className="text-body text-muted-foreground">
-            A new Story is on its way — you can leave and come back.
-          </Text>
+          <T k="today.storyGenerating" className="text-body text-muted-foreground" />
           <ProgressBar
             value={(phase.progress.percent ?? 0) / 100}
-            label={`${stageLabel(phase.progress)} ${Math.round(phase.progress.percent ?? 0)}%`}
+            label={
+              // One line, not two: the percent rides on the stage entry's own
+              // segments so the row reads as a single sentence in every mode.
+              <TableText
+                segments={[
+                  ...t(progressStageKey(phase.progress), progressStageParams(phase.progress)),
+                  { text: ` ${Math.round(phase.progress.percent ?? 0)}%` },
+                ]}
+                className="text-caption text-muted-foreground"
+              />
+            }
           />
         </View>
       ) : phase.kind === "error" ? (
-        <InlineError message={`Cannot load today’s Story: ${phase.message}`} onRetry={onReloadToday} />
+        <InlineError message={<T k="today.storyError" params={{ message: phase.message }} />} onRetry={onReloadToday} />
       ) : phase.kind === "failed" ? (
         // The run failed rather than the read: the line is the server's own,
         // and the way to try again is the Generate box on Stories.
         <View className="gap-3">
           <Text className="text-body text-destructive">{phase.message}</Text>
-          <ActionButton label="Generate a Story" onPress={onOpenStories} />
+          <ActionButton
+            label={<T k="today.storyGenerate" className="text-body font-semibold text-foreground" />}
+            accessibilityLabel={tp("today.storyGenerate")}
+            onPress={onOpenStories}
+          />
         </View>
       ) : (
         <EmptyState
           compact
-          message="No Story yet — the tutor writes one for you every day."
-          actionLabel="Generate a Story"
+          message={<T k="today.storyEmptyToday" className="text-center text-body text-muted-foreground" />}
+          actionLabel={<T k="today.storyGenerate" className="text-body font-semibold text-primary" />}
           onAction={onOpenStories}
         />
       )}
@@ -272,15 +295,23 @@ function TodayStoryCard({
   );
 }
 
-/** Genre and length (plan 4.4 item 2). The API has no length field, so the
+/**
+ * Genre and length (plan 4.4 item 2). The API has no length field, so the
  * sentence count is what the Story actually reports — see the issue #47 notes.
  * A story with no genre says only the length: "no genre · " is noise the
- * Learner cannot act on (issue #47 review N1). */
-function storyMeta(story: Story): string {
+ * Learner cannot act on (issue #47 review N1). The count is the table's, in
+ * the Learner's language; the Genre is the Learner's own words and never
+ * translates.
+ */
+function storyMetaSegments(
+  t: ReturnType<typeof useT>["t"],
+  story: Story,
+  language: InterfaceLanguage,
+): RubyText {
   const sentences = story.sentences?.length ?? 0;
-  const length = `${sentences} sentence${sentences === 1 ? "" : "s"}`;
+  const length = t("mobile.todayStoryLength", { count: sentences, plural: pluralEn(language, sentences) });
   const genre = story.genre?.trim();
-  return genre ? `${genre} · ${length}` : length;
+  return genre ? [{ text: `${genre} · ` }, ...length] : length;
 }
 
 /**
@@ -294,16 +325,16 @@ function PracticeCard({
   focus: FocusSetView;
   onOpenPractice: () => void;
 }) {
+  const { tp, language } = useT();
   const items = focus.items;
+  const count = items?.length ?? 0;
   return (
     <Card testID="today-practice-card">
-      <Text
-        role="heading"
-        accessibilityRole="header"
+      <T
+        k="today.practiceHeading"
         className="text-title-sm font-semibold text-foreground"
-      >
-        Practice
-      </Text>
+        accessibilityRole="header"
+      />
       {focus.loading && items === null ? (
         // Shaped like the settled card: the waiting line and the Start button
         // block (issue #47 review S7).
@@ -315,15 +346,25 @@ function PracticeCard({
         <InlineError message={focus.error} onRetry={focus.retry} />
       ) : (
         <View className="gap-3">
-          <Text className="text-body text-muted-foreground">
-            {waitingLine(items?.length ?? 0)}
-          </Text>
+          {count === 0 ? (
+            <T k="today.practiceWaitingNone" className="text-body text-muted-foreground" />
+          ) : (
+            // English plural -s as a parameter; the Japanese column receives "" (issue #125).
+            <T
+              k="today.practiceWaitingCount"
+              params={{ count, plural: pluralEn(language, count) }}
+              className="text-body text-muted-foreground"
+            />
+          )}
           <ActionButton
-            label="Start"
-            accessibilityLabel="Start practice"
+            label={<T k="today.practiceStart" className="text-body font-semibold text-primary-foreground" />}
+            accessibilityLabel={tp("today.practiceStartAria")}
             accessibilityHint={
               items && items.length > 0
-                ? `Builds a session from ${items.length} Focus Set item${items.length === 1 ? "" : "s"}`
+                ? tp("mobile.todayPracticeHint", {
+                    count: items.length,
+                    plural: pluralEn(language, items.length),
+                  })
                 : undefined
             }
             onPress={onOpenPractice}
@@ -331,20 +372,12 @@ function PracticeCard({
             testID="today-practice-start"
           />
           {items?.length === 0 ? (
-            <Text className="text-caption text-muted-foreground">
-              A session is built from your Focus Set, so there is nothing to practise until a Sync
-              or a Story adds items.
-            </Text>
+            <T k="today.practiceSessionNote" className="text-caption text-muted-foreground" />
           ) : null}
         </View>
       )}
     </Card>
   );
-}
-
-function waitingLine(count: number): string {
-  if (count === 0) return "Nothing is waiting in your Focus Set yet.";
-  return `${count} Focus Set item${count === 1 ? "" : "s"} waiting.`;
 }
 
 /**
@@ -362,8 +395,11 @@ function SyncCard({
   timezone: string | undefined | null;
   onOpenMarumoriSettings: () => void;
 }) {
+  const { tp, language } = useT();
   const [syncing, setSyncing] = useState(false);
-  const [syncNote, setSyncNote] = useState<string | null>(null);
+  // The note is a <T> element, not a resolved string: it stays in the Learner's
+  // language if they switch while it is on screen (issue #125).
+  const [syncNote, setSyncNote] = useState<ReactNode>(null);
 
   const syncNow = () => {
     setSyncing(true);
@@ -377,11 +413,11 @@ function SyncCard({
         // The run ran and failed: the server's Learner-facing reason, which
         // is more useful than anything the screen could invent (issue #47
         // review S1).
-        setSyncNote(outcome.error ?? "Sync failed.");
+        setSyncNote(outcome.error ?? <T k="today.syncFailedFallback" />);
       } else {
         // sync() already re-read the status on success, so the Last Sync line
         // under this note is the fresh one without a second reload (S3).
-        setSyncNote("Sync succeeded.");
+        setSyncNote(<T k="today.syncSucceededNote" />);
       }
     });
   };
@@ -389,15 +425,20 @@ function SyncCard({
   return (
     <Card testID="today-sync-card">
       <View className="flex-row flex-wrap items-center justify-between gap-3">
-        <Text
-          role="heading"
-          accessibilityRole="header"
+        <T
+          k="today.lastSyncHeading"
           className="text-title-sm font-semibold text-foreground"
-        >
-          Last sync
-        </Text>
+          accessibilityRole="header"
+        />
         <ActionButton
-          label={syncing ? "Syncing…" : "Sync now"}
+          label={
+            syncing ? (
+              <T k="today.syncSyncing" className="text-body font-semibold text-foreground" />
+            ) : (
+              <T k="today.syncNow" className="text-body font-semibold text-foreground" />
+            )
+          }
+          accessibilityLabel={tp(syncing ? "today.syncSyncing" : "today.syncNow")}
           onPress={syncNow}
           disabled={syncing || marumori.state.status !== "ready" || !isConnected(marumori)}
           testID="today-sync-now"
@@ -415,18 +456,26 @@ function SyncCard({
         <InlineError message={marumori.state.message} onRetry={marumori.reload} />
       ) : !isConnected(marumori) ? (
         <View className="gap-3">
-          <Text className="text-body text-muted-foreground">
-            No MaruMori account linked yet, so nothing has been synced.
-          </Text>
-          <ActionButton label="Link MaruMori" onPress={onOpenMarumoriSettings} />
+          <T k="today.syncNotLinked" className="text-body text-muted-foreground" />
+          <ActionButton
+            label={<T k="today.syncLinkMaruMori" className="text-body font-semibold text-foreground" />}
+            accessibilityLabel={tp("today.syncLinkMaruMori")}
+            onPress={onOpenMarumoriSettings}
+          />
         </View>
       ) : (
-        <SyncLine marumori={marumori} timezone={timezone} />
+        <SyncLine marumori={marumori} timezone={timezone} language={language} />
       )}
       {syncNote ? (
-        <Text accessibilityLiveRegion="polite" role="status" className="text-caption text-muted-foreground">
-          {syncNote}
-        </Text>
+        typeof syncNote === "string" ? (
+          <Text accessibilityLiveRegion="polite" role="status" className="text-caption text-muted-foreground">
+            {syncNote}
+          </Text>
+        ) : (
+          <View accessibilityLiveRegion="polite" role="status">
+            {syncNote}
+          </View>
+        )
       ) : null}
     </Card>
   );
@@ -439,9 +488,11 @@ function isConnected(marumori: MaruMori): boolean {
 function SyncLine({
   marumori,
   timezone,
+  language,
 }: {
   marumori: MaruMori;
   timezone: string | undefined | null;
+  language: InterfaceLanguage;
 }) {
   if (marumori.state.status !== "ready") return null;
   const { lastSync, lastFailure } = marumori.state.marumori;
@@ -454,28 +505,28 @@ function SyncLine({
   if (failed) {
     return (
       <View className="gap-2">
-        <Text className="text-body text-destructive">
-          {`Last sync failed ${formatInstant(failed.finishedAt ?? failed.startedAt, timezone)}.`}
-        </Text>
+        <T
+          k="today.syncFailedLine"
+          params={{ time: formatInstantRuby(failed.finishedAt ?? failed.startedAt, timezone, language) }}
+          className="text-body text-destructive"
+        />
         {failed.error ? <Text className="text-small text-muted-foreground">{failed.error}</Text> : null}
       </View>
     );
   }
   if (!lastSync) {
-    return (
-      <Text className="text-body text-muted-foreground">
-        No sync has finished yet. Press Sync now to pull your knowledge across.
-      </Text>
-    );
+    return <T k="today.syncNoneYet" className="text-body text-muted-foreground" />;
   }
   return (
     <View className="gap-2">
       {/* Explicit about what the timestamp is (issue #47 review polish): a
           bare clock time does not read as "this sync worked". */}
-      <Text className="text-body text-foreground">
-        {`Last sync succeeded ${formatInstant(lastSync.finishedAt ?? lastSync.startedAt, timezone)}.`}
-      </Text>
-      <Text className="text-small text-muted-foreground">{syncResultLine(lastSync)}</Text>
+      <T
+        k="today.syncSucceededLine"
+        params={{ time: formatInstantRuby(lastSync.finishedAt ?? lastSync.startedAt, timezone, language) }}
+        className="text-body text-foreground"
+      />
+      {syncResultLine(lastSync, language)}
     </View>
   );
 }
@@ -484,19 +535,31 @@ function newer(a: string, b: string): boolean {
   return new Date(a).getTime() > new Date(b).getTime();
 }
 
-function syncResultLine(run: MaruMoriSyncRun): string {
+function syncResultLine(run: MaruMoriSyncRun, language: InterfaceLanguage): ReactNode {
   const counts = run.counts;
-  if (!counts) return "The sync finished with no counts to report.";
-  return `${counts.new} new item${counts.new === 1 ? "" : "s"}, ${counts.levelChanges} level change${
-    counts.levelChanges === 1 ? "" : "s"
-  }, ${counts.linked} linked to reference data.`;
+  if (!counts) return <T k="today.syncNoCounts" className="text-small text-muted-foreground" />;
+  // The English column carries the plural -s as a parameter; the Japanese
+  // column keeps the same placeholder and always receives "" (issue #125).
+  return (
+    <T
+      k="today.syncResultCounts"
+      params={{
+        new: counts.new,
+        newPlural: pluralEn(language, counts.new),
+        levelChanges: counts.levelChanges,
+        levelPlural: pluralEn(language, counts.levelChanges),
+        linked: counts.linked,
+      }}
+      className="text-small text-muted-foreground"
+    />
+  );
 }
-
 
 /**
  * The one action control a section offers: 44 px tall and 8 px of radius like
  * every other button (plan 2.5), filled where the section's main action is and
- * outlined where it is a way out.
+ * outlined where it is a way out. A <T> label carries its own text classes
+ * (issue #125), so those callers pass an explicit accessibilityLabel.
  */
 function ActionButton({
   label,
@@ -507,7 +570,7 @@ function ActionButton({
   accessibilityLabel,
   accessibilityHint,
 }: {
-  label: string;
+  label: ReactNode;
   onPress: () => void;
   filled?: boolean;
   disabled?: boolean;
@@ -523,7 +586,7 @@ function ActionButton({
     <Pressable
       testID={testID}
       accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityLabel={accessibilityLabel ?? (typeof label === "string" ? label : undefined)}
       accessibilityHint={accessibilityHint}
       accessibilityState={{ disabled }}
       disabled={disabled}
@@ -534,7 +597,13 @@ function ActionButton({
     >
       {/* uniwind drops a colour class that precedes a text-size class on native,
           so the size comes first here as everywhere else. */}
-      <Text className={`text-body font-semibold ${text}`}>{label}</Text>
+      {typeof label === "string" ? (
+        <Text className={`text-body font-semibold ${text}`}>{label}</Text>
+      ) : (
+        // The button's name is the explicit accessibilityLabel; the drawn
+        // line hides so the sentence is not announced twice.
+        accessibilityLabel !== undefined ? <Labeled>{label}</Labeled> : label
+      )}
     </Pressable>
   );
 }

@@ -46,17 +46,64 @@ export type {
   StartingLevelHook,
   StartingLevelState,
 } from "./useOnboarding.ts";
+// Interface Language (issue #125): the typed string table, the furigana
+// notation, and the provider that hands the language to every core sentence.
+export {
+  DEFAULT_INTERFACE_LANGUAGE,
+  interfaceLanguageOptions,
+  isJapanese,
+  parseInterfaceLanguage,
+} from "./i18n/language.ts";
+export type { InterfaceLanguage, InterfaceLanguageOption } from "./i18n/language.ts";
+export { strings } from "./i18n/strings.ts";
+export type { StringKey } from "./i18n/strings.ts";
+export { parseRuby, stripRuby } from "./i18n/ruby.ts";
+export type { RubySegment, RubyText } from "./i18n/ruby.ts";
+export { formatDateRuby } from "./i18n/dates.ts";
+export { translate, translatePlain, pluralEn } from "./i18n/translate.ts";
+export type { TranslateParams, EntryRef } from "./i18n/translate.ts";
+export {
+  ERROR_CODES,
+  errorMessage,
+  errorCode,
+  EXERCISE_KINDS,
+  exerciseInstruction,
+  exerciseInstructionKey,
+  failureText,
+  httpFailureText,
+} from "./i18n/errorMessages.ts";
+export type { ExerciseKind, ServerErrorCode } from "./i18n/errorMessages.ts";
+export {
+  InterfaceLanguageContext,
+  InterfaceLanguageProvider,
+  useInterfaceLanguage,
+  useT,
+} from "./i18n/context.ts";
+export type {
+  InterfaceLanguageContextValue,
+  InterfaceLanguageProviderProps,
+  InterfaceLanguageView,
+  Translator,
+} from "./i18n/context.ts";
 export { decideLandingSetup, hasSetupSeen, markSetupSeen, SETUP_SEEN_KEY } from "./firstRun.ts";
 export type { KeyValueStore, LandingSetupDecision } from "./firstRun.ts";
 export { memoryTokenStorage } from "./tokenStorage.ts";
 export type { TokenStorage } from "./tokenStorage.ts";
 export { deviceTimezone, TIMEZONE_OPTIONS } from "./timezones.ts";
-export { SETTINGS_SECTIONS, findSettingsSection } from "./settingsSections.ts";
+export {
+  SETTINGS_SECTIONS,
+  findSettingsSection,
+  sectionBlurb,
+  sectionBlurbKey,
+  sectionTitle,
+  sectionTitleKey,
+} from "./settingsSections.ts";
 export type { SettingsSection, StepSaveFn, StepSaveOutcome, StepSaveRegistrar } from "./settingsSections.ts";
 export { probeServerHealth, PROBE_TIMEOUT_MS } from "./serverHealth.ts";
 export type { FetchLike } from "./serverHealth.ts";
 export {
   AI_TASK_LABELS,
+  aiTaskLabel,
   EMPTY_PROVIDER_FORM,
   canSubmitProviderForm,
   isProviderFormTouched,
@@ -66,15 +113,21 @@ export {
   providerUpdateInput,
 } from "./aiProviderForm.ts";
 export type { ProviderForm } from "./aiProviderForm.ts";
-export { ITEM_KIND_LABELS, ITEM_KINDS, isSavedList, itemListHint } from "./itemLists.ts";
+export { ITEM_KIND_LABELS, ITEM_KINDS, isSavedList, itemKindLabel, itemListHint } from "./itemLists.ts";
 export type { ItemKind } from "./itemLists.ts";
 export {
   FURIGANA_LEVELS,
+  grammarReviewPatternRuby,
+  grammarReviewRuby,
+  grammarReviewTailRuby,
   grammarReviewText,
+  grammarUpdatedRuby,
   grammarUpdatedText,
   parseLookupHold,
   suggestionsFor,
+  syncOutcomeRuby,
   syncOutcomeText,
+  syncRunRuby,
   syncRunText,
 } from "./settingsText.ts";
 // The Story reader's pure logic, shared by the phone and the web reader (issue #77).
@@ -88,15 +141,34 @@ export { useEntryLookup } from "./reader/useEntryLookup.ts";
 export type { EntryLookup } from "./reader/useEntryLookup.ts";
 export {
   formatInstant,
+  formatInstantRuby,
   greetingFor,
+  greetingRubyFor,
   learnerClock,
+  learnerClockRuby,
+  learnerGreetingRuby,
   localDayKey,
   normalizeTimezone,
   stillUnreadFrom,
+  stillUnreadFromRuby,
 } from "./learnerTime.ts";
 export { FAILED_RUN_FALLBACK, todayCardPhase } from "./todayCard.ts";
 export type { TodayCardPhase } from "./todayCard.ts";
-export { genreLabel, originLabel, progressLabel, stageLabel, storyCardMeta, storyDate } from "./storyPresentation.ts";
+export {
+  genreLabel,
+  genreRuby,
+  originLabel,
+  originRuby,
+  progressLabel,
+  progressStageKey,
+  progressStageParams,
+  stageLabel,
+  storyCardMeta,
+  storyCardMetaRuby,
+  storyDate,
+  storyDateRuby,
+  storyMetaEn,
+} from "./storyPresentation.ts";
 export {
   createFocusLabelResolver,
   focusChipKey,

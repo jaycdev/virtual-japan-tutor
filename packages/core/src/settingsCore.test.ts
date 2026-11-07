@@ -82,15 +82,15 @@ describe("probeServerHealth", () => {
   });
 
   it("refuses an answer that is not a healthy /health, with the status", async () => {
-    const message = await probeServerHealth("http://a", async () => ({ ok: false, status: 503 }));
-    expect(message).toContain("503");
+    const failure = await probeServerHealth("http://a", async () => ({ ok: false, status: 503 }));
+    expect(failure).toEqual({ k: "serverHealth.answered", params: { status: 503 } });
   });
 
   it("refuses an address that does not answer at all", async () => {
-    const message = await probeServerHealth("http://a", async () => {
+    const failure = await probeServerHealth("http://a", async () => {
       throw new TypeError("Failed to fetch");
     });
-    expect(message).toContain("did not answer");
+    expect(failure).toEqual({ k: "serverHealth.noAnswer" });
   });
 
   it("probes <base>/health", async () => {

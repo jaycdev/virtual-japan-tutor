@@ -1,5 +1,5 @@
 import type { PitchPattern } from "@vjt/api-client";
-import { pitchDots } from "@vjt/core";
+import { pitchDots, translatePlain, type InterfaceLanguage } from "@vjt/core";
 
 /**
  * The mora pitch graph (ui-plan 4.1): inline SVG drawn with `currentColor`, so the
@@ -38,8 +38,10 @@ export function PitchGraph({
   );
 }
 
-/** The caption the graph carries: the pattern spelled out, as the mobile window does. */
-export function pitchCaption(pitch: PitchPattern): string {
-  const base = pitch.heiban ? "heiban (flat)" : `downstep after mora ${pitch.downstepAfterMora}`;
+/** The caption the graph carries: the pattern spelled out in the Interface Language. */
+export function pitchCaption(pitch: PitchPattern, lang: InterfaceLanguage = "en"): string {
+  const base = pitch.heiban
+    ? translatePlain(lang, "reader.pitchHeiban")
+    : translatePlain(lang, "reader.pitchDownstep", { n: pitch.downstepAfterMora });
   return pitch.tag ? `${base} — ${pitch.tag}` : base;
 }

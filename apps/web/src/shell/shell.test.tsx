@@ -1,9 +1,14 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
+import { interfaceLanguageStore } from "../interfacelanguage/index.tsx";
 import { currentLocation, renderAppAt } from "../test/renderApp.tsx";
 import { activeDestination } from "./destinations.ts";
+
+afterEach(() => {
+  interfaceLanguageStore.setLanguage("en");
+});
 
 describe("activeDestination", () => {
   it.each([
@@ -48,6 +53,14 @@ describe("app shell", () => {
   it("sets the document title from the route", async () => {
     renderAppAt("/practice");
     await waitFor(() => expect(document.title).toBe("Practice · Virtual Japan Tutor"));
+  });
+
+  it("the document title follows the interface language", async () => {
+    interfaceLanguageStore.setLanguage("ja");
+    renderAppAt("/practice");
+    await screen.findByRole("main");
+    // nav.practice in plain Japanese; attributes and the title never carry ruby.
+    await waitFor(() => expect(document.title).toBe("練習 · Virtual Japan Tutor"));
   });
 
   it("keeps the 960 px cap except on the reader route, whose handle asks for the wide layout", async () => {
