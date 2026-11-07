@@ -12,7 +12,8 @@
 ## Consequences
 
 - Any red CI job blocks every publish: both images and the APK, on `main` and on tags.
-- A tag runs the whole of CI again, then a `guard` job fails it if the tagged commit isn't on `main`. Cut releases from a commit that has been merged.
+- A tag runs the whole of CI again, then a `guard` job fails it if the tagged commit isn't on `main`. Cut releases from a commit that has been merged. A manual run of `publish.yml` (ADR-0014) goes through its `ref-check` first, then the same gate.
+- `release.yml` still refuses to tag a commit that CI has not passed, so a red commit is not left with a tag that can't publish. CI has no push run of its own, so it reads the "CI / …" jobs of the commit's `publish.yml` run on `main`.
 - CI builds the unsigned APK on pull requests only. On `main` and tags the signed build in `publish.yml` is the Android build, so a broken native build fails the APK job without blocking the images. A failed build produces no APK, so nothing bad ships.
 - Runs for the same ref go one at a time, are never cancelled, and wait in a queue (`queue: max`). Every `main` commit gets a CI result, and an older commit can't overwrite a newer `:dev`. A merge waits for the previous merge's run to finish.
 - A ruleset on `main` requires a pull request and the four CI checks. It doesn't require an up-to-date branch, and the repository admin can bypass it on a pull request. Two pull requests that are green alone can still turn `main` red together. The publish gate stops that commit from being published.
