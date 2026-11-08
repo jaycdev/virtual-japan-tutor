@@ -4,6 +4,7 @@ import {
   coveringSpan,
   firstGlosses,
   grammarCue,
+  shortPartOfSpeechLabel,
   type EntryLookup,
   type GrammarCue,
   type ReadingSettingsView,
@@ -13,7 +14,7 @@ import { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { useStoryTextSize } from "../storysize/index.tsx";
-import { T } from "../components/Text.tsx";
+import { T, TableText } from "../components/Text.tsx";
 import { JlptBadge, SrsLevelText } from "./parts.tsx";
 import { PitchGraph } from "./PitchGraph.tsx";
 import { TokenWords } from "./StoryText.tsx";
@@ -220,6 +221,7 @@ function LookupRow({
   looked: LookedTarget;
   lookup: EntryLookup;
 }) {
+  const { t } = useT();
   const sen = story.sentences[looked.sentence];
   if (!sen) return null;
   const token = sen.tokens[looked.index];
@@ -236,6 +238,7 @@ function LookupRow({
   if (!entry) return null;
   const glosses = firstGlosses(entry, 2);
   const more = countGlosses(entry) > glosses.length;
+  const partOfSpeech = shortPartOfSpeechLabel(entry.senses, t);
   return (
     <View testID="panel-lookup" style={styles.lookupContent}>
       <Text className="text-body text-pitch" style={styles.lookupWord}>
@@ -245,6 +248,9 @@ function LookupRow({
         <Text className="text-body text-focus">
           {token.reading}
         </Text>
+      ) : null}
+      {partOfSpeech ? (
+        <TableText className="text-caption text-muted-foreground" segments={partOfSpeech} testID="panel-part-of-speech" />
       ) : null}
       {glosses.map((gloss, i) => (
         <Text key={i} className="text-small text-foreground">
