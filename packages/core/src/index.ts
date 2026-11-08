@@ -137,6 +137,7 @@ export * from "./reader/furigana.ts";
 export * from "./reader/sentences.ts";
 export * from "./reader/pitch.ts";
 export * from "./reader/glosses.ts";
+export * from "./reader/partOfSpeech.ts";
 export { useEntryLookup } from "./reader/useEntryLookup.ts";
 export type { EntryLookup } from "./reader/useEntryLookup.ts";
 export {
