@@ -1,9 +1,9 @@
 import type { DictionaryEntry, ItemList, StoryGrammarSpan } from "@vjt/api-client";
-import { useT } from "@vjt/core";
+import { sensePartOfSpeechLabels, useT } from "@vjt/core";
 import { useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
-import { T } from "@/components/Text.tsx";
+import { T, TableText } from "@/components/Text.tsx";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -69,8 +69,10 @@ export function ReaderDialog({
 
 /** A Dictionary Entry: headword, reading, JLPT level, pitch and every sense. */
 export function DictionaryBody({ entry }: { entry: DictionaryEntry }) {
-  const { language } = useT();
+  const { t, language } = useT();
   const reading = entry.reading !== entry.headword ? entry.reading : null;
+  // Each sense's Part of Speech (issue #132), with a repeat of the sense above left out.
+  const partsOfSpeech = sensePartOfSpeechLabels(entry.senses, t);
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
@@ -86,8 +88,10 @@ export function DictionaryBody({ entry }: { entry: DictionaryEntry }) {
       ) : null}
       {entry.senses.map((sense, i) => (
         <div key={i} className="flex flex-col gap-1">
-          {sense.partsOfSpeech.length > 0 ? (
-            <p className="text-caption text-muted-foreground">{sense.partsOfSpeech.join(", ")}</p>
+          {partsOfSpeech[i] ? (
+            <p className="text-caption text-muted-foreground">
+              <TableText segments={partsOfSpeech[i]} />
+            </p>
           ) : null}
           {sense.glosses.map((gloss, j) => (
             <p key={j} className="text-body text-foreground">

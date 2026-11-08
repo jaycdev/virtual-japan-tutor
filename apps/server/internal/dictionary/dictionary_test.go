@@ -191,7 +191,7 @@ func shopVocab() []refdata.Vocabulary {
 		EntSeq:   101,
 		Kanji:    []refdata.JMdictKanji{{Text: "店"}},
 		Readings: []refdata.JMdictReading{{Text: "みせ"}},
-		Senses:   []refdata.JMdictSense{{POS: []string{"noun"}, Glosses: []string{"shop, store"}}},
+		Senses:   []refdata.JMdictSense{{POS: []string{"n"}, Glosses: []string{"shop, store"}}},
 	}}}
 }
 

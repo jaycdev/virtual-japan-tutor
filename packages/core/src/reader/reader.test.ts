@@ -97,7 +97,7 @@ describe("pitchDots", () => {
 describe("glosses", () => {
   const entry = {
     senses: [
-      { glosses: ["school", "academy"], partsOfSpeech: ["noun"] },
+      { glosses: ["school", "academy"], partsOfSpeech: ["n"] },
       { glosses: ["colloquial"], partsOfSpeech: [] },
     ],
   } as Parameters<typeof countGlosses>[0];

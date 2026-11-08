@@ -1,5 +1,5 @@
 import type { DictionaryEntry, StoryGrammarSpan } from "@vjt/api-client";
-import { type RubyText, type StringKey, useT } from "@vjt/core";
+import { type RubyText, sensePartOfSpeechLabels, type StringKey, useT } from "@vjt/core";
 import * as DialogPrimitives from "@rn-primitives/dialog";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
@@ -94,6 +94,8 @@ export function DictionaryWindow({
   onClose: () => void;
 }) {
   const { t } = useT();
+  // Each sense's Part of Speech (issue #132), with a repeat of the sense above left out.
+  const partsOfSpeech = sensePartOfSpeechLabels(entry.senses, t);
   return (
     <WindowCard
       testID="dictionary-window"
@@ -115,9 +117,9 @@ export function DictionaryWindow({
       ) : null}
       {entry.senses.map((sense, i) => (
         <View key={i} style={styles.sense}>
-          <Text className="text-caption text-muted-foreground">
-            {sense.partsOfSpeech.join(", ")}
-          </Text>
+          {partsOfSpeech[i] ? (
+            <TableText className="text-caption text-muted-foreground" segments={partsOfSpeech[i]} />
+          ) : null}
           {sense.glosses.map((gloss, j) => (
             <Text key={j} className="text-body text-foreground">
               {gloss}

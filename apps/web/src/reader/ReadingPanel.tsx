@@ -1,8 +1,16 @@
 import type { Story } from "@vjt/api-client";
-import { countGlosses, coveringSpan, firstGlosses, grammarCue, useT, type EntryLookup } from "@vjt/core";
+import {
+  countGlosses,
+  coveringSpan,
+  firstGlosses,
+  grammarCue,
+  shortPartOfSpeechLabel,
+  useT,
+  type EntryLookup,
+} from "@vjt/core";
 
 import { Button } from "@/components/ui/button";
-import { T } from "@/components/Text.tsx";
+import { T, TableText } from "@/components/Text.tsx";
 import { cn } from "@/lib/utils";
 import type { StoryTextSize } from "../storysize/store.ts";
 import { JlptBadge, SrsLevelText } from "./parts.tsx";
@@ -128,6 +136,7 @@ export function ReadingPanel({
 }
 
 function LookupBody({ story, target, lookup }: { story: Story; target: LookTarget; lookup: EntryLookup }) {
+  const { t } = useT();
   const sentence = story.sentences[target.sentence];
   const token = sentence?.tokens[target.index];
   if (!sentence || !token) return null;
@@ -153,11 +162,17 @@ function LookupBody({ story, target, lookup }: { story: Story; target: LookTarge
   if (!entry) return null;
   const glosses = firstGlosses(entry, 2);
   const more = countGlosses(entry) > glosses.length;
+  const partOfSpeech = shortPartOfSpeechLabel(entry.senses, t);
   return (
     <div data-testid="panel-lookup" className="flex flex-wrap items-center gap-x-3 gap-y-1">
       <p className="text-body font-semibold text-pitch">{token.surface}</p>
       {token.reading && token.reading !== token.surface ? (
         <p className="text-body text-muted-foreground">{token.reading}</p>
+      ) : null}
+      {partOfSpeech ? (
+        <span data-testid="panel-part-of-speech" className="text-caption text-muted-foreground">
+          <TableText segments={partOfSpeech} />
+        </span>
       ) : null}
       {glosses.map((gloss, i) => (
         <p key={i} className="text-small text-foreground">

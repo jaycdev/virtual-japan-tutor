@@ -172,6 +172,11 @@ The full dictionary view of a word, opened from a word's context menu. It shows 
 _Japanese_: 辞書
 _Avoid_: Definition popup
 
+**Part of Speech**:
+What kind of word a dictionary sense is: noun, pronoun, verb, i-adjective, na-adjective, adverb, particle and so on. For a verb it says whether the verb is transitive or intransitive; the Dictionary Entry also names the verb's group (godan, ichidan, irregular). Some words also carry a flag such as takes する. The Lookup shows the first sense's Part of Speech; the Dictionary Entry shows each sense's. Both are read from JMdict's codes.
+_Japanese_: 品詞
+_Avoid_: Word type, word class
+
 **Item List**:
 A named collection of words and Grammar Points the Learner has saved while reading Stories. The Learner can create as many as they like.
 _Japanese_: リスト

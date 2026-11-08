@@ -2757,7 +2757,10 @@ components:
             type: string
         partsOfSpeech:
           type: array
-          description: Parts of speech in JMdict's words ("noun", "transitive verb", …).
+          description: >
+            JMdict's part-of-speech entity codes for the sense, not words: "n" (noun), "v5r"
+            (godan verb ending in ru), "vt" (transitive verb), "adj-na" (adjectival noun). The
+            client turns them into readable labels; an empty list means JMdict gave none.
           items:
             type: string
     PitchPattern:

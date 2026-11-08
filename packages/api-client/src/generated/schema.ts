@@ -1531,7 +1531,7 @@ export interface components {
         };
         DictionarySense: {
             glosses: string[];
-            /** @description Parts of speech in JMdict's words ("noun", "transitive verb", …). */
+            /** @description JMdict's part-of-speech entity codes for the sense, not words: "n" (noun), "v5r" (godan verb ending in ru), "vt" (transitive verb), "adj-na" (adjectival noun). The client turns them into readable labels; an empty list means JMdict gave none. */
             partsOfSpeech: string[];
         };
         /** @description One reading's pitch pattern from Kanjium (ADR-0006). The client draws the mora graph from these numbers; no new scraping happens for this feature. */

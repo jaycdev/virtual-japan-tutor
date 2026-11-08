@@ -1,6 +1,6 @@
 import type { ApiClient, StorySentence } from "@vjt/api-client";
 import { createApiClient } from "@vjt/api-client";
-import { useStory } from "@vjt/core";
+import { InterfaceLanguageProvider, useStory, type InterfaceLanguage } from "@vjt/core";
 import { PortalHost } from "@rn-primitives/portal";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -61,7 +61,7 @@ const SCHOOL_ENTRY = {
   reading: "がっこう",
   jlptLevel: "N5",
   senses: [
-    { glosses: ["school"], partsOfSpeech: ["noun"] },
+    { glosses: ["school"], partsOfSpeech: ["n"] },
     { glosses: ["colloquial reading", "architectural sense"], partsOfSpeech: [] },
   ],
   kanjiForms: ["学校"],
@@ -81,7 +81,7 @@ const MISE_ENTRY = {
   headword: "店",
   reading: "みせ",
   jlptLevel: "N5",
-  senses: [{ glosses: ["shop", "store"], partsOfSpeech: ["noun"] }],
+  senses: [{ glosses: ["shop", "store"], partsOfSpeech: ["n"] }],
   kanjiForms: ["店"],
   readings: ["みせ"],
   pitch: { reading: "みせ", moraCount: 2, accentPosition: 0, heiban: true, downstepAfterMora: null },
@@ -317,13 +317,15 @@ function SizeProbe() {
  * the Story off the fake API's Library page, and a stub host the Back returns
  * to — the Stories suite proves that screen's own markup.
  */
-function renderReader(client: ApiClient) {
+function renderReader(client: ApiClient, language: InterfaceLanguage = "en") {
   return render(
-    <StoryTextSizeProvider>
-      <PortalHost />
-      <SizeProbe />
-      <ReaderHarness client={client} />
-    </StoryTextSizeProvider>,
+    <InterfaceLanguageProvider language={language} setLanguage={() => undefined}>
+      <StoryTextSizeProvider>
+        <PortalHost />
+        <SizeProbe />
+        <ReaderHarness client={client} />
+      </StoryTextSizeProvider>
+    </InterfaceLanguageProvider>,
   );
 }
 
@@ -357,8 +359,8 @@ function ReaderHarness({ client }: { client: ApiClient }) {
   );
 }
 /** The Reader opens once the fake Library lands; settle its own fetches too. */
-async function openStory(client: ApiClient) {
-  renderReader(client);
+async function openStory(client: ApiClient, language: InterfaceLanguage = "en") {
+  renderReader(client, language);
   await screen.findByTestId("back-to-stories");
   // The reader fetches reading settings + Item Lists on mount; give their
   // mocked responses time to land before any gesture reads them.
@@ -559,6 +561,19 @@ describe("Story reader layout and Story text size (issue #45)", () => {
 });
 
 describe("Story reader gestures (mobile)", () => {
+  it("in ja-furigana the Word meaning row shows the Japanese Part of Speech, its reading over the word", async () => {
+    const { client } = fakeApi();
+    await openStory(client, "ja-furigana");
+
+    fireEvent.mouseDown(token(0, 0), { clientX: 300, clientY: 300 });
+    const lookup = await screen.findByTestId("panel-lookup");
+    const partOfSpeech = within(lookup).getByTestId("panel-part-of-speech");
+    // The furigana row hands assistive tech the plain word, and draws the reading over it.
+    expect(partOfSpeech.getAttribute("aria-label")).toBe("名詞");
+    expect(within(partOfSpeech).getByTestId("furigana-reading").textContent).toBe("めいし");
+    fireEvent.mouseUp(token(0, 0), { clientX: 300, clientY: 300 });
+  });
+
   it("a quick tap selects the sentence, primes the Lookup row, and hands the panel back to sentence-mode", async () => {
     const { client, requests } = fakeApi();
     await openStory(client);
@@ -611,6 +626,8 @@ describe("Story reader gestures (mobile)", () => {
     expect(within(menu).queryByTestId("menu-option-grammar")).toBeNull();
     // The reading panel's word-mode row carries the word's pitch graph.
     await waitFor(() => expect(within(screen.getByTestId("panel-lookup")).getByTestId("pitch-graph")).toBeTruthy());
+    // The first sense's Part of Speech, short form, in the Lookup row (issue #132).
+    expect(within(screen.getByTestId("panel-lookup")).getByTestId("panel-part-of-speech").textContent).toBe("Noun");
 
     await waitFor(() => expect(requests.some((r) => r.path === "/weak-signals")).toBe(true));
     expect(weakSignals(requests)).toEqual([{ itemKind: "vocabulary", itemRef: "990101", reason: "lookup" }]);
@@ -736,7 +753,7 @@ describe("Story reader gestures (mobile)", () => {
 
     const win = await screen.findByTestId("dictionary-window");
     expect(within(win).getByText("店")).toBeTruthy();
-    expect(within(win).getByText("noun")).toBeTruthy();
+    expect(within(win).getByText("Noun")).toBeTruthy();
     expect(within(win).getByText("shop")).toBeTruthy();
     expect(within(win).getByText("store")).toBeTruthy();
     expect(within(win).getByText("N5")).toBeTruthy();

@@ -3,7 +3,7 @@
 // arrow keys for sentences, and a real selection for the copy. The network is a
 // stateful fake of the API; the reader itself is the real component.
 import { createApiClient, type ApiClient, type Story } from "@vjt/api-client";
-import { useStory } from "@vjt/core";
+import { InterfaceLanguageProvider, useStory, type InterfaceLanguage } from "@vjt/core";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useEffect } from "react";
@@ -37,7 +37,7 @@ const SCHOOL_ENTRY = {
   reading: "がっこう",
   jlptLevel: "N5",
   senses: [
-    { glosses: ["school"], partsOfSpeech: ["noun"] },
+    { glosses: ["school"], partsOfSpeech: ["n"] },
     { glosses: ["colloquial reading", "architectural sense"], partsOfSpeech: [] },
   ],
   kanjiForms: ["学校"],
@@ -205,13 +205,15 @@ function LocationProbe({ report }: { report: (path: string) => void }) {
   return null;
 }
 
-async function renderReader(opts: Parameters<typeof fakeApi>[0] = {}) {
+async function renderReader(opts: Parameters<typeof fakeApi>[0] = {}, language: InterfaceLanguage = "en") {
   const api = fakeApi(opts);
   const paths: string[] = [];
   const view = render(
     <MemoryRouter>
-      <LocationProbe report={(p) => paths.push(p)} />
-      <ReaderHarness client={api.client} />
+      <InterfaceLanguageProvider language={language} setLanguage={() => undefined}>
+        <LocationProbe report={(p) => paths.push(p)} />
+        <ReaderHarness client={api.client} />
+      </InterfaceLanguageProvider>
     </MemoryRouter>,
   );
   await screen.findByRole("heading", { level: 1 });
@@ -309,8 +311,21 @@ describe("Story reader: Lookup", () => {
     const lookup = await screen.findByTestId("panel-lookup");
     expect(within(lookup).getByText("がっこう")).toBeTruthy();
     expect(within(lookup).getByText("school")).toBeTruthy();
+    // The first sense's Part of Speech, short form, after the reading (issue #132).
+    expect(within(lookup).getByTestId("panel-part-of-speech").textContent).toBe("Noun");
     fireEvent.mouseLeave(token(container, 0, 0));
     await waitFor(() => expect(screen.queryByTestId("panel-lookup")).toBeNull());
+  });
+
+  it("in ja-furigana the Word meaning row shows the Japanese Part of Speech, its reading in ruby", async () => {
+    const { container } = await renderReader({}, "ja-furigana");
+    fireEvent.mouseEnter(token(container, 0, 0));
+    const lookup = await screen.findByTestId("panel-lookup");
+    const partOfSpeech = within(lookup).getByTestId("panel-part-of-speech");
+    // The sentence a screen reader hears is the plain word; the reading sits in <rt>.
+    expect(partOfSpeech.querySelector(".sr-only")?.textContent).toBe("名詞");
+    expect(partOfSpeech.querySelector("ruby rt")?.textContent).toBe("めいし");
+    fireEvent.mouseLeave(token(container, 0, 0));
   });
 
   it("a particle with a Grammar Catalogue hint shows its point on hover, with no menu and no Weak Signal (issue #98)", async () => {
@@ -416,6 +431,7 @@ describe("Story reader: Lookup", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Dictionary" }));
     const dialog = await screen.findByTestId("dictionary-window");
     expect(within(dialog).getByText("school")).toBeTruthy();
+    expect(within(dialog).getByText("Noun")).toBeTruthy();
     expect(within(dialog).getByText("colloquial reading")).toBeTruthy();
     expect(within(dialog).getByText("downstep after mora 3")).toBeTruthy();
   });
