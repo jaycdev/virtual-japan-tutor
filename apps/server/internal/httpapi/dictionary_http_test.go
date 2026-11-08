@@ -88,7 +88,7 @@ func schoolEntry() refdata.Vocabulary {
 			Kanji:    []refdata.JMdictKanji{{Text: "学校"}},
 			Readings: []refdata.JMdictReading{{Text: "がっこう"}},
 			Senses: []refdata.JMdictSense{
-				{POS: []string{"noun"}, Glosses: []string{"school", "secondary school"}},
+				{POS: []string{"n"}, Glosses: []string{"school", "secondary school"}},
 			},
 		},
 		JLPTLevel: refdata.N5,
@@ -194,8 +194,8 @@ func TestGetDictionaryEntryFullShape(t *testing.T) {
 		t.Fatalf("senses = %+v, want one", e.Senses)
 	}
 	sense := e.Senses[0]
-	if len(sense.PartsOfSpeech) != 1 || sense.PartsOfSpeech[0] != "noun" {
-		t.Errorf("sense partsOfSpeech = %v, want [noun]", sense.PartsOfSpeech)
+	if len(sense.PartsOfSpeech) != 1 || sense.PartsOfSpeech[0] != "n" {
+		t.Errorf("sense partsOfSpeech = %v, want [n]", sense.PartsOfSpeech)
 	}
 	if len(sense.Glosses) != 2 || sense.Glosses[0] != "school" || sense.Glosses[1] != "secondary school" {
 		t.Errorf("sense glosses = %v, want both in JMdict order", sense.Glosses)
@@ -277,7 +277,7 @@ func TestGetDictionaryEntryHeadwordAndReadingFallbacks(t *testing.T) {
 			EntSeq:   1558430,
 			Kanji:    []refdata.JMdictKanji{{Text: "切る"}, {Text: "断つ"}},
 			Readings: []refdata.JMdictReading{{Text: "きる"}, {Text: "だつ"}},
-			Senses:   []refdata.JMdictSense{{POS: []string{"verb"}, Glosses: []string{"to cut"}}},
+			Senses:   []refdata.JMdictSense{{POS: []string{"v5s", "vt"}, Glosses: []string{"to cut"}}},
 		},
 	}}
 
@@ -326,7 +326,7 @@ func TestGetDictionaryEntryPitchWithNonZeroAccentAndTag(t *testing.T) {
 			EntSeq:   1558430,
 			Kanji:    []refdata.JMdictKanji{{Text: "先生"}},
 			Readings: []refdata.JMdictReading{{Text: "せんせい"}},
-			Senses:   []refdata.JMdictSense{{POS: []string{"noun"}, Glosses: []string{"teacher"}}},
+			Senses:   []refdata.JMdictSense{{POS: []string{"n"}, Glosses: []string{"teacher"}}},
 		},
 	}}
 	// Kanjium lists the main pattern first; extras are ignored.
