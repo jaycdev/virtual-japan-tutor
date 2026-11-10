@@ -53,9 +53,9 @@ func (st *PostgresStore) SaveLinks(ctx context.Context, storyID uuid.UUID, links
 
 	for _, l := range links {
 		tag, err := tx.Exec(ctx, `
-			UPDATE story_tokens SET ent_seq = $1, dictionary = $2, tag = $3, srs_level = $4
-			WHERE story_id = $5 AND sentence_id = $6 AND position = $7 AND ent_seq IS NULL`,
-			l.EntSeq, l.Dictionary, l.Tag, l.SRSLevel, storyID, l.SentenceID, l.Pos)
+			UPDATE story_tokens SET ent_seq = $1, dictionary = $2, tag = $3, srs_level = $4, reading = $5
+			WHERE story_id = $6 AND sentence_id = $7 AND position = $8 AND ent_seq IS NULL`,
+			l.EntSeq, l.Dictionary, l.Tag, l.SRSLevel, l.Reading, storyID, l.SentenceID, l.Pos)
 		if err != nil {
 			return fmt.Errorf("story save links: token: %w", err)
 		}

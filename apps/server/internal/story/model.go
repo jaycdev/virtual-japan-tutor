@@ -202,6 +202,10 @@ type VocabHit struct {
 	// Headword and first gloss for the Story's vocab_items list.
 	JA string
 	EN string
+	// Readings are the entry's kana readings in JMdict order, the first its
+	// default. A token linked to the entry takes its reading from these (see
+	// reconcileReading, issue #134).
+	Readings []string
 	// Alts are every entry that shares the matched spelling, the first
 	// included (common entries first). A spelling is often ambiguous (いる is
 	// both "to be" and 射る, "to shoot"), and the token cannot say which was

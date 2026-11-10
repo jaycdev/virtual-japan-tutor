@@ -48,6 +48,7 @@ func (f *fakeRelinkStore) SaveLinks(_ context.Context, storyID uuid.UUID, links 
 			}
 			seq := l.EntSeq
 			tok.EntSeq, tok.Dictionary, tok.Tag, tok.SRSLevel = &seq, l.Dictionary, l.Tag, l.SRSLevel
+			tok.Reading = l.Reading
 		}
 	}
 	s.VocabItems = append([]VocabItem(nil), vocab...)

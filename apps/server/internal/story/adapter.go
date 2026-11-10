@@ -69,6 +69,9 @@ const maxHomographs = 16
 // usually-kana words) and first gloss for display lists.
 func hitOf(v refdata.Vocabulary) VocabHit {
 	h := VocabHit{EntSeq: v.EntSeq, JA: v.Headword()}
+	for _, r := range v.Readings {
+		h.Readings = append(h.Readings, r.Text)
+	}
 	for _, s := range v.Senses {
 		if len(s.Glosses) > 0 {
 			h.EN = s.Glosses[0]

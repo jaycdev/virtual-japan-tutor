@@ -28,8 +28,10 @@ type TokenLink struct {
 	Pos        int
 	EntSeq     int64
 	Dictionary string
-	Tag        string
-	SRSLevel   *int
+	// Reading is the furigana for the linked entry (issue #134).
+	Reading  string
+	Tag      string
+	SRSLevel *int
 }
 
 // RelinkReport counts what a relink run did across every Story it visited.
@@ -153,6 +155,10 @@ func (r *Relinker) relinkStory(ctx context.Context, ref StoryRef) (relinkResult,
 				continue
 			}
 			base, _ := toks[i].BaseForm()
+			// The furigana is reconciled from kagome's reading, as generation
+			// did it, so the stored reading is not the input.
+			tok.kagome = kagomeReading(toks[i])
+			tok.Reading = tok.kagome
 			ok, err := r.linker.link(ctx, tok, base)
 			if err != nil {
 				return res, err
@@ -210,12 +216,13 @@ func (r *Relinker) relinkStory(ctx context.Context, ref StoryRef) (relinkResult,
 		tag, level := TagUnknown, (*int)(nil)
 		if chosen := knownEntryFor(&tok, known, focusWant); chosen != nil {
 			entSeq, dict = chosen.EntSeq, chosen.JA
+			tok.Reading = reconcileReading(tok.kagome, chosen.Readings)
 			lvl := known[chosen.EntSeq].SRSLevel
 			tag, level = TagKnown, &lvl
 		}
 		links = append(links, TokenLink{
 			SentenceID: p.sentence, Pos: tok.Pos, EntSeq: entSeq, Dictionary: dict,
-			Tag: tag, SRSLevel: level,
+			Reading: tok.Reading, Tag: tag, SRSLevel: level,
 		})
 		if !inVocab[entSeq] {
 			inVocab[entSeq] = true
