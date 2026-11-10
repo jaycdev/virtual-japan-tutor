@@ -266,6 +266,12 @@ type Token struct {
 	// and never stored. See reconcileReading (issue #134).
 	kagome   string
 	readings []string
+
+	// hint is the intended dictionary word the model named for this kana-only
+	// token (see storyJSON, word_hints, issue #136). It selects which of the
+	// token's entries the link may take. Set during materialisation, never
+	// stored.
+	hint string
 }
 
 // Span is a Grammar Span inside a sentence: runes [Start,End) realising one

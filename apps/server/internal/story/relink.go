@@ -214,11 +214,15 @@ func (r *Relinker) relinkStory(ctx context.Context, ref StoryRef) (relinkResult,
 		tok := p.tok
 		entSeq, dict := *tok.EntSeq, tok.Dictionary
 		tag, level := TagUnknown, (*int)(nil)
-		if chosen := knownEntryFor(&tok, known, focusWant); chosen != nil {
-			entSeq, dict = chosen.EntSeq, chosen.JA
-			tok.Reading = reconcileReading(tok.kagome, chosen.Readings)
-			lvl := known[chosen.EntSeq].SRSLevel
-			tag, level = TagKnown, &lvl
+		// Stored tokens carry no word hint, so settleEntry picks exactly
+		// what knownEntryFor did; it is shared with generation (issue #136).
+		if entry, isKnown := settleEntry(&tok, known, focusWant); entry != nil {
+			entSeq, dict = entry.EntSeq, entry.JA
+			tok.Reading = reconcileReading(tok.kagome, entry.Readings)
+			if isKnown {
+				lvl := known[entry.EntSeq].SRSLevel
+				tag, level = TagKnown, &lvl
+			}
 		}
 		links = append(links, TokenLink{
 			SentenceID: p.sentence, Pos: tok.Pos, EntSeq: entSeq, Dictionary: dict,
