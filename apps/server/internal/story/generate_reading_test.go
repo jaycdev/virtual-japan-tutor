@@ -75,6 +75,46 @@ func TestFuriganaFollowsLinkedEntryReading(t *testing.T) {
 	}
 }
 
+// The same bug on a second word (issue #134): kagome reads 仮名 as かめい, a rare
+// reading, while the common entry 仮名【かな】 is what the token links to. The
+// furigana must follow the entry, as it does for 市場.
+const kanaWordSentence = "仮名で名前を書いた。"
+
+func TestFuriganaFollowsLinkedEntryReadingForKanaWord(t *testing.T) {
+	cases := []struct {
+		name     string
+		readings []string
+		want     string
+	}{
+		{
+			name:     "kagome reading not among the entry's readings",
+			readings: []string{"かな"},
+			want:     "かな",
+		},
+		{
+			// かめい is a reading of the linked entry, so it stays even though かな
+			// comes first.
+			name:     "kagome reading among the entry's readings is kept",
+			readings: []string{"かな", "かめい"},
+			want:     "かめい",
+		},
+		{
+			name:     "entry without readings keeps kagome's reading",
+			readings: nil,
+			want:     "かめい",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			lookup := fakeLookup{"仮名": {EntSeq: 1000001, JA: "仮名", Readings: c.readings}}
+			s := materialiseJA(t, uuid.New(), lookup, kanaWordSentence)
+			if got := tokenNamed(t, s, 0, "仮名").Reading; got != c.want {
+				t.Fatalf("reading of 仮名 = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
 // When the Learner knows a different sense of the spelling, tagKnown links the
 // token to that entry, and its furigana follows the entry it now opens.
 func TestKnownSenseReconcilesFuriganaToItsEntry(t *testing.T) {
