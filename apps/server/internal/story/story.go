@@ -259,6 +259,13 @@ type Token struct {
 	// (see VocabHit.Alts); tagKnown links the token to the Learner's known
 	// one. Never stored.
 	alts []VocabHit
+
+	// kagome is kagome's reading of the surface (hiragana), the input the
+	// furigana is reconciled from; readings are the linked entry's readings
+	// (see VocabHit.Readings). Both are set during materialisation or relink,
+	// and never stored. See reconcileReading (issue #134).
+	kagome   string
+	readings []string
 }
 
 // Span is a Grammar Span inside a sentence: runes [Start,End) realising one

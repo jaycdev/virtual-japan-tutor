@@ -140,7 +140,41 @@ func (l *tokenLinker) link(ctx context.Context, tok *Token, base string) (bool, 
 	tok.EntSeq = &seq
 	tok.Dictionary = hit.JA
 	tok.alts = hit.Alts
+	tok.readings = hit.Readings
+	tok.Reading = reconcileReading(tok.kagome, hit.Readings)
 	return true, nil
+}
+
+// kagomeReading is kagome's reading of a morpheme as furigana: hiragana, the
+// form the app stores everywhere.
+func kagomeReading(t tokenizer.Token) string {
+	r, _ := t.Reading()
+	return toHiragana(r)
+}
+
+// reconcileReading is the furigana for a token linked to an entry with these
+// readings (issue #134). kagome's reading is kept when the entry lists it, or
+// when the entry has no readings; otherwise the entry's first reading is used,
+// so the furigana agrees with the Dictionary Entry the token opens. Readings
+// compare in hiragana, as the furigana is stored.
+func reconcileReading(kagome string, readings []string) string {
+	first := ""
+	for _, r := range readings {
+		h := toHiragana(r)
+		if h == "" {
+			continue
+		}
+		if h == kagome {
+			return kagome
+		}
+		if first == "" {
+			first = h
+		}
+	}
+	if first == "" {
+		return kagome
+	}
+	return first
 }
 
 // ChatClient is the structured-output call generation needs; *llm.Client
@@ -353,8 +387,8 @@ func (g *Generator) materialise(ctx context.Context, raw *storyJSON, req Request
 		}
 		for j, kt := range toks {
 			base, _ := kt.BaseForm()
-			reading, _ := kt.Reading()
-			tok := Token{Pos: j, Surface: kt.Surface, Start: kt.Start, End: kt.End, Reading: toHiragana(reading), Dictionary: base, Tag: TagUnknown}
+			kana := kagomeReading(kt)
+			tok := Token{Pos: j, Surface: kt.Surface, Start: kt.Start, End: kt.End, Reading: kana, kagome: kana, Dictionary: base, Tag: TagUnknown}
 			// The coverage gate counts only content words, but the reader can
 			// look up every word that isLinkable, so the two rules are kept
 			// apart: content is set for every token, the link for linkable ones.
@@ -491,6 +525,8 @@ func (g *Generator) tagKnown(ctx context.Context, s *Story, req Request) error {
 				t.EntSeq = &seq
 				t.Dictionary = chosen.JA
 			}
+			// The furigana follows the entry the token now links to.
+			t.Reading = reconcileReading(t.kagome, chosen.Readings)
 			v := known[chosen.EntSeq]
 			t.Tag = TagKnown
 			level := v.SRSLevel
@@ -517,7 +553,7 @@ func (g *Generator) tagKnown(ctx context.Context, s *Story, req Request) error {
 // returns nil when the Learner knows none of them.
 func knownEntryFor(t *Token, known map[int64]KnownView, focusWant map[int64]bool) *VocabHit {
 	cands := make([]VocabHit, 0, len(t.alts)+1)
-	cands = append(cands, VocabHit{EntSeq: *t.EntSeq, JA: t.Dictionary})
+	cands = append(cands, VocabHit{EntSeq: *t.EntSeq, JA: t.Dictionary, Readings: t.readings})
 	for _, a := range t.alts {
 		if a.EntSeq != *t.EntSeq {
 			cands = append(cands, a)

@@ -50,11 +50,11 @@ func (l *RefdataLookup) Lookup(ctx context.Context, surface, dictionary string) 
 			return VocabHit{}, false, err
 		}
 		if len(hits) > 0 {
-			hit := hitOf(hits[0])
+			hit := hitOf(hits[0], form)
 			// Every entry sharing the spelling, for the Known-Item check;
 			// bounded, since a kana spelling can match dozens of entries.
 			for i := 0; i < len(hits) && i < maxHomographs; i++ {
-				hit.Alts = append(hit.Alts, hitOf(hits[i]))
+				hit.Alts = append(hit.Alts, hitOf(hits[i], form))
 			}
 			return hit, true, nil
 		}
@@ -67,8 +67,15 @@ const maxHomographs = 16
 
 // hitOf picks the entry's headword (refdata.JMdictEntry.Headword: kana for
 // usually-kana words) and first gloss for display lists.
-func hitOf(v refdata.Vocabulary) VocabHit {
+//
+// written is the spelling the lookup matched; the readings kept are the ones
+// that apply to it (see applicableReadings), so the furigana fallback never
+// picks a reading that does not go with the form.
+func hitOf(v refdata.Vocabulary, written string) VocabHit {
 	h := VocabHit{EntSeq: v.EntSeq, JA: v.Headword()}
+	for _, r := range applicableReadings(v.JMdictEntry, written) {
+		h.Readings = append(h.Readings, r.Text)
+	}
 	for _, s := range v.Senses {
 		if len(s.Glosses) > 0 {
 			h.EN = s.Glosses[0]
@@ -76,6 +83,47 @@ func hitOf(v refdata.Vocabulary) VocabHit {
 		}
 	}
 	return h
+}
+
+// applicableReadings returns the entry's readings that apply to the matched
+// spelling, with the rule refdata.Store.FindVocabulary uses (issue #134): when
+// the spelling is one of the entry's kanji forms, a kana-only (no_kanji)
+// reading does not apply, nor one restricted to other kanji forms. A kana
+// spelling keeps every reading, and so does a kanji form that leaves none.
+func applicableReadings(e refdata.JMdictEntry, written string) []refdata.JMdictReading {
+	isKanji := false
+	for _, k := range e.Kanji {
+		if k.Text == written {
+			isKanji = true
+			break
+		}
+	}
+	if !isKanji {
+		return e.Readings
+	}
+	var kept []refdata.JMdictReading
+	for _, r := range e.Readings {
+		if r.NoKanji {
+			continue
+		}
+		if len(r.RestrictTo) > 0 && !containsString(r.RestrictTo, written) {
+			continue
+		}
+		kept = append(kept, r)
+	}
+	if len(kept) == 0 {
+		return e.Readings
+	}
+	return kept
+}
+
+func containsString(list []string, s string) bool {
+	for _, x := range list {
+		if x == s {
+			return true
+		}
+	}
+	return false
 }
 
 // MasteryFocus implements Focus over the Mastery/Focus Set service plus the
