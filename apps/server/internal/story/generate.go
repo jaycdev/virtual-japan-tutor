@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -385,10 +386,22 @@ func (g *Generator) materialise(ctx context.Context, raw *storyJSON, req Request
 		if err != nil {
 			return nil, err
 		}
+		// The model's word hints for this sentence, by surface (issue #136).
+		hints := make(map[string]string, len(in.WordHints))
+		for _, h := range in.WordHints {
+			if s, w := strings.TrimSpace(h.Surface), strings.TrimSpace(h.Word); s != "" && w != "" {
+				hints[s] = w
+			}
+		}
 		for j, kt := range toks {
 			base, _ := kt.BaseForm()
 			kana := kagomeReading(kt)
 			tok := Token{Pos: j, Surface: kt.Surface, Start: kt.Start, End: kt.End, Reading: kana, kagome: kana, Dictionary: base, Tag: TagUnknown}
+			// A hint only ever applies to a kana-only token: a kanji spelling
+			// is already one word, so a hint on it is ignored.
+			if w, ok := hints[kt.Surface]; ok && isKanaOnly(kt.Surface) {
+				tok.hint = w
+			}
 			// The coverage gate counts only content words, but the reader can
 			// look up every word that isLinkable, so the two rules are kept
 			// apart: content is set for every token, the link for linkable ones.
@@ -516,18 +529,22 @@ func (g *Generator) tagKnown(ctx context.Context, s *Story, req Request) error {
 			// of its spelling, and links to that entry: a focus word among
 			// them first (so a Story covers the item it was built around),
 			// then the first entry, then the other alternatives in order.
-			chosen := knownEntryFor(t, known, focusWant)
-			if chosen == nil {
+			// A hinted token links to its hinted entry even when unknown.
+			entry, isKnown := settleEntry(t, known, focusWant)
+			if entry == nil {
 				continue
 			}
-			if *t.EntSeq != chosen.EntSeq {
-				seq := chosen.EntSeq
+			if *t.EntSeq != entry.EntSeq {
+				seq := entry.EntSeq
 				t.EntSeq = &seq
-				t.Dictionary = chosen.JA
+				t.Dictionary = entry.JA
 			}
 			// The furigana follows the entry the token now links to.
-			t.Reading = reconcileReading(t.kagome, chosen.Readings)
-			v := known[chosen.EntSeq]
+			t.Reading = reconcileReading(t.kagome, entry.Readings)
+			if !isKnown {
+				continue
+			}
+			v := known[entry.EntSeq]
 			t.Tag = TagKnown
 			level := v.SRSLevel
 			t.SRSLevel = &level
@@ -547,11 +564,9 @@ func (g *Generator) tagKnown(ctx context.Context, s *Story, req Request) error {
 	return nil
 }
 
-// knownEntryFor picks the entry a token is linked to from among the entries
-// sharing its spelling that the Learner knows: a Focus Set word if one of them
-// is, else the token's own first entry, else the first known alternative. It
-// returns nil when the Learner knows none of them.
-func knownEntryFor(t *Token, known map[int64]KnownView, focusWant map[int64]bool) *VocabHit {
+// entryCandidates lists the entries a token may link to: its own entry first,
+// then the other entries sharing its spelling (its alternatives).
+func entryCandidates(t *Token) []VocabHit {
 	cands := make([]VocabHit, 0, len(t.alts)+1)
 	cands = append(cands, VocabHit{EntSeq: *t.EntSeq, JA: t.Dictionary, Readings: t.readings})
 	for _, a := range t.alts {
@@ -559,6 +574,42 @@ func knownEntryFor(t *Token, known map[int64]KnownView, focusWant map[int64]bool
 			cands = append(cands, a)
 		}
 	}
+	return cands
+}
+
+// hintedEntries returns the candidates whose dictionary word is the token's
+// hint (issue #136), in candidate order. It is empty when the token has no
+// hint, or when the hint names none of its entries: the hint is model output,
+// so an unmatched hint is ignored and the token keeps its usual link.
+func hintedEntries(t *Token) []VocabHit {
+	if t.hint == "" {
+		return nil
+	}
+	var out []VocabHit
+	for _, c := range entryCandidates(t) {
+		if c.JA == t.hint {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// linkCandidates is what a token's link may be chosen from: the hinted entries
+// when the hint names some, else every entry of the spelling.
+func linkCandidates(t *Token) []VocabHit {
+	if hinted := hintedEntries(t); len(hinted) > 0 {
+		return hinted
+	}
+	return entryCandidates(t)
+}
+
+// knownEntryFor picks the entry a token is linked to from among the entries
+// sharing its spelling that the Learner knows: a Focus Set word if one of them
+// is, else the token's own first entry, else the first known alternative. A
+// hinted token only considers its hinted entries. It returns nil when the
+// Learner knows none of them.
+func knownEntryFor(t *Token, known map[int64]KnownView, focusWant map[int64]bool) *VocabHit {
+	cands := linkCandidates(t)
 	var first *VocabHit
 	for i := range cands {
 		if v, ok := known[cands[i].EntSeq]; !ok || !v.IsKnown {
@@ -572,6 +623,31 @@ func knownEntryFor(t *Token, known map[int64]KnownView, focusWant map[int64]bool
 		}
 	}
 	return first
+}
+
+// settleEntry decides which entry a linked token points to, and whether the
+// Learner knows it. A known entry (knownEntryFor) wins with isKnown true. A
+// hinted token with no known entry links to its hinted entry, unknown
+// (isKnown false), so the coverage gate counts it as the word the model meant.
+// Otherwise there is no entry to move to (nil), and the token keeps its link.
+func settleEntry(t *Token, known map[int64]KnownView, focusWant map[int64]bool) (entry *VocabHit, isKnown bool) {
+	if chosen := knownEntryFor(t, known, focusWant); chosen != nil {
+		return chosen, true
+	}
+	if hinted := hintedEntries(t); len(hinted) > 0 {
+		return preferFocus(hinted, focusWant), false
+	}
+	return nil, false
+}
+
+// preferFocus returns the first candidate in the Focus Set, else the first.
+func preferFocus(cands []VocabHit, focusWant map[int64]bool) *VocabHit {
+	for i := range cands {
+		if focusWant[cands[i].EntSeq] {
+			return &cands[i]
+		}
+	}
+	return &cands[0]
 }
 
 // gate runs the deterministic checks over an already-tokenised, already-
@@ -960,6 +1036,20 @@ func stripNulls(s string) string {
 	return strings.ReplaceAll(s, "\x00", "")
 }
 
+// isKanaOnly reports whether a surface is written only in kana (hiragana or
+// katakana, with the prolonged sound mark). The empty string is not kana-only.
+func isKanaOnly(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if !unicode.Is(unicode.Hiragana, r) && !unicode.Is(unicode.Katakana, r) && r != 'ー' {
+			return false
+		}
+	}
+	return true
+}
+
 // toHiragana converts kagome's surface reading to hiragana: katakana
 // morphemes (シズカ) tokenise with a katakana reading, and furigana is
 // hiragana everywhere else (dictionary readings included), so readings are
@@ -1064,7 +1154,9 @@ Comprehension questions: write %d to %d multiple-choice questions in Japanese ab
 
 Grammar spans: for each use of a grammar point, give its grammar_point_id and text — the exact characters of that sentence that express the pattern, copied verbatim from the sentence's ja field. Do not count positions; the checker finds the text itself. Spans must cover whole words, and they cover the pattern's characters only — never the stem of the verb or adjective. Example: for 食べてしまった with the pattern てしまった, text is てしまった, not 食べてしまった. Never include the verb or adjective that comes before the pattern. A pattern that itself begins with a word, such as 必要がある or はずがない, is spanned in full.
 
-Return JSON: {"title": string, "title_en": string, "theme": string, "genre": string, "sentences": [{"ja": string, "en": string, "grammar_spans": [{"text": string, "grammar_point_id": int}]}], "questions": [{"prompt_ja": string, "options_ja": [string], "answer_index": int}]}`,
+Word hints: some words are written only in kana but mean different words depending on the kanji, such as つく (着く, 付く, 吐く) or はな (花, 鼻, 話). For each such word in a sentence, list it in that sentence's word_hints: surface is the word exactly as it is written in ja, and word is the intended word in its usual kanji spelling, so つく in ため息をつく is surface つく with word 吐く. Leave word_hints empty for a sentence with no such word.
+
+Return JSON: {"title": string, "title_en": string, "theme": string, "genre": string, "sentences": [{"ja": string, "en": string, "grammar_spans": [{"text": string, "grammar_point_id": int}], "word_hints": [{"surface": string, "word": string}]}], "questions": [{"prompt_ja": string, "options_ja": [string], "answer_index": int}]}`,
 		MinQuestions, MaxQuestions)
 	return b.String()
 }
@@ -1113,9 +1205,18 @@ const storySchemaJSON = `{"type":"object","properties":{
 				},
 				"required":["text","grammar_point_id"],
 				"additionalProperties":false
+			}},
+			"word_hints":{"type":"array","items":{
+				"type":"object",
+				"properties":{
+					"surface":{"type":"string"},
+					"word":{"type":"string"}
+				},
+				"required":["surface","word"],
+				"additionalProperties":false
 			}}
 		},
-		"required":["ja","en","grammar_spans"],
+		"required":["ja","en","grammar_spans","word_hints"],
 		"additionalProperties":false
 	}},
 	"questions":{"type":"array","minItems":3,"maxItems":5,"items":{
@@ -1149,6 +1250,13 @@ type storyJSON struct {
 			End            int    `json:"end"`
 			GrammarPointID int64  `json:"grammar_point_id"`
 		} `json:"grammar_spans"`
+		// WordHints names the intended word for each kana-only word of the
+		// sentence that has same-reading homophones (issue #136): Surface is
+		// the token as written, Word its dictionary form in kanji.
+		WordHints []struct {
+			Surface string `json:"surface"`
+			Word    string `json:"word"`
+		} `json:"word_hints"`
 	} `json:"sentences"`
 	Questions []struct {
 		PromptJA  string   `json:"prompt_ja"`
