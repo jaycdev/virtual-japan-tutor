@@ -123,12 +123,33 @@ export function phraseMarkFor(
 }
 
 /**
+ * The phrase mark of every token of a sentence, in token order (issue #97). The
+ * reader computes this once per sentence and indexes it per token, instead of
+ * working out the run again for each word it draws.
+ */
+export function sentencePhraseMarks(sentence: StorySentence): PhraseMark[] {
+  return sentence.tokens.map((token) =>
+    phraseMarkFor(sentence, token, spansCovering(token, sentence.grammarSpans)[0] ?? null),
+  );
+}
+
+/**
+ * Whether a word's Lookup and Dictionary action open its Phrase's entry rather
+ * than its own: a Phrase covers the word and no Grammar Span does (issue #97).
+ */
+export function opensPhraseEntry(sentence: StorySentence, token: StoryToken, span: StoryGrammarSpan | null): boolean {
+  return span === null && coveringPhrase(sentence, token) !== null;
+}
+
+/**
  * The marks for a token with its phrase underline applied: the phrase run is one
- * underline in the lookup colour, so it replaces the token's own underline.
- * The highlighter is untouched.
+ * underline in the lookup colour, so it replaces the token's own lookup underline.
+ * A Focus underline stays, since it is a different meaning. The highlighter is
+ * untouched.
  */
 export function withPhraseMark(marks: TokenMarks, phrase: PhraseMark): TokenMarks {
-  return phrase.underline ? { ...marks, underline: "lookup" } : marks;
+  if (!phrase.underline || marks.underline === "focus") return marks;
+  return { ...marks, underline: "lookup" };
 }
 
 /**

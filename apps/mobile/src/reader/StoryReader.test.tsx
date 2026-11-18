@@ -106,6 +106,8 @@ function fakeApi(
     noGeneration?: boolean;
     /** Phrases of the first sentence (issue #97); none unless a test asks. */
     phrases?: { start: number; end: number; entSeq: number; ja: string; en: string }[];
+    /** Tags the second token of the first sentence Known, so a Phrase over it is all Known (issue #97). */
+    allKnownPhrase?: boolean;
   } = {},
 ) {
   const storyView = {
@@ -134,7 +136,15 @@ function fakeApi(
             srsLevel: 4,
             showFurigana: false,
           },
-          { surface: "で", start: 4, end: 5, reading: "で", entSeq: 990102, tag: "unknown", showFurigana: false },
+          {
+            surface: "で",
+            start: 4,
+            end: 5,
+            reading: "で",
+            entSeq: 990102,
+            tag: opts.allKnownPhrase ? "known" : "unknown",
+            showFurigana: false,
+          },
           { surface: "べんきょう", start: 5, end: 9, reading: "勉強", tag: "unknown", showFurigana: true },
           { surface: "しました", start: 9, end: 13, reading: "しました", tag: "unknown", showFurigana: true },
         ],
@@ -631,27 +641,37 @@ describe("Story reader gestures (mobile)", () => {
     releaseAt(0, 0, 5, 5);
   });
 
-  it("the phrase Lookup's Dictionary action opens the Dictionary Entry for the phrase's entSeq (issue #97)", async () => {
+  it("releasing on the menu's Dictionary row opens the Phrase's entry, not the word's own (issue #97)", async () => {
     const { client, requests } = fakeApi({
       phrases: [{ start: 0, end: 5, entSeq: 1234567, ja: "がっこうで", en: "at school" }],
     });
     await openStory(client);
 
-    await pressAndHold(0, 0); // the phrase's Lookup row is up while the finger is down
-    const row = await waitFor(() => {
-      const found = screen.getByTestId("panel-lookup");
-      expect(within(found).getByTestId("phrase-dictionary")).toBeTruthy();
-      return found;
-    });
-    // The action is labelled as the token menu's Dictionary row is.
-    expect(within(row).getByTestId("phrase-dictionary").textContent).toContain("Dictionary");
-    fireEvent.click(within(row).getByTestId("phrase-dictionary"));
+    await pressAndHold(0, 0); // がっこう inside がっこうで, whose own entry is 990101
+    // The Lookup row shows the Phrase, and its entry is cached, so the menu's Dictionary row is live.
+    await waitFor(() => expect(within(screen.getByTestId("panel-lookup")).getByText("がっこうで")).toBeTruthy());
+    expect(requests.some((r) => r.path === "/dictionary/entries/1234567")).toBe(true);
+    expect(screen.queryByTestId("phrase-dictionary")).toBeNull();
+
+    releaseAt(0, 0, 300, 337); // over the menu's Dictionary row
     const win = await screen.findByTestId("dictionary-window");
     expect(win.textContent).toContain("がっこうで");
-    expect(requests.some((r) => r.path === "/dictionary/entries/1234567")).toBe(true);
     expect(requests.some((r) => r.path === "/dictionary/entries/990101")).toBe(false);
-    releaseAt(0, 0, 5, 5);
   });
+
+  it("hold on a Phrase whose tokens are all Known still shows the phrase's Lookup (issue #97)", async () => {
+    const { client, requests } = fakeApi({
+      phrases: [{ start: 0, end: 5, entSeq: 1234567, ja: "がっこうで", en: "at school" }],
+      allKnownPhrase: true,
+    });
+    await openStory(client);
+
+    await pressAndHold(0, 1); // で: a Known token of the Phrase
+    expect(within(await screen.findByTestId("panel-lookup")).getByText("がっこうで")).toBeTruthy();
+    expect(requests.some((r) => r.path === "/dictionary/entries/1234567")).toBe(true);
+    releaseAt(0, 1, 5, 5);
+  });
+
 
   it("a hold opens the Lookup menu at the finger and reports one Weak Signal per word", async () => {
     const { client, requests } = fakeApi();

@@ -139,6 +139,19 @@ describe("menuOptions", () => {
     const opts = menuOptions(token(), null, true, "Saved");
     expect(opts.find((o) => o.id === "save")?.hint).toBe("Save to Saved");
   });
+
+  it("a phrase token with no entry of its own enables Dictionary, since the Phrase's entry opens (issue #97)", () => {
+    const opts = menuOptions(token({ entSeq: undefined }), null, true, "Saved", false, undefined, true);
+    expect(opts.find((o) => o.id === "dictionary")?.enabled).toBe(true);
+    expect(opts.find((o) => o.id === "dictionary")?.hint).toBeUndefined();
+    // Save still needs the word's own entry or a Grammar Span: a Phrase is not saved from here.
+    expect(opts.find((o) => o.id === "save")?.enabled).toBe(false);
+  });
+
+  it("a failed phrase lookup dims Dictionary too", () => {
+    const opts = menuOptions(token({ entSeq: undefined }), null, true, "Saved", true, undefined, true);
+    expect(opts.find((o) => o.id === "dictionary")?.enabled).toBe(false);
+  });
 });
 
 describe("saveableItem", () => {

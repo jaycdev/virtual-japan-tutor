@@ -7,6 +7,7 @@ import {
   lookupKey,
   menuOptions,
   hintOnly,
+  opensPhraseEntry,
   optionAt,
   reduceHold,
   saveableItem,
@@ -189,10 +190,15 @@ export function StoryReader({
   const pressedToken =
     gesture.token !== null ? story.sentences[gesture.token.sentence]?.tokens[gesture.token.index] : undefined;
 
+  // The Lookup the pressed word loads: its Phrase's entry, or its own (issue #97).
+  const pressedSentence = gesture.token ? story.sentences[gesture.token.sentence] : undefined;
+  const pressedKey =
+    pressedSentence && pressedToken
+      ? lookupKey(pressedSentence, pressedToken, coveringSpan(pressedSentence, pressedToken))
+      : null;
   // A failed lookup (null cached) dims the Dictionary row until the retry (nit 2/3).
   const dictionaryFailed =
-    pressedToken?.entSeq !== undefined &&
-    lookup.failed(pressedToken.entSeq, pressedToken.surface, pressedToken.reading);
+    pressedKey !== null && lookup.failed(pressedKey.entSeq, pressedKey.surface, pressedKey.reading);
 
   // The Reading Panel's word-mode follows the machine: the pressed token is
   // "looked at" from press until cancel (release, terminate, or Back).
@@ -227,13 +233,15 @@ export function StoryReader({
       listsState.status === "ready"
         ? listsState.lists.find((l) => l.id === listsState.defaultListId)?.name
         : undefined;
+    const span = coveringSpan(sen, tok);
     return menuOptions(
       tok,
-      coveringSpan(sen, tok),
+      span,
       listsState.status === "ready",
       defaultName,
       dictionaryFailed,
       language,
+      opensPhraseEntry(sen, tok, span),
     );
   }, [gesture.phase, gesture.token, story, lists.state, dictionaryFailed, language]);
 
@@ -313,13 +321,17 @@ export function StoryReader({
     if (!sen || !token) return;
     const span = coveringSpan(sen, token);
     if (option === "dictionary") {
+      // The Lookup the word loads: its Phrase's entry when a Phrase covers it
+      // and no Grammar Span does (issue #97), else its own entry.
       // Only push the window when the entry is actually there: a window
       // pushed over an empty lookup would render nothing and make the first
       // Back pop an invisible layer (issue #14 review, major 3). Failure is
       // not reachable here — a failed lookup dims the row, so optionAt never
       // picks it — this guard only covers a lookup still in flight.
-      if (token.entSeq === undefined || lookup.peek(token.entSeq, token.surface, token.reading) === undefined) return;
-      setWindows((w) => [...w, { ...ref, kind: "token" }]);
+      const key = lookupKey(sen, token, span);
+      if (!key || lookup.peek(key.entSeq, key.surface, key.reading) === undefined) return;
+      const phrased = opensPhraseEntry(sen, token, span);
+      setWindows((w) => [...w, { ...ref, kind: phrased ? "phrase" : "token" }]);
       return;
     }
     if (option === "grammar") {
@@ -333,16 +345,6 @@ export function StoryReader({
       return;
     }
     setSheetToken(ref);
-  };
-
-  /**
-   * The phrase Lookup's Dictionary action (issue #97): pushes the Dictionary
-   * Entry window for the Phrase the pressed word sits in. The action only renders
-   * once the phrase's entry is cached, so the window never opens empty.
-   */
-  const openPhraseDictionary = () => {
-    if (!looked || looked.kind !== "phrase") return;
-    setWindows((w) => [...w, { sentence: looked.sentence, index: looked.index, kind: "phrase" }]);
   };
 
   /** A tap on a menu row: close the menu, then run the option. */
@@ -608,7 +610,6 @@ export function StoryReader({
         reading={reading}
         lookup={lookup}
         onUnblur={onUnblur}
-        onOpenPhraseDictionary={openPhraseDictionary}
       />
 
       <ScrollView

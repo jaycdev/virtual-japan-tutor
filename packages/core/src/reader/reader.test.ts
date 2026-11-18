@@ -8,11 +8,12 @@ import {
   lookupKey,
   phraseMarkFor,
   phrasesCovering,
+  sentencePhraseMarks,
   tokenMarks,
   withPhraseMark,
 } from "./marks.ts";
 import { pitchDots } from "./pitch.ts";
-import { sentenceSegments } from "./sentences.ts";
+import { phraseRuns, sentenceSegments } from "./sentences.ts";
 import { countGlosses, firstGlosses } from "./glosses.ts";
 
 function token(overrides: Partial<StoryToken> = {}): StoryToken {
@@ -138,6 +139,38 @@ describe("phrase mark (issue #97)", () => {
     expect(withPhraseMark(known, { underline: false, first: false, last: false })).toEqual(known);
     const grammar = { grammar: "grammar", underline: "none" } as const;
     expect(withPhraseMark(grammar, { underline: true, first: true, last: true }).grammar).toBe("grammar");
+  });
+
+  it("withPhraseMark keeps a Focus underline inside a phrase run (issue #97)", () => {
+    const focus = { grammar: "none", underline: "focus" } as const;
+    expect(withPhraseMark(focus, { underline: true, first: false, last: true }).underline).toBe("focus");
+  });
+
+  it("sentencePhraseMarks gives every token its phrase mark, in token order, from one pass over the sentence", () => {
+    const s = sentenceOf([kono, goro, wa]);
+    expect(sentencePhraseMarks(s)).toEqual([
+      { underline: true, first: true, last: false },
+      { underline: true, first: false, last: true },
+      { underline: false, first: false, last: false },
+    ]);
+  });
+
+  it("phraseRuns joins a phrase's consecutive tokens into one run, and a Grammar Span breaks it into two", () => {
+    const a = token({ start: 0, end: 1, surface: "一", reading: "いち", entSeq: 990201, tag: "unknown" });
+    const b = token({ start: 1, end: 2, surface: "二", reading: "に", entSeq: 990202, tag: "unknown" });
+    const c = token({ start: 2, end: 3, surface: "三", reading: "さん", entSeq: 990203, tag: "unknown" });
+    const d = token({ start: 3, end: 4, surface: "は", reading: "は", entSeq: undefined, tag: undefined });
+    const phrase: StoryPhrase = { start: 0, end: 3, entSeq: 1000002, ja: "一二三", en: "one two three" };
+    const whole = { ja: "一二三は", en: "", tokens: [a, b, c, d], grammarSpans: [], phrases: [phrase] } as StorySentence;
+    const shape = (s: StorySentence) =>
+      phraseRuns(sentenceSegments(s), sentencePhraseMarks(s)).map((seg) =>
+        seg.kind === "run" ? ["run", seg.members.map((m) => m.index)] : seg.kind === "token" ? ["token", seg.index] : ["gap"],
+      );
+    expect(shape(whole)).toEqual([["run", [0, 1, 2]], ["token", 3]]);
+
+    // The Grammar Span over 二 leaves 一 and 三 in the phrase, but not joined.
+    const broken = { ...whole, grammarSpans: [span({ start: 1, end: 2 })] } as StorySentence;
+    expect(shape(broken)).toEqual([["run", [0]], ["token", 1], ["run", [2]], ["token", 3]]);
   });
 });
 

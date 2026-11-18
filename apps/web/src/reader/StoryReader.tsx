@@ -6,6 +6,7 @@ import {
   holdSignal,
   lookupKey,
   menuOptions,
+  opensPhraseEntry,
   saveableItem,
   storyCardMetaRuby,
   storyMetaEn,
@@ -49,8 +50,7 @@ import { StoryText, type StoryTextHandlers } from "./StoryText.tsx";
  * Everything the Story sends is rendered as React text, never as HTML.
  */
 
-// "phrase": the Dictionary Entry opened from a phrase Lookup (issue #97).
-type DialogKind = "dictionary" | "phrase" | "grammar" | "save";
+type DialogKind = "dictionary" | "grammar" | "save";
 type Box = { left: number; top: number; width: number; height: number };
 
 function sameRef(a: TokenRef | null, b: TokenRef): boolean {
@@ -132,6 +132,13 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
     const sen = story.sentences[ref.sentence];
     const tok = sen?.tokens[ref.index];
     return sen && tok ? lookupKey(sen, tok, spanAt(ref)) : null;
+  };
+
+  // Whether the word's Dictionary action opens its Phrase's entry (issue #97).
+  const phraseLinkedAt = (ref: TokenRef) => {
+    const sen = story.sentences[ref.sentence];
+    const tok = sen?.tokens[ref.index];
+    return sen && tok ? opensPhraseEntry(sen, tok, spanAt(ref)) : false;
   };
 
   const prime = (ref: TokenRef) => {
@@ -221,7 +228,7 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
     const tok = tokenAt(ref);
     if (!tok) return;
     const span = spanAt(ref);
-    if (tok.entSeq === undefined && span === null) return; // nothing behind this word
+    if (keyAt(ref) === null && span === null) return; // nothing behind this word
     // A drag that selects text is a copying gesture, not a click: copying must
     // not open a menu. Enter on a word is never a selection gesture, so it is
     // not blocked (issue #77 review).
@@ -282,22 +289,21 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
       listsState.status === "ready"
         ? listsState.lists.find((l) => l.id === listsState.defaultListId)?.name
         : undefined;
-    const failed = tok.entSeq !== undefined && lookup.failed(tok.entSeq, tok.surface, tok.reading);
-    return menuOptions(tok, spanAt(menu.ref), listsState.status === "ready", defaultName, failed, language);
+    // The Dictionary action's Lookup: the Phrase's entry, or the word's own (issue #97).
+    const key = keyAt(menu.ref);
+    const failed = key !== null && lookup.failed(key.entSeq, key.surface, key.reading);
+    return menuOptions(
+      tok,
+      spanAt(menu.ref),
+      listsState.status === "ready",
+      defaultName,
+      failed,
+      language,
+      phraseLinkedAt(menu.ref),
+    );
   })();
 
   const closeMenu = () => setMenu(null);
-
-  // The phrase Lookup's Dictionary action (issue #97): the Dictionary Entry window
-  // for the Phrase the panel is showing, from the word the panel follows.
-  const openPhraseDictionary = () => {
-    const ref = panelRef;
-    if (!ref) return;
-    if (menu) keepFocusOnMenuClose.current = true; // the dialog takes focus, not the word
-    lastWord.current = ref;
-    closeMenu();
-    setDialog({ kind: "phrase", ref });
-  };
 
   // Presses dismiss the menu on the reader's own rules, before any click runs
   // (issue #77 review, measured in Chromium — the browser counts presses on a
@@ -314,9 +320,6 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
     const onMouseDown = (event: MouseEvent) => {
       const target = event.target as Element | null;
       if (target?.closest?.('[data-slot="popover-content"]')) return;
-      // The phrase Lookup's Dictionary action sits in the panel, not the menu:
-      // its press keeps the menu up so the action's click still lands (issue #97).
-      if (target?.closest?.("[data-phrase-action]")) return;
       const ref = tokenRefOf(target?.closest?.("[data-token]"));
       if (ref !== null && sameRef(menuRef, ref)) {
         if (event.detail > 1) return;
@@ -482,15 +485,8 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
 
   const dialogTok = dialog ? tokenAt(dialog.ref) : undefined;
   const dialogSpan = dialog ? spanAt(dialog.ref) : null;
-  const dialogSen = dialog ? story.sentences[dialog.ref.sentence] : undefined;
-  // The Dictionary Entry window's key: the word's own entry, or the phrase the
-  // window was opened on from a phrase Lookup (issue #97).
-  const dialogKey =
-    dialogSen && dialogTok && dialog?.kind === "phrase"
-      ? lookupKey(dialogSen, dialogTok, null)
-      : dialogTok && dialogTok.entSeq !== undefined
-        ? { entSeq: dialogTok.entSeq, surface: dialogTok.surface, reading: dialogTok.reading }
-        : null;
+  // The Dictionary Entry window's key: the word's own entry, or its Phrase's (issue #97).
+  const dialogKey = dialog ? keyAt(dialog.ref) : null;
   const dialogEntry = dialogKey ? lookup.peek(dialogKey.entSeq, dialogKey.surface, dialogKey.reading) : undefined;
   const dialogFailed = dialogKey ? lookup.failed(dialogKey.entSeq, dialogKey.surface, dialogKey.reading) : false;
   const returnFocus = () => focusWord(lastWord.current);
@@ -549,7 +545,6 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
         blurError={blurError}
         onToggleBlur={() => void toggleBlur()}
         onRetryBlur={() => void toggleBlur()}
-        onOpenPhraseDictionary={openPhraseDictionary}
       />
 
       <Popover open={menu !== null} onOpenChange={(open) => !open && closeMenu()}>
@@ -617,7 +612,7 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
       </Popover>
 
       <ReaderDialog
-        open={dialog?.kind === "dictionary" || dialog?.kind === "phrase"}
+        open={dialog?.kind === "dictionary"}
         onOpenChange={(open) => !open && closeDialog()}
         title={dialogEntry?.headword ?? dialogKey?.surface ?? dialogTok?.surface ?? tp("reader.dictionaryEntry")}
         description={tp("reader.dictionaryEntry")}

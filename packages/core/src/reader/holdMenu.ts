@@ -133,9 +133,16 @@ export function menuOptions(
   /** The last lookup for this word failed (issue #14 review): Dictionary dims. */
   dictionaryFailed = false,
   lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
+  /**
+   * A Phrase covers the token and no Grammar Span does, so Dictionary opens the
+   * Phrase's entry (issue #97) even when the token has no entry of its own.
+   */
+  phraseLinked = false,
 ): MenuOption[] {
-  const linked = token.entSeq !== undefined;
-  const saveable = linked || span !== null;
+  // Dictionary has something to open: the word's entry, or the Phrase's.
+  const linked = token.entSeq !== undefined || phraseLinked;
+  // Save still files the word's own entry, or the Span's Grammar Point.
+  const saveable = token.entSeq !== undefined || span !== null;
   const unlinked = translatePlain(lang, "reader.menu.unlinked");
   const failed = translatePlain(lang, "reader.menu.lookupFailed");
   const loading = translatePlain(lang, "reader.menu.listsLoading");
