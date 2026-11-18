@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 import { showsFurigana, furiganaPxFor } from "./furigana.ts";
 import {
   coveringPhrase,
+  dictionaryKey,
+  dictionaryKeys,
   isLookupMarked,
   lookupKey,
   phraseMarkFor,
@@ -80,6 +82,38 @@ describe("phrases", () => {
     expect(lookupKey(sentence, goro, span({ start: 2, end: 3 }))).toEqual({ entSeq: 990102, surface: "頃", reading: "ころ" });
     // A word with no entry and no phrase has no Lookup key.
     expect(lookupKey(sentence, token({ start: 3, end: 4, surface: "は", entSeq: undefined }), null)).toBeNull();
+  });
+
+  it("each Dictionary row opens its own key: the word's entry, or the Phrase's (issue #97)", () => {
+    const sentence = { ja: "この頃は", en: "", tokens: [], grammarSpans: [], phrases: [konogoro] } as StorySentence;
+    const goro = token({ start: 2, end: 3, surface: "頃", reading: "ころ", entSeq: 990106 });
+    expect(dictionaryKey(sentence, goro, null, "dictionary")).toEqual({ entSeq: 990106, surface: "頃", reading: "ころ" });
+    expect(dictionaryKey(sentence, goro, null, "phraseDictionary")).toEqual({
+      entSeq: 1000001,
+      surface: "この頃",
+      reading: "",
+    });
+    expect(dictionaryKeys(sentence, goro, null)).toEqual([
+      { entSeq: 990106, surface: "頃", reading: "ころ" },
+      { entSeq: 1000001, surface: "この頃", reading: "" },
+    ]);
+  });
+
+  it("a phrase word with no entry of its own has only the Phrase's key, and a Grammar Span takes the Phrase row away (issue #97)", () => {
+    const sentence = { ja: "この頃は", en: "", tokens: [], grammarSpans: [], phrases: [konogoro] } as StorySentence;
+    const goro = token({ start: 2, end: 3, surface: "頃", reading: "ころ", entSeq: undefined });
+    expect(dictionaryKeys(sentence, goro, null)).toEqual([{ entSeq: 1000001, surface: "この頃", reading: "" }]);
+    const own = token({ start: 2, end: 3, surface: "頃", reading: "ころ", entSeq: 990106 });
+    const grammar = span({ start: 2, end: 3 });
+    expect(dictionaryKey(sentence, own, grammar, "phraseDictionary")).toBeNull();
+    expect(dictionaryKeys(sentence, own, grammar)).toEqual([{ entSeq: 990106, surface: "頃", reading: "ころ" }]);
+  });
+
+  it("a word outside any phrase has just its own key", () => {
+    const sentence = { ja: "この頃は", en: "", tokens: [], grammarSpans: [], phrases: [konogoro] } as StorySentence;
+    const wa = token({ start: 3, end: 4, surface: "は", reading: "は", entSeq: 990107 });
+    expect(dictionaryKeys(sentence, wa, null)).toEqual([{ entSeq: 990107, surface: "は", reading: "は" }]);
+    expect(dictionaryKey(sentence, wa, null, "phraseDictionary")).toBeNull();
   });
 });
 

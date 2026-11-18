@@ -81,6 +81,51 @@ export function lookupKey(
   return null;
 }
 
+/** The two Dictionary rows a Lookup Menu can carry: the word's own, and its Phrase's (issue #97). */
+export type DictionaryRow = "dictionary" | "phraseDictionary";
+
+/**
+ * The Dictionary Entry one Dictionary row opens (issue #97). The Phrase row opens
+ * the Phrase's entry, when a Phrase covers the word and no Grammar Span does. The
+ * word's own row opens the word's own entry whenever it has one, even inside a
+ * Phrase, so the word stays reachable from the menu; a word with no entry of its
+ * own falls back to the Phrase, as lookupKey does.
+ */
+export function dictionaryKey(
+  sentence: StorySentence,
+  token: StoryToken,
+  span: StoryGrammarSpan | null,
+  row: DictionaryRow,
+): LookupKey | null {
+  if (row === "phraseDictionary") {
+    if (span !== null) return null;
+    const phrase = coveringPhrase(sentence, token);
+    return phrase ? { entSeq: phrase.entSeq, surface: phraseText(sentence, phrase), reading: "" } : null;
+  }
+  if (token.entSeq !== undefined) return { entSeq: token.entSeq, surface: token.surface, reading: token.reading };
+  return lookupKey(sentence, token, span);
+}
+
+/**
+ * Every Dictionary Entry a word's menu can open, the word's own first, so a press
+ * primes both rows (issue #97). A word with no entry of its own in a Phrase has
+ * just the Phrase's.
+ */
+export function dictionaryKeys(
+  sentence: StorySentence,
+  token: StoryToken,
+  span: StoryGrammarSpan | null,
+): LookupKey[] {
+  const keys: LookupKey[] = [];
+  for (const row of ["dictionary", "phraseDictionary"] as const) {
+    const key = dictionaryKey(sentence, token, span, row);
+    if (key && !keys.some((k) => k.entSeq === key.entSeq && k.surface === key.surface && (k.reading ?? "") === (key.reading ?? ""))) {
+      keys.push(key);
+    }
+  }
+  return keys;
+}
+
 /**
  * The phrase-wide underline one token carries (issue #97). `first` and `last`
  * mark the ends of the run of tokens the underline spans, so a renderer can

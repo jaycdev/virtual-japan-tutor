@@ -4,7 +4,8 @@ import {
   coveringSpan,
   grammarCue,
   holdSignal,
-  lookupKey,
+  dictionaryKey,
+  dictionaryKeys,
   menuOptions,
   opensPhraseEntry,
   saveableItem,
@@ -14,6 +15,7 @@ import {
   useItemLists,
   useReadingSettings,
   useT,
+  type DictionaryRow,
   type MenuOptionId,
   type StoryView,
   type TokenRef,
@@ -81,7 +83,8 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
   const [hovered, setHovered] = useState<TokenRef | null>(null);
   const [focused, setFocused] = useState<TokenRef | null>(null);
   const [menu, setMenu] = useState<{ ref: TokenRef; box: Box } | null>(null);
-  const [dialog, setDialog] = useState<{ kind: DialogKind; ref: TokenRef } | null>(null);
+  // A Dictionary dialog remembers which Dictionary row opened it (issue #97).
+  const [dialog, setDialog] = useState<{ kind: DialogKind; ref: TokenRef; row?: DictionaryRow } | null>(null);
   const [titleEnRevealed, setTitleEnRevealed] = useState(false);
   // The save notes are <T> elements, not resolved strings: they stay in the
   // Learner's language if it changes while on screen, and their furigana
@@ -126,12 +129,24 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
     return sen && tok ? coveringSpan(sen, tok) : null;
   };
 
-  // The Lookup a word loads (issue #97): its Phrase's entry when a Phrase covers
-  // it and no Grammar Span does, else its own Dictionary Entry.
-  const keyAt = (ref: TokenRef) => {
+  // The Dictionary Entries a word's rows open (issue #97): its own, then its Phrase's.
+  const keysAt = (ref: TokenRef) => {
     const sen = story.sentences[ref.sentence];
     const tok = sen?.tokens[ref.index];
-    return sen && tok ? lookupKey(sen, tok, spanAt(ref)) : null;
+    return sen && tok ? dictionaryKeys(sen, tok, spanAt(ref)) : [];
+  };
+
+  // The Dictionary Entry one Dictionary row opens (issue #97), or null.
+  const keyFor = (ref: TokenRef, row: DictionaryRow) => {
+    const sen = story.sentences[ref.sentence];
+    const tok = sen?.tokens[ref.index];
+    return sen && tok ? dictionaryKey(sen, tok, spanAt(ref), row) : null;
+  };
+
+  // A failed lookup (null cached) dims that row until its retry.
+  const rowFailed = (ref: TokenRef, row: DictionaryRow) => {
+    const key = keyFor(ref, row);
+    return key !== null && lookup.failed(key.entSeq, key.surface, key.reading);
   };
 
   // Whether the word's Dictionary action opens its Phrase's entry (issue #97).
@@ -142,8 +157,7 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
   };
 
   const prime = (ref: TokenRef) => {
-    const key = keyAt(ref);
-    if (key) lookup.load(key.entSeq, key.surface, key.reading);
+    for (const key of keysAt(ref)) lookup.load(key.entSeq, key.surface, key.reading);
   };
 
   // Hover and focus show a Lookup but never spend a request on a word whose last
@@ -152,9 +166,9 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
   // over (issue #77 review). A press — click, Enter, or the dialog's Retry —
   // still goes through and makes one fresh attempt.
   const primeUnlessFailed = (ref: TokenRef) => {
-    const key = keyAt(ref);
-    if (key && lookup.failed(key.entSeq, key.surface, key.reading)) return;
-    prime(ref);
+    for (const key of keysAt(ref)) {
+      if (!lookup.failed(key.entSeq, key.surface, key.reading)) lookup.load(key.entSeq, key.surface, key.reading);
+    }
   };
 
   const reportSignals = (signals: WeakSignalRequest[]) => {
@@ -228,7 +242,7 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
     const tok = tokenAt(ref);
     if (!tok) return;
     const span = spanAt(ref);
-    if (keyAt(ref) === null && span === null) return; // nothing behind this word
+    if (keysAt(ref).length === 0 && span === null) return; // nothing behind this word
     // A drag that selects text is a copying gesture, not a click: copying must
     // not open a menu. Enter on a word is never a selection gesture, so it is
     // not blocked (issue #77 review).
@@ -289,17 +303,15 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
       listsState.status === "ready"
         ? listsState.lists.find((l) => l.id === listsState.defaultListId)?.name
         : undefined;
-    // The Dictionary action's Lookup: the Phrase's entry, or the word's own (issue #97).
-    const key = keyAt(menu.ref);
-    const failed = key !== null && lookup.failed(key.entSeq, key.surface, key.reading);
     return menuOptions(
       tok,
       spanAt(menu.ref),
       listsState.status === "ready",
       defaultName,
-      failed,
+      rowFailed(menu.ref, "dictionary"),
       language,
       phraseLinkedAt(menu.ref),
+      rowFailed(menu.ref, "phraseDictionary"),
     );
   })();
 
@@ -381,9 +393,9 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
     const span = spanAt(ref);
     closeMenu();
     if (!tok) return;
-    if (option === "dictionary") {
+    if (option === "dictionary" || option === "phraseDictionary") {
       keepFocusOnMenuClose.current = true;
-      setDialog({ kind: "dictionary", ref });
+      setDialog({ kind: "dictionary", ref, row: option });
       return;
     }
     if (option === "grammar") {
@@ -485,8 +497,8 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
 
   const dialogTok = dialog ? tokenAt(dialog.ref) : undefined;
   const dialogSpan = dialog ? spanAt(dialog.ref) : null;
-  // The Dictionary Entry window's key: the word's own entry, or its Phrase's (issue #97).
-  const dialogKey = dialog ? keyAt(dialog.ref) : null;
+  // The Dictionary Entry window's key: the entry the row that opened it names (issue #97).
+  const dialogKey = dialog ? keyFor(dialog.ref, dialog.row ?? "dictionary") : null;
   const dialogEntry = dialogKey ? lookup.peek(dialogKey.entSeq, dialogKey.surface, dialogKey.reading) : undefined;
   const dialogFailed = dialogKey ? lookup.failed(dialogKey.entSeq, dialogKey.surface, dialogKey.reading) : false;
   const returnFocus = () => focusWord(lastWord.current);

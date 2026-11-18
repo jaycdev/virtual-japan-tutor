@@ -212,6 +212,7 @@ export const strings = {
 
   // — The Lookup Menu (issue #14) —
   "reader.menu.dictionary": { en: "Dictionary", ja: "辞書《じしょ》" },
+  "reader.menu.phraseDictionary": { en: "Phrase Dictionary", ja: "フレーズの辞書《じしょ》" },
   "reader.menu.grammar": { en: "Grammar", ja: "文法《ぶんぽう》" },
   "reader.menu.save": { en: "Save", ja: "保存《ほぞん》" },
   "reader.menu.saveTo": { en: "Save to…", ja: "保存《ほぞん》…" },

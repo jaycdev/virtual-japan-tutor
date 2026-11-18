@@ -4,7 +4,8 @@ import {
   coveringSpan,
   holdSignal,
   IDLE,
-  lookupKey,
+  dictionaryKey,
+  dictionaryKeys,
   menuOptions,
   hintOnly,
   opensPhraseEntry,
@@ -17,6 +18,7 @@ import {
   useItemLists,
   useReadingSettings,
   useT,
+  type DictionaryRow,
   type EntryRef,
   type MeasurableNode,
   type MenuOptionId,
@@ -190,15 +192,17 @@ export function StoryReader({
   const pressedToken =
     gesture.token !== null ? story.sentences[gesture.token.sentence]?.tokens[gesture.token.index] : undefined;
 
-  // The Lookup the pressed word loads: its Phrase's entry, or its own (issue #97).
+  // The Dictionary rows of the pressed word (issue #97): each row's entry can fail on its own.
   const pressedSentence = gesture.token ? story.sentences[gesture.token.sentence] : undefined;
-  const pressedKey =
-    pressedSentence && pressedToken
-      ? lookupKey(pressedSentence, pressedToken, coveringSpan(pressedSentence, pressedToken))
-      : null;
-  // A failed lookup (null cached) dims the Dictionary row until the retry (nit 2/3).
-  const dictionaryFailed =
-    pressedKey !== null && lookup.failed(pressedKey.entSeq, pressedKey.surface, pressedKey.reading);
+  const pressedSpan = pressedSentence && pressedToken ? coveringSpan(pressedSentence, pressedToken) : null;
+  // A failed lookup (null cached) dims that row until the retry (nit 2/3).
+  const rowFailed = (row: DictionaryRow) => {
+    const key =
+      pressedSentence && pressedToken ? dictionaryKey(pressedSentence, pressedToken, pressedSpan, row) : null;
+    return key !== null && lookup.failed(key.entSeq, key.surface, key.reading);
+  };
+  const dictionaryFailed = rowFailed("dictionary");
+  const phraseDictionaryFailed = rowFailed("phraseDictionary");
 
   // The Reading Panel's word-mode follows the machine: the pressed token is
   // "looked at" from press until cancel (release, terminate, or Back).
@@ -242,8 +246,9 @@ export function StoryReader({
       dictionaryFailed,
       language,
       opensPhraseEntry(sen, tok, span),
+      phraseDictionaryFailed,
     );
-  }, [gesture.phase, gesture.token, story, lists.state, dictionaryFailed, language]);
+  }, [gesture.phase, gesture.token, story, lists.state, dictionaryFailed, phraseDictionaryFailed, language]);
 
   // --- gesture handlers ------------------------------------------------------
 
@@ -263,9 +268,10 @@ export function StoryReader({
     setSelected(ref.sentence);
     setSelectedToken(ref);
     dispatch({ type: "press", token: ref, x: e.nativeEvent.pageX, y: e.nativeEvent.pageY });
-    // The Lookup a word loads: its Phrase's entry when one covers it and no Grammar Span does (issue #97).
-    const key = lookupKey(sen, token, coveringSpan(sen, token));
-    if (key) lookup.load(key.entSeq, key.surface, key.reading);
+    // The entries the word's Dictionary rows open: its own, and its Phrase's (issue #97).
+    for (const key of dictionaryKeys(sen, token, coveringSpan(sen, token))) {
+      lookup.load(key.entSeq, key.surface, key.reading);
+    }
 
     // The timer only reads the reducer (through gestureRef) and the immutable
     // press data (the Story never changes while it is open) — never captured
@@ -320,17 +326,17 @@ export function StoryReader({
     const token = sen?.tokens[ref.index];
     if (!sen || !token) return;
     const span = coveringSpan(sen, token);
-    if (option === "dictionary") {
-      // The Lookup the word loads: its Phrase's entry when a Phrase covers it
-      // and no Grammar Span does (issue #97), else its own entry.
+    if (option === "dictionary" || option === "phraseDictionary") {
+      // The entry this row opens (issue #97): the Phrase's for the Phrase row,
+      // else the word's own (the Phrase's when the word has no entry of its own).
       // Only push the window when the entry is actually there: a window
       // pushed over an empty lookup would render nothing and make the first
       // Back pop an invisible layer (issue #14 review, major 3). Failure is
       // not reachable here — a failed lookup dims the row, so optionAt never
       // picks it — this guard only covers a lookup still in flight.
-      const key = lookupKey(sen, token, span);
+      const key = dictionaryKey(sen, token, span, option);
       if (!key || lookup.peek(key.entSeq, key.surface, key.reading) === undefined) return;
-      const phrased = opensPhraseEntry(sen, token, span);
+      const phrased = option === "phraseDictionary" || token.entSeq === undefined;
       setWindows((w) => [...w, { ...ref, kind: phrased ? "phrase" : "token" }]);
       return;
     }
@@ -450,7 +456,7 @@ export function StoryReader({
     top && topSentence && topToken && top.kind === "token" && topToken.entSeq !== undefined
       ? { entSeq: topToken.entSeq, surface: topToken.surface, reading: topToken.reading }
       : top && topSentence && topToken && top.kind === "phrase"
-        ? lookupKey(topSentence, topToken, null)
+        ? dictionaryKey(topSentence, topToken, null, "phraseDictionary")
         : null;
   const topEntry = topKey ? lookup.peek(topKey.entSeq, topKey.surface, topKey.reading) : undefined;
   const topDictionary = topKey !== null;
@@ -461,13 +467,10 @@ export function StoryReader({
     // ever pushed over a cached entry (see runMenuOption), so a successful
     // lookup stays cached across closes — no refetch flicker on the next
     // press. Only a key that is FAILED at close time is forgotten, so a
-    // later hold retries it.
-    if (
-      top?.kind === "token" &&
-      topToken?.entSeq !== undefined &&
-      lookup.failed(topToken.entSeq, topToken.surface, topToken.reading)
-    )
-      lookup.invalidate(topToken.entSeq, topToken.surface, topToken.reading);
+    // later hold retries it. That holds for a token window and a phrase
+    // window alike (topKey names the entry either one shows).
+    if (topKey && lookup.failed(topKey.entSeq, topKey.surface, topKey.reading))
+      lookup.invalidate(topKey.entSeq, topKey.surface, topKey.reading);
     setWindows((w) => w.slice(0, -1));
   };
 

@@ -152,6 +152,38 @@ describe("menuOptions", () => {
     const opts = menuOptions(token({ entSeq: undefined }), null, true, "Saved", true, undefined, true);
     expect(opts.find((o) => o.id === "dictionary")?.enabled).toBe(false);
   });
+
+  it("a linked phrase word with its own entry gets its own Dictionary row, then the Phrase's (issue #97)", () => {
+    const opts = menuOptions(token({ entSeq: 990106, surface: "頃" }), null, true, "Saved", false, undefined, true, false);
+    expect(opts.map((o) => [o.id, o.label, o.enabled])).toEqual([
+      ["dictionary", "Dictionary", true],
+      ["phraseDictionary", "Phrase Dictionary", true],
+      ["save", "Save", true],
+      ["saveTo", "Save to…", true],
+    ]);
+  });
+
+  it("a failed own lookup dims only the own Dictionary row, and a failed phrase lookup only the Phrase row (issue #97)", () => {
+    const own = menuOptions(token({ entSeq: 990106 }), null, true, "Saved", true, undefined, true, false);
+    expect(own.map((o) => [o.id, o.enabled])).toEqual([
+      ["dictionary", false],
+      ["phraseDictionary", true],
+      ["save", true],
+      ["saveTo", true],
+    ]);
+    const phrase = menuOptions(token({ entSeq: 990106 }), null, true, "Saved", false, undefined, true, true);
+    expect(phrase.map((o) => [o.id, o.enabled])).toEqual([
+      ["dictionary", true],
+      ["phraseDictionary", false],
+      ["save", true],
+      ["saveTo", true],
+    ]);
+  });
+
+  it("a phrase word with no entry of its own keeps one Dictionary row, which opens the Phrase (issue #97)", () => {
+    const opts = menuOptions(token({ entSeq: undefined }), null, true, "Saved", false, undefined, true);
+    expect(opts.map((o) => o.id)).toEqual(["dictionary", "save", "saveTo"]);
+  });
 });
 
 describe("saveableItem", () => {

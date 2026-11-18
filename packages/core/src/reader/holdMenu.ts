@@ -23,10 +23,10 @@ export interface TokenRef {
   index: number;
 }
 
-export type MenuOptionId = "dictionary" | "grammar" | "save" | "saveTo";
+export type MenuOptionId = "dictionary" | "phraseDictionary" | "grammar" | "save" | "saveTo";
 
 /** Fixed option order — also the tie-break order for hit-testing. */
-export const MENU_OPTION_ORDER: MenuOptionId[] = ["dictionary", "grammar", "save", "saveTo"];
+export const MENU_OPTION_ORDER: MenuOptionId[] = ["dictionary", "phraseDictionary", "grammar", "save", "saveTo"];
 
 export interface HoldState {
   phase: "idle" | "press" | "menu";
@@ -130,17 +130,26 @@ export function menuOptions(
   span: StoryGrammarSpan | null,
   listsReady: boolean,
   defaultListName?: string,
-  /** The last lookup for this word failed (issue #14 review): Dictionary dims. */
+  /**
+   * The last lookup for the Dictionary row's entry failed (issue #14 review):
+   * that row dims. For a word with no entry of its own in a Phrase, that row
+   * opens the Phrase's entry.
+   */
   dictionaryFailed = false,
   lang: InterfaceLanguage = DEFAULT_INTERFACE_LANGUAGE,
   /**
    * A Phrase covers the token and no Grammar Span does, so Dictionary opens the
-   * Phrase's entry (issue #97) even when the token has no entry of its own.
+   * Phrase's entry (issue #97) even when the token has no entry of its own. A
+   * token with its own entry too gets a second, Phrase Dictionary row.
    */
   phraseLinked = false,
+  /** The last lookup for the Phrase's entry failed: the Phrase Dictionary row dims. */
+  phraseDictionaryFailed = false,
 ): MenuOption[] {
   // Dictionary has something to open: the word's entry, or the Phrase's.
   const linked = token.entSeq !== undefined || phraseLinked;
+  // A word with its own entry inside a Phrase: its own row, then the Phrase's (issue #97).
+  const bothRows = token.entSeq !== undefined && phraseLinked;
   // Save still files the word's own entry, or the Span's Grammar Point.
   const saveable = token.entSeq !== undefined || span !== null;
   const unlinked = translatePlain(lang, "reader.menu.unlinked");
@@ -157,6 +166,13 @@ export function menuOptions(
       hint: !linked ? unlinked : dictionaryFailed ? failed : undefined,
     },
   ];
+  if (bothRows)
+    options.push({
+      id: "phraseDictionary",
+      label: translatePlain(lang, "reader.menu.phraseDictionary"),
+      enabled: !phraseDictionaryFailed,
+      hint: phraseDictionaryFailed ? failed : undefined,
+    });
   if (span)
     options.push({
       id: "grammar",

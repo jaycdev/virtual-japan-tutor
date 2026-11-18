@@ -307,6 +307,8 @@ function fakeApi(
 const RECTS: Record<string, Rect> = {
   "token-menu": { x: 220, y: 312, width: 160, height: 200 },
   "menu-option-dictionary": { x: 220, y: 312, width: 160, height: 50 },
+  // The Phrase row takes the grammar row's place in a phrase word's menu (no Grammar row there).
+  "menu-option-phraseDictionary": { x: 220, y: 362, width: 160, height: 50 },
   "menu-option-grammar": { x: 220, y: 362, width: 160, height: 50 },
   "menu-option-save": { x: 220, y: 412, width: 160, height: 50 },
   "menu-option-saveTo": { x: 220, y: 462, width: 160, height: 50 },
@@ -628,7 +630,7 @@ describe("Story reader gestures (mobile)", () => {
     fireEvent.mouseUp(token(0, 0), { clientX: 300, clientY: 300 });
   });
 
-  it("holding a word inside a Phrase loads the phrase's entry, not the word's own (issue #97)", async () => {
+  it("holding a word inside a Phrase loads its own entry and the phrase's, each once (issue #97)", async () => {
     // がっこうで (runes 0-5) is a Phrase over the first two tokens, entry 1234567.
     const { client, requests } = fakeApi({
       phrases: [{ start: 0, end: 5, entSeq: 1234567, ja: "がっこうで", en: "at school" }],
@@ -637,26 +639,28 @@ describe("Story reader gestures (mobile)", () => {
 
     await pressAndHold(0, 0); // がっこう, whose own entry is 990101
     await waitFor(() => expect(requests.some((r) => r.path === "/dictionary/entries/1234567")).toBe(true));
-    expect(requests.some((r) => r.path === "/dictionary/entries/990101")).toBe(false);
+    await waitFor(() => expect(requests.some((r) => r.path === "/dictionary/entries/990101")).toBe(true));
+    expect(requests.filter((r) => r.path === "/dictionary/entries/1234567")).toHaveLength(1);
+    expect(requests.filter((r) => r.path === "/dictionary/entries/990101")).toHaveLength(1);
     releaseAt(0, 0, 5, 5);
   });
 
-  it("releasing on the menu's Dictionary row opens the Phrase's entry, not the word's own (issue #97)", async () => {
+  it("releasing on the menu's Phrase Dictionary row opens the Phrase's entry, not the word's own (issue #97)", async () => {
     const { client, requests } = fakeApi({
       phrases: [{ start: 0, end: 5, entSeq: 1234567, ja: "がっこうで", en: "at school" }],
     });
     await openStory(client);
 
     await pressAndHold(0, 0); // がっこう inside がっこうで, whose own entry is 990101
-    // The Lookup row shows the Phrase, and its entry is cached, so the menu's Dictionary row is live.
+    // The Lookup row shows the Phrase, and its entry is cached, so the menu's Phrase row is live.
     await waitFor(() => expect(within(screen.getByTestId("panel-lookup")).getByText("がっこうで")).toBeTruthy());
     expect(requests.some((r) => r.path === "/dictionary/entries/1234567")).toBe(true);
-    expect(screen.queryByTestId("phrase-dictionary")).toBeNull();
 
-    releaseAt(0, 0, 300, 337); // over the menu's Dictionary row
+    releaseAt(0, 0, 300, 387); // over the menu's Phrase Dictionary row
     const win = await screen.findByTestId("dictionary-window");
     expect(win.textContent).toContain("がっこうで");
-    expect(requests.some((r) => r.path === "/dictionary/entries/990101")).toBe(false);
+    expect(requests.filter((r) => r.path === "/dictionary/entries/1234567")).toHaveLength(1);
+    expect(requests.filter((r) => r.path === "/dictionary/entries/990101")).toHaveLength(1);
   });
 
   it("hold on a Phrase whose tokens are all Known still shows the phrase's Lookup (issue #97)", async () => {
@@ -672,6 +676,40 @@ describe("Story reader gestures (mobile)", () => {
     releaseAt(0, 1, 5, 5);
   });
 
+  it("a linked phrase word offers its own Dictionary row and a Phrase Dictionary row (issue #97)", async () => {
+    // がっこう has its own entry (990101) and sits inside the Phrase がっこうで (1234567).
+    const { client, requests } = fakeApi({
+      phrases: [{ start: 0, end: 5, entSeq: 1234567, ja: "がっこうで", en: "at school" }],
+    });
+    await openStory(client);
+
+    await pressAndHold(0, 0);
+    const menu = screen.getByLabelText("Lookup menu");
+    expect(within(menu).getByTestId("menu-option-dictionary").textContent).toContain("Dictionary");
+    expect(within(menu).getByTestId("menu-option-phraseDictionary").textContent).toContain("Phrase Dictionary");
+    await waitFor(() => expect(requests.some((r) => r.path === "/dictionary/entries/990101")).toBe(true));
+    await waitFor(() => expect(requests.some((r) => r.path === "/dictionary/entries/1234567")).toBe(true));
+    releaseAt(0, 0, 5, 5);
+  });
+
+  it("the Dictionary row opens the word's own entry, each request once, not the Phrase's (issue #97)", async () => {
+    const { client, requests } = fakeApi({
+      phrases: [{ start: 0, end: 5, entSeq: 1234567, ja: "がっこうで", en: "at school" }],
+    });
+    await openStory(client);
+
+    await pressAndHold(0, 0);
+    await waitFor(() => expect(requests.some((r) => r.path === "/dictionary/entries/990101")).toBe(true));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20)); // let the own entry land in the cache
+    });
+    releaseAt(0, 0, 300, 337); // over the menu's Dictionary row
+    const win = await screen.findByTestId("dictionary-window");
+    expect(win.textContent).toContain("学校");
+    expect(win.textContent).not.toContain("がっこうで");
+    expect(requests.filter((r) => r.path === "/dictionary/entries/990101")).toHaveLength(1);
+    expect(requests.filter((r) => r.path === "/dictionary/entries/1234567")).toHaveLength(1);
+  });
 
   it("a hold opens the Lookup menu at the finger and reports one Weak Signal per word", async () => {
     const { client, requests } = fakeApi();
