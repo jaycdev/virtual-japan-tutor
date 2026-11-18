@@ -1,10 +1,13 @@
 import type { StorySentence, StoryToken } from "@vjt/api-client";
 import {
   furiganaPxFor,
+  phraseMarkFor,
   sentenceSegments,
   showsFurigana,
+  spansCovering,
   tokenMarks,
   useT,
+  withPhraseMark,
   type MeasurableNode,
   type TokenMarks,
   type TokenRef,
@@ -221,7 +224,10 @@ export const StoryParagraph = memo(function StoryParagraph({
             token={segment.token}
             sentenceIndex={sentenceIndex}
             index={segment.index}
-            marks={tokenMarks(segment.token, sentence.grammarSpans)}
+            marks={withPhraseMark(
+              tokenMarks(segment.token, sentence.grammarSpans),
+              phraseMarkFor(sentence, segment.token, spansCovering(segment.token, sentence.grammarSpans)[0] ?? null),
+            )}
             selected={selectedToken !== null && selectedToken.sentence === sentenceIndex && selectedToken.index === segment.index}
             handlers={handlers(sentenceIndex, segment.index)}
             fontSizePx={fontSizePx}

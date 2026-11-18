@@ -335,6 +335,16 @@ export function StoryReader({
     setSheetToken(ref);
   };
 
+  /**
+   * The phrase Lookup's Dictionary action (issue #97): pushes the Dictionary
+   * Entry window for the Phrase the pressed word sits in. The action only renders
+   * once the phrase's entry is cached, so the window never opens empty.
+   */
+  const openPhraseDictionary = () => {
+    if (!looked || looked.kind !== "phrase") return;
+    setWindows((w) => [...w, { sentence: looked.sentence, index: looked.index, kind: "phrase" }]);
+  };
+
   /** A tap on a menu row: close the menu, then run the option. */
   const onMenuSelect = (option: MenuOptionId) => {
     const g = gestureRef.current;
@@ -432,11 +442,16 @@ export function StoryReader({
   const topSentence = top ? story.sentences[top.sentence] : undefined;
   const topToken = topSentence?.tokens[top?.index ?? -1];
   const topSpan = top && top.kind === "grammar" && topSentence && topToken ? coveringSpan(topSentence, topToken) : null;
-  const topEntry =
-    top && top.kind === "token" && topToken?.entSeq !== undefined
-      ? lookup.peek(topToken.entSeq, topToken.surface, topToken.reading)
-      : undefined;
-  const topVocabLinked = top?.kind === "token" && topToken?.entSeq !== undefined;
+  // The Dictionary Entry window's key: the word's own entry, or the phrase's when
+  // the window was opened from a phrase Lookup (issue #97).
+  const topKey =
+    top && topSentence && topToken && top.kind === "token" && topToken.entSeq !== undefined
+      ? { entSeq: topToken.entSeq, surface: topToken.surface, reading: topToken.reading }
+      : top && topSentence && topToken && top.kind === "phrase"
+        ? lookupKey(topSentence, topToken, null)
+        : null;
+  const topEntry = topKey ? lookup.peek(topKey.entSeq, topKey.surface, topKey.reading) : undefined;
+  const topDictionary = topKey !== null;
 
   const closeTopWindow = () => {
     // Both close paths — the card's × and hardware Back — come through here,
@@ -593,6 +608,7 @@ export function StoryReader({
         reading={reading}
         lookup={lookup}
         onUnblur={onUnblur}
+        onOpenPhraseDictionary={openPhraseDictionary}
       />
 
       <ScrollView
@@ -729,7 +745,7 @@ export function StoryReader({
       {top ? (
         top.kind === "grammar" && topSpan ? (
           <GrammarWindow span={topSpan} onClose={closeTopWindow} />
-        ) : topVocabLinked && topEntry ? (
+        ) : topDictionary && topEntry ? (
           // The window is only pushed when the entry is already cached (see
           // runMenuOption), so this renders with real content, never a stub.
           <DictionaryWindow entry={topEntry} onClose={closeTopWindow} />

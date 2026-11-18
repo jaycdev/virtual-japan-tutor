@@ -1,5 +1,13 @@
 import type { Story, StorySentence, StoryToken } from "@vjt/api-client";
-import { sentenceSegments, showsFurigana, spansCovering, tokenMarks, type TokenRef } from "@vjt/core";
+import {
+  phraseMarkFor,
+  sentenceSegments,
+  showsFurigana,
+  spansCovering,
+  tokenMarks,
+  withPhraseMark,
+  type TokenRef,
+} from "@vjt/core";
 import {
   Fragment,
   useEffect,
@@ -132,13 +140,18 @@ function Word({
   handlers: StoryTextHandlers;
 }) {
   const ref: TokenRef = { sentence: sentenceIndex, index };
-  const inGrammarSpan = spansCovering(token, sentence.grammarSpans).length > 0;
+  const span = spansCovering(token, sentence.grammarSpans)[0] ?? null;
+  const inGrammarSpan = span !== null;
   // A word opens a Lookup only when there is something behind it: a Dictionary
   // Entry, the Grammar Span it sits in, or a particle's Grammar Catalogue hint
   // (issue #98).
   const interactive = token.entSeq !== undefined || inGrammarSpan || token.grammarHint !== undefined;
   const opensMenu = token.entSeq !== undefined || inGrammarSpan;
-  const marks = tokenMarks(token, sentence.grammarSpans, focusEntSeqs);
+  // The phrase underline (issue #97): one run across the Phrase's tokens. Its
+  // edge is a data attribute so the run can be joined across its ends.
+  const phrase = phraseMarkFor(sentence, token, span);
+  const marks = withPhraseMark(tokenMarks(token, sentence.grammarSpans, focusEntSeqs), phrase);
+  const phraseEdge = !phrase.underline ? undefined : phrase.first && phrase.last ? "only" : phrase.first ? "first" : phrase.last ? "last" : "middle";
   const ruby = showsFurigana(token);
 
   const onKeyDown = (e: KeyboardEvent<HTMLSpanElement>) => {
@@ -157,6 +170,7 @@ function Word({
   return (
     <span
       data-token={`${sentenceIndex}-${index}`}
+      data-phrase-edge={phraseEdge}
       // A hint-only particle opens no menu, so it is not a button: it stays
       // focusable so a keyboard user gets its Lookup on focus, but claims no
       // popup or expanded state that Enter would not deliver.

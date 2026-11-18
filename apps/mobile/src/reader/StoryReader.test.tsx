@@ -263,6 +263,7 @@ function fakeApi(
     const entry = pathname.match(/^\/dictionary\/entries\/(\d+)$/)?.[1];
     if (entry === "990101") return json(200, SCHOOL_ENTRY);
     if (entry === "990103") return json(200, MISE_ENTRY);
+    if (entry === "1234567") return json(200, { ...SCHOOL_ENTRY, entSeq: 1234567, headword: "がっこうで" });
 
     if (pathname === "/item-lists" && request.method === "GET") {
       return json(200, { items: itemLists, defaultListId: "l1" });
@@ -626,6 +627,28 @@ describe("Story reader gestures (mobile)", () => {
 
     await pressAndHold(0, 0); // がっこう, whose own entry is 990101
     await waitFor(() => expect(requests.some((r) => r.path === "/dictionary/entries/1234567")).toBe(true));
+    expect(requests.some((r) => r.path === "/dictionary/entries/990101")).toBe(false);
+    releaseAt(0, 0, 5, 5);
+  });
+
+  it("the phrase Lookup's Dictionary action opens the Dictionary Entry for the phrase's entSeq (issue #97)", async () => {
+    const { client, requests } = fakeApi({
+      phrases: [{ start: 0, end: 5, entSeq: 1234567, ja: "がっこうで", en: "at school" }],
+    });
+    await openStory(client);
+
+    await pressAndHold(0, 0); // the phrase's Lookup row is up while the finger is down
+    const row = await waitFor(() => {
+      const found = screen.getByTestId("panel-lookup");
+      expect(within(found).getByTestId("phrase-dictionary")).toBeTruthy();
+      return found;
+    });
+    // The action is labelled as the token menu's Dictionary row is.
+    expect(within(row).getByTestId("phrase-dictionary").textContent).toContain("Dictionary");
+    fireEvent.click(within(row).getByTestId("phrase-dictionary"));
+    const win = await screen.findByTestId("dictionary-window");
+    expect(win.textContent).toContain("がっこうで");
+    expect(requests.some((r) => r.path === "/dictionary/entries/1234567")).toBe(true);
     expect(requests.some((r) => r.path === "/dictionary/entries/990101")).toBe(false);
     releaseAt(0, 0, 5, 5);
   });

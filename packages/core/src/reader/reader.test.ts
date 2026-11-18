@@ -2,7 +2,15 @@ import type { PitchPattern, StoryGrammarSpan, StoryPhrase, StorySentence, StoryT
 import { describe, expect, it } from "vitest";
 
 import { showsFurigana, furiganaPxFor } from "./furigana.ts";
-import { coveringPhrase, isLookupMarked, lookupKey, phrasesCovering, tokenMarks } from "./marks.ts";
+import {
+  coveringPhrase,
+  isLookupMarked,
+  lookupKey,
+  phraseMarkFor,
+  phrasesCovering,
+  tokenMarks,
+  withPhraseMark,
+} from "./marks.ts";
 import { pitchDots } from "./pitch.ts";
 import { sentenceSegments } from "./sentences.ts";
 import { countGlosses, firstGlosses } from "./glosses.ts";
@@ -71,6 +79,65 @@ describe("phrases", () => {
     expect(lookupKey(sentence, goro, span({ start: 2, end: 3 }))).toEqual({ entSeq: 990102, surface: "頃", reading: "ころ" });
     // A word with no entry and no phrase has no Lookup key.
     expect(lookupKey(sentence, token({ start: 3, end: 4, surface: "は", entSeq: undefined }), null)).toBeNull();
+  });
+});
+
+describe("phrase mark (issue #97)", () => {
+  // この頃は: この [0,2) and 頃 [2,3) form the phrase 「この頃」 [0,3); は [3,4) is outside it.
+  const konogoro: StoryPhrase = { start: 0, end: 3, entSeq: 1000001, ja: "この頃", en: "these days" };
+  const kono = token({ start: 0, end: 2, surface: "この", reading: "この", entSeq: 990101, tag: "unknown" });
+  const goro = token({ start: 2, end: 3, surface: "頃", reading: "ころ", entSeq: 990102, tag: "unknown" });
+  const wa = token({ start: 3, end: 4, surface: "は", reading: "は", entSeq: undefined, tag: undefined });
+
+  function sentenceOf(tokens: StoryToken[], phrases: StoryPhrase[] = [konogoro], grammarSpans: StoryGrammarSpan[] = []): StorySentence {
+    return { ja: "この頃は", en: "", tokens, grammarSpans, phrases };
+  }
+
+  it("a phrase with one non-Known token marks every token of it, Known ones included", () => {
+    const s = sentenceOf([kono, { ...goro, tag: "known" }, wa]);
+    expect(phraseMarkFor(s, s.tokens[0]!, null).underline).toBe(true);
+    expect(phraseMarkFor(s, s.tokens[1]!, null).underline).toBe(true);
+  });
+
+  it("an all-Known phrase gets no phrase mark", () => {
+    const s = sentenceOf([{ ...kono, tag: "known" }, { ...goro, tag: "known" }, wa]);
+    expect(phraseMarkFor(s, s.tokens[0]!, null).underline).toBe(false);
+    expect(phraseMarkFor(s, s.tokens[1]!, null).underline).toBe(false);
+  });
+
+  it("a token outside any phrase gets no phrase mark", () => {
+    const s = sentenceOf([kono, goro, wa]);
+    expect(phraseMarkFor(s, s.tokens[2]!, null)).toEqual({ underline: false, first: false, last: false });
+  });
+
+  it("a 2-token phrase: the first token is first, the last is last", () => {
+    const s = sentenceOf([kono, goro, wa]);
+    expect(phraseMarkFor(s, kono, null)).toEqual({ underline: true, first: true, last: false });
+    expect(phraseMarkFor(s, goro, null)).toEqual({ underline: true, first: false, last: true });
+  });
+
+  it("a 3-token phrase: first, middle and last", () => {
+    const a = token({ start: 0, end: 1, surface: "一", reading: "いち", entSeq: 990201, tag: "unknown" });
+    const b = token({ start: 1, end: 2, surface: "二", reading: "に", entSeq: 990202, tag: "unknown" });
+    const c = token({ start: 2, end: 3, surface: "三", reading: "さん", entSeq: 990203, tag: "unknown" });
+    const phrase: StoryPhrase = { start: 0, end: 3, entSeq: 1000002, ja: "一二三", en: "one two three" };
+    const s = { ja: "一二三", en: "", tokens: [a, b, c], grammarSpans: [], phrases: [phrase] } as StorySentence;
+    expect(phraseMarkFor(s, a, null)).toEqual({ underline: true, first: true, last: false });
+    expect(phraseMarkFor(s, b, null)).toEqual({ underline: true, first: false, last: false });
+    expect(phraseMarkFor(s, c, null)).toEqual({ underline: true, first: false, last: true });
+  });
+
+  it("a token under a Grammar Span keeps its own marking: no phrase mark", () => {
+    const s = sentenceOf([kono, goro, wa], [konogoro], [span({ start: 2, end: 3 })]);
+    expect(phraseMarkFor(s, goro, s.grammarSpans[0]!).underline).toBe(false);
+  });
+
+  it("withPhraseMark turns a Known token's underline into the lookup one, and leaves the rest alone", () => {
+    const known = { grammar: "none", underline: "none" } as const;
+    expect(withPhraseMark(known, { underline: true, first: false, last: false }).underline).toBe("lookup");
+    expect(withPhraseMark(known, { underline: false, first: false, last: false })).toEqual(known);
+    const grammar = { grammar: "grammar", underline: "none" } as const;
+    expect(withPhraseMark(grammar, { underline: true, first: true, last: true }).grammar).toBe("grammar");
   });
 });
 

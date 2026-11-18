@@ -363,6 +363,60 @@ describe("Story reader: Lookup", () => {
     fireEvent.mouseLeave(token(container, 0, 1));
   });
 
+  it("a Phrase's tokens share one underline run: the ends are marked, the word after it is not (issue #97)", async () => {
+    const story = makeStory({
+      sentences: [
+        {
+          ja: "この頃は",
+          en: "These days, ...",
+          tokens: [
+            { surface: "この", start: 0, end: 2, reading: "この", entSeq: 990105, tag: "known", showFurigana: false },
+            { surface: "頃", start: 2, end: 3, reading: "ころ", entSeq: 990106, tag: "unknown", showFurigana: true },
+            { surface: "は", start: 3, end: 4, reading: "は", tag: "unknown", showFurigana: false },
+          ],
+          grammarSpans: [],
+          phrases: [{ start: 0, end: 3, entSeq: 1000001, ja: "この頃", en: "these days" }],
+        },
+      ],
+    });
+    const { container } = await renderReader({ story });
+    // この is Known, but its phrase has a non-Known word, so it joins the run.
+    expect(token(container, 0, 0).getAttribute("data-phrase-edge")).toBe("first");
+    expect(token(container, 0, 0).className).toContain("decoration-lookup-mark");
+    expect(token(container, 0, 1).getAttribute("data-phrase-edge")).toBe("last");
+    expect(token(container, 0, 1).className).toContain("decoration-lookup-mark");
+    // は is outside the phrase: no run edge, and its own underline is the unchanged per-word one.
+    expect(token(container, 0, 2).getAttribute("data-phrase-edge")).toBeNull();
+  });
+
+  it("the phrase Lookup's Dictionary action opens the Dictionary Entry for the phrase's entSeq (issue #97)", async () => {
+    const story = makeStory({
+      sentences: [
+        {
+          ja: "この頃は",
+          en: "These days, ...",
+          tokens: [
+            { surface: "この", start: 0, end: 2, reading: "この", entSeq: 990105, tag: "unknown", showFurigana: false },
+            { surface: "頃", start: 2, end: 3, reading: "ころ", entSeq: 990106, tag: "unknown", showFurigana: true },
+            { surface: "は", start: 3, end: 4, reading: "は", tag: "unknown", showFurigana: false },
+          ],
+          grammarSpans: [],
+          phrases: [{ start: 0, end: 3, entSeq: 1000001, ja: "この頃", en: "these days" }],
+        },
+      ],
+    });
+    const { container, requests } = await renderReader({ story });
+    fireEvent.mouseEnter(token(container, 0, 1));
+    const lookup = await screen.findByTestId("panel-lookup");
+    // The action is labelled as the token menu's Dictionary row is.
+    fireEvent.click(await within(lookup).findByRole("button", { name: "Dictionary" }));
+    const dialog = await screen.findByTestId("dictionary-window");
+    expect(dialog.textContent).toContain("この頃");
+    expect(requestsTo(requests, "/dictionary/entries/1000001", "GET")).toHaveLength(1);
+    // Only the phrase's entry is asked for: the word's own entries are not.
+    expect(requestsTo(requests, "/dictionary/entries/990106", "GET")).toHaveLength(0);
+  });
+
   it("in ja-furigana the Word meaning row shows the Japanese Part of Speech, its reading in ruby", async () => {
     const { container } = await renderReader({}, "ja-furigana");
     fireEvent.mouseEnter(token(container, 0, 0));

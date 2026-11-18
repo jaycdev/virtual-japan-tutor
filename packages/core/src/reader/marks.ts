@@ -82,6 +82,56 @@ export function lookupKey(
 }
 
 /**
+ * The phrase-wide underline one token carries (issue #97). `first` and `last`
+ * mark the ends of the run of tokens the underline spans, so a renderer can
+ * join the run across them.
+ */
+export interface PhraseMark {
+  underline: boolean;
+  first: boolean;
+  last: boolean;
+}
+
+const NO_PHRASE_MARK: PhraseMark = { underline: false, first: false, last: false };
+
+/**
+ * The phrase underline for a token (issue #97). A token inside a Phrase gets
+ * one continuous underline across every token of that Phrase, Known ones
+ * included, as long as the Phrase has at least one non-Known token; a Phrase
+ * whose tokens are all Known gets none. A token under a Grammar Span keeps its
+ * Grammar Span marking, so it gets no phrase underline, and it is left out of
+ * the run (the Grammar Span has the precedence the Lookup does too).
+ */
+export function phraseMarkFor(
+  sentence: StorySentence,
+  token: StoryToken,
+  span: StoryGrammarSpan | null,
+): PhraseMark {
+  if (span !== null) return NO_PHRASE_MARK;
+  // A sentence with no phrases list (an older payload) has no phrase marks.
+  if (!sentence.phrases?.length) return NO_PHRASE_MARK;
+  const phrase = coveringPhrase(sentence, token);
+  if (!phrase) return NO_PHRASE_MARK;
+  // The run: the Phrase's tokens that no Grammar Span claims, in sentence order.
+  const run = sentence.tokens.filter(
+    (t) => phrasesCovering(t, [phrase]).length > 0 && spansCovering(t, sentence.grammarSpans).length === 0,
+  );
+  if (!run.some((t) => t.tag !== "known")) return NO_PHRASE_MARK;
+  const at = run.findIndex((t) => t.start === token.start && t.end === token.end);
+  if (at < 0) return NO_PHRASE_MARK;
+  return { underline: true, first: at === 0, last: at === run.length - 1 };
+}
+
+/**
+ * The marks for a token with its phrase underline applied: the phrase run is one
+ * underline in the lookup colour, so it replaces the token's own underline.
+ * The highlighter is untouched.
+ */
+export function withPhraseMark(marks: TokenMarks, phrase: PhraseMark): TokenMarks {
+  return phrase.underline ? { ...marks, underline: "lookup" } : marks;
+}
+
+/**
  * The marks for one token. `focusEntSeqs` is the Focus Set vocabulary of the
  * open Story (the `isFocus` vocab items); a word in it takes the Focus underline
  * when it would otherwise carry the lookup one.

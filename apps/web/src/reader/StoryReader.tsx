@@ -49,7 +49,8 @@ import { StoryText, type StoryTextHandlers } from "./StoryText.tsx";
  * Everything the Story sends is rendered as React text, never as HTML.
  */
 
-type DialogKind = "dictionary" | "grammar" | "save";
+// "phrase": the Dictionary Entry opened from a phrase Lookup (issue #97).
+type DialogKind = "dictionary" | "phrase" | "grammar" | "save";
 type Box = { left: number; top: number; width: number; height: number };
 
 function sameRef(a: TokenRef | null, b: TokenRef): boolean {
@@ -287,6 +288,17 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
 
   const closeMenu = () => setMenu(null);
 
+  // The phrase Lookup's Dictionary action (issue #97): the Dictionary Entry window
+  // for the Phrase the panel is showing, from the word the panel follows.
+  const openPhraseDictionary = () => {
+    const ref = panelRef;
+    if (!ref) return;
+    if (menu) keepFocusOnMenuClose.current = true; // the dialog takes focus, not the word
+    lastWord.current = ref;
+    closeMenu();
+    setDialog({ kind: "phrase", ref });
+  };
+
   // Presses dismiss the menu on the reader's own rules, before any click runs
   // (issue #77 review, measured in Chromium — the browser counts presses on a
   // word in mousedown's `detail`):
@@ -302,6 +314,9 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
     const onMouseDown = (event: MouseEvent) => {
       const target = event.target as Element | null;
       if (target?.closest?.('[data-slot="popover-content"]')) return;
+      // The phrase Lookup's Dictionary action sits in the panel, not the menu:
+      // its press keeps the menu up so the action's click still lands (issue #97).
+      if (target?.closest?.("[data-phrase-action]")) return;
       const ref = tokenRefOf(target?.closest?.("[data-token]"));
       if (ref !== null && sameRef(menuRef, ref)) {
         if (event.detail > 1) return;
@@ -467,10 +482,17 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
 
   const dialogTok = dialog ? tokenAt(dialog.ref) : undefined;
   const dialogSpan = dialog ? spanAt(dialog.ref) : null;
-  const dialogEntry =
-    dialogTok && dialogTok.entSeq !== undefined ? lookup.peek(dialogTok.entSeq, dialogTok.surface, dialogTok.reading) : undefined;
-  const dialogFailed =
-    dialogTok && dialogTok.entSeq !== undefined ? lookup.failed(dialogTok.entSeq, dialogTok.surface, dialogTok.reading) : false;
+  const dialogSen = dialog ? story.sentences[dialog.ref.sentence] : undefined;
+  // The Dictionary Entry window's key: the word's own entry, or the phrase the
+  // window was opened on from a phrase Lookup (issue #97).
+  const dialogKey =
+    dialogSen && dialogTok && dialog?.kind === "phrase"
+      ? lookupKey(dialogSen, dialogTok, null)
+      : dialogTok && dialogTok.entSeq !== undefined
+        ? { entSeq: dialogTok.entSeq, surface: dialogTok.surface, reading: dialogTok.reading }
+        : null;
+  const dialogEntry = dialogKey ? lookup.peek(dialogKey.entSeq, dialogKey.surface, dialogKey.reading) : undefined;
+  const dialogFailed = dialogKey ? lookup.failed(dialogKey.entSeq, dialogKey.surface, dialogKey.reading) : false;
   const returnFocus = () => focusWord(lastWord.current);
 
   return (
@@ -527,6 +549,7 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
         blurError={blurError}
         onToggleBlur={() => void toggleBlur()}
         onRetryBlur={() => void toggleBlur()}
+        onOpenPhraseDictionary={openPhraseDictionary}
       />
 
       <Popover open={menu !== null} onOpenChange={(open) => !open && closeMenu()}>
@@ -594,16 +617,16 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
       </Popover>
 
       <ReaderDialog
-        open={dialog?.kind === "dictionary"}
+        open={dialog?.kind === "dictionary" || dialog?.kind === "phrase"}
         onOpenChange={(open) => !open && closeDialog()}
-        title={dialogEntry?.headword ?? dialogTok?.surface ?? tp("reader.dictionaryEntry")}
+        title={dialogEntry?.headword ?? dialogKey?.surface ?? dialogTok?.surface ?? tp("reader.dictionaryEntry")}
         description={tp("reader.dictionaryEntry")}
         testId="dictionary-window"
         onCloseAutoFocus={returnFocus}
       >
         {dialogEntry ? (
           <DictionaryBody entry={dialogEntry} />
-        ) : dialogFailed && dialogTok?.entSeq !== undefined ? (
+        ) : dialogFailed && dialogKey !== null ? (
           <div className="flex flex-col items-start gap-3">
             <p className="text-body text-destructive">
               <T k="reader.dictNoAnswer" />
@@ -611,9 +634,9 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
             <Button
               variant="outline"
               onClick={() => {
-                if (!dialogTok || dialogTok.entSeq === undefined) return;
-                lookup.invalidate(dialogTok.entSeq, dialogTok.surface, dialogTok.reading);
-                lookup.load(dialogTok.entSeq, dialogTok.surface, dialogTok.reading);
+                if (!dialogKey) return;
+                lookup.invalidate(dialogKey.entSeq, dialogKey.surface, dialogKey.reading);
+                lookup.load(dialogKey.entSeq, dialogKey.surface, dialogKey.reading);
               }}
             >
               <T k="common.retry" />

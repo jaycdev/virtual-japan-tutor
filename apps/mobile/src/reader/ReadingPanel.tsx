@@ -59,6 +59,7 @@ export function ReadingPanel({
   reading,
   lookup,
   onUnblur,
+  onOpenPhraseDictionary,
 }: {
   story: Story;
   selected: number | null;
@@ -67,6 +68,8 @@ export function ReadingPanel({
   lookup: EntryLookup;
   /** Reports Weak Signals when a blurred Sentence Translation is revealed. */
   onUnblur: (sentenceIdx: number) => void;
+  /** Opens the Dictionary Entry for a phrase Lookup (issue #97). */
+  onOpenPhraseDictionary?: () => void;
 }) {
   const { fontSizePx, lineHeightPx, columnWidthPx } = useStoryTextSize();
   const { tp } = useT();
@@ -113,7 +116,7 @@ export function ReadingPanel({
               className="text-caption text-muted-foreground"
               style={styles.lookupLabel}
             />
-            <LookupRow story={story} looked={looked} lookup={lookup} />
+            <LookupRow story={story} looked={looked} lookup={lookup} onOpenPhraseDictionary={onOpenPhraseDictionary} />
           </View>
         ) : (
           <View style={styles.sentenceMode}>
@@ -218,12 +221,14 @@ function LookupRow({
   story,
   looked,
   lookup,
+  onOpenPhraseDictionary,
 }: {
   story: Story;
   looked: LookedTarget;
   lookup: EntryLookup;
+  onOpenPhraseDictionary?: () => void;
 }) {
-  const { t } = useT();
+  const { t, tp } = useT();
   const sen = story.sentences[looked.sentence];
   if (!sen) return null;
   const token = sen.tokens[looked.index];
@@ -266,6 +271,19 @@ function LookupRow({
         {entry?.pitch ? <PitchGraph pitch={entry.pitch} withCaption /> : null}
         {entry?.srsLevel != null ? <SrsLevelText level={entry.srsLevel} /> : null}
         {entry?.jlptLevel ? <JlptBadge level={entry.jlptLevel} /> : null}
+        {looked.kind === "phrase" && onOpenPhraseDictionary ? (
+          // The same label as the token menu's Dictionary row (issue #97).
+          <Pressable
+            testID="phrase-dictionary"
+            accessibilityRole="button"
+            accessibilityLabel={tp("reader.menu.dictionary")}
+            onPress={onOpenPhraseDictionary}
+            className="border-border"
+            style={styles.phraseAction}
+          >
+            <Text className="text-small text-foreground">{tp("reader.menu.dictionary")}</Text>
+          </Pressable>
+        ) : null}
       </View>
     </View>
   );
@@ -321,4 +339,5 @@ const styles = StyleSheet.create({
   lookupWord: { fontWeight: "600" },
   lookupContent: { flexDirection: "row", alignItems: "center", gap: 10, flexWrap: "wrap" },
   lookupRight: { marginLeft: "auto", flexDirection: "row", alignItems: "center", gap: 8 },
+  phraseAction: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
 });

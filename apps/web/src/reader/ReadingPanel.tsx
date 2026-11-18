@@ -52,6 +52,7 @@ export function ReadingPanel({
   blurError,
   onToggleBlur,
   onRetryBlur,
+  onOpenPhraseDictionary,
 }: {
   story: Story;
   selected: number | null;
@@ -64,6 +65,8 @@ export function ReadingPanel({
   blurError: string | null;
   onToggleBlur: () => void;
   onRetryBlur: () => void;
+  /** Opens the Dictionary Entry for a phrase Lookup (issue #97). */
+  onOpenPhraseDictionary?: () => void;
 }) {
   const { tp } = useT();
   const sentence = selected !== null ? story.sentences[selected] : undefined;
@@ -86,7 +89,7 @@ export function ReadingPanel({
             <p className="text-caption font-semibold tracking-wide text-muted-foreground uppercase">
               <T k="reader.wordMeaning" />
             </p>
-            <LookupBody story={story} target={target} lookup={lookup} />
+            <LookupBody story={story} target={target} lookup={lookup} onOpenPhraseDictionary={onOpenPhraseDictionary} />
           </>
         ) : sentence ? (
           <p
@@ -137,8 +140,18 @@ export function ReadingPanel({
   );
 }
 
-function LookupBody({ story, target, lookup }: { story: Story; target: LookTarget; lookup: EntryLookup }) {
-  const { t } = useT();
+function LookupBody({
+  story,
+  target,
+  lookup,
+  onOpenPhraseDictionary,
+}: {
+  story: Story;
+  target: LookTarget;
+  lookup: EntryLookup;
+  onOpenPhraseDictionary?: () => void;
+}) {
+  const { t, tp } = useT();
   const sentence = story.sentences[target.sentence];
   const token = sentence?.tokens[target.index];
   if (!sentence || !token) return null;
@@ -188,6 +201,13 @@ function LookupBody({ story, target, lookup }: { story: Story; target: LookTarge
         {entry.pitch ? <PitchGraph pitch={entry.pitch} width={64} height={28} /> : null}
         {entry.srsLevel != null ? <SrsLevelText level={entry.srsLevel} /> : null}
         {entry.jlptLevel ? <JlptBadge level={entry.jlptLevel} /> : null}
+        {target.kind === "phrase" && onOpenPhraseDictionary ? (
+          // The same label as the token menu's Dictionary row (issue #97). It is
+          // marked so the menu's outside-press rule leaves it alone.
+          <Button variant="outline" data-phrase-action data-testid="phrase-dictionary" onClick={onOpenPhraseDictionary}>
+            {tp("reader.menu.dictionary")}
+          </Button>
+        ) : null}
       </div>
     </div>
   );
