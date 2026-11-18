@@ -63,6 +63,10 @@ export interface LookupKey {
  * The Lookup key for a word (issue #97). A Phrase covering the word wins over
  * the word's own entry, but only when no Grammar Span covers the word: the
  * Grammar Span keeps its Lookup, as before. Null when there is nothing to look up.
+ *
+ * A Phrase's key has an empty reading: that empty reading is what keys the
+ * phrase's Lookup in the cache (useEntryLookup), so every token of the phrase
+ * loads and peeks the same entry.
  */
 export function lookupKey(
   sentence: StorySentence,

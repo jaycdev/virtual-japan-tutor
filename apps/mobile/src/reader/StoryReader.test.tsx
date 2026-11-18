@@ -104,6 +104,8 @@ function fakeApi(
     genOutcome?: "ready" | "running" | "failed";
     /** GET /stories/generation answers 404 (no run has ever happened). */
     noGeneration?: boolean;
+    /** Phrases of the first sentence (issue #97); none unless a test asks. */
+    phrases?: { start: number; end: number; entSeq: number; ja: string; en: string }[];
   } = {},
 ) {
   const storyView = {
@@ -147,7 +149,7 @@ function fakeApi(
             jlptLevel: "N4",
           },
         ],
-        phrases: [],
+        phrases: opts.phrases ?? [],
       },
       {
         ja: "みせにいきました。",
@@ -613,6 +615,19 @@ describe("Story reader gestures (mobile)", () => {
     fireEvent.mouseDown(token(0, 0), { clientX: 300, clientY: 300 });
     expect(await within(panel).findByText("SRS 4")).toBeTruthy();
     fireEvent.mouseUp(token(0, 0), { clientX: 300, clientY: 300 });
+  });
+
+  it("holding a word inside a Phrase loads the phrase's entry, not the word's own (issue #97)", async () => {
+    // がっこうで (runes 0-5) is a Phrase over the first two tokens, entry 1234567.
+    const { client, requests } = fakeApi({
+      phrases: [{ start: 0, end: 5, entSeq: 1234567, ja: "がっこうで", en: "at school" }],
+    });
+    await openStory(client);
+
+    await pressAndHold(0, 0); // がっこう, whose own entry is 990101
+    await waitFor(() => expect(requests.some((r) => r.path === "/dictionary/entries/1234567")).toBe(true));
+    expect(requests.some((r) => r.path === "/dictionary/entries/990101")).toBe(false);
+    releaseAt(0, 0, 5, 5);
   });
 
   it("a hold opens the Lookup menu at the finger and reports one Weak Signal per word", async () => {

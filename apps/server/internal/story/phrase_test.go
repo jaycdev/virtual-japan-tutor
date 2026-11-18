@@ -146,3 +146,41 @@ func TestFindPhrasesScanContinuesAfterAPhrase(t *testing.T) {
 		t.Fatalf("findPhrases(この頃その時) = %v, want %v", phraseSpans(got), want)
 	}
 }
+
+// linkedTok is one linked test token at an explicit rune range, for the cases
+// buildPhraseTokens cannot express (a gap between tokens, a surface that does
+// not match the text).
+func linkedTok(pos int, surface string, start, end int, ent int64) Token {
+	e := ent
+	return Token{Pos: pos, Surface: surface, Start: start, End: end, EntSeq: &e}
+}
+
+func TestFindPhrasesNonContiguousTokensDoNotMerge(t *testing.T) {
+	// 猫 [0,1) and 中 [2,3) are both linked and 猫中 is a form, but the の at
+	// rune 1 belongs to no token, so the two tokens are not back to back.
+	tokens := []Token{linkedTok(0, "猫", 0, 1, 1000500), linkedTok(1, "中", 2, 3, 1000501)}
+	got := findPhrases(tokens, "猫の中", nil, formMap(map[string]int64{"猫中": 1000050}))
+	if len(got) != 0 {
+		t.Fatalf("findPhrases(猫 + gap + 中) = %v, want none", phraseSpans(got))
+	}
+}
+
+func TestFindPhrasesSurfacesNotMatchingTheTextDoNotMerge(t *testing.T) {
+	// 一 [0,1) and 杯 [1,2) are linked and back to back, and 一杯 is a form, but
+	// the sentence text over [0,2) is 一つ, so the run does not spell 一杯.
+	tokens := []Token{linkedTok(0, "一", 0, 1, 1000301), linkedTok(1, "杯", 1, 2, 1000302)}
+	got := findPhrases(tokens, "一つ", nil, formMap(map[string]int64{"一杯": 1000003}))
+	if len(got) != 0 {
+		t.Fatalf("findPhrases(一 + 杯 over the text 一つ) = %v, want none", phraseSpans(got))
+	}
+}
+
+func TestFindPhrasesMergesFourTokenForm(t *testing.T) {
+	// 一生懸命 is four linked tokens that together form one entry, span [0,4).
+	tokens, ja := buildPhraseTokens(ptok{"一", 1000701}, ptok{"生", 1000702}, ptok{"懸", 1000703}, ptok{"命", 1000704})
+	got := findPhrases(tokens, ja, nil, formMap(map[string]int64{"一生懸命": 1000070}))
+	want := [][3]int64{{0, 4, 1000070}}
+	if !reflect.DeepEqual(phraseSpans(got), want) {
+		t.Fatalf("findPhrases(一生懸命) = %v, want %v", phraseSpans(got), want)
+	}
+}
