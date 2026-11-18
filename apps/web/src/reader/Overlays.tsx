@@ -56,7 +56,7 @@ export function ReaderDialog({
   }
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent data-testid={testId} onCloseAutoFocus={closeFocus}>
+      <DialogContent data-testid={testId} className="max-h-[85dvh] overflow-y-auto" onCloseAutoFocus={closeFocus}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
