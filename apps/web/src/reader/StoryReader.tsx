@@ -228,8 +228,10 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
 
   const handlers: StoryTextHandlers = {
     onSelectSentence: (i) => setSelected(i),
+    // Hover is recorded even while a menu is open: the pointer's word must be
+    // known when the menu closes, or no mouseenter will ever report it again
+    // (the pointer is still on that word, so the browser fires nothing new).
     onTokenEnter: (ref) => {
-      if (menu) return;
       setHovered(ref);
       primeUnlessFailed(ref);
     },
@@ -243,8 +245,10 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
     onTokenActivate: activate,
   };
 
-  // The panel follows the menu's word, then focus, then hover.
-  const panelRef = menu?.ref ?? focused ?? hovered;
+  // The panel follows the menu's word, then the pointer's word, then focus. Focus
+  // is restored to the word a menu was opened from when it closes, so it must not
+  // outrank a pointer that has moved on to another word.
+  const panelRef = menu?.ref ?? hovered ?? focused;
   const panelTarget: LookTarget | null = (() => {
     if (!panelRef) return null;
     const tok = tokenAt(panelRef);

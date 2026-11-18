@@ -402,6 +402,21 @@ describe("Story reader: Lookup", () => {
     expect(within(lookup).getByText("SRS 4")).toBeTruthy();
   });
 
+  it("hovering another word while the Lookup Menu is open shows its Lookup once the menu closes", async () => {
+    const { container } = await renderReader();
+    // Open the menu on a dictionary word, then move the pointer across the
+    // Grammar Span word while the menu is still open.
+    fireEvent.mouseEnter(token(container, 0, 0));
+    fireEvent.click(token(container, 0, 0));
+    fireEvent.mouseLeave(token(container, 0, 0));
+    fireEvent.mouseEnter(token(container, 0, 3));
+    // Closing the menu (Escape) must not need a fresh mouseenter on the word.
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Dictionary" })).toBeNull());
+    const lookup = await screen.findByTestId("panel-lookup");
+    expect(lookup.textContent).toContain("てしまう");
+  });
+
   it("focusing a word (keyboard) shows the same Lookup and selects its sentence", async () => {
     const { container } = await renderReader();
     fireEvent.focus(token(container, 0, 0));
