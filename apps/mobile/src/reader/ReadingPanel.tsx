@@ -4,6 +4,7 @@ import {
   coveringSpan,
   firstGlosses,
   grammarCue,
+  lookupKey,
   shortPartOfSpeechLabel,
   type EntryLookup,
   type GrammarCue,
@@ -47,7 +48,8 @@ export const PANEL_LINES = 7;
 export interface LookedTarget {
   sentence: number;
   index: number;
-  kind: "token" | "grammar";
+  /** "phrase": the Phrase covering the word (issue #97), shown as its entry. */
+  kind: "token" | "grammar" | "phrase";
 }
 
 export function ReadingPanel({
@@ -231,22 +233,24 @@ function LookupRow({
     if (!cue) return null;
     return <GrammarGloss cue={cue} />;
   }
-  const entry = token.entSeq !== undefined ? lookup.peek(token.entSeq, token.surface, token.reading) : undefined;
+  // The key is the word's own entry, or the Phrase covering it (issue #97).
+  const key = lookupKey(sen, token, coveringSpan(sen, token));
+  const entry = key ? lookup.peek(key.entSeq, key.surface, key.reading) : undefined;
   // The row only appears once there is real data to show: a lookup in flight,
   // a failed one, or a word with no dictionary link at all renders nothing —
   // the fixed "Word meaning" label above still marks the mode.
-  if (!entry) return null;
+  if (!key || !entry) return null;
   const glosses = firstGlosses(entry, 2);
   const more = countGlosses(entry) > glosses.length;
   const partOfSpeech = shortPartOfSpeechLabel(entry.senses, t);
   return (
     <View testID="panel-lookup" style={styles.lookupContent}>
       <Text className="text-body text-pitch" style={styles.lookupWord}>
-        {token.surface}
+        {key.surface}
       </Text>
-      {token.reading && token.reading !== token.surface ? (
+      {key.reading && key.reading !== key.surface ? (
         <Text className="text-body text-focus">
-          {token.reading}
+          {key.reading}
         </Text>
       ) : null}
       {partOfSpeech ? (

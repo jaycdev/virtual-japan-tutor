@@ -48,6 +48,22 @@ const SCHOOL_ENTRY = {
   kanji: [],
 };
 
+// The entry of この頃 (a Phrase, issue #97): the Lookup of 頃 inside it shows this.
+const KONO_GORO_ENTRY = {
+  entSeq: 1000001,
+  found: true,
+  headword: "この頃",
+  reading: "このごろ",
+  jlptLevel: "N4",
+  senses: [{ glosses: ["these days"], partsOfSpeech: ["n-adv"] }],
+  kanjiForms: ["この頃"],
+  readings: ["このごろ"],
+  pitch: null,
+  srsLevel: null,
+  mastery: 0,
+  kanji: [],
+};
+
 function makeStory(overrides: Partial<Story> = {}): Story {
   return {
     id: "st-1",
@@ -80,6 +96,7 @@ function makeStory(overrides: Partial<Story> = {}): Story {
             jlptLevel: "N4",
           },
         ],
+        phrases: [],
       },
       {
         ja: "みせにいきました。",
@@ -90,6 +107,7 @@ function makeStory(overrides: Partial<Story> = {}): Story {
           { surface: "いきました", start: 3, end: 7, reading: "いきました", tag: "unknown", showFurigana: false },
         ],
         grammarSpans: [],
+        phrases: [],
       },
     ],
     questions: [{ position: 0, promptJa: "どこで べんきょう しましたか。", optionsJa: ["がっこう", "いえ"] }],
@@ -171,6 +189,7 @@ function fakeApi(
     }
     if (path === "/dictionary/entries/990101") return json(200, SCHOOL_ENTRY);
     if (path === "/dictionary/entries/990103") return json(404, { message: "no such entry" });
+    if (path === "/dictionary/entries/1000001") return json(200, KONO_GORO_ENTRY);
     if (path === "/stories/st-1" && method === "GET") return json(200, story);
     if (path === "/stories/today") return json(404, { message: "none" });
     if (path === "/stories") return json(200, { items: opts.library ?? [story], total: (opts.library ?? [story]).length, limit: 20, offset: 0 });
@@ -244,6 +263,7 @@ describe("Story reader: text", () => {
           en: hostile,
           tokens: [],
           grammarSpans: [],
+        phrases: [],
         },
       ],
       questions: [{ position: 0, promptJa: hostile, optionsJa: [hostile, "いえ"] }],
@@ -317,6 +337,32 @@ describe("Story reader: Lookup", () => {
     await waitFor(() => expect(screen.queryByTestId("panel-lookup")).toBeNull());
   });
 
+  it("hovering any word of a Phrase shows the phrase's own Lookup, from its entry (issue #97)", async () => {
+    const story = makeStory({
+      sentences: [
+        {
+          ja: "この頃は",
+          en: "These days, ...",
+          tokens: [
+            { surface: "この", start: 0, end: 2, reading: "この", entSeq: 990105, tag: "unknown", showFurigana: false },
+            { surface: "頃", start: 2, end: 3, reading: "ころ", entSeq: 990106, tag: "unknown", showFurigana: true },
+            { surface: "は", start: 3, end: 4, reading: "は", tag: "unknown", showFurigana: false },
+          ],
+          grammarSpans: [],
+          phrases: [{ start: 0, end: 3, entSeq: 1000001, ja: "この頃", en: "these days" }],
+        },
+      ],
+    });
+    const { container, requests } = await renderReader({ story });
+    // The second part, 頃: its Lookup is the phrase's, not the word's own.
+    fireEvent.mouseEnter(token(container, 0, 1));
+    const lookup = await screen.findByTestId("panel-lookup");
+    expect(within(lookup).getByText("この頃")).toBeTruthy();
+    expect(within(lookup).getByText("these days")).toBeTruthy();
+    expect(requestsTo(requests, "/dictionary/entries/1000001", "GET")).toHaveLength(1);
+    fireEvent.mouseLeave(token(container, 0, 1));
+  });
+
   it("in ja-furigana the Word meaning row shows the Japanese Part of Speech, its reading in ruby", async () => {
     const { container } = await renderReader({}, "ja-furigana");
     fireEvent.mouseEnter(token(container, 0, 0));
@@ -346,6 +392,7 @@ describe("Story reader: Lookup", () => {
             },
           ],
           grammarSpans: [],
+        phrases: [],
         },
       ],
       vocabItems: [],
@@ -381,6 +428,7 @@ describe("Story reader: Lookup", () => {
             { surface: "は", start: 1, end: 2, reading: "は", tag: "unknown", showFurigana: false, grammarHint: hint() },
           ],
           grammarSpans: [],
+        phrases: [],
         },
       ],
       vocabItems: [],

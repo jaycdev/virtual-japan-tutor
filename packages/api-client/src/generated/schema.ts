@@ -1415,6 +1415,8 @@ export interface components {
             en: string;
             tokens: components["schemas"]["StoryToken"][];
             grammarSpans: components["schemas"]["StoryGrammarSpan"][];
+            /** @description The sentence's Phrases (issue #97), computed when the Story loads: runs of linked tokens that together form one dictionary entry, such as この頃 or 一杯. Each token keeps its own entSeq and menu; a phrase is only the Lookup target for hovering any of its tokens. */
+            phrases: components["schemas"]["StoryPhrase"][];
         };
         StoryToken: {
             surface: string;
@@ -1484,6 +1486,22 @@ export interface components {
             jlptLevel: components["schemas"]["GrammarJLPTLevel"];
             /** @description The Grammar Point's current MaruMori SRS Level (as of the last Sync): the highest among the MaruMori grammar items matched to it. Null when none has one (Seeded Grammar, or a lesson-only point with no progress yet). */
             srsLevel?: number | null;
+        };
+        /** @description A Phrase (GLOSSARY.md, issue #97): two to four adjacent linked tokens of a sentence that together form one dictionary entry, such as この頃 or 一杯. Offsets are codepoint (rune) indexes into the sentence's ja text, counting from 0, like a Grammar Span. The entry's headword and first gloss ride along so the Lookup needs no second request. */
+        StoryPhrase: {
+            /** @description Codepoint index of the phrase's first character. */
+            start: number;
+            /** @description Codepoint index just past the phrase's last character. */
+            end: number;
+            /**
+             * Format: int64
+             * @description JMdict ent_seq of the entry the phrase's written form names.
+             */
+            entSeq: number;
+            /** @description The entry's headword. */
+            ja: string;
+            /** @description The entry's first gloss. */
+            en: string;
         };
         /** @description Per-Learner reader preferences (issue #11, extended by issue #12), stored so the reading experience is the same in every session and on every device. */
         ReadingSettings: {

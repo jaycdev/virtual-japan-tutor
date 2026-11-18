@@ -1,8 +1,10 @@
 import type { ApiClient, Story, WeakSignalRequest } from "@vjt/api-client";
 import {
+  coveringPhrase,
   coveringSpan,
   holdSignal,
   IDLE,
+  lookupKey,
   menuOptions,
   hintOnly,
   optionAt,
@@ -203,7 +205,9 @@ export function StoryReader({
     // A particle with only a hint has no entry, so its Lookup row is the grammar one.
     const span = coveringSpan(sen, tok);
     const grammar = span !== null || (tok.entSeq === undefined && tok.grammarHint !== undefined);
-    return { ...target, kind: grammar ? "grammar" : "token" };
+    // A Phrase the word sits in shows the phrase's Lookup, unless a Grammar Span claims it (issue #97).
+    const phrased = !grammar && coveringPhrase(sen, tok) !== null;
+    return { ...target, kind: grammar ? "grammar" : phrased ? "phrase" : "token" };
   }, [gesture.token, story]);
 
   const menuOpen = gesture.phase === "menu";
@@ -251,7 +255,9 @@ export function StoryReader({
     setSelected(ref.sentence);
     setSelectedToken(ref);
     dispatch({ type: "press", token: ref, x: e.nativeEvent.pageX, y: e.nativeEvent.pageY });
-    if (token.entSeq !== undefined) lookup.load(token.entSeq, token.surface, token.reading);
+    // The Lookup a word loads: its Phrase's entry when one covers it and no Grammar Span does (issue #97).
+    const key = lookupKey(sen, token, coveringSpan(sen, token));
+    if (key) lookup.load(key.entSeq, key.surface, key.reading);
 
     // The timer only reads the reducer (through gestureRef) and the immutable
     // press data (the Story never changes while it is open) — never captured

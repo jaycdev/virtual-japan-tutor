@@ -147,6 +147,7 @@ function fakeApi(
             jlptLevel: "N4",
           },
         ],
+        phrases: [],
       },
       {
         ja: "みせにいきました。",
@@ -167,6 +168,7 @@ function fakeApi(
             jlptLevel: "N4",
           },
         ],
+        phrases: [],
       },
     ],
     questions: [
@@ -1210,6 +1212,7 @@ describe("Reader text colour on the dark palette (Android paints a class-less Te
       en: "Yes.",
       tokens: [{ surface: "はい", start: 0, end: 2, reading: "はい", tag: "known", showFurigana: false }],
       grammarSpans: [],
+      phrases: [],
     };
     const handlers = (): TokenHandlers => ({
       onStartShouldSetResponder: () => true,

@@ -1,4 +1,4 @@
-import type { StoryGrammarSpan, StoryToken } from "@vjt/api-client";
+import type { StoryGrammarSpan, StoryPhrase, StorySentence, StoryToken } from "@vjt/api-client";
 
 /**
  * Token-to-mark classification for the Story reader (issue #77, shared by the
@@ -31,6 +31,50 @@ export interface TokenMarks {
 /** The Grammar Spans covering a token (codepoint ranges overlap). */
 export function spansCovering(token: StoryToken, spans: StoryGrammarSpan[]): StoryGrammarSpan[] {
   return spans.filter((sp) => token.start < sp.end && sp.start < token.end);
+}
+
+/**
+ * The Phrases covering a token (codepoint ranges overlap). A Phrase is a
+ * compound word such as この頃 (issue #97): hovering any of its tokens shows one
+ * Lookup for the phrase, while each token keeps its own menu.
+ */
+export function phrasesCovering(token: StoryToken, phrases: StoryPhrase[]): StoryPhrase[] {
+  return phrases.filter((p) => token.start < p.end && p.start < token.end);
+}
+
+/** The first Phrase covering this token, or null (codepoint offsets). */
+export function coveringPhrase(sentence: StorySentence, token: StoryToken): StoryPhrase | null {
+  return phrasesCovering(token, sentence.phrases)[0] ?? null;
+}
+
+/** The Japanese a Phrase covers in its sentence (codepoints, as the offsets count them). */
+export function phraseText(sentence: StorySentence, phrase: StoryPhrase): string {
+  return Array.from(sentence.ja).slice(phrase.start, phrase.end).join("");
+}
+
+/** What a word's Lookup loads: the Dictionary Entry it names and the text to show for it. */
+export interface LookupKey {
+  entSeq: number;
+  surface: string;
+  reading?: string;
+}
+
+/**
+ * The Lookup key for a word (issue #97). A Phrase covering the word wins over
+ * the word's own entry, but only when no Grammar Span covers the word: the
+ * Grammar Span keeps its Lookup, as before. Null when there is nothing to look up.
+ */
+export function lookupKey(
+  sentence: StorySentence,
+  token: StoryToken,
+  span: StoryGrammarSpan | null,
+): LookupKey | null {
+  if (span === null) {
+    const phrase = coveringPhrase(sentence, token);
+    if (phrase) return { entSeq: phrase.entSeq, surface: phraseText(sentence, phrase), reading: "" };
+  }
+  if (token.entSeq !== undefined) return { entSeq: token.entSeq, surface: token.surface, reading: token.reading };
+  return null;
 }
 
 /**

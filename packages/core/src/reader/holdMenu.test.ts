@@ -176,6 +176,7 @@ describe("coveringSpan", () => {
     en: "I went to the shop.",
     tokens: [],
     grammarSpans: [span({ start: 2, end: 4 })],
+    phrases: [],
   } as StorySentence;
 
   it("matches on overlapping codepoint ranges", () => {
@@ -199,6 +200,7 @@ describe("grammarCue and hintOnly (issue #98 particles)", () => {
     en: "x",
     tokens: [],
     grammarSpans: [span({ start: 0, end: 2 })],
+    phrases: [],
   } as StorySentence;
 
   it("cues a particle by its hint, with no span", () => {

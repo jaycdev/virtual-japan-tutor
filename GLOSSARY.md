@@ -162,6 +162,10 @@ _Avoid_: Gloss tap, hover
 The part of a Story sentence that expresses a Grammar Point (e.g. てしまった in 食べてしまった). It is a Lookup target in its own right, separate from the words around it.
 _Avoid_: Grammar highlight, grammar token
 
+**Phrase**:
+A run of two to four adjacent linked tokens of a Story sentence that together form one JMdict entry, such as この頃 or 一杯. It is detected when the Story loads, and it is a Lookup target in its own right: hovering or pressing any of its tokens shows the phrase's entry. The parts stay reachable from their own menus.
+_Avoid_: compound, multi-word token
+
 **Sentence Translation**:
 The English translation of one sentence in a Story, shown in the Reading Panel when that sentence is selected. It can be blurred or unblurred.
 _Japanese_: 文の訳

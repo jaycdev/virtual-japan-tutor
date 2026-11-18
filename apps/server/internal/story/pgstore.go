@@ -308,6 +308,10 @@ func (st *PostgresStore) loadChildren(ctx context.Context, s *Story) error {
 		return err
 	}
 
+	if err := st.loadPhrases(ctx, s); err != nil {
+		return err
+	}
+
 	qrows, err := st.pool.Query(ctx, `
 		SELECT id, position, prompt_ja, options_ja, answer_index
 		FROM story_questions WHERE story_id = $1 ORDER BY position`, s.ID)
@@ -325,6 +329,102 @@ func (st *PostgresStore) loadChildren(ctx context.Context, s *Story) error {
 	qrows.Close()
 	if err := qrows.Err(); err != nil {
 		return err
+	}
+	return nil
+}
+
+// loadPhrases fills each sentence's Phrases (issue #97) from its loaded tokens
+// and Grammar Spans. It collects every candidate written form of the Story,
+// the linked runs of two to four tokens that spell their sentence's text, and
+// asks JMdict about all of them in one query. The form's entry is the one
+// refdata's FindVocabulary would list first (common entries, then ent_seq), and
+// vocabByID names the phrase's entries in a second query.
+func (st *PostgresStore) loadPhrases(ctx context.Context, s *Story) error {
+	seen := map[string]bool{}
+	var forms []string
+	for i := range s.Sentences {
+		sen := &s.Sentences[i]
+		for a := range sen.Tokens {
+			for n := 2; n <= maxPhraseTokens && a+n <= len(sen.Tokens); n++ {
+				form, ok := runForm(sen.Tokens[a:a+n], sen.JA)
+				if ok && !seen[form] {
+					seen[form] = true
+					forms = append(forms, form)
+				}
+			}
+		}
+	}
+	if len(forms) == 0 {
+		return nil
+	}
+
+	rows, err := st.pool.Query(ctx, `
+		SELECT f.form, f.ent_seq
+		FROM (
+			SELECT k.text AS form, k.ent_seq FROM jmdict_kanji_forms k WHERE k.text = ANY ($1)
+			UNION ALL
+			SELECT r.text AS form, r.ent_seq FROM jmdict_readings r WHERE r.text = ANY ($1)
+		) f
+		JOIN jmdict_entries e ON e.ent_seq = f.ent_seq
+		ORDER BY f.form, e.is_common DESC, e.ent_seq`, forms)
+	if err != nil {
+		return fmt.Errorf("story phrases: %w", err)
+	}
+	entByForm := map[string]int64{}
+	for rows.Next() {
+		var form string
+		var ent int64
+		if err := rows.Scan(&form, &ent); err != nil {
+			rows.Close()
+			return fmt.Errorf("story phrases: %w", err)
+		}
+		if _, ok := entByForm[form]; !ok {
+			entByForm[form] = ent
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("story phrases: %w", err)
+	}
+	if len(entByForm) == 0 {
+		return nil
+	}
+
+	formEntSeq := func(form string) (int64, bool) {
+		ent, ok := entByForm[form]
+		return ent, ok
+	}
+	var ids []int64
+	idSeen := map[int64]bool{}
+	for i := range s.Sentences {
+		sen := &s.Sentences[i]
+		sen.Phrases = findPhrases(sen.Tokens, sen.JA, sen.Spans, formEntSeq)
+		for _, p := range sen.Phrases {
+			if !idSeen[p.EntSeq] {
+				idSeen[p.EntSeq] = true
+				ids = append(ids, p.EntSeq)
+			}
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	vocab, err := vocabByID(ctx, st.pool, ids)
+	if err != nil {
+		return err
+	}
+	named := make(map[int64]VocabFocus, len(vocab))
+	for _, v := range vocab {
+		named[v.EntSeq] = v
+	}
+	for i := range s.Sentences {
+		phrases := s.Sentences[i].Phrases
+		for k := range phrases {
+			if v, ok := named[phrases[k].EntSeq]; ok {
+				phrases[k].JA = v.JA
+				phrases[k].EN = v.EN
+			}
+		}
 	}
 	return nil
 }

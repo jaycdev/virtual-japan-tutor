@@ -44,6 +44,7 @@ export type StoryToken = components["schemas"]["StoryToken"];
 export type StoryQuestion = components["schemas"]["StoryQuestion"];
 export type StoryVocabItem = components["schemas"]["StoryVocabItem"];
 export type StoryGrammarSpan = components["schemas"]["StoryGrammarSpan"];
+export type StoryPhrase = components["schemas"]["StoryPhrase"];
 export type StoryRating = components["schemas"]["StoryRating"];
 export type StorySettings = components["schemas"]["StorySettings"];
 export type StoryAnswer = components["schemas"]["StoryAnswer"];

@@ -1,8 +1,8 @@
-import type { PitchPattern, StoryGrammarSpan, StorySentence, StoryToken } from "@vjt/api-client";
+import type { PitchPattern, StoryGrammarSpan, StoryPhrase, StorySentence, StoryToken } from "@vjt/api-client";
 import { describe, expect, it } from "vitest";
 
 import { showsFurigana, furiganaPxFor } from "./furigana.ts";
-import { isLookupMarked, tokenMarks } from "./marks.ts";
+import { coveringPhrase, isLookupMarked, lookupKey, phrasesCovering, tokenMarks } from "./marks.ts";
 import { pitchDots } from "./pitch.ts";
 import { sentenceSegments } from "./sentences.ts";
 import { countGlosses, firstGlosses } from "./glosses.ts";
@@ -44,6 +44,36 @@ describe("marks", () => {
   });
 });
 
+describe("phrases", () => {
+  // この頃 at runes [0,3) of "この頃は": the tokens この [0,2) and 頃 [2,3).
+  const konogoro: StoryPhrase = { start: 0, end: 3, entSeq: 1000001, ja: "この頃", en: "these days" };
+
+  it("a token is covered by a phrase it overlaps; touching is not covering", () => {
+    expect(phrasesCovering(token({ start: 0, end: 2 }), [konogoro])).toEqual([konogoro]);
+    expect(phrasesCovering(token({ start: 2, end: 3 }), [konogoro])).toEqual([konogoro]);
+    expect(phrasesCovering(token({ start: 3, end: 4 }), [konogoro])).toEqual([]);
+  });
+
+  it("coveringPhrase names the phrase over a token, or null when none covers it", () => {
+    const sentence = { ja: "この頃は", en: "", tokens: [], grammarSpans: [], phrases: [konogoro] } as StorySentence;
+    expect(coveringPhrase(sentence, token({ start: 2, end: 3 }))).toEqual(konogoro);
+    expect(coveringPhrase(sentence, token({ start: 3, end: 4 }))).toBeNull();
+  });
+
+  it("a word's Lookup loads its phrase's entry, unless a Grammar Span claims the word", () => {
+    const sentence = { ja: "この頃は", en: "", tokens: [], grammarSpans: [], phrases: [konogoro] } as StorySentence;
+    const kono = token({ start: 0, end: 2, surface: "この", reading: "この", entSeq: 990101 });
+    const goro = token({ start: 2, end: 3, surface: "頃", reading: "ころ", entSeq: 990102 });
+    // The phrase's entry and text, with no reading of its own, for every part.
+    expect(lookupKey(sentence, kono, null)).toEqual({ entSeq: 1000001, surface: "この頃", reading: "" });
+    expect(lookupKey(sentence, goro, null)).toEqual({ entSeq: 1000001, surface: "この頃", reading: "" });
+    // A Grammar Span over the word keeps the word's own entry.
+    expect(lookupKey(sentence, goro, span({ start: 2, end: 3 }))).toEqual({ entSeq: 990102, surface: "頃", reading: "ころ" });
+    // A word with no entry and no phrase has no Lookup key.
+    expect(lookupKey(sentence, token({ start: 3, end: 4, surface: "は", entSeq: undefined }), null)).toBeNull();
+  });
+});
+
 describe("furigana", () => {
   it("shows a reading only when the server's threshold says so and there is one", () => {
     expect(showsFurigana(token())).toBe(true);
@@ -59,7 +89,7 @@ describe("furigana", () => {
 
 describe("sentenceSegments", () => {
   function sentence(ja: string, tokens: StoryToken[]): StorySentence {
-    return { ja, en: "", tokens, grammarSpans: [] };
+    return { ja, en: "", tokens, grammarSpans: [], phrases: [] };
   }
 
   it("splices the punctuation the tokeniser left out between tokens", () => {

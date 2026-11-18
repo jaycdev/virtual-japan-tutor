@@ -1,8 +1,10 @@
 import type { ApiClient, Story, WeakSignalRequest } from "@vjt/api-client";
 import {
+  coveringPhrase,
   coveringSpan,
   grammarCue,
   holdSignal,
+  lookupKey,
   menuOptions,
   saveableItem,
   storyCardMetaRuby,
@@ -123,9 +125,17 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
     return sen && tok ? coveringSpan(sen, tok) : null;
   };
 
+  // The Lookup a word loads (issue #97): its Phrase's entry when a Phrase covers
+  // it and no Grammar Span does, else its own Dictionary Entry.
+  const keyAt = (ref: TokenRef) => {
+    const sen = story.sentences[ref.sentence];
+    const tok = sen?.tokens[ref.index];
+    return sen && tok ? lookupKey(sen, tok, spanAt(ref)) : null;
+  };
+
   const prime = (ref: TokenRef) => {
-    const tok = tokenAt(ref);
-    if (tok?.entSeq !== undefined) lookup.load(tok.entSeq, tok.surface, tok.reading);
+    const key = keyAt(ref);
+    if (key) lookup.load(key.entSeq, key.surface, key.reading);
   };
 
   // Hover and focus show a Lookup but never spend a request on a word whose last
@@ -134,8 +144,8 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
   // over (issue #77 review). A press — click, Enter, or the dialog's Retry —
   // still goes through and makes one fresh attempt.
   const primeUnlessFailed = (ref: TokenRef) => {
-    const tok = tokenAt(ref);
-    if (tok?.entSeq !== undefined && lookup.failed(tok.entSeq, tok.surface, tok.reading)) return;
+    const key = keyAt(ref);
+    if (key && lookup.failed(key.entSeq, key.surface, key.reading)) return;
     prime(ref);
   };
 
@@ -254,6 +264,9 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
     const tok = tokenAt(panelRef);
     if (!tok) return null;
     const span = spanAt(panelRef);
+    const sen = story.sentences[panelRef.sentence];
+    // A Phrase the word sits in shows the phrase's Lookup, unless a Grammar Span claims the word (issue #97).
+    if (!span && sen && coveringPhrase(sen, tok)) return { ...panelRef, kind: "phrase" };
     if (grammarCue(tok, span) === null && tok.entSeq === undefined) return null;
     // A particle with only a hint has no entry, so its Lookup is the grammar one.
     return { ...panelRef, kind: span || tok.entSeq === undefined ? "grammar" : "token" };
