@@ -48,6 +48,38 @@ const SCHOOL_ENTRY = {
   kanji: [],
 };
 
+// The entry of 頃 itself, which sits inside この頃 (issue #97): its own Dictionary row opens this.
+const OWN_GORO_ENTRY = {
+  entSeq: 990106,
+  found: true,
+  headword: "頃合い",
+  reading: "ころあい",
+  jlptLevel: null,
+  senses: [{ glosses: ["suitable time"], partsOfSpeech: ["n"] }],
+  kanjiForms: ["頃合い"],
+  readings: ["ころあい"],
+  pitch: null,
+  srsLevel: null,
+  mastery: null,
+  kanji: [],
+};
+
+// The entry of この頃 (a Phrase, issue #97): the Lookup of 頃 inside it shows this.
+const KONO_GORO_ENTRY = {
+  entSeq: 1000001,
+  found: true,
+  headword: "この頃",
+  reading: "このごろ",
+  jlptLevel: "N4",
+  senses: [{ glosses: ["these days"], partsOfSpeech: ["n-adv"] }],
+  kanjiForms: ["この頃"],
+  readings: ["このごろ"],
+  pitch: null,
+  srsLevel: null,
+  mastery: 0,
+  kanji: [],
+};
+
 function makeStory(overrides: Partial<Story> = {}): Story {
   return {
     id: "st-1",
@@ -80,6 +112,7 @@ function makeStory(overrides: Partial<Story> = {}): Story {
             jlptLevel: "N4",
           },
         ],
+        phrases: [],
       },
       {
         ja: "みせにいきました。",
@@ -90,6 +123,7 @@ function makeStory(overrides: Partial<Story> = {}): Story {
           { surface: "いきました", start: 3, end: 7, reading: "いきました", tag: "unknown", showFurigana: false },
         ],
         grammarSpans: [],
+        phrases: [],
       },
     ],
     questions: [{ position: 0, promptJa: "どこで べんきょう しましたか。", optionsJa: ["がっこう", "いえ"] }],
@@ -171,6 +205,8 @@ function fakeApi(
     }
     if (path === "/dictionary/entries/990101") return json(200, SCHOOL_ENTRY);
     if (path === "/dictionary/entries/990103") return json(404, { message: "no such entry" });
+    if (path === "/dictionary/entries/1000001") return json(200, KONO_GORO_ENTRY);
+    if (path === "/dictionary/entries/990106") return json(200, OWN_GORO_ENTRY);
     if (path === "/stories/st-1" && method === "GET") return json(200, story);
     if (path === "/stories/today") return json(404, { message: "none" });
     if (path === "/stories") return json(200, { items: opts.library ?? [story], total: (opts.library ?? [story]).length, limit: 20, offset: 0 });
@@ -244,6 +280,7 @@ describe("Story reader: text", () => {
           en: hostile,
           tokens: [],
           grammarSpans: [],
+          phrases: [],
         },
       ],
       questions: [{ position: 0, promptJa: hostile, optionsJa: [hostile, "いえ"] }],
@@ -317,6 +354,250 @@ describe("Story reader: Lookup", () => {
     await waitFor(() => expect(screen.queryByTestId("panel-lookup")).toBeNull());
   });
 
+  it("hovering any word of a Phrase shows the phrase's own Lookup, from its entry (issue #97)", async () => {
+    const story = makeStory({
+      sentences: [
+        {
+          ja: "この頃は",
+          en: "These days, ...",
+          tokens: [
+            { surface: "この", start: 0, end: 2, reading: "この", entSeq: 990105, tag: "unknown", showFurigana: false },
+            { surface: "頃", start: 2, end: 3, reading: "ころ", entSeq: 990106, tag: "unknown", showFurigana: true },
+            { surface: "は", start: 3, end: 4, reading: "は", tag: "unknown", showFurigana: false },
+          ],
+          grammarSpans: [],
+          phrases: [{ start: 0, end: 3, entSeq: 1000001, ja: "この頃", en: "these days" }],
+        },
+      ],
+    });
+    const { container, requests } = await renderReader({ story });
+    // The second part, 頃: its Lookup is the phrase's, not the word's own.
+    fireEvent.mouseEnter(token(container, 0, 1));
+    const lookup = await screen.findByTestId("panel-lookup");
+    expect(within(lookup).getByText("この頃")).toBeTruthy();
+    expect(within(lookup).getByText("these days")).toBeTruthy();
+    expect(requestsTo(requests, "/dictionary/entries/1000001", "GET")).toHaveLength(1);
+    fireEvent.mouseLeave(token(container, 0, 1));
+  });
+
+  it("a Phrase's tokens sit in one wrapper that carries the underline; the words inside carry none (issue #97)", async () => {
+    const story = makeStory({
+      sentences: [
+        {
+          ja: "この頃は",
+          en: "These days, ...",
+          tokens: [
+            { surface: "この", start: 0, end: 2, reading: "この", entSeq: 990105, tag: "known", showFurigana: false },
+            { surface: "頃", start: 2, end: 3, reading: "ころ", entSeq: 990106, tag: "unknown", showFurigana: true },
+            { surface: "は", start: 3, end: 4, reading: "は", tag: "unknown", showFurigana: false },
+          ],
+          grammarSpans: [],
+          phrases: [{ start: 0, end: 3, entSeq: 1000001, ja: "この頃", en: "these days" }],
+        },
+      ],
+    });
+    const { container } = await renderReader({ story });
+    // One wrapper element holds the whole run: the underline is drawn once, across it.
+    const run = token(container, 0, 0).parentElement as HTMLElement;
+    expect(run.hasAttribute("data-phrase-run")).toBe(true);
+    expect(run.contains(token(container, 0, 1))).toBe(true);
+    expect(run.className).toContain("underline");
+    expect(run.className).toContain("decoration-dotted");
+    expect(run.className).toContain("decoration-lookup-mark");
+    // The words inside it take no underline of their own, the Known one included.
+    expect(token(container, 0, 0).classList.contains("underline")).toBe(false);
+    expect(token(container, 0, 1).classList.contains("underline")).toBe(false);
+    expect(token(container, 0, 0).hasAttribute("data-phrase-edge")).toBe(false);
+    // は is outside the phrase: no wrapper, and no underline.
+    expect(token(container, 0, 2).parentElement).not.toBe(run);
+    expect(token(container, 0, 2).classList.contains("underline")).toBe(false);
+  });
+
+  it("a Phrase broken in the middle by a Grammar Span renders as two wrapper runs (issue #97)", async () => {
+    const story = makeStory({
+      sentences: [
+        {
+          ja: "一二三",
+          en: "one two three",
+          tokens: [
+            { surface: "一", start: 0, end: 1, reading: "いち", entSeq: 990201, tag: "unknown", showFurigana: false },
+            { surface: "二", start: 1, end: 2, reading: "に", entSeq: 990202, tag: "unknown", showFurigana: false },
+            { surface: "三", start: 2, end: 3, reading: "さん", entSeq: 990203, tag: "unknown", showFurigana: false },
+          ],
+          grammarSpans: [
+            { start: 1, end: 2, grammarPointId: "12", isFocus: false, pattern: "～に", meaning: "toward", jlptLevel: "N4" },
+          ],
+          phrases: [{ start: 0, end: 3, entSeq: 1000002, ja: "一二三", en: "one two three" }],
+        },
+      ],
+    });
+    const { container } = await renderReader({ story });
+    const runs = container.querySelectorAll("[data-phrase-run]");
+    expect(runs).toHaveLength(2);
+    expect(token(container, 0, 0).parentElement).toBe(runs[0]);
+    expect(token(container, 0, 2).parentElement).toBe(runs[1]);
+    // The Grammar Span's word sits between them, outside both runs.
+    expect(token(container, 0, 1).parentElement?.hasAttribute("data-phrase-run")).toBe(false);
+  });
+
+  it("a Focus word inside a Phrase keeps its Focus underline, and the run's lookup underline stays off it (issue #97)", async () => {
+    const story = makeStory({
+      sentences: [
+        {
+          ja: "この店は",
+          en: "This shop, ...",
+          tokens: [
+            { surface: "この", start: 0, end: 2, reading: "この", entSeq: 990105, tag: "unknown", showFurigana: false },
+            { surface: "店", start: 2, end: 3, reading: "みせ", entSeq: 990103, tag: "unknown", showFurigana: false },
+            { surface: "は", start: 3, end: 4, reading: "は", tag: "unknown", showFurigana: false },
+          ],
+          grammarSpans: [],
+          phrases: [{ start: 0, end: 3, entSeq: 1000001, ja: "この店", en: "this shop" }],
+        },
+      ],
+    });
+    const { container } = await renderReader({ story });
+    // 店 is a Focus Set item (in the story's vocabItems): its own Focus underline, not the run's.
+    expect(token(container, 0, 1).classList.contains("decoration-focus")).toBe(true);
+    expect(token(container, 0, 1).classList.contains("decoration-lookup-mark")).toBe(false);
+    expect(token(container, 0, 0).parentElement?.hasAttribute("data-phrase-run")).toBe(true);
+  });
+
+  it("hovering a Phrase whose words are all Known still shows the phrase's Lookup (issue #97)", async () => {
+    const story = makeStory({
+      sentences: [
+        {
+          ja: "この頃は",
+          en: "These days, ...",
+          tokens: [
+            { surface: "この", start: 0, end: 2, reading: "この", entSeq: 990105, tag: "known", showFurigana: false },
+            { surface: "頃", start: 2, end: 3, reading: "ころ", entSeq: 990106, tag: "known", showFurigana: true },
+            { surface: "は", start: 3, end: 4, reading: "は", tag: "unknown", showFurigana: false },
+          ],
+          grammarSpans: [],
+          phrases: [{ start: 0, end: 3, entSeq: 1000001, ja: "この頃", en: "these days" }],
+        },
+      ],
+    });
+    const { container } = await renderReader({ story });
+    fireEvent.mouseEnter(token(container, 0, 1));
+    const lookup = await screen.findByTestId("panel-lookup");
+    expect(within(lookup).getByText("この頃")).toBeTruthy();
+    fireEvent.mouseLeave(token(container, 0, 1));
+  });
+
+  it("the menu's Phrase Dictionary on a phrase word opens the Dictionary Entry for the phrase's entSeq (issue #97)", async () => {
+    const story = makeStory({
+      sentences: [
+        {
+          ja: "この頃は",
+          en: "These days, ...",
+          tokens: [
+            { surface: "この", start: 0, end: 2, reading: "この", entSeq: 990105, tag: "unknown", showFurigana: false },
+            { surface: "頃", start: 2, end: 3, reading: "ころ", entSeq: 990106, tag: "unknown", showFurigana: true },
+            { surface: "は", start: 3, end: 4, reading: "は", tag: "unknown", showFurigana: false },
+          ],
+          grammarSpans: [],
+          phrases: [{ start: 0, end: 3, entSeq: 1000001, ja: "この頃", en: "these days" }],
+        },
+      ],
+    });
+    const { container, requests } = await renderReader({ story });
+    fireEvent.click(token(container, 0, 1));
+    fireEvent.click(await screen.findByRole("button", { name: "Phrase Dictionary" }));
+    const dialog = await screen.findByTestId("dictionary-window");
+    expect(dialog.textContent).toContain("この頃");
+    expect(requestsTo(requests, "/dictionary/entries/1000001", "GET")).toHaveLength(1);
+  });
+
+  it("a phrase word with no entry of its own still gets an enabled Dictionary that opens the phrase (issue #97)", async () => {
+    const story = makeStory({
+      sentences: [
+        {
+          ja: "この頃は",
+          en: "These days, ...",
+          tokens: [
+            { surface: "この", start: 0, end: 2, reading: "この", entSeq: 990105, tag: "unknown", showFurigana: false },
+            { surface: "頃", start: 2, end: 3, reading: "ころ", tag: "unknown", showFurigana: true },
+            { surface: "は", start: 3, end: 4, reading: "は", tag: "unknown", showFurigana: false },
+          ],
+          grammarSpans: [],
+          phrases: [{ start: 0, end: 3, entSeq: 1000001, ja: "この頃", en: "these days" }],
+        },
+      ],
+    });
+    const { container } = await renderReader({ story });
+    fireEvent.click(token(container, 0, 1));
+    const dictionary = await screen.findByRole("button", { name: "Dictionary" });
+    expect(dictionary.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(dictionary);
+    expect((await screen.findByTestId("dictionary-window")).textContent).toContain("この頃");
+  });
+
+  it("a linked phrase word offers its own Dictionary row and a Phrase Dictionary row (issue #97)", async () => {
+    const story = makeStory({
+      sentences: [
+        {
+          ja: "この頃は",
+          en: "These days, ...",
+          tokens: [
+            { surface: "この", start: 0, end: 2, reading: "この", entSeq: 990105, tag: "unknown", showFurigana: false },
+            { surface: "頃", start: 2, end: 3, reading: "ころ", entSeq: 990106, tag: "unknown", showFurigana: true },
+            { surface: "は", start: 3, end: 4, reading: "は", tag: "unknown", showFurigana: false },
+          ],
+          grammarSpans: [],
+          phrases: [{ start: 0, end: 3, entSeq: 1000001, ja: "この頃", en: "these days" }],
+        },
+      ],
+    });
+    const { container } = await renderReader({ story });
+    fireEvent.click(token(container, 0, 1));
+    expect(await screen.findByRole("button", { name: "Dictionary" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Phrase Dictionary" })).toBeTruthy();
+  });
+
+  it("the menu's Dictionary on a phrase word opens its own entry, once, and the Phrase Dictionary row opens the phrase, once (issue #97)", async () => {
+    const story = makeStory({
+      sentences: [
+        {
+          ja: "この頃は",
+          en: "These days, ...",
+          tokens: [
+            { surface: "この", start: 0, end: 2, reading: "この", entSeq: 990105, tag: "unknown", showFurigana: false },
+            { surface: "頃", start: 2, end: 3, reading: "ころ", entSeq: 990106, tag: "unknown", showFurigana: true },
+            { surface: "は", start: 3, end: 4, reading: "は", tag: "unknown", showFurigana: false },
+          ],
+          grammarSpans: [],
+          phrases: [{ start: 0, end: 3, entSeq: 1000001, ja: "この頃", en: "these days" }],
+        },
+      ],
+    });
+    const { container, requests } = await renderReader({ story });
+    fireEvent.click(token(container, 0, 1));
+    fireEvent.click(await screen.findByRole("button", { name: "Dictionary" }));
+    const own = await screen.findByTestId("dictionary-window");
+    await waitFor(() => expect(own.textContent).toContain("頃合い"));
+    expect(requestsTo(requests, "/dictionary/entries/990106", "GET")).toHaveLength(1);
+    expect(requestsTo(requests, "/dictionary/entries/1000001", "GET")).toHaveLength(1);
+    fireEvent.keyDown(own, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByTestId("dictionary-window")).toBeNull());
+
+    fireEvent.click(token(container, 0, 1));
+    fireEvent.click(await screen.findByRole("button", { name: "Phrase Dictionary" }));
+    const phrase = await screen.findByTestId("dictionary-window");
+    await waitFor(() => expect(phrase.textContent).toContain("この頃"));
+    expect(requestsTo(requests, "/dictionary/entries/1000001", "GET")).toHaveLength(1);
+    expect(requestsTo(requests, "/dictionary/entries/990106", "GET")).toHaveLength(1);
+  });
+
+  it("a press elsewhere on the page closes the Lookup Menu (issue #97)", async () => {
+    const { container } = await renderReader();
+    fireEvent.click(token(container, 0, 0));
+    await screen.findByRole("button", { name: "Dictionary" });
+    fireEvent.mouseDown(screen.getByRole("heading", { level: 1 }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Dictionary" })).toBeNull());
+  });
+
   it("in ja-furigana the Word meaning row shows the Japanese Part of Speech, its reading in ruby", async () => {
     const { container } = await renderReader({}, "ja-furigana");
     fireEvent.mouseEnter(token(container, 0, 0));
@@ -346,6 +627,7 @@ describe("Story reader: Lookup", () => {
             },
           ],
           grammarSpans: [],
+          phrases: [],
         },
       ],
       vocabItems: [],
@@ -381,6 +663,7 @@ describe("Story reader: Lookup", () => {
             { surface: "は", start: 1, end: 2, reading: "は", tag: "unknown", showFurigana: false, grammarHint: hint() },
           ],
           grammarSpans: [],
+          phrases: [],
         },
       ],
       vocabItems: [],

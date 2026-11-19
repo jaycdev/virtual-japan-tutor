@@ -22,7 +22,7 @@ export function makeStory(id: string, over: Partial<Story> = {}): Story {
     genre: "daily_life",
     text: "はじめました。",
     createdAt: "2026-10-01T08:00:00Z",
-    sentences: [{ ja: "はじめました。", en: "I got started.", tokens: [], grammarSpans: [] }],
+    sentences: [{ ja: "はじめました。", en: "I got started.", tokens: [], grammarSpans: [], phrases: [] }],
     questions: [],
     vocabItems: [],
     ...over,

@@ -2,14 +2,16 @@ import type { StorySentence, StoryToken } from "@vjt/api-client";
 import {
   furiganaPxFor,
   sentenceSegments,
+  sentencePhraseMarks,
   showsFurigana,
   tokenMarks,
   useT,
+  withPhraseMark,
   type MeasurableNode,
   type TokenMarks,
   type TokenRef,
 } from "@vjt/core";
-import { forwardRef, memo } from "react";
+import { forwardRef, memo, useMemo } from "react";
 import { StyleSheet, Text, View, type NativeSyntheticEvent, type NativeTouchEvent } from "react-native";
 
 import { useStoryTextSize } from "../storysize/index.tsx";
@@ -196,6 +198,8 @@ export const StoryParagraph = memo(function StoryParagraph({
   lineHeightPx: number;
 }) {
   const { tp } = useT();
+  // The phrase marks of every token, worked out once for this sentence (issue #97).
+  const phraseMarks = useMemo(() => sentencePhraseMarks(sentence), [sentence]);
   // Centred line-by-line via the flex container itself (issue #45): each
   // wrapped line of token columns sits in the middle of the 40-character box.
   // `alignItems: "flex-end"` keeps bare punctuation spans on the word baseline
@@ -221,7 +225,7 @@ export const StoryParagraph = memo(function StoryParagraph({
             token={segment.token}
             sentenceIndex={sentenceIndex}
             index={segment.index}
-            marks={tokenMarks(segment.token, sentence.grammarSpans)}
+            marks={withPhraseMark(tokenMarks(segment.token, sentence.grammarSpans), phraseMarks[segment.index]!)}
             selected={selectedToken !== null && selectedToken.sentence === sentenceIndex && selectedToken.index === segment.index}
             handlers={handlers(sentenceIndex, segment.index)}
             fontSizePx={fontSizePx}

@@ -600,6 +600,79 @@ func ids(stories []*Story) []uuid.UUID {
 
 func ptr[T any](v T) *T { return &v }
 
+// A Phrase's entry over the real schema (issue #97; skipped without
+// TEST_DATABASE_URL): two JMdict entries share the written form その時, and the
+// rare one has the LOWER ent_seq, so only the common-first order can name the
+// common one. A sentence with no phrase loads with no Phrases.
+func TestPostgresStoryPhraseNamesTheCommonEntry(t *testing.T) {
+	pool := dbtest.New(t)
+	ctx := context.Background()
+	st := NewPostgresStore(pool)
+
+	user := uuid.New()
+	if _, err := pool.Exec(ctx, `INSERT INTO users (id, username, password_hash) VALUES ($1, $2, 'x')`, user, user.String()); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	const (
+		entRare   = 9920001 // is_common false, lower ent_seq
+		entCommon = 9920002 // is_common true
+		entSono   = 9920003
+		entToki   = 9920004
+	)
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO jmdict_entries (ent_seq, is_common) VALUES
+			($1, false), ($2, true), ($3, true), ($4, true)`,
+		entRare, entCommon, entSono, entToki); err != nil {
+		t.Fatalf("seed jmdict entries: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO jmdict_kanji_forms (ent_seq, ord, text) VALUES ($1, 1, 'その時'), ($2, 1, 'その時')`,
+		entRare, entCommon); err != nil {
+		t.Fatalf("seed jmdict forms: %v", err)
+	}
+
+	const ja = "その時"
+	s := &Story{
+		UserID: user, Genre: "phrases", Prompt: "p", Text: ja,
+		Sentences: []Sentence{
+			{
+				Pos: 0, JA: ja, EN: "at that time",
+				Tokens: []Token{
+					{Pos: 0, Surface: "その", Start: 0, End: 2, Reading: "その", Dictionary: "その", EntSeq: ptr(int64(entSono)), Tag: TagUnknown},
+					{Pos: 1, Surface: "時", Start: 2, End: 3, Reading: "とき", Dictionary: "時", EntSeq: ptr(int64(entToki)), Tag: TagUnknown},
+				},
+			},
+			{
+				Pos: 1, JA: "は。", EN: "topic.",
+				Tokens: []Token{{Pos: 0, Surface: "は", Start: 0, End: 1, Reading: "は", Dictionary: "は", Tag: TagUnknown}},
+			},
+		},
+		Questions: []Question{
+			{Pos: 0, PromptJA: "q", OptionsJA: []string{"a", "b"}},
+			{Pos: 1, PromptJA: "q", OptionsJA: []string{"a", "b"}},
+			{Pos: 2, PromptJA: "q", OptionsJA: []string{"a", "b"}},
+		},
+		Validated: true, Attempts: 1,
+	}
+	if err := st.Save(ctx, s); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	got, err := st.Get(ctx, s.ID, user)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	phrases := got.Sentences[0].Phrases
+	if len(phrases) != 1 {
+		t.Fatalf("phrases = %+v, want exactly one (その時)", phrases)
+	}
+	if p := phrases[0]; p.Start != 0 || p.End != 3 || p.EntSeq != entCommon {
+		t.Fatalf("phrase = %+v, want the common entry %d over runes [0,3)", p, entCommon)
+	}
+	if n := len(got.Sentences[1].Phrases); n != 0 {
+		t.Fatalf("a sentence with no phrase has %d phrases, want 0", n)
+	}
+}
+
 // TestPostgresMasteryFocusIgnoresItemLists is the Postgres lock on the
 // issue #12 invariant: the gate's KnownSource (MasteryFocus) reads the
 // knowledge tables only. An item held ONLY by a Boosting List is not a

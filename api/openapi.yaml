@@ -2495,7 +2495,7 @@ components:
             $ref: "#/components/schemas/StoryVocabItem"
     StorySentence:
       type: object
-      required: [ja, en, tokens, grammarSpans]
+      required: [ja, en, tokens, grammarSpans, phrases]
       properties:
         ja:
           type: string
@@ -2510,6 +2510,14 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/StoryGrammarSpan"
+        phrases:
+          type: array
+          description: >
+            The sentence's Phrases (issue #97), computed when the Story loads: runs of linked tokens
+            that together form one dictionary entry, such as この頃 or 一杯. Each token keeps its own
+            entSeq and menu; a phrase is only the Lookup target for hovering any of its tokens.
+          items:
+            $ref: "#/components/schemas/StoryPhrase"
     StoryToken:
       type: object
       required: [surface, start, end, tag, showFurigana]
@@ -2642,6 +2650,31 @@ components:
             The Grammar Point's current MaruMori SRS Level (as of the last Sync): the highest among
             the MaruMori grammar items matched to it. Null when none has one (Seeded Grammar, or a
             lesson-only point with no progress yet).
+    StoryPhrase:
+      type: object
+      description: >
+        A Phrase (GLOSSARY.md, issue #97): two to four adjacent linked tokens of a sentence that
+        together form one dictionary entry, such as この頃 or 一杯. Offsets are codepoint (rune)
+        indexes into the sentence's ja text, counting from 0, like a Grammar Span. The entry's
+        headword and first gloss ride along so the Lookup needs no second request.
+      required: [start, end, entSeq, ja, en]
+      properties:
+        start:
+          type: integer
+          description: Codepoint index of the phrase's first character.
+        end:
+          type: integer
+          description: Codepoint index just past the phrase's last character.
+        entSeq:
+          type: integer
+          format: int64
+          description: JMdict ent_seq of the entry the phrase's written form names.
+        ja:
+          type: string
+          description: The entry's headword.
+        en:
+          type: string
+          description: The entry's first gloss.
     ReadingSettings:
       type: object
       description: >

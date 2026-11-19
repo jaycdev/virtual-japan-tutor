@@ -4,6 +4,7 @@ import {
   coveringSpan,
   firstGlosses,
   grammarCue,
+  lookupKey,
   shortPartOfSpeechLabel,
   useT,
   type EntryLookup,
@@ -22,7 +23,8 @@ import "./reader.css"; // defines --reading-panel-height
 export interface LookTarget {
   sentence: number;
   index: number;
-  kind: "token" | "grammar";
+  /** "phrase": the Phrase covering the word (issue #97), shown as its entry. */
+  kind: "token" | "grammar" | "phrase";
 }
 
 /**
@@ -135,7 +137,15 @@ export function ReadingPanel({
   );
 }
 
-function LookupBody({ story, target, lookup }: { story: Story; target: LookTarget; lookup: EntryLookup }) {
+function LookupBody({
+  story,
+  target,
+  lookup,
+}: {
+  story: Story;
+  target: LookTarget;
+  lookup: EntryLookup;
+}) {
   const { t } = useT();
   const sentence = story.sentences[target.sentence];
   const token = sentence?.tokens[target.index];
@@ -158,16 +168,18 @@ function LookupBody({ story, target, lookup }: { story: Story; target: LookTarge
 
   // The row appears once there is real data: a lookup in flight, a failed one, or a
   // word with no entry renders nothing, and the fixed label above still marks the mode.
-  const entry = token.entSeq !== undefined ? lookup.peek(token.entSeq, token.surface, token.reading) : undefined;
-  if (!entry) return null;
+  // The key is the word's own entry, or the Phrase covering it (issue #97).
+  const key = lookupKey(sentence, token, coveringSpan(sentence, token));
+  const entry = key ? lookup.peek(key.entSeq, key.surface, key.reading) : undefined;
+  if (!key || !entry) return null;
   const glosses = firstGlosses(entry, 2);
   const more = countGlosses(entry) > glosses.length;
   const partOfSpeech = shortPartOfSpeechLabel(entry.senses, t);
   return (
     <div data-testid="panel-lookup" className="flex flex-wrap items-center gap-x-3 gap-y-1">
-      <p className="text-body font-semibold text-pitch">{token.surface}</p>
-      {token.reading && token.reading !== token.surface ? (
-        <p className="text-body text-muted-foreground">{token.reading}</p>
+      <p className="text-body font-semibold text-pitch">{key.surface}</p>
+      {key.reading && key.reading !== key.surface ? (
+        <p className="text-body text-muted-foreground">{key.reading}</p>
       ) : null}
       {partOfSpeech ? (
         <span data-testid="panel-part-of-speech" className="text-caption text-muted-foreground">

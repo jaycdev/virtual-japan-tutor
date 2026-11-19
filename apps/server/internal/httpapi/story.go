@@ -579,11 +579,22 @@ func storyView(st *story.Story, threshold int) api.Story {
 				SrsLevel:       sp.SRSLevel,
 			})
 		}
+		phrases := make([]api.StoryPhrase, 0, len(sen.Phrases))
+		for _, p := range sen.Phrases {
+			phrases = append(phrases, api.StoryPhrase{
+				Start:  p.Start,
+				End:    p.End,
+				EntSeq: p.EntSeq,
+				Ja:     p.JA,
+				En:     p.EN,
+			})
+		}
 		sentences = append(sentences, api.StorySentence{
 			Ja:           sen.JA,
 			En:           sen.EN,
 			Tokens:       tokens,
 			GrammarSpans: spans,
+			Phrases:      phrases,
 		})
 	}
 	questions := make([]api.StoryQuestion, 0, len(st.Questions))

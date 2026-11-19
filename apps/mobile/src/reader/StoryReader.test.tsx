@@ -104,6 +104,10 @@ function fakeApi(
     genOutcome?: "ready" | "running" | "failed";
     /** GET /stories/generation answers 404 (no run has ever happened). */
     noGeneration?: boolean;
+    /** Phrases of the first sentence (issue #97); none unless a test asks. */
+    phrases?: { start: number; end: number; entSeq: number; ja: string; en: string }[];
+    /** Tags the second token of the first sentence Known, so a Phrase over it is all Known (issue #97). */
+    allKnownPhrase?: boolean;
   } = {},
 ) {
   const storyView = {
@@ -132,7 +136,15 @@ function fakeApi(
             srsLevel: 4,
             showFurigana: false,
           },
-          { surface: "で", start: 4, end: 5, reading: "で", entSeq: 990102, tag: "unknown", showFurigana: false },
+          {
+            surface: "で",
+            start: 4,
+            end: 5,
+            reading: "で",
+            entSeq: 990102,
+            tag: opts.allKnownPhrase ? "known" : "unknown",
+            showFurigana: false,
+          },
           { surface: "べんきょう", start: 5, end: 9, reading: "勉強", tag: "unknown", showFurigana: true },
           { surface: "しました", start: 9, end: 13, reading: "しました", tag: "unknown", showFurigana: true },
         ],
@@ -147,6 +159,7 @@ function fakeApi(
             jlptLevel: "N4",
           },
         ],
+        phrases: opts.phrases ?? [],
       },
       {
         ja: "みせにいきました。",
@@ -167,6 +180,7 @@ function fakeApi(
             jlptLevel: "N4",
           },
         ],
+        phrases: [],
       },
     ],
     questions: [
@@ -259,6 +273,7 @@ function fakeApi(
     const entry = pathname.match(/^\/dictionary\/entries\/(\d+)$/)?.[1];
     if (entry === "990101") return json(200, SCHOOL_ENTRY);
     if (entry === "990103") return json(200, MISE_ENTRY);
+    if (entry === "1234567") return json(200, { ...SCHOOL_ENTRY, entSeq: 1234567, headword: "がっこうで" });
 
     if (pathname === "/item-lists" && request.method === "GET") {
       return json(200, { items: itemLists, defaultListId: "l1" });
@@ -292,6 +307,8 @@ function fakeApi(
 const RECTS: Record<string, Rect> = {
   "token-menu": { x: 220, y: 312, width: 160, height: 200 },
   "menu-option-dictionary": { x: 220, y: 312, width: 160, height: 50 },
+  // The Phrase row takes the grammar row's place in a phrase word's menu (no Grammar row there).
+  "menu-option-phraseDictionary": { x: 220, y: 362, width: 160, height: 50 },
   "menu-option-grammar": { x: 220, y: 362, width: 160, height: 50 },
   "menu-option-save": { x: 220, y: 412, width: 160, height: 50 },
   "menu-option-saveTo": { x: 220, y: 462, width: 160, height: 50 },
@@ -611,6 +628,87 @@ describe("Story reader gestures (mobile)", () => {
     fireEvent.mouseDown(token(0, 0), { clientX: 300, clientY: 300 });
     expect(await within(panel).findByText("SRS 4")).toBeTruthy();
     fireEvent.mouseUp(token(0, 0), { clientX: 300, clientY: 300 });
+  });
+
+  it("holding a word inside a Phrase loads its own entry and the phrase's, each once (issue #97)", async () => {
+    // がっこうで (runes 0-5) is a Phrase over the first two tokens, entry 1234567.
+    const { client, requests } = fakeApi({
+      phrases: [{ start: 0, end: 5, entSeq: 1234567, ja: "がっこうで", en: "at school" }],
+    });
+    await openStory(client);
+
+    await pressAndHold(0, 0); // がっこう, whose own entry is 990101
+    await waitFor(() => expect(requests.some((r) => r.path === "/dictionary/entries/1234567")).toBe(true));
+    await waitFor(() => expect(requests.some((r) => r.path === "/dictionary/entries/990101")).toBe(true));
+    expect(requests.filter((r) => r.path === "/dictionary/entries/1234567")).toHaveLength(1);
+    expect(requests.filter((r) => r.path === "/dictionary/entries/990101")).toHaveLength(1);
+    releaseAt(0, 0, 5, 5);
+  });
+
+  it("releasing on the menu's Phrase Dictionary row opens the Phrase's entry, not the word's own (issue #97)", async () => {
+    const { client, requests } = fakeApi({
+      phrases: [{ start: 0, end: 5, entSeq: 1234567, ja: "がっこうで", en: "at school" }],
+    });
+    await openStory(client);
+
+    await pressAndHold(0, 0); // がっこう inside がっこうで, whose own entry is 990101
+    // The Lookup row shows the Phrase, and its entry is cached, so the menu's Phrase row is live.
+    await waitFor(() => expect(within(screen.getByTestId("panel-lookup")).getByText("がっこうで")).toBeTruthy());
+    expect(requests.some((r) => r.path === "/dictionary/entries/1234567")).toBe(true);
+
+    releaseAt(0, 0, 300, 387); // over the menu's Phrase Dictionary row
+    const win = await screen.findByTestId("dictionary-window");
+    expect(win.textContent).toContain("がっこうで");
+    expect(requests.filter((r) => r.path === "/dictionary/entries/1234567")).toHaveLength(1);
+    expect(requests.filter((r) => r.path === "/dictionary/entries/990101")).toHaveLength(1);
+  });
+
+  it("hold on a Phrase whose tokens are all Known still shows the phrase's Lookup (issue #97)", async () => {
+    const { client, requests } = fakeApi({
+      phrases: [{ start: 0, end: 5, entSeq: 1234567, ja: "がっこうで", en: "at school" }],
+      allKnownPhrase: true,
+    });
+    await openStory(client);
+
+    await pressAndHold(0, 1); // で: a Known token of the Phrase
+    expect(within(await screen.findByTestId("panel-lookup")).getByText("がっこうで")).toBeTruthy();
+    expect(requests.some((r) => r.path === "/dictionary/entries/1234567")).toBe(true);
+    releaseAt(0, 1, 5, 5);
+  });
+
+  it("a linked phrase word offers its own Dictionary row and a Phrase Dictionary row (issue #97)", async () => {
+    // がっこう has its own entry (990101) and sits inside the Phrase がっこうで (1234567).
+    const { client, requests } = fakeApi({
+      phrases: [{ start: 0, end: 5, entSeq: 1234567, ja: "がっこうで", en: "at school" }],
+    });
+    await openStory(client);
+
+    await pressAndHold(0, 0);
+    const menu = screen.getByLabelText("Lookup menu");
+    expect(within(menu).getByTestId("menu-option-dictionary").textContent).toContain("Dictionary");
+    expect(within(menu).getByTestId("menu-option-phraseDictionary").textContent).toContain("Phrase Dictionary");
+    await waitFor(() => expect(requests.some((r) => r.path === "/dictionary/entries/990101")).toBe(true));
+    await waitFor(() => expect(requests.some((r) => r.path === "/dictionary/entries/1234567")).toBe(true));
+    releaseAt(0, 0, 5, 5);
+  });
+
+  it("the Dictionary row opens the word's own entry, each request once, not the Phrase's (issue #97)", async () => {
+    const { client, requests } = fakeApi({
+      phrases: [{ start: 0, end: 5, entSeq: 1234567, ja: "がっこうで", en: "at school" }],
+    });
+    await openStory(client);
+
+    await pressAndHold(0, 0);
+    await waitFor(() => expect(requests.some((r) => r.path === "/dictionary/entries/990101")).toBe(true));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20)); // let the own entry land in the cache
+    });
+    releaseAt(0, 0, 300, 337); // over the menu's Dictionary row
+    const win = await screen.findByTestId("dictionary-window");
+    expect(win.textContent).toContain("学校");
+    expect(win.textContent).not.toContain("がっこうで");
+    expect(requests.filter((r) => r.path === "/dictionary/entries/990101")).toHaveLength(1);
+    expect(requests.filter((r) => r.path === "/dictionary/entries/1234567")).toHaveLength(1);
   });
 
   it("a hold opens the Lookup menu at the finger and reports one Weak Signal per word", async () => {
@@ -1210,6 +1308,7 @@ describe("Reader text colour on the dark palette (Android paints a class-less Te
       en: "Yes.",
       tokens: [{ surface: "はい", start: 0, end: 2, reading: "はい", tag: "known", showFurigana: false }],
       grammarSpans: [],
+      phrases: [],
     };
     const handlers = (): TokenHandlers => ({
       onStartShouldSetResponder: () => true,

@@ -54,6 +54,7 @@ function story(overrides: Partial<Story> = {}): Story {
             jlptLevel: "N4",
           },
         ],
+        phrases: [],
       },
     ],
     questions: [

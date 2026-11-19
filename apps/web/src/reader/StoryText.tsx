@@ -1,8 +1,19 @@
 import type { Story, StorySentence, StoryToken } from "@vjt/api-client";
-import { sentenceSegments, showsFurigana, spansCovering, tokenMarks, type TokenRef } from "@vjt/core";
+import {
+  lookupKey,
+  phraseRuns,
+  sentencePhraseMarks,
+  sentenceSegments,
+  showsFurigana,
+  spansCovering,
+  tokenMarks,
+  type TokenRef,
+  type TokenSegment,
+} from "@vjt/core";
 import {
   Fragment,
   useEffect,
+  useMemo,
   type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
@@ -25,6 +36,9 @@ import "./reader.css";
  *     furigana above), the solid `focus` underline for Focus Set vocabulary,
  *     the `grammar` / `grammar-focus` highlighter for a Grammar Span, and the
  *     `selected-sentence` background on the chosen sentence;
+ *   - a Phrase (issue #97) is ONE wrapper span around its run of words, so its
+ *     dotted underline is drawn once across the whole compound; the words inside
+ *     carry no lookup underline of their own (a Focus one still shows);
  *   - a word with a Dictionary Entry, or inside a Grammar Span, is focusable
  *     (Tab reaches it) and opens the Lookup on hover or focus, and its menu on click
  *     or Enter.
@@ -72,6 +86,12 @@ export function StoryText({
   ...handlers
 }: StoryTextProps) {
   useCleanCopy(columnRef);
+  // Each sentence's pieces, with its Phrase runs grouped: worked out once per
+  // Story, not for every word the reader draws (issue #97).
+  const pieces = useMemo(
+    () => story.sentences.map((sentence) => phraseRuns(sentenceSegments(sentence), sentencePhraseMarks(sentence))),
+    [story],
+  );
   return (
     <div
       ref={columnRef}
@@ -79,38 +99,51 @@ export function StoryText({
       className="story-column-width story-text relative mx-auto font-serif text-foreground"
       style={{ fontSize: "var(--story-text-size)", lineHeight: "var(--story-line-height)" }}
     >
-      {story.sentences.map((sentence, i) => (
-        <p
-          key={i}
-          data-sentence={i}
-          // No aria-label: a <p> is generic text, and a label on it is ignored.
-          // The sentence's own accessible name is its Japanese.
-          onClick={() => handlers.onSelectSentence(i)}
-          className={cn("mb-[0.6em] rounded-sm", selected === i && "bg-selected-sentence")}
-        >
-          {sentenceSegments(sentence).map((segment) =>
-            segment.kind === "gap" ? (
-              <Fragment key={segment.key}>{segment.text}</Fragment>
-            ) : (
-              <Word
-                key={segment.index}
-                sentenceIndex={i}
-                index={segment.index}
-                token={segment.token}
-                sentence={sentence}
-                focusEntSeqs={focusEntSeqs}
-                size={size}
-                open={menuToken !== null && menuToken.sentence === i && menuToken.index === segment.index}
-                handlers={handlers}
-              />
-            ),
-          )}
-        </p>
-      ))}
+      {story.sentences.map((sentence, i) => {
+        const word = (segment: TokenSegment, inRun: boolean) => (
+          <Word
+            key={segment.index}
+            sentenceIndex={i}
+            index={segment.index}
+            token={segment.token}
+            sentence={sentence}
+            focusEntSeqs={focusEntSeqs}
+            size={size}
+            open={menuToken !== null && menuToken.sentence === i && menuToken.index === segment.index}
+            inRun={inRun}
+            handlers={handlers}
+          />
+        );
+        return (
+          <p
+            key={i}
+            data-sentence={i}
+            // No aria-label: a <p> is generic text, and a label on it is ignored.
+            // The sentence's own accessible name is its Japanese.
+            onClick={() => handlers.onSelectSentence(i)}
+            className={cn("mb-[0.6em] rounded-sm", selected === i && "bg-selected-sentence")}
+          >
+            {(pieces[i] ?? []).map((piece) => {
+              if (piece.kind === "gap") return <Fragment key={piece.key}>{piece.text}</Fragment>;
+              if (piece.kind === "token") return word(piece, false);
+              // A Phrase run: one wrapper draws its underline across every word in it.
+              return (
+                <span key={piece.key} data-phrase-run className={PHRASE_RUN_CLASS}>
+                  {piece.members.map((member) => word(member, true))}
+                </span>
+              );
+            })}
+          </p>
+        );
+      })}
       {children}
     </div>
   );
 }
+
+/** The one underline a Phrase run carries (issue #97): the lookup colour, offset clear of the furigana. */
+const PHRASE_RUN_CLASS =
+  "underline decoration-dotted decoration-1 underline-offset-[0.25em] decoration-lookup-mark";
 
 function Word({
   token,
@@ -120,6 +153,7 @@ function Word({
   focusEntSeqs,
   size,
   open,
+  inRun,
   handlers,
 }: {
   token: StoryToken;
@@ -129,16 +163,24 @@ function Word({
   focusEntSeqs: ReadonlySet<number>;
   size: StoryTextSize;
   open: boolean;
+  /** Inside a Phrase run, whose wrapper already draws the lookup underline. */
+  inRun: boolean;
   handlers: StoryTextHandlers;
 }) {
   const ref: TokenRef = { sentence: sentenceIndex, index };
-  const inGrammarSpan = spansCovering(token, sentence.grammarSpans).length > 0;
+  const span = spansCovering(token, sentence.grammarSpans)[0] ?? null;
+  const inGrammarSpan = span !== null;
   // A word opens a Lookup only when there is something behind it: a Dictionary
-  // Entry, the Grammar Span it sits in, or a particle's Grammar Catalogue hint
-  // (issue #98).
-  const interactive = token.entSeq !== undefined || inGrammarSpan || token.grammarHint !== undefined;
-  const opensMenu = token.entSeq !== undefined || inGrammarSpan;
-  const marks = tokenMarks(token, sentence.grammarSpans, focusEntSeqs);
+  // Entry (its own, or its Phrase's, issue #97), the Grammar Span it sits in, or
+  // a particle's Grammar Catalogue hint (issue #98).
+  const hasEntry = lookupKey(sentence, token, span) !== null;
+  const interactive = hasEntry || inGrammarSpan || token.grammarHint !== undefined;
+  const opensMenu = hasEntry || inGrammarSpan;
+  const tokenUnderline = tokenMarks(token, sentence.grammarSpans, focusEntSeqs);
+  // A word in a Phrase run has no lookup underline of its own: the run's wrapper
+  // draws it once across the Phrase. A Focus underline is the word's own, so it stays.
+  const marks =
+    inRun && tokenUnderline.underline === "lookup" ? { ...tokenUnderline, underline: "none" as const } : tokenUnderline;
   const ruby = showsFurigana(token);
 
   const onKeyDown = (e: KeyboardEvent<HTMLSpanElement>) => {

@@ -1,9 +1,13 @@
 import type { ApiClient, Story, WeakSignalRequest } from "@vjt/api-client";
 import {
+  coveringPhrase,
   coveringSpan,
   grammarCue,
   holdSignal,
+  dictionaryKey,
+  dictionaryKeys,
   menuOptions,
+  opensPhraseEntry,
   saveableItem,
   storyCardMetaRuby,
   storyMetaEn,
@@ -11,6 +15,7 @@ import {
   useItemLists,
   useReadingSettings,
   useT,
+  type DictionaryRow,
   type MenuOptionId,
   type StoryView,
   type TokenRef,
@@ -78,7 +83,8 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
   const [hovered, setHovered] = useState<TokenRef | null>(null);
   const [focused, setFocused] = useState<TokenRef | null>(null);
   const [menu, setMenu] = useState<{ ref: TokenRef; box: Box } | null>(null);
-  const [dialog, setDialog] = useState<{ kind: DialogKind; ref: TokenRef } | null>(null);
+  // A Dictionary dialog remembers which Dictionary row opened it (issue #97).
+  const [dialog, setDialog] = useState<{ kind: DialogKind; ref: TokenRef; row?: DictionaryRow } | null>(null);
   const [titleEnRevealed, setTitleEnRevealed] = useState(false);
   // The save notes are <T> elements, not resolved strings: they stay in the
   // Learner's language if it changes while on screen, and their furigana
@@ -123,9 +129,35 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
     return sen && tok ? coveringSpan(sen, tok) : null;
   };
 
+  // The Dictionary Entries a word's rows open (issue #97): its own, then its Phrase's.
+  const keysAt = (ref: TokenRef) => {
+    const sen = story.sentences[ref.sentence];
+    const tok = sen?.tokens[ref.index];
+    return sen && tok ? dictionaryKeys(sen, tok, spanAt(ref)) : [];
+  };
+
+  // The Dictionary Entry one Dictionary row opens (issue #97), or null.
+  const keyFor = (ref: TokenRef, row: DictionaryRow) => {
+    const sen = story.sentences[ref.sentence];
+    const tok = sen?.tokens[ref.index];
+    return sen && tok ? dictionaryKey(sen, tok, spanAt(ref), row) : null;
+  };
+
+  // A failed lookup (null cached) dims that row until its retry.
+  const rowFailed = (ref: TokenRef, row: DictionaryRow) => {
+    const key = keyFor(ref, row);
+    return key !== null && lookup.failed(key.entSeq, key.surface, key.reading);
+  };
+
+  // Whether the word's Dictionary action opens its Phrase's entry (issue #97).
+  const phraseLinkedAt = (ref: TokenRef) => {
+    const sen = story.sentences[ref.sentence];
+    const tok = sen?.tokens[ref.index];
+    return sen && tok ? opensPhraseEntry(sen, tok, spanAt(ref)) : false;
+  };
+
   const prime = (ref: TokenRef) => {
-    const tok = tokenAt(ref);
-    if (tok?.entSeq !== undefined) lookup.load(tok.entSeq, tok.surface, tok.reading);
+    for (const key of keysAt(ref)) lookup.load(key.entSeq, key.surface, key.reading);
   };
 
   // Hover and focus show a Lookup but never spend a request on a word whose last
@@ -134,9 +166,9 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
   // over (issue #77 review). A press — click, Enter, or the dialog's Retry —
   // still goes through and makes one fresh attempt.
   const primeUnlessFailed = (ref: TokenRef) => {
-    const tok = tokenAt(ref);
-    if (tok?.entSeq !== undefined && lookup.failed(tok.entSeq, tok.surface, tok.reading)) return;
-    prime(ref);
+    for (const key of keysAt(ref)) {
+      if (!lookup.failed(key.entSeq, key.surface, key.reading)) lookup.load(key.entSeq, key.surface, key.reading);
+    }
   };
 
   const reportSignals = (signals: WeakSignalRequest[]) => {
@@ -210,7 +242,7 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
     const tok = tokenAt(ref);
     if (!tok) return;
     const span = spanAt(ref);
-    if (tok.entSeq === undefined && span === null) return; // nothing behind this word
+    if (keysAt(ref).length === 0 && span === null) return; // nothing behind this word
     // A drag that selects text is a copying gesture, not a click: copying must
     // not open a menu. Enter on a word is never a selection gesture, so it is
     // not blocked (issue #77 review).
@@ -254,6 +286,9 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
     const tok = tokenAt(panelRef);
     if (!tok) return null;
     const span = spanAt(panelRef);
+    const sen = story.sentences[panelRef.sentence];
+    // A Phrase the word sits in shows the phrase's Lookup, unless a Grammar Span claims the word (issue #97).
+    if (!span && sen && coveringPhrase(sen, tok)) return { ...panelRef, kind: "phrase" };
     if (grammarCue(tok, span) === null && tok.entSeq === undefined) return null;
     // A particle with only a hint has no entry, so its Lookup is the grammar one.
     return { ...panelRef, kind: span || tok.entSeq === undefined ? "grammar" : "token" };
@@ -268,8 +303,16 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
       listsState.status === "ready"
         ? listsState.lists.find((l) => l.id === listsState.defaultListId)?.name
         : undefined;
-    const failed = tok.entSeq !== undefined && lookup.failed(tok.entSeq, tok.surface, tok.reading);
-    return menuOptions(tok, spanAt(menu.ref), listsState.status === "ready", defaultName, failed, language);
+    return menuOptions(
+      tok,
+      spanAt(menu.ref),
+      listsState.status === "ready",
+      defaultName,
+      rowFailed(menu.ref, "dictionary"),
+      language,
+      phraseLinkedAt(menu.ref),
+      rowFailed(menu.ref, "phraseDictionary"),
+    );
   })();
 
   const closeMenu = () => setMenu(null);
@@ -350,9 +393,9 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
     const span = spanAt(ref);
     closeMenu();
     if (!tok) return;
-    if (option === "dictionary") {
+    if (option === "dictionary" || option === "phraseDictionary") {
       keepFocusOnMenuClose.current = true;
-      setDialog({ kind: "dictionary", ref });
+      setDialog({ kind: "dictionary", ref, row: option });
       return;
     }
     if (option === "grammar") {
@@ -454,10 +497,10 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
 
   const dialogTok = dialog ? tokenAt(dialog.ref) : undefined;
   const dialogSpan = dialog ? spanAt(dialog.ref) : null;
-  const dialogEntry =
-    dialogTok && dialogTok.entSeq !== undefined ? lookup.peek(dialogTok.entSeq, dialogTok.surface, dialogTok.reading) : undefined;
-  const dialogFailed =
-    dialogTok && dialogTok.entSeq !== undefined ? lookup.failed(dialogTok.entSeq, dialogTok.surface, dialogTok.reading) : false;
+  // The Dictionary Entry window's key: the entry the row that opened it names (issue #97).
+  const dialogKey = dialog ? keyFor(dialog.ref, dialog.row ?? "dictionary") : null;
+  const dialogEntry = dialogKey ? lookup.peek(dialogKey.entSeq, dialogKey.surface, dialogKey.reading) : undefined;
+  const dialogFailed = dialogKey ? lookup.failed(dialogKey.entSeq, dialogKey.surface, dialogKey.reading) : false;
   const returnFocus = () => focusWord(lastWord.current);
 
   return (
@@ -583,14 +626,14 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
       <ReaderDialog
         open={dialog?.kind === "dictionary"}
         onOpenChange={(open) => !open && closeDialog()}
-        title={dialogEntry?.headword ?? dialogTok?.surface ?? tp("reader.dictionaryEntry")}
+        title={dialogEntry?.headword ?? dialogKey?.surface ?? dialogTok?.surface ?? tp("reader.dictionaryEntry")}
         description={tp("reader.dictionaryEntry")}
         testId="dictionary-window"
         onCloseAutoFocus={returnFocus}
       >
         {dialogEntry ? (
           <DictionaryBody entry={dialogEntry} />
-        ) : dialogFailed && dialogTok?.entSeq !== undefined ? (
+        ) : dialogFailed && dialogKey !== null ? (
           <div className="flex flex-col items-start gap-3">
             <p className="text-body text-destructive">
               <T k="reader.dictNoAnswer" />
@@ -598,9 +641,9 @@ export function StoryReader({ client, view, story }: { client: ApiClient; view: 
             <Button
               variant="outline"
               onClick={() => {
-                if (!dialogTok || dialogTok.entSeq === undefined) return;
-                lookup.invalidate(dialogTok.entSeq, dialogTok.surface, dialogTok.reading);
-                lookup.load(dialogTok.entSeq, dialogTok.surface, dialogTok.reading);
+                if (!dialogKey) return;
+                lookup.invalidate(dialogKey.entSeq, dialogKey.surface, dialogKey.reading);
+                lookup.load(dialogKey.entSeq, dialogKey.surface, dialogKey.reading);
               }}
             >
               <T k="common.retry" />

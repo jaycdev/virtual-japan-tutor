@@ -217,6 +217,27 @@ type Sentence struct {
 	EN     string
 	Tokens []Token
 	Spans  []Span
+	// Phrases are the sentence's compound words (issue #97), computed when the
+	// Story loads and never stored. See Phrase.
+	Phrases []Phrase
+}
+
+// Phrase is a run of two to four adjacent linked tokens of a sentence that
+// together form one JMdict written form, such as この頃 or 一杯 (GLOSSARY.md).
+// It is a Lookup target in its own right: hovering any of its tokens shows one
+// Lookup for the phrase, while each part keeps its own menu. Start and End are
+// rune offsets [Start,End) into the sentence's Japanese text, the same
+// convention as Span. EntSeq is the JMdict entry of the written form; JA and EN
+// are its headword and first gloss, filled in by the store on load.
+//
+// Phrases are read-time enrichment: detected from the stored tokens each time a
+// Story loads (see findPhrases), so existing Stories need no relink.
+type Phrase struct {
+	Start  int
+	End    int
+	EntSeq int64
+	JA     string
+	EN     string
 }
 
 // Token is one kagome morpheme of a sentence, tagged against the Learner's
